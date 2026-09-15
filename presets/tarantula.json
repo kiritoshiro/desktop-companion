@@ -1,10 +1,10 @@
 {
-  "name": "Default",
+  "name": "Tarantula",
   "slots": [
     {
       "model": "tarantula",
       "personality": "curious",
-      "count": 8,
+      "count": 1,
       "count_random": false
     }
   ],
@@ -12,8 +12,8 @@
     "size_scale": 1.0,
     "interferable": true,
     "mood_mode": "auto",
-    "social_play": true,
-    "gait_style": "skitter",
+    "social_play": false,
+    "gait_style": "lively",
     "flies": {
       "enabled": false,
       "min_interval": 4.0,

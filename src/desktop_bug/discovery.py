@@ -31,6 +31,18 @@ def _unique_paths(paths: List[Path]) -> List[Path]:
     return result
 
 
+def _added_time(path: Path) -> float:
+    """Return the platform's file creation time for newest-first listings."""
+    try:
+        return path.stat().st_ctime
+    except OSError:
+        return 0.0
+
+
+def _newest_first(path: Path):
+    return (-_added_time(path), path.parent.name.casefold(), path.name.casefold())
+
+
 def candidate_roots(root: Path = None) -> List[Path]:
     """Return places where data folders may live.
 
@@ -101,6 +113,30 @@ def validate_model(data: dict, path: Path) -> Tuple[bool, str]:
         for key in ["name", "side", "gait_group", "attach_angle", "rest_angle", "reach", "upper_len", "lower_len"]:
             if key not in leg:
                 return False, f"{path}: leg {index} missing {key}"
+    appearance = data.get("appearance", {})
+    if appearance is not None and not isinstance(appearance, dict):
+        return False, f"{path}: appearance must be an object"
+    chain = appearance.get("leg_chain") if isinstance(appearance, dict) else None
+    if chain is not None:
+        if not isinstance(chain, dict):
+            return False, f"{path}: appearance.leg_chain must be an object"
+        if bool(chain.get("enabled", False)):
+            if chain.get("segment_count", 4) not in (4, 5):
+                return False, f"{path}: appearance.leg_chain.segment_count must be 4 or 5"
+            if not isinstance(chain.get("extra_segment_asset", "leg_knuckle"), str) or not chain.get("extra_segment_asset", "leg_knuckle").strip():
+                return False, f"{path}: appearance.leg_chain.extra_segment_asset must be a non-empty string"
+            segment_count = int(chain.get("segment_count", 4))
+            for key, expected_length in [
+                ("segment_scales", segment_count),
+                ("segment_lengths", segment_count),
+                ("joint_scales", segment_count - 1),
+                ("bend_profile", segment_count - 1),
+                ("joint_phase_offsets", segment_count - 1),
+                ("bend_directions", segment_count - 1),
+            ]:
+                values = chain.get(key)
+                if values is not None and (not isinstance(values, list) or len(values) != expected_length):
+                    return False, f"{path}: appearance.leg_chain.{key} must contain {expected_length} values"
     return True, ""
 
 
@@ -116,7 +152,7 @@ def discover_models(root: Path = None) -> Tuple[Dict[str, dict], List[str]]:
     models: Dict[str, dict] = {}
     warnings: List[str] = []
     for models_dir in data_dirs("models", root):
-        for path in sorted(models_dir.glob("*/model.json")):
+        for path in sorted(models_dir.glob("*/model.json"), key=_newest_first):
             try:
                 data = _read_json(path)
                 ok, message = validate_model(data, path)
@@ -164,7 +200,7 @@ def discover_presets(root: Path = None) -> List[Path]:
     presets: List[Path] = []
     seen_stems = set()
     for presets_dir in data_dirs("presets", root):
-        for path in sorted(presets_dir.glob("*.json")):
+        for path in sorted(presets_dir.glob("*.json"), key=_newest_first):
             # Avoid showing duplicate bundled presets when an editable copy exists.
             if path.stem in seen_stems:
                 continue

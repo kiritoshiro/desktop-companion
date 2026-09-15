@@ -1,10 +1,10 @@
 {
-  "name": "Default",
+  "name": "Snowpuff-2",
   "slots": [
     {
-      "model": "tarantula",
-      "personality": "curious",
-      "count": 8,
+      "model": "plush_snow_hybrid_2",
+      "personality": "cuddly",
+      "count": 1,
       "count_random": false
     }
   ],
@@ -12,7 +12,7 @@
     "size_scale": 1.0,
     "interferable": true,
     "mood_mode": "auto",
-    "social_play": true,
+    "social_play": false,
     "gait_style": "skitter",
     "flies": {
       "enabled": false,

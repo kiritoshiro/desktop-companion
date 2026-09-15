@@ -62,6 +62,22 @@ class LegState:
     twitch_clock: float = 0.0
     gait_phase_offset: float = field(default_factory=lambda: random.uniform(-0.42, 0.42))
     step_cooldown: float = 0.0
+    # Grounded locomotion state.  ``foot_x/y`` is the world-space contact;
+    # these values describe how that fixed contact is being stroked behind the
+    # body while the body pose is solved from all supporting legs.
+    contact_state: str = "stance"
+    support_weight: float = 1.0
+    contact_age: float = 0.0
+    stroke_progress: float = 0.0
+    stance_base_f: float = 0.0
+    stance_base_s: float = 0.0
+    stance_stroke_f: float = 0.0
+    stance_stroke_s: float = 0.0
+    stance_turn: float = 0.0
+    last_step_phase: float = 0.0
+    last_step_emergency: bool = False
+    joint_phase: float = 0.0
+    joint_bends: List[float] = field(default_factory=list)
 
 
 class Creature:
@@ -187,6 +203,8 @@ class Creature:
         self._skitter_phase = random.random() * math.tau
         self._skitter_burst_jitter = random.uniform(0.94, 1.16)
         self._prev_heading_gait = self.heading
+        self._spider_locomotion_active = False
+        self._spider_gait_frame_updated = False
         # Feeler-probe pacing (lively style only): a gap timer between probes and
         # the current probe pulse envelope.
         self._feeler_clock = random.uniform(0.4, 1.4)
@@ -631,6 +649,293 @@ class Creature:
     def _uses_skitter_gait(self) -> bool:
         return getattr(self, "gait_style", "classic") == "skitter"
 
+    def _spider_gait_config(self):
+        """Return bounded tuning for models that opt into an insect-like gait.
+
+        The existing lively/skitter scheduler is shared by many creatures.  A
+        sprite model can opt in to a more grounded spider stride without
+        changing the legacy gait of unrelated models.
+        """
+        raw = self._appearance("spider_gait", None)
+        if not isinstance(raw, dict) or not bool(raw.get("enabled", False)):
+            return None
+        try:
+            return {
+                "profile": str(raw.get("profile", "tetrapod")).strip().lower(),
+                "max_airborne": int(clamp(float(raw.get("max_airborne", 3)), 2, 3)),
+                "swing_arc_outward": clamp(float(raw.get("swing_arc_outward", 0.12)), 0.0, 0.30),
+                "swing_arc_forward": clamp(float(raw.get("swing_arc_forward", 0.24)), 0.0, 0.50),
+                "swing_height": clamp(float(raw.get("swing_height", 0.56)), 0.35, 0.85),
+                "front_stride_bias": clamp(float(raw.get("front_stride_bias", 0.16)), 0.0, 0.35),
+                "swing_fraction": clamp(float(raw.get("swing_fraction", 0.29)), 0.20, 0.40),
+                # One clock drives both the group launch window and the swing
+                # duration.  This prevents the old 47 ms window / 122 ms swing
+                # mismatch that caused most steps to start outside their phase.
+                "cycle_hz": clamp(float(raw.get("cycle_hz", 2.10)), 1.20, 4.50),
+                "speed_cycle_gain": clamp(float(raw.get("speed_cycle_gain", 1.45)), 0.0, 3.0),
+                "step_lookahead": clamp(float(raw.get("step_lookahead", 0.72)), 0.25, 1.20),
+                "front_phase_offset": clamp(float(raw.get("front_phase_offset", 0.035)), 0.0, 0.10),
+                "refractory_fraction": clamp(float(raw.get("refractory_fraction", 0.16)), 0.04, 0.35),
+                # Limits for the support-driven body solver.  They are expressed
+                # in body-size units so the same controller behaves consistently
+                # for differently scaled Snowpuff-2 instances.
+                "support_stroke_limit": clamp(float(raw.get("support_stroke_limit", 0.62)), 0.35, 1.10),
+                "support_turn_limit": clamp(float(raw.get("support_turn_limit", 0.58)), 0.25, 1.20),
+                "support_blend_time": clamp(float(raw.get("support_blend_time", 0.10)), 0.04, 0.30),
+                "max_body_turn_rate": clamp(float(raw.get("max_body_turn_rate", 2.60)), 0.80, 4.50),
+            }
+        except (TypeError, ValueError):
+            return None
+
+    def _spider_reanchor_stance(self, leg: LegState) -> None:
+        """Start a fresh world-space stance for a non-swinging leg."""
+        local_f, local_s = self._world_to_body_local(leg.foot_x, leg.foot_y)
+        leg.contact_state = "stance"
+        leg.support_weight = 1.0
+        leg.contact_age = 0.0
+        leg.stroke_progress = 0.0
+        leg.stance_base_f = local_f
+        leg.stance_base_s = local_s
+        leg.stance_stroke_f = 0.0
+        leg.stance_stroke_s = 0.0
+        leg.stance_turn = 0.0
+
+    def _spider_reanchor_contacts(self) -> None:
+        """Re-establish contacts after an externally controlled movement mode."""
+        for leg in self.legs:
+            if leg.stepping:
+                leg.contact_state = "swing"
+                leg.support_weight = 0.0
+                continue
+            leg.pending_step = False
+            leg.pending_delay = 0.0
+            self._spider_reanchor_stance(leg)
+
+    def _spider_leg_attach_at_pose(self, leg: LegState, x: float, y: float, heading: float) -> Tuple[float, float]:
+        d = leg.definition
+        sign = self._side_sign(d.get("side", "right"))
+        af = float(d.get("attach_forward", 0.0)) * self.size
+        a_side = float(d.get("attach_side", 0.30)) * self.size * sign
+        # Body sway is deliberately omitted from the mechanical contact solve:
+        # the artwork and the leg roots must share one rigid body transform.
+        fx, fy = math.cos(heading), math.sin(heading)
+        rx, ry = -math.sin(heading), math.cos(heading)
+        return x + fx * af + rx * a_side, y + fy * af + ry * a_side
+
+    @staticmethod
+    def _spider_rotate_local(forward: float, side: float, angle: float) -> Tuple[float, float]:
+        ca, sa = math.cos(angle), math.sin(angle)
+        return forward * ca - side * sa, forward * sa + side * ca
+
+    def _spider_support_pose(self, scale: float, move_f: float, move_s: float,
+                             turn_delta: float, config: dict):
+        """Fit a rigid body pose to the fixed feet after one proposed stroke."""
+        supports = [
+            leg for leg in self.legs
+            if leg.contact_state == "stance" and not leg.stepping and leg.support_weight > 0.01
+        ]
+        if len(supports) < 3:
+            return None
+
+        records = []
+        total_weight = 0.0
+        q_f_sum = q_s_sum = p_x_sum = p_y_sum = 0.0
+        for leg in supports:
+            stroke_f = leg.stance_stroke_f - move_f * scale
+            stroke_s = leg.stance_stroke_s - move_s * scale
+            stance_turn = leg.stance_turn - turn_delta * scale
+            base_f, base_s = self._spider_rotate_local(
+                leg.stance_base_f, leg.stance_base_s, stance_turn
+            )
+            q_f = base_f + stroke_f
+            q_s = base_s + stroke_s
+            weight = max(0.01, float(leg.support_weight))
+            records.append((leg, q_f, q_s, stroke_f, stroke_s, stance_turn, weight))
+            total_weight += weight
+            q_f_sum += q_f * weight
+            q_s_sum += q_s * weight
+            p_x_sum += leg.foot_x * weight
+            p_y_sum += leg.foot_y * weight
+
+        q_f_c = q_f_sum / total_weight
+        q_s_c = q_s_sum / total_weight
+        p_x_c = p_x_sum / total_weight
+        p_y_c = p_y_sum / total_weight
+        dot = cross = 0.0
+        for leg, q_f, q_s, _, _, _, weight in records:
+            px = leg.foot_x - p_x_c
+            py = leg.foot_y - p_y_c
+            qx = q_f - q_f_c
+            qy = q_s - q_s_c
+            dot += weight * (qx * px + qy * py)
+            cross += weight * (qx * py - qy * px)
+        solved_heading = math.atan2(cross, dot) if abs(dot) + abs(cross) > 1e-7 else self.heading
+        max_heading_step = config["max_body_turn_rate"] * max(0.001, getattr(self, "_spider_solver_dt", 0.016))
+        heading_step = ((solved_heading - self.heading + math.pi) % math.tau) - math.pi
+        heading_step = clamp(heading_step, -max_heading_step, max_heading_step)
+        solved_heading = self.heading + heading_step
+        fx, fy = math.cos(solved_heading), math.sin(solved_heading)
+        rx, ry = -math.sin(solved_heading), math.cos(solved_heading)
+        solved_x = p_x_c - (fx * q_f_c + rx * q_s_c)
+        solved_y = p_y_c - (fy * q_f_c + ry * q_s_c)
+
+        # Validate the proposed mechanical pose before committing the stroke.
+        # Reaching the envelope causes the gait scheduler to lift a foot; it
+        # never permits the body to stretch the planted chain indefinitely.
+        for leg, _, _, stroke_f, stroke_s, stance_turn, _ in records:
+            if math.hypot(stroke_f, stroke_s) > config["support_stroke_limit"] * self.size + 1e-4:
+                return None
+            if abs(stance_turn) > config["support_turn_limit"] + 1e-4:
+                return None
+            attach_x, attach_y = self._spider_leg_attach_at_pose(leg, solved_x, solved_y, solved_heading)
+            reach = math.hypot(leg.foot_x - attach_x, leg.foot_y - attach_y)
+            if reach > self._leg_max_reach(leg, visual=False) * 0.98:
+                return None
+            lf_dx = leg.foot_x - solved_x
+            lf_dy = leg.foot_y - solved_y
+            local_f = lf_dx * fx + lf_dy * fy
+            local_s = lf_dx * rx + lf_dy * ry
+            side = self._side_sign(leg.definition.get("side", "right"))
+            min_side = max(
+                float(leg.definition.get("attach_side", 0.30)) * self.size * 0.72,
+                float(leg.definition.get("rest_side", 1.0)) * self.size * 0.30,
+            )
+            if side * local_s < min_side:
+                return None
+            if abs(local_f) > self.size * 2.45:
+                return None
+        return solved_x, solved_y, solved_heading, records
+
+    def _spider_grounded_mode_allowed(self) -> bool:
+        """Return whether Snowpuff-2 may use stance-driven locomotion now."""
+        if self._spider_gait_config() is None or self.airborne or self.dragging:
+            return False
+        if self.inertia_timer > 0.0:
+            return False
+        # These states deliberately own body displacement.  Walking resumes by
+        # re-anchoring the contacts on the next controller frame.
+        return self.state not in ("Jump", "Land", "Roll", "DriftRun", "Dragged")
+
+    def _spider_locomotion_intent(self, dt: float) -> Tuple[float, float, float]:
+        """Convert behavior state into a local stroke and turn request."""
+        dx = self.target_x - self.x
+        dy = self.target_y - self.y
+        target_dist = math.hypot(dx, dy)
+        strafe = self.state == "Observe" and self._is_observer_personality()
+        self.strafe_observe = strafe
+        if target_dist > 2.0 and not strafe:
+            self.target_heading = math.atan2(dy, dx)
+
+        desired_speed = self.speed if not self.motion_paused else 0.0
+        if target_dist < 15.0 and self.state not in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun"):
+            desired_speed *= target_dist / 15.0
+        angle_error = ((self.target_heading - self.heading + math.pi) % math.tau) - math.pi
+        alignment = clamp(1.0 - abs(angle_error) / (math.pi * 0.75), 0.15, 1.0)
+        desired_speed *= alignment
+        desired_speed *= self._skitter_motion_factor(dt, desired_speed, target_dist)
+        accel_mult = float(self.personality.get("acceleration_multiplier", 1.0))
+        accel = (420.0 if desired_speed > self.current_speed else 580.0) * accel_mult
+        if self.current_speed < desired_speed:
+            self.current_speed = min(desired_speed, self.current_speed + accel * dt)
+        else:
+            self.current_speed = max(desired_speed, self.current_speed - accel * dt)
+
+        if strafe and target_dist > 1e-4:
+            move_x, move_y = dx / target_dist, dy / target_dist
+        else:
+            move_x, move_y = math.cos(self.heading), math.sin(self.heading)
+        req_vx, req_vy = move_x * self.current_speed, move_y * self.current_speed
+        fx, fy, rx, ry = self._basis()
+        request_f = (req_vx * fx + req_vy * fy) * dt
+        request_s = (req_vx * rx + req_vy * ry) * dt
+        turn_mult = 1.35 if self.state in ("Chase", "Retreat", "Startled") else 1.0
+        requested_turn = clamp(angle_error, -self.turn_rate * turn_mult * dt, self.turn_rate * turn_mult * dt)
+        return request_f, request_s, requested_turn
+
+    def _update_spider_grounded_locomotion_step(self, dt: float) -> None:
+        """Drive body pose from planted feet, then let the gait update swings."""
+        config = self._spider_gait_config()
+        if config is None:
+            return
+        if not self._spider_locomotion_active:
+            self._spider_reanchor_contacts()
+            self._spider_locomotion_active = True
+
+        self._spider_solver_dt = dt
+        move_f, move_s, turn_delta = self._spider_locomotion_intent(dt)
+        blend_time = config["support_blend_time"]
+        for leg in self.legs:
+            if leg.contact_state == "stance" and not leg.stepping:
+                leg.contact_age += dt
+                leg.support_weight = min(1.0, max(leg.support_weight, leg.contact_age / blend_time))
+                leg.stroke_progress = clamp(
+                    math.hypot(leg.stance_stroke_f, leg.stance_stroke_s)
+                    / max(1.0, config["support_stroke_limit"] * self.size),
+                    0.0, 1.0,
+                )
+
+        old_x, old_y, old_heading = self.x, self.y, self.heading
+        chosen = None
+        # Reduce a stroke before reducing the body pose.  This makes a sharp
+        # turn slow at the leg envelope instead of crossing or overextending.
+        for scale in (1.0, 0.78, 0.56, 0.34, 0.16, 0.0):
+            proposal = self._spider_support_pose(scale, move_f, move_s, turn_delta, config)
+            if proposal is not None:
+                chosen = (scale, proposal)
+                break
+        if chosen is not None:
+            scale, (new_x, new_y, new_heading, records) = chosen
+            for leg, _, _, stroke_f, stroke_s, stance_turn, _ in records:
+                leg.stance_stroke_f = stroke_f
+                leg.stance_stroke_s = stroke_s
+                leg.stance_turn = stance_turn
+                leg.stroke_progress = clamp(
+                    math.hypot(stroke_f, stroke_s)
+                    / max(1.0, config["support_stroke_limit"] * self.size),
+                    0.0, 1.0,
+                )
+            self.x, self.y, self.heading = new_x, new_y, new_heading
+        self.x, self.y = clamp_point(self.x, self.y, self.margin * 0.4, self.screen_w, self.screen_h)
+        self.vel_x = (self.x - old_x) / max(dt, 1e-4)
+        self.vel_y = (self.y - old_y) / max(dt, 1e-4)
+        actual_turn = ((self.heading - old_heading + math.pi) % math.tau) - math.pi
+        self.turn_rehome_pressure = clamp(
+            self.turn_rehome_pressure * max(0.0, 1.0 - dt * 2.6) + abs(actual_turn) * 3.0,
+            0.0, 1.4,
+        )
+
+        # The body shell and the leg roots share the mechanical transform.  Keep
+        # breathing in the shell, but do not add a second whole-body sway/bob
+        # transform that the contacts do not experience.
+        speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
+        self.body_bob = 0.0
+        self.body_sway = 0.0
+        self.bob_phase += dt * (3.6 + self.current_speed * 0.095)
+        self.breath_phase += dt * (1.55 + 0.35 * speed01)
+        self.abdomen_pulse = math.sin(self.breath_phase) * 0.045 + math.sin(self.bob_phase * 0.5) * speed01 * 0.022
+        self.ceph_pulse = -math.sin(self.breath_phase + 0.85) * 0.018
+
+    def _update_spider_grounded_locomotion(self, dt: float) -> None:
+        """Advance grounded mechanics at a fixed substep for frame-rate stability."""
+        duration = max(0.0, float(dt))
+        substeps = max(1, int(round(duration * 120.0)))
+        step = min(1.0 / 120.0, duration)
+        for _ in range(substeps):
+            self._update_spider_grounded_locomotion_step(step)
+
+    def _update_spider_grounded_frame(self, dt: float) -> None:
+        """Run the production grounded order: contacts/body solve, then gait."""
+        config = self._spider_gait_config()
+        if config is None:
+            return
+        duration = max(0.0, float(dt))
+        substeps = max(1, int(round(duration * 120.0)))
+        step = min(1.0 / 120.0, duration)
+        for _ in range(substeps):
+            self._update_spider_grounded_locomotion_step(step)
+            self._update_spider_gait_step(step, config)
+        self._spider_gait_frame_updated = True
+
     def _visual_foot_for_render(self, leg: LegState) -> Tuple[float, float]:
         """Return the visible foot location without making planted feet slide with the body.
 
@@ -644,6 +949,16 @@ class Creature:
         stretching off into the distance).  The classic gait is unchanged.
         """
         lively = self._uses_lively_gait()
+        spider_gait = self._spider_gait_config()
+        if spider_gait is not None:
+            # A planted tarsus is a world-space contact point.  Never project it
+            # back into a body-relative sector during rendering: the sector moves
+            # with the body and made planted feet slide visibly while walking.
+            # The scheduler now replants before this becomes a long limb.  Active
+            # swings may still use a safety envelope because they are not contacts.
+            if not leg.stepping and not leg.pending_step:
+                return leg.foot_x, leg.foot_y
+            return self._limit_world_point_to_leg_reach(leg, leg.foot_x, leg.foot_y, visual=True)
         if lively:
             # Hard guarantee for the lively gait: pull the rendered foot into the
             # leg's own angular wedge (no crossing) and cap the leg length tightly
@@ -714,6 +1029,13 @@ class Creature:
                 rs += stride * speed01 * move_s * lateral_mult
             else:
                 rf += stride * speed01 * (1.05 if self.state not in ("Chase", "Retreat", "Dragged", "Startled") else 1.35)
+            spider_gait = self._spider_gait_config()
+            if spider_gait is not None and self._uses_lively_gait():
+                # Leading legs reach a little farther ahead while rear legs
+                # retain a shorter stroke.  The side lane stays fixed, so a
+                # forward walk cannot turn into a lateral crab shuffle.
+                front_factor = clamp(float(d.get("rest_forward", 0.0)), -1.0, 1.0)
+                rf += stride * speed01 * front_factor * spider_gait["front_stride_bias"]
             # Subtle organic toe spread while idle; this does not slide planted feet.
             micro_x = math.sin(self.breath_phase * 0.9 + leg.phase_seed) * jitter
             micro_y = math.cos(self.breath_phase * 0.7 + leg.phase_seed * 1.13) * jitter
@@ -737,6 +1059,12 @@ class Creature:
             leg.step_target_x = leg.foot_x
             leg.step_target_y = leg.foot_y
             leg.twitch_clock = random.uniform(0.0, 1.0)
+            try:
+                leg.joint_phase = float(leg.definition.get("phase_offset", 0.0)) * math.tau + leg.phase_seed * 0.11
+            except (TypeError, ValueError):
+                leg.joint_phase = leg.phase_seed * 0.11
+            leg.joint_bends = []
+            self._spider_reanchor_stance(leg)
 
     # ------------------------------------------------------------------
     # FSM entry helpers. These intentionally set targets immediately.
@@ -2098,7 +2426,12 @@ class Creature:
             self._update_jump(dt)
         else:
             self._update_state(dt, mx, my)
-            self._move_body(dt)
+            if self._spider_grounded_mode_allowed():
+                self._update_spider_grounded_frame(dt)
+            else:
+                if self._spider_locomotion_active:
+                    self._spider_locomotion_active = False
+                self._move_body(dt)
         if self.cage is not None and not self.dragging:
             self._apply_cage_bounds()
         self._update_legs(dt)
@@ -3840,23 +4173,37 @@ class Creature:
     def _begin_step(self, leg: LegState, force_fast: bool = False) -> None:
         leg.pending_step = False
         leg.stepping = True
+        leg.contact_state = "swing"
+        leg.support_weight = 0.0
+        leg.contact_age = 0.0
+        leg.stroke_progress = 0.0
         leg.step_timer = 0.0
         speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
-        leg.step_duration = 0.30 - 0.13 * speed01
+        spider_gait = self._spider_gait_config()
+        if spider_gait is not None and self._uses_lively_gait():
+            leg.step_duration = self._spider_step_duration(
+                spider_gait,
+                clamp(self.current_speed / 150.0, 0.0, 1.0),
+                float(getattr(self, "_spider_turn_speed", 0.0)),
+                force_fast=force_fast,
+            )
+        else:
+            leg.step_duration = 0.30 - 0.13 * speed01
         sliding = self._is_drift_sliding()
-        if force_fast or (self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun") and not sliding) or (abs(getattr(self, "last_drift_amount", 0.0)) > 0.22 and not sliding):
+        if spider_gait is None and (force_fast or (self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun") and not sliding) or (abs(getattr(self, "last_drift_amount", 0.0)) > 0.22 and not sliding)):
             leg.step_duration *= 0.72
-        if self._uses_skitter_gait() and not sliding:
+        if spider_gait is None and self._uses_skitter_gait() and not sliding:
             # The third movement option is based on lively, but its tarsi flick
             # forward much faster so each burst reads as several quick steps.
             leg.step_duration *= 0.58 if force_fast else 0.66
-        if sliding:
+        if spider_gait is None and sliding:
             # During the visible slide, feet should look light and skiddy rather
             # than gripping hard and machine-gunning new steps.
             leg.step_duration *= float(self.personality.get("drift_slide_step_slowdown", 1.42))
-        min_step = 0.052 if self._uses_skitter_gait() and not sliding else 0.095
-        max_step = 0.26 if self._uses_skitter_gait() and not sliding else 0.40
-        leg.step_duration = clamp(leg.step_duration, min_step, max_step)
+        if spider_gait is None:
+            min_step = 0.052 if self._uses_skitter_gait() and not sliding else 0.095
+            max_step = 0.26 if self._uses_skitter_gait() and not sliding else 0.40
+            leg.step_duration = clamp(leg.step_duration, min_step, max_step)
         _, _, _, _, _, start_severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
         if start_severe_wrong:
             # If a planted foot crossed to the wrong side after a sharp turn, start
@@ -3871,8 +4218,15 @@ class Creature:
         speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
         target_f, target_s = self._world_to_body_local(leg.pending_target_x, leg.pending_target_y)
         side = self._side_sign(leg.definition.get("side", "right"))
-        target_f += random.uniform(-0.060, 0.095) * self.size * (0.7 + speed01)
-        target_s += side * random.uniform(-0.040, 0.055) * self.size * (0.6 + speed01 * 0.5)
+        if spider_gait is not None and self._uses_lively_gait():
+            # Predictable landing is part of the gait.  Keep only a tiny
+            # deterministic per-leg offset so the eight feet do not stamp onto
+            # a mathematically identical line.
+            target_f += math.sin(leg.phase_seed) * 0.018 * self.size
+            target_s += side * math.cos(leg.phase_seed * 1.37) * 0.012 * self.size
+        else:
+            target_f += random.uniform(-0.060, 0.095) * self.size * (0.7 + speed01)
+            target_s += side * random.uniform(-0.040, 0.055) * self.size * (0.6 + speed01 * 0.5)
         tx, ty = self._body_local_to_world(target_f, target_s)
         leg.step_target_x, leg.step_target_y = self._constrain_leg_point(leg, tx, ty)
 
@@ -3882,6 +4236,19 @@ class Creature:
         path_x = leg.step_target_x - leg.step_start_x
         path_y = leg.step_target_y - leg.step_start_y
         path_len = max(1.0, math.hypot(path_x, path_y))
+        spider_gait = self._spider_gait_config()
+        if spider_gait is not None and self._uses_lively_gait():
+            # Spider tarsi lift mostly forward and upward, with only a small
+            # outward clearance arc.  The previous normal-to-path arc made
+            # every swing fan sideways, which read as a crab walk.
+            fx, fy, rx, ry = self._basis()
+            side = self._side_sign(leg.definition.get("side", "right"))
+            front_factor = clamp(float(leg.definition.get("rest_forward", 0.0)), -1.0, 1.0)
+            forward_arc = path_len * spider_gait["swing_arc_forward"] * (0.82 + max(0.0, front_factor) * 0.18)
+            outward_arc = path_len * spider_gait["swing_arc_outward"]
+            leg.step_control_x = mid_x + fx * forward_arc + rx * side * outward_arc
+            leg.step_control_y = mid_y + fy * forward_arc + ry * side * outward_arc
+            return
         nx = -path_y / path_len
         ny = path_x / path_len
         _, _, rx, ry = self._basis()
@@ -3930,8 +4297,28 @@ class Creature:
                     leg.lift = 0.0
                     leg.foot_x = leg.step_target_x
                     leg.foot_y = leg.step_target_y
+                    if self._spider_gait_config() is not None:
+                        # Touchdown is a new world-space contact.  Give it a
+                        # small transfer weight so the rigid support solve does
+                        # not jump when the support set changes.
+                        local_f, local_s = self._world_to_body_local(leg.foot_x, leg.foot_y)
+                        leg.contact_state = "stance"
+                        leg.support_weight = 0.12
+                        leg.contact_age = 0.0
+                        leg.stroke_progress = 0.0
+                        leg.stance_base_f = local_f
+                        leg.stance_base_s = local_s
+                        leg.stance_stroke_f = 0.0
+                        leg.stance_stroke_s = 0.0
+                        leg.stance_turn = 0.0
                     speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
-                    if self._uses_skitter_gait():
+                    spider_gait = self._spider_gait_config()
+                    if spider_gait is not None and self._uses_lively_gait():
+                        # Refractory time is derived from the same shared gait
+                        # clock as the swing itself; it cannot desynchronise the
+                        # two tetrapod windows.
+                        leg.step_cooldown = leg.step_duration * spider_gait["refractory_fraction"]
+                    elif self._uses_skitter_gait():
                         leg.step_cooldown = random.uniform(0.012, 0.045) * (1.08 - speed01 * 0.36)
                     else:
                         leg.step_cooldown = random.uniform(0.035, 0.095) * (1.15 - speed01 * 0.45)
@@ -4114,6 +4501,161 @@ class Creature:
         if started:
             self.turn_rehome_pressure = max(0.0, self.turn_rehome_pressure - 0.18)
 
+    def _spider_group_index(self, leg: LegState) -> int:
+        """Map a model gait group to one of the two tetrapod phases."""
+        groups = list(getattr(self, "gait_groups", (0, 1)))
+        try:
+            group = int(leg.definition.get("gait_group", 0))
+        except (TypeError, ValueError):
+            group = 0
+        if len(groups) < 2:
+            return 0
+        try:
+            return groups.index(group) % 2
+        except ValueError:
+            return group % 2
+
+    def _spider_cycle_hz(self, config: dict, speed01: float, turn_speed: float = 0.0) -> float:
+        """Return the one cadence used by both phase windows and foot swings."""
+        hz = config["cycle_hz"] + speed01 * config["speed_cycle_gain"]
+        if turn_speed > 0.30:
+            hz += min(turn_speed, 4.5) * 0.10
+        return clamp(hz, 1.20, 4.50)
+
+    def _spider_step_duration(self, config: dict, speed01: float,
+                              turn_speed: float = 0.0, force_fast: bool = False) -> float:
+        hz = self._spider_cycle_hz(config, speed01, turn_speed)
+        duration = config["swing_fraction"] / max(0.1, hz)
+        if force_fast:
+            duration *= 0.86
+        return clamp(duration, 0.075, 0.18)
+
+    def _spider_phase_window(self, leg: LegState, phase: float, config: dict):
+        """Return whether a leg is in its shared group launch window."""
+        group = self._spider_group_index(leg)
+        front = self._leg_front_factor(leg)
+        # Front legs lead slightly; rear legs follow slightly.  All four legs
+        # still use the same group clock instead of independent random phases.
+        if config.get("profile") in ("chosen_one", "tarantula"):
+            # These models use a metachronal wave around the body rather than
+            # releasing four same-phase legs at once.  The model owns each
+            # foot's phase so its front-to-rear wave remains stable while the
+            # support solver changes heading.
+            try:
+                phase_offset = float(leg.definition.get("phase_offset", 0.5 * group))
+            except (TypeError, ValueError):
+                phase_offset = 0.5 * group
+            start = phase_offset - front * config["front_phase_offset"]
+        else:
+            start = (0.5 * group) - front * config["front_phase_offset"]
+        relative = (phase - start) % 1.0
+        return relative < config["swing_fraction"], relative, group
+
+    def _spider_predicted_target(self, leg: LegState, config: dict,
+                                 turn_speed: float = 0.0) -> Tuple[float, float]:
+        """Predict where the foot should land after its bounded swing."""
+        speed01 = clamp(self.current_speed / 150.0, 0.0, 1.0)
+        duration = self._spider_step_duration(config, speed01, turn_speed)
+        target_x, target_y = self._leg_ideal_foot(leg)
+        vx, vy = self.vel_x, self.vel_y
+        velocity = math.hypot(vx, vy)
+        if velocity < 1.0 and self.current_speed > 1.0:
+            fx, fy, _, _ = self._basis()
+            vx, vy = fx * self.current_speed, fy * self.current_speed
+            velocity = self.current_speed
+        if velocity > 1.0:
+            lookahead = velocity * duration * config["step_lookahead"]
+            target_x += vx / velocity * lookahead
+            target_y += vy / velocity * lookahead
+        return self._constrain_leg_point(leg, target_x, target_y)
+
+    def _update_spider_gait_step(self, dt: float, config: dict) -> None:
+        """Run the grounded alternating-tetrapod scheduler for Snowpuff-2."""
+        if self.airborne:
+            return
+        self._advance_active_steps(dt)
+
+        dheading = ((self.heading - self._prev_heading_gait + math.pi) % math.tau) - math.pi
+        self._prev_heading_gait = self.heading
+        turn_speed = abs(dheading) / max(dt, 1e-3)
+        self._spider_turn_speed = turn_speed
+        turn_err = abs(((self.target_heading - self.heading + math.pi) % math.tau) - math.pi)
+        moving = self.current_speed > 4.0
+        turning = turn_speed > 0.30 or turn_err > 0.12
+        speed01 = clamp(self.current_speed / 150.0, 0.0, 1.0)
+        fast_state = self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun")
+        max_air = config["max_airborne"]
+        swinging_now = sum(1 for leg in self.legs if leg.stepping or leg.pending_step)
+
+        # Advance the same clock that defines the swing duration before choosing
+        # launches, so this frame's candidates are evaluated in the current window.
+        self._lively_gait_phase = (
+            self._lively_gait_phase + dt * self._spider_cycle_hz(config, speed01, turn_speed)
+        ) % 1.0
+
+        # Only severe wrong-side/overreach poses bypass the phase window.  Normal
+        # foot-placement error is scheduled in its tetrapod's window.
+        candidates = []
+        for i, leg in enumerate(self.legs):
+            if leg.stepping or leg.pending_step or leg.step_cooldown > 0.0:
+                continue
+            _, _, _, _, _, severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
+            _, _, _, very_far = self._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
+            emergency = severe_wrong or very_far
+            target = self._spider_predicted_target(leg, config, turn_speed)
+            distance_to_target = math.hypot(leg.foot_x - target[0], leg.foot_y - target[1])
+            threshold = self.size * (0.14 if moving or turning else 0.10)
+            if fast_state:
+                threshold *= 0.82
+            _, relative, group = self._spider_phase_window(leg, self._lively_gait_phase, config)
+            in_window = relative < config["swing_fraction"]
+            _, _, _, _, wrong_side, _ = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
+            _, _, too_far, _ = self._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
+            needs_step = distance_to_target > threshold or wrong_side or too_far
+            if not emergency and (not needs_step or not in_window):
+                continue
+            score = distance_to_target / max(1.0, threshold)
+            if emergency:
+                score += 3.0
+            score += max(0.0, config["swing_fraction"] - relative) * 0.35
+            candidates.append((score, i, leg, target, emergency, group))
+
+        candidates.sort(reverse=True, key=lambda item: item[0])
+        slots = max(0, max_air - swinging_now)
+        side_airborne = {
+            -1.0: sum(1 for leg in self.legs if (leg.stepping or leg.pending_step) and self._side_sign(leg.definition.get("side", "right")) < 0),
+            1.0: sum(1 for leg in self.legs if (leg.stepping or leg.pending_step) and self._side_sign(leg.definition.get("side", "right")) > 0),
+        }
+        used = set()
+        for _, i, leg, target, emergency, group in candidates:
+            if slots <= 0:
+                break
+            side = self._side_sign(leg.definition.get("side", "right"))
+            # Keep support balanced by anatomical side, not array adjacency.
+            if side_airborne[side] >= 2 and not emergency:
+                continue
+            leg.last_step_phase = self._lively_gait_phase
+            leg.last_step_emergency = emergency
+            self._schedule_step(leg, target[0], target[1], delay=0.0,
+                                force_fast=emergency or fast_state)
+            leg.step_cooldown = 0.0
+            side_airborne[side] += 1
+            used.add(i)
+            slots -= 1
+
+        self._update_spider_joint_articulation(dt, config)
+        self._update_feelers(dt, moving=moving, turning=turning)
+        if used:
+            self.turn_rehome_pressure = max(0.0, self.turn_rehome_pressure - 0.18)
+
+    def _update_spider_gait(self, dt: float, config: dict) -> None:
+        """Advance the gait scheduler at the same fixed mechanics rate."""
+        duration = max(0.0, float(dt))
+        substeps = max(1, int(round(duration * 120.0)))
+        step = min(1.0 / 120.0, duration)
+        for _ in range(substeps):
+            self._update_spider_gait_step(step, config)
+
     def _update_legs_lively(self, dt: float) -> None:
         """Visible alternating-tetrapod gait with lifted legs and object probing.
 
@@ -4123,6 +4665,13 @@ class Creature:
         renderer.  When the spider is settled near something it is attending to,
         it reaches a front leg out to tap the object and waves its pedipalps.
         """
+        spider_gait = self._spider_gait_config()
+        if spider_gait is not None:
+            if self._spider_gait_frame_updated:
+                self._spider_gait_frame_updated = False
+                return
+            self._update_spider_gait(dt, spider_gait)
+            return
         if self.airborne:
             return
         self._advance_active_steps(dt)
@@ -4138,6 +4687,7 @@ class Creature:
         moving = self.current_speed > 4.0
         turning = turn_speed > 0.30 or turn_err > 0.12
         skitter = self._uses_skitter_gait()
+        spider_gait = self._spider_gait_config()
         hold_still = (self.current_speed < (4.5 if skitter else 3.0)) and not turning and not self.dragging
         speed01 = clamp(self.current_speed / 150.0, 0.0, 1.0)
         sliding = self._is_drift_sliding()
@@ -4152,6 +4702,11 @@ class Creature:
             # A turn needs several feet free to walk the body around quickly so
             # legs do not linger crossed over one another.
             max_air = max(max_air, 4 if skitter else 3)
+        if spider_gait is not None:
+            # Keep at least five of eight feet planted.  Four airborne legs can
+            # be stable for a hexapod, but makes an eight-legged spider rock
+            # sideways like a crab.
+            max_air = min(max_air, spider_gait["max_airborne"])
         swinging_now = sum(1 for leg in self.legs if leg.stepping or leg.pending_step)
 
         # Emergency repair: never allow an impossible pose, but fix it with a
@@ -4191,7 +4746,7 @@ class Creature:
         # Alternating tetrapod: two leg groups half a cycle out of phase. Skitter
         # uses the same idea as lively, but with a shorter swing window, lower
         # replant threshold, and faster clock so feet tick in quick succession.
-        swing_frac = 0.31 if skitter else 0.40
+        swing_frac = spider_gait["swing_fraction"] if spider_gait is not None else (0.31 if skitter else 0.40)
         group_count = max(1, len(self.gait_groups))
         replant_thresh = self.size * ((0.095 if (moving or sliding) else 0.080) if skitter else (0.16 if (moving or sliding) else 0.12))
         if fast_state:
@@ -4346,7 +4901,7 @@ class Creature:
         if cache_key in self.SPRITE_CACHE:
             return self.SPRITE_CACHE[cache_key]
 
-        names = ["abdomen", "cephalothorax", "leg_upper", "leg_lower", "leg_tip", "shadow"]
+        names = ["abdomen", "cephalothorax", "leg_upper", "leg_lower", "leg_tip", "leg_knuckle", "shadow"]
         loaded = {}
         for name in names:
             candidate = assets_dir / f"{name}.png"
@@ -4356,6 +4911,249 @@ class Creature:
                     loaded[name] = pixmap
         self.SPRITE_CACHE[cache_key] = loaded
         return loaded
+
+    def _sprite_leg_chain_config(self):
+        """Return a sanitized optional multi-knuckle leg-chain configuration.
+
+        The legacy three-piece sprite rig remains the default.  A model opts in
+        with ``appearance.leg_chain`` so existing creatures keep their exact
+        renderer path and asset requirements.
+        """
+        raw = self._appearance("leg_chain", None)
+        if not isinstance(raw, dict) or not bool(raw.get("enabled", False)):
+            return None
+        try:
+            segment_count = int(raw.get("segment_count", 4))
+            if segment_count not in (4, 5):
+                return None
+            asset_name = str(raw.get("extra_segment_asset", "leg_knuckle")).strip()
+            if not asset_name:
+                return None
+            split = clamp(float(raw.get("knuckle_split", 0.46)), 0.28, 0.66)
+            bend = clamp(float(raw.get("knuckle_bend", 0.12)), 0.0, 0.24)
+            max_stretch = clamp(float(raw.get("max_stretch", 1.05)), 1.0, 1.12)
+            elevated_arc = clamp(float(raw.get("elevated_arc", 0.0)), 0.0, 0.45)
+            proximal_lift = clamp(float(raw.get("proximal_lift", 1.0)), 1.0, 2.20)
+            hairy = bool(raw.get("hairy", False))
+            hair_scale = clamp(float(raw.get("hair_scale", 0.18)), 0.0, 0.50)
+            default_scales = [1.0, 0.84, 0.64, 0.52, 0.42][:segment_count]
+            # Width scales are deliberately separate from anatomical lengths.
+            # Older configs only had segment_scales, which made the renderer
+            # reuse presentation values as geometry and allowed a proximal
+            # segment to become much longer than its knuckle could control.
+            default_lengths = [1.0, 1.05, 0.78, 0.56, 0.44][:segment_count]
+            default_joints = [0.95, 0.72, 0.60, 0.48][:segment_count - 1]
+            default_profile = [1.0, 0.64, 0.28, 0.18][:segment_count - 1]
+            default_phase_offsets = [0.0, 0.32, -0.22, 0.44][:segment_count - 1]
+            default_bend_directions = [1.0, 1.0, 0.72, 0.42][:segment_count - 1]
+            segment_scales = [float(value) for value in raw.get("segment_scales", default_scales)]
+            segment_lengths = [float(value) for value in raw.get("segment_lengths", default_lengths)]
+            joint_scales = [float(value) for value in raw.get("joint_scales", default_joints)]
+            bend_profile = [float(value) for value in raw.get("bend_profile", default_profile)]
+            joint_phase_offsets = [clamp(float(value), -math.tau, math.tau) for value in raw.get("joint_phase_offsets", default_phase_offsets)]
+            bend_directions = [clamp(float(value), -1.4, 1.4) for value in raw.get("bend_directions", default_bend_directions)]
+            joint_count = segment_count - 1
+            if (len(segment_scales) != segment_count or len(segment_lengths) != segment_count
+                    or len(joint_scales) != joint_count
+                    or len(bend_profile) != joint_count or len(joint_phase_offsets) != joint_count
+                    or len(bend_directions) != joint_count):
+                return None
+            if any(value <= 0.0 or not math.isfinite(value)
+                   for value in segment_scales + segment_lengths + joint_scales + bend_profile):
+                return None
+            if any(not math.isfinite(value) for value in joint_phase_offsets + bend_directions):
+                return None
+            return {
+                "segment_count": segment_count,
+                "asset_name": asset_name,
+                "split": split,
+                "bend": bend,
+                "max_stretch": max_stretch,
+                "elevated_arc": elevated_arc,
+                "proximal_lift": proximal_lift,
+                "hairy": hairy,
+                "hair_scale": hair_scale,
+                "segment_scales": segment_scales,
+                "segment_lengths": segment_lengths,
+                "joint_scales": joint_scales,
+                "bend_profile": bend_profile,
+                "joint_phase_offsets": joint_phase_offsets,
+                "bend_directions": bend_directions,
+            }
+        except (TypeError, ValueError):
+            return None
+
+    def _update_spider_joint_articulation(self, dt: float, config: dict) -> None:
+        """Give each interior joint its own smooth flex rhythm.
+
+        Foot contacts and body pose are mechanical state. Joint bend is a
+        separate degree of freedom: it follows the leg's phase and position in
+        the chain, then folds more strongly during swing. This prevents an
+        added knuckle from merely duplicating one elbow angle everywhere.
+        """
+        chain = self._sprite_leg_chain_config()
+        if chain is None:
+            return
+        joint_count = chain["segment_count"] - 1
+        profile = chain["bend_profile"]
+        phase_offsets = chain["joint_phase_offsets"]
+        for leg in self.legs:
+            if len(leg.joint_bends) != joint_count:
+                leg.joint_bends = [0.88 + 0.08 * index for index in range(joint_count)]
+            if leg.stepping:
+                step_t = clamp(leg.step_timer / max(0.001, leg.step_duration), 0.0, 1.0)
+                swing = math.sin(math.pi * step_t)
+            else:
+                swing = 0.0
+            gait_angle = self._lively_gait_phase * math.tau + leg.joint_phase
+            for index in range(joint_count):
+                # Joints lead/lag within one leg. The middle joint folds most
+                # during a lifted swing; distal joints remain restrained.
+                joint_angle = gait_angle + phase_offsets[index]
+                joint_wave = (
+                    math.sin(joint_angle * (1.0 + index * 0.13)) * 0.72
+                    + math.sin(joint_angle * 1.37 + index * 0.81) * 0.28
+                )
+                target = 0.86 + 0.11 * joint_wave + 0.08 * profile[index]
+                if leg.stepping:
+                    target += swing * (0.16 + 0.07 * (index == joint_count // 2))
+                target = clamp(target, 0.55, 1.28)
+                leg.joint_bends[index] += (target - leg.joint_bends[index]) * (1.0 - math.exp(-dt * 12.0))
+
+    def _safe_sprite_leg_foot(self, leg: LegState, x: float, y: float, chain_config=None) -> Tuple[float, float]:
+        """Keep rendered sprite feet inside the same reach envelope as the IK knee."""
+        spider_gait = self._spider_gait_config()
+        if spider_gait is not None and not leg.stepping and not leg.pending_step:
+            # Do not move a planted contact point just because the attachment
+            # moved with the body.  Corrective steps are scheduled by the gait
+            # controller before the foot becomes impossible.
+            return x, y
+        safe_x, safe_y = self._limit_world_point_to_leg_reach(leg, x, y, visual=True)
+        if chain_config is None:
+            return safe_x, safe_y
+        d = leg.definition
+        segment_reach = (float(d.get("upper_len", 0.85)) + float(d.get("lower_len", 1.05))) * self.size
+        max_reach = min(self._leg_max_reach(leg, visual=True), segment_reach * chain_config["max_stretch"])
+        ax, ay = self._leg_attach(leg)
+        dx, dy = safe_x - ax, safe_y - ay
+        distance = math.hypot(dx, dy)
+        if distance > max_reach and distance > 1e-5:
+            scale = max_reach / distance
+            safe_x, safe_y = ax + dx * scale, ay + dy * scale
+        return safe_x, safe_y
+
+    def _sprite_leg_chain_points(self, leg: LegState, ax: float, ay: float,
+                                 fx: float, fy: float, chain_config: dict):
+        """Solve a bounded four- or five-segment leg as one coordinated chain.
+
+        The old renderer solved one large outward knee and then subdivided the
+        remaining line.  That made the extra knuckle decorative: all joints
+        inherited the same forced bow, and a long foot catch could stretch the
+        first segment far past its own joint. These points now start from the
+        independently phased joint pose, then pass through a 2D maximum-length
+        chain solve. The root and foot stay fixed while every knuckle receives
+        its own anatomical length limit.
+        """
+        a_f, a_s = self._world_to_body_local(ax, ay)
+        f_f, f_s = self._world_to_body_local(fx, fy)
+        direct = max(1e-4, math.hypot(f_f - a_f, f_s - a_s))
+        seg_scales = chain_config["segment_scales"]
+        total = max(1e-4, sum(seg_scales))
+        fractions = []
+        running = 0.0
+        for scale in seg_scales[:-1]:
+            running += scale / total
+            fractions.append(running)
+
+        _, _, rx, ry = self._basis()
+        side = self._side_sign(leg.definition.get("side", "right"))
+        front = self._leg_front_factor(leg)
+        # The foot has already been reach-limited on the ground plane.  Keep
+        # the joint fold modest at rest and let a lifted leg tuck a little more.
+        bend_base = self.size * chain_config["bend"] * (0.78 + 0.34 * leg.lift)
+        forward_bias = self.size * 0.075 * front * (0.72 + 0.28 * leg.lift)
+        profiles = chain_config["bend_profile"]
+        directions = chain_config["bend_directions"]
+        elevated_arc = chain_config["elevated_arc"]
+        proximal_lift = chain_config["proximal_lift"]
+        joint_bends = leg.joint_bends
+        if len(joint_bends) != len(profiles):
+            joint_bends = [0.90 + 0.06 * index for index in range(len(profiles))]
+
+        upper = max(self.size * 0.22, float(leg.definition.get("upper_len", 0.85)) * self.size)
+        lower = max(self.size * 0.22, float(leg.definition.get("lower_len", 1.05)) * self.size)
+        # Width scales are deliberately separate from anatomical lengths.
+        # Older configs only had segment_scales, which made presentation values
+        # double as geometry and allowed a proximal segment to grow too long.
+        length_weights = chain_config["segment_lengths"]
+        length_total = max(1e-4, sum(length_weights))
+        segment_limits = [
+            (upper + lower) * chain_config["max_stretch"] * weight / length_total
+            for weight in length_weights
+        ]
+
+        def constrain_to_segment_limits(seed_points):
+            """Project only overlong links while preserving both contacts."""
+            points = list(seed_points)
+            target = (fx, fy)
+
+            def project(point, other, limit):
+                dx = point[0] - other[0]
+                dy = point[1] - other[1]
+                distance = math.hypot(dx, dy)
+                if distance <= limit or distance < 1e-5:
+                    return point
+                return (other[0] + dx * limit / distance,
+                        other[1] + dy * limit / distance)
+
+            # This is a max-length chain, so short links retain the curved
+            # seed pose instead of being forced into a straight IK line.
+            # Alternating projections keep the root and foot contacts stable.
+            for _ in range(10):
+                points[0] = (ax, ay)
+                for index, limit in enumerate(segment_limits):
+                    points[index + 1] = project(points[index + 1], points[index], limit)
+                points[-1] = target
+                for index in range(len(segment_limits) - 1, -1, -1):
+                    points[index] = project(points[index], points[index + 1], segment_limits[index])
+            points[0] = (ax, ay)
+            points[-1] = target
+            return points
+
+        def build(bend_scale: float):
+            seed_points = [(ax, ay)]
+            for index, fraction in enumerate(fractions):
+                bend = bend_base * profiles[index] * directions[index] * joint_bends[index] * bend_scale
+                local_f = a_f + (f_f - a_f) * fraction + forward_bias * profiles[index]
+                local_s = a_s + (f_s - a_s) * fraction + side * bend
+                point_x, point_y = self._body_local_to_world(local_f, local_s)
+                # A tarantula carries its joints high and lets the distal leg
+                # descend to the floor. This is visual elevation only: the
+                # foot contact and support solver remain on the ground plane.
+                # The proximal limb rises first. Every later joint is lower
+                # than the previous one, producing a tarantula knee arc rather
+                # than a symmetric wing-like bow.
+                rise = (self.size * elevated_arc * max(0.0, 1.0 - fraction)
+                        * (1.0 + 0.18 * leg.lift) * bend_scale)
+                if index == 0:
+                    rise *= proximal_lift
+                seed_points.append((point_x, point_y - rise))
+            seed_points.append((fx, fy))
+            points = constrain_to_segment_limits(seed_points)
+            path_len = sum(math.hypot(points[i + 1][0] - points[i][0],
+                                      points[i + 1][1] - points[i][1])
+                           for i in range(len(points) - 1))
+            return points, path_len
+
+        points, path_len = build(1.0)
+        # A bent chain may be a little longer than the direct anchor-to-foot
+        # line, but never enough to look like a stretched rubber limb.
+        path_budget = min((upper + lower) * chain_config["max_stretch"], direct * 1.28)
+        if path_len > path_budget:
+            extra = max(1e-4, path_len - direct)
+            bend_scale = clamp((path_budget - direct) / extra, 0.0, 1.0)
+            points, _ = build(bend_scale)
+        return points
 
     def _draw_sprite_segment(self, painter, pixmap, x1: float, y1: float, x2: float, y2: float, thickness: float, opacity: float = 1.0):
         from PyQt5.QtCore import QPointF, QRectF
@@ -4393,7 +5191,9 @@ class Creature:
         """
         d = leg.definition
         sign = self._side_sign(d.get("side", "right"))
-        fx, fy = self._limit_world_point_to_leg_reach(leg, fx, fy, visual=True)
+        spider_gait = self._spider_gait_config()
+        if spider_gait is None or leg.stepping or leg.pending_step:
+            fx, fy = self._limit_world_point_to_leg_reach(leg, fx, fy, visual=True)
         a_f, a_s = self._world_to_body_local(ax, ay)
         f_f, f_s = self._world_to_body_local(fx, fy)
 
@@ -4442,6 +5242,7 @@ class Creature:
         show_joint_nodes = bool(self._appearance("show_joint_nodes", False))
         joint_node_scale = float(self._appearance("joint_node_scale", 1.0))
         coxa_width_scale = float(self._appearance("coxa_thickness_scale", 1.0))
+        chain_config = self._sprite_leg_chain_config()
 
         # Legs first, underneath body. Segment thickness tapers from coxa to tarsus.
         for leg in self.legs:
@@ -4472,21 +5273,68 @@ class Creature:
                 tarsus_y += leg_y_off
                 foot_y += leg_y_off
 
+            chain_points = None
+            if chain_config and segmented_legs:
+                # Procedural models use the same multi-joint solver as sprite
+                # models, but draw the segments as tapered lines. This keeps
+                # the model's joint definition and its visible articulation
+                # identical without requiring copied bitmap assets.
+                chain_points = self._sprite_leg_chain_points(leg, ax, ay, foot_x, foot_y, chain_config)
+                coxa_x, coxa_y = chain_points[1]
+                kx, ky = chain_points[2]
+                tarsus_x, tarsus_y = chain_points[3]
+
             base_width = max(1.4, self.size * (0.066 + leg.lift * 0.016) * leg_width_scale) * (1.0 + startle * 0.10)
             coxa_width = max(1.2, base_width * 1.08 * coxa_width_scale)
             femur_width = max(1.0, base_width * 0.98)
             tibia_width = max(1.0, base_width * 0.78)
             tarsus_width = max(1.0, base_width * 0.42)
-            if fluffiness > 0.0:
+            # A segmented spider must remain a set of separated rods. The old
+            # fuzzy spline filled the gaps between joints and made long legs
+            # look like bat wings, so reserve it for legacy unsegmented legs.
+            if fluffiness > 0.0 and chain_points is None:
                 painter.setPen(QPen(self._qcolor("highlight", int(40 + fluffiness * 50)), base_width * (1.4 + fluffiness * 0.6), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                fuzzy_path = QPainterPath(QPointF(ax, ay))
-                fuzzy_path.cubicTo(QPointF(coxa_x, coxa_y), QPointF(coxa_x, coxa_y), QPointF(kx, ky))
-                fuzzy_path.lineTo(QPointF(tarsus_x, tarsus_y))
-                fuzzy_path.lineTo(QPointF(foot_x, foot_y))
+                if chain_points is not None:
+                    fuzzy_path = QPainterPath(QPointF(*chain_points[0]))
+                    for point_x, point_y in chain_points[1:]:
+                        fuzzy_path.lineTo(QPointF(point_x, point_y))
+                else:
+                    fuzzy_path = QPainterPath(QPointF(ax, ay))
+                    fuzzy_path.cubicTo(QPointF(coxa_x, coxa_y), QPointF(coxa_x, coxa_y), QPointF(kx, ky))
+                    fuzzy_path.lineTo(QPointF(tarsus_x, tarsus_y))
+                    fuzzy_path.lineTo(QPointF(foot_x, foot_y))
                 painter.drawPath(fuzzy_path)
 
-            color = self._qcolor("highlight" if (leg.stepping or startle > 0.35) else "legs", 230 if (leg.stepping or startle > 0.35) else 245)
-            if segmented_legs:
+            # Leg motion is communicated by the articulated pose. Do not make
+            # the swinging leg glow; highlight remains reserved for a genuine
+            # startled state shared by the whole creature.
+            color = self._qcolor("highlight" if startle > 0.35 else "legs", 230 if startle > 0.35 else 245)
+            if chain_points is not None:
+                # Keep a distinct narrow metatarsus between the tibia and toe.
+                # The previous four-entry list silently dropped the fifth
+                # point when Chosen One switched to a five-segment chain.
+                width_bases = [
+                    coxa_width,
+                    femur_width,
+                    tibia_width,
+                    max(tarsus_width, tibia_width * 0.72),
+                    tarsus_width,
+                ]
+                scales = chain_config["segment_scales"]
+                chain_widths = [width_bases[index] * scales[index] for index in range(len(chain_points) - 1)]
+                for index, width in enumerate(chain_widths):
+                    start_x, start_y = chain_points[index]
+                    end_x, end_y = chain_points[index + 1]
+                    if chain_config["hairy"] and chain_config["hair_scale"] > 0.0:
+                        hair_color = self._qcolor_triplet(
+                            self._appearance("fluff_color", self.colors.get("highlight", [120, 80, 60])),
+                            int(72 + chain_config["hair_scale"] * 90),
+                        )
+                        painter.setPen(QPen(hair_color, width * (1.12 + chain_config["hair_scale"] * 0.55), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                        painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
+                    painter.setPen(QPen(color if index < len(chain_widths) - 1 else self._qcolor("legs", 210), width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
+            elif segmented_legs:
                 painter.setPen(QPen(color, coxa_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                 painter.drawLine(QPointF(ax, ay), QPointF(coxa_x, coxa_y))
                 painter.setPen(QPen(color, femur_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
@@ -4507,20 +5355,38 @@ class Creature:
             if show_joint_nodes:
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QBrush(self._qcolor("legs", 220)))
-                node_r = max(1.0, base_width * 0.18 * joint_node_scale)
-                painter.drawEllipse(QPointF(coxa_x, coxa_y), node_r * 1.05, node_r * 1.05)
-                painter.drawEllipse(QPointF(kx, ky), node_r * 1.30, node_r * 1.30)
-                painter.drawEllipse(QPointF(tarsus_x, tarsus_y), node_r * 0.98, node_r * 0.98)
-                painter.setBrush(QBrush(self._qcolor("highlight", 210)))
-                painter.drawEllipse(QPointF(kx, ky), node_r * 0.60, node_r * 0.60)
-            painter.setPen(QPen(self._qcolor("highlight" if (leg.stepping or startle > 0.35) else "legs", 220), max(1.0, tarsus_width * 0.8), Qt.SolidLine, Qt.RoundCap))
+                node_r = max(1.0, base_width * 0.24 * joint_node_scale)
+                if chain_points is not None:
+                    joint_scales = chain_config["joint_scales"]
+                    joints = chain_points[1:-1]
+                    for joint_index, (joint_x, joint_y) in enumerate(joints):
+                        scale = joint_scales[joint_index]
+                        radius = node_r * scale * (1.12 if joint_index == 1 else 0.96)
+                        painter.drawEllipse(QPointF(joint_x, joint_y), radius, radius)
+                    # A small core on every joint makes all four independently
+                    # animated pivots readable at desktop scale. The patella
+                    # and distal hinge receive a slightly stronger core.
+                    painter.setBrush(QBrush(self._qcolor("highlight", 210)))
+                    for joint_index, (joint_x, joint_y) in enumerate(joints):
+                        core_scale = 0.48 if joint_index in (1, len(joints) - 1) else 0.34
+                        painter.drawEllipse(QPointF(joint_x, joint_y), node_r * core_scale, node_r * core_scale)
+                else:
+                    painter.drawEllipse(QPointF(coxa_x, coxa_y), node_r * 1.05, node_r * 1.05)
+                    painter.drawEllipse(QPointF(kx, ky), node_r * 1.30, node_r * 1.30)
+                    painter.drawEllipse(QPointF(tarsus_x, tarsus_y), node_r * 0.98, node_r * 0.98)
+                    painter.setBrush(QBrush(self._qcolor("highlight", 210)))
+                    painter.drawEllipse(QPointF(kx, ky), node_r * 0.60, node_r * 0.60)
+            painter.setPen(QPen(self._qcolor("highlight" if startle > 0.35 else "legs", 220), max(1.0, tarsus_width * 0.8), Qt.SolidLine, Qt.RoundCap))
             painter.drawPoint(QPointF(foot_x, foot_y))
 
         crouch_drop = self.crouch * self.size * 0.06
         painter.save()
         painter.translate(self.x + tremble_x, self.y + self.body_bob + tremble_y - self.jump_z + crouch_drop)
         painter.rotate(math.degrees(self.heading))
-        painter.rotate(math.degrees(self.body_wiggle))
+        # Snowpuff-2's stance solver owns the body pose; a second cosmetic
+        # rotation here would rotate the shell away from the leg roots.
+        if self._spider_gait_config() is None:
+            painter.rotate(math.degrees(self.body_wiggle))
         jz_body = clamp(self.jump_z / max(1.0, self.size), 0.0, 3.0)
         jump_scale = 1.0 + jz_body * 0.12
         vfac = clamp(self.squash * (1.0 - self.crouch * 0.14), 0.55, 1.2)
@@ -4654,9 +5520,15 @@ class Creature:
         leg_thick = float(self._appearance("leg_segment_thickness", self.size * 0.34)) * (1.0 + startle * 0.08)
         leg_tip_thick = float(self._appearance("leg_tip_thickness", self.size * 0.18)) * (1.0 + startle * 0.08)
         foot_bulb = float(self._appearance("foot_bulb", self.size * 0.055)) * (1.0 + startle * 0.20)
+        chain_config = self._sprite_leg_chain_config()
+        leg_knuckle = assets.get(chain_config["asset_name"], leg_lower) if chain_config else None
 
         for leg in self.legs:
             ax, ay, foot_x, foot_y = self._leg_draw_points(leg)
+            # Use the same safe endpoint for the knee solve and the final draw.
+            # Previously _solve_knee clamped only its private copy of the foot,
+            # while the sprite segments still drew to the unclamped endpoint.
+            foot_x, foot_y = self._safe_sprite_leg_foot(leg, foot_x, foot_y, chain_config)
             kx, ky = self._solve_knee(ax, ay, foot_x, foot_y, leg)
             # Lift the swinging / reaching leg off the ground (lively gait).
             lift_px = self._leg_lift_px(leg)
@@ -4666,30 +5538,60 @@ class Creature:
                 foot_y += (ay - foot_y) * flex
                 foot_y -= lift_px
                 ky -= lift_px * 0.45
-            tarsus_x = kx + (foot_x - kx) * 0.72
-            tarsus_y = ky + (foot_y - ky) * 0.72
             if leg_y_off:
                 ay += leg_y_off
                 ky += leg_y_off
-                tarsus_y += leg_y_off
                 foot_y += leg_y_off
             step_gain = leg.lift * 0.12
             seg_scale = 1.0 + step_gain
-            self._draw_sprite_segment(painter, leg_upper, ax, ay, kx, ky, leg_thick * seg_scale, opacity=1.0)
-            self._draw_sprite_segment(painter, leg_lower, kx, ky, tarsus_x, tarsus_y, leg_thick * 0.84 * seg_scale, opacity=1.0)
-            self._draw_sprite_segment(painter, leg_tip, tarsus_x, tarsus_y, foot_x, foot_y, leg_tip_thick * seg_scale, opacity=1.0)
+            if chain_config:
+                points = self._sprite_leg_chain_points(leg, ax, ay, foot_x, foot_y, chain_config)
+                scales = chain_config["segment_scales"]
+                width_bases = [
+                    leg_thick,
+                    leg_thick,
+                    leg_thick * 0.84,
+                    leg_thick * 0.68,
+                    leg_tip_thick,
+                ]
+                widths = [width_bases[index] * scales[index] * seg_scale for index in range(len(points) - 1)]
+                sprites = [leg_upper, leg_lower, leg_knuckle, leg_knuckle, leg_tip][:len(points) - 1]
+                for index, sprite in enumerate(sprites):
+                    start_x, start_y = points[index]
+                    end_x, end_y = points[index + 1]
+                    self._draw_sprite_segment(painter, sprite, start_x, start_y, end_x, end_y, widths[index], opacity=1.0)
+            else:
+                tarsus_x = kx + (foot_x - kx) * 0.72
+                tarsus_y = ky + (foot_y - ky) * 0.72
+                self._draw_sprite_segment(painter, leg_upper, ax, ay, kx, ky, leg_thick * seg_scale, opacity=1.0)
+                self._draw_sprite_segment(painter, leg_lower, kx, ky, tarsus_x, tarsus_y, leg_thick * 0.84 * seg_scale, opacity=1.0)
+                self._draw_sprite_segment(painter, leg_tip, tarsus_x, tarsus_y, foot_x, foot_y, leg_tip_thick * seg_scale, opacity=1.0)
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(self._qcolor("legs", 215)))
-            painter.drawEllipse(QPointF(kx, ky), leg_thick * 0.14, leg_thick * 0.14)
-            painter.drawEllipse(QPointF(tarsus_x, tarsus_y), leg_tip_thick * 0.18, leg_tip_thick * 0.18)
-            painter.setBrush(QBrush(self._qcolor("highlight" if (leg.stepping or startle > 0.35) else "legs", 215 if (leg.stepping or startle > 0.35) else 180)))
+            if chain_config:
+                joint_scales = chain_config["joint_scales"]
+                for joint_index, (joint_x, joint_y) in enumerate(points[1:-1]):
+                    radius = leg_thick * 0.14 * joint_scales[joint_index]
+                    painter.drawEllipse(QPointF(joint_x, joint_y), radius, radius)
+                painter.setBrush(QBrush(self._qcolor("highlight", 210)))
+                joints = points[1:-1]
+                for joint_index, (joint_x, joint_y) in enumerate(joints):
+                    core_scale = 0.075 if joint_index in (1, len(joints) - 1) else 0.052
+                    radius = leg_thick * core_scale * joint_scales[joint_index]
+                    painter.drawEllipse(QPointF(joint_x, joint_y), radius, radius)
+            else:
+                knee_scale = 1.0
+                painter.drawEllipse(QPointF(kx, ky), leg_thick * 0.14 * knee_scale, leg_thick * 0.14 * knee_scale)
+                painter.drawEllipse(QPointF(tarsus_x, tarsus_y), leg_tip_thick * 0.18, leg_tip_thick * 0.18)
+            painter.setBrush(QBrush(self._qcolor("highlight" if startle > 0.35 else "legs", 215 if startle > 0.35 else 180)))
             painter.drawEllipse(QPointF(foot_x, foot_y), foot_bulb * (1.0 + step_gain), foot_bulb * 0.70 * (1.0 + step_gain))
 
         crouch_drop = self.crouch * self.size * 0.06
         painter.save()
         painter.translate(self.x + tremble_x, self.y + self.body_bob + tremble_y - self.jump_z + crouch_drop)
         painter.rotate(math.degrees(self.heading))
-        painter.rotate(math.degrees(self.body_wiggle))
+        if self._spider_gait_config() is None:
+            painter.rotate(math.degrees(self.body_wiggle))
         jz_body = clamp(self.jump_z / max(1.0, self.size), 0.0, 3.0)
         jump_scale = 1.0 + jz_body * 0.12
         vfac = clamp(self.squash * (1.0 - self.crouch * 0.14), 0.55, 1.2)
@@ -4776,7 +5678,9 @@ class Creature:
         """
         if not self._uses_lively_gait():
             return 0.0
-        px = leg.lift * self.size * (0.42 if self._uses_skitter_gait() else 0.55)
+        spider_gait = self._spider_gait_config()
+        lift_scale = spider_gait["swing_height"] if spider_gait is not None else (0.42 if self._uses_skitter_gait() else 0.55)
+        px = leg.lift * self.size * lift_scale
         front = self._leg_front_factor(leg)
         if self.catch_blend > 0.01 and front > 0.15:
             px += self.catch_blend * clamp((front - 0.15) / 0.85, 0.0, 1.0) * self.size * 0.28
@@ -4909,6 +5813,84 @@ class Creature:
         span = length_units * self.size * (1.0 + startle * 0.08)
         line_col = self._qcolor(color_key, 240)
         tip_col = self._qcolor(tip_color_key, 240)
+
+        # Tarantulas do not have insect-like antennae.  Their front appendages
+        # are broad, jointed, and rise out of the cephalothorax before the
+        # remaining links descend toward the ground.  Keep this as an explicit
+        # model style so the expressive feeler rig remains available to the
+        # other creatures.
+        if str(cfg.get("style", "")).strip().lower() in ("front_leg", "tarantula_front_legs"):
+            raw_lengths = cfg.get("segment_lengths", [0.24, 0.28, 0.22, 0.15, 0.11])
+            if not isinstance(raw_lengths, list):
+                raw_lengths = [0.24, 0.28, 0.22, 0.15, 0.11]
+            try:
+                lengths = [float(value) for value in raw_lengths[:segments]]
+            except (TypeError, ValueError):
+                lengths = []
+            if len(lengths) != segments or any(value <= 0.0 or not math.isfinite(value) for value in lengths):
+                lengths = [1.0 for _ in range(segments)]
+            length_total = max(1e-4, sum(lengths))
+            # The proximal link points outward/upward; every following link
+            # turns more forward and then slightly inward, like a tarantula's
+            # femur -> tibia -> metatarsus -> tarsus sequence.
+            angle_profile = [0.86, 0.56, 0.27, 0.08, -0.06]
+            while len(angle_profile) < segments:
+                angle_profile.append(angle_profile[-1] * 0.72)
+            joint_scale = clamp(float(cfg.get("joint_scale", 0.95)), 0.45, 1.60)
+            proximal_rise = clamp(float(cfg.get("proximal_rise", 0.12)), 0.0, 0.28) * self.size
+            leg_thickness = clamp(float(cfg.get("leg_thickness", 1.0)), 0.65, 1.60)
+            hairy = bool(cfg.get("hairy", False))
+            hair_scale = clamp(float(cfg.get("hair_scale", 0.16)), 0.0, 0.50)
+            span *= clamp(drive.length, 0.65, 1.50)
+
+            for idx, side_sign in enumerate((-1.0, 1.0)):
+                root_y = side_sign * ceph_h * base_side
+                fwd = 0.0
+                lateral = 0.0
+                screen = [(base_x, root_y)]
+                for segment_index in range(segments):
+                    angle = side_sign * angle_profile[segment_index]
+                    # Mood motion stays subtle; the silhouette remains a
+                    # controlled leg chain rather than a waving thread.
+                    angle += math.sin(self.antenna_phase[idx] + segment_index * 0.72) * drive.wave_amp * 0.045
+                    if drive.aim_blend > 0.01:
+                        angle = angle * (1.0 - drive.aim_blend) + drive.aim_angle * drive.aim_blend
+                    segment = span * lengths[segment_index] / length_total
+                    fwd += math.cos(angle) * segment
+                    lateral += math.sin(angle) * segment
+                    progress = (segment_index + 1) / max(1, segments)
+                    rise = proximal_rise * max(0.0, 1.0 - progress)
+                    screen.append((base_x + fwd, root_y + lateral - rise))
+
+                for segment_index in range(segments):
+                    width = max(
+                        1.5,
+                        self.size * thickness * drive.thickness * leg_thickness
+                        * (1.18 - 0.13 * segment_index),
+                    )
+                    x1, y1 = screen[segment_index]
+                    x2, y2 = screen[segment_index + 1]
+                    if hairy and hair_scale > 0.0:
+                        hair_color = self._qcolor_triplet(
+                            self._appearance("fluff_color", self.colors.get("highlight", [120, 80, 60])),
+                            int(70 + hair_scale * 95),
+                        )
+                        painter.setPen(QPen(hair_color, width * (1.16 + hair_scale * 0.60), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+                    painter.setPen(QPen(line_col, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(line_col))
+                for joint_index, (joint_x, joint_y) in enumerate(screen[1:-1]):
+                    joint_radius = max(1.5, self.size * thickness * drive.thickness * 0.19 * joint_scale)
+                    joint_radius *= 1.08 if joint_index == 0 else (0.92 - min(0.25, joint_index * 0.05))
+                    painter.drawEllipse(QPointF(joint_x, joint_y), joint_radius, joint_radius)
+                tx, ty = screen[-1]
+                tip_radius = max(1.6, self.size * thickness * drive.tip_bulb * 0.25)
+                painter.setBrush(QBrush(tip_col))
+                painter.drawEllipse(QPointF(tx, ty), tip_radius, tip_radius)
+            return
 
         for idx, side_sign in enumerate((-1.0, 1.0)):
             pts = build_antenna_points(side_sign, segments, drive, self.antenna_phase[idx])

@@ -1,0 +1,232 @@
+"""Deterministic headless checks for the Snowpuff-2 spider gait."""
+
+import argparse
+import json
+import math
+import random
+import sys
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+
+from desktop_bug.creature import Creature
+
+
+def build_creature(model: dict, personality: dict, *, gait_style: str = "lively") -> Creature:
+    creature = Creature(model, personality, 2400, 1400, gait_style=gait_style)
+    creature.x = 900.0
+    creature.y = 700.0
+    creature.heading = 0.0
+    creature.target_heading = 0.0
+    creature.target_x = 2100.0
+    creature.target_y = 700.0
+    creature.current_speed = 0.0
+    creature.speed = 80.0
+    creature.vel_x = creature.vel_y = 0.0
+    creature.state = "Wander"
+    creature._initialize_legs()
+    return creature
+
+
+def advance_controller(creature: Creature, dt: float, config: dict) -> None:
+    """Use the production grounded update order without a GUI frame."""
+    creature._update_spider_grounded_frame(dt)
+    # In the GUI path _update_legs consumes this flag after the body update.
+    creature._spider_gait_frame_updated = False
+
+
+def run_causality_checks(model: dict, personality: dict, config: dict) -> None:
+    frozen = build_creature(model, personality)
+    frozen.target_x = frozen.x
+    frozen.target_y = frozen.y
+    frozen.speed = frozen.current_speed = 0.0
+    frozen_heading = frozen.heading
+    frozen_pos = (frozen.x, frozen.y)
+    for _ in range(30):
+        frozen._update_spider_grounded_locomotion(1.0 / 60.0)
+    assert math.hypot(frozen.x - frozen_pos[0], frozen.y - frozen_pos[1]) < 1e-6
+    assert abs(((frozen.heading - frozen_heading + math.pi) % math.tau) - math.pi) < 1e-6
+
+    swing_only = build_creature(model, personality)
+    swing_only.target_x = swing_only.x
+    swing_only.target_y = swing_only.y
+    swing_only.speed = swing_only.current_speed = 0.0
+    leg = swing_only.legs[0]
+    swing_only._schedule_step(leg, leg.foot_x + 5.0, leg.foot_y)
+    before = (swing_only.x, swing_only.y, swing_only.heading)
+    for _ in range(8):
+        swing_only._update_spider_grounded_locomotion(1.0 / 60.0)
+        swing_only._advance_active_steps(1.0 / 60.0)
+    after = (swing_only.x, swing_only.y, swing_only.heading)
+    assert math.hypot(after[0] - before[0], after[1] - before[1]) < 1e-6
+    assert abs(((after[2] - before[2] + math.pi) % math.tau) - math.pi) < 1e-6
+
+
+def run_walk(model: dict, personality: dict, config: dict, seconds: float,
+             speed: float, turn_rate: float, dt: float):
+    creature = build_creature(model, personality)
+    creature.speed = speed
+    if abs(turn_rate) > 1e-6:
+        # A pure heading request makes this a support-driven in-place/slow arc
+        # turn instead of letting target pursuit overwrite the turn target.
+        creature.target_x = creature.x
+        creature.target_y = creature.y
+        creature.turn_rate = abs(turn_rate)
+        creature.target_heading = math.copysign(math.pi * 0.5, turn_rate)
+
+    outside_starts = 0
+    normal_starts = 0
+    max_airborne = 0
+    planted_displacements = 0
+    max_chain_stretch = 0.0
+    max_segment_ratio = 0.0
+    max_pose_jump = 0.0
+    max_heading_jump = 0.0
+    max_joint_bend_range = 0.0
+    max_joint_motion_spread = 0.0
+    previous_joint_bends = None
+    min_supports = len(creature.legs)
+    frames = max(1, round(seconds / dt))
+    for _ in range(frames):
+        old_pose = (creature.x, creature.y, creature.heading)
+        old_contacts = {
+            id(leg): (leg.foot_x, leg.foot_y)
+            for leg in creature.legs
+            if leg.contact_state == "stance" and not leg.stepping and not leg.pending_step
+        }
+        was_stepping = [leg.stepping or leg.pending_step for leg in creature.legs]
+        was_emergency = []
+        for leg in creature.legs:
+            _, _, _, _, _, severe_wrong = creature._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
+            _, _, _, very_far = creature._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
+            was_emergency.append(severe_wrong or very_far)
+
+        advance_controller(creature, dt, config)
+        pose_jump = math.hypot(creature.x - old_pose[0], creature.y - old_pose[1])
+        heading_jump = abs(((creature.heading - old_pose[2] + math.pi) % math.tau) - math.pi)
+        max_pose_jump = max(max_pose_jump, pose_jump)
+        max_heading_jump = max(max_heading_jump, heading_jump)
+        min_supports = min(min_supports, sum(
+            leg.contact_state == "stance" and not leg.stepping for leg in creature.legs
+        ))
+
+        max_airborne = max(max_airborne, sum(leg.stepping or leg.pending_step for leg in creature.legs))
+        for index, leg in enumerate(creature.legs):
+            if id(leg) in old_contacts and not was_stepping[index] and leg.contact_state == "stance" and not leg.stepping:
+                old_x, old_y = old_contacts[id(leg)]
+                planted_displacements += int(math.hypot(leg.foot_x - old_x, leg.foot_y - old_y) > 1e-6)
+                visible_x, visible_y = creature._visual_foot_for_render(leg)
+                planted_displacements += int(math.hypot(visible_x - leg.foot_x, visible_y - leg.foot_y) > 1e-6)
+            if not was_stepping[index] and leg.stepping:
+                normal_starts += 1
+                in_window, _, _ = creature._spider_phase_window(leg, leg.last_step_phase, config)
+                if not in_window and not leg.last_step_emergency:
+                    outside_starts += 1
+            chain_config = creature._sprite_leg_chain_config()
+            if chain_config:
+                ax, ay = creature._leg_attach(leg)
+                fx, fy = creature._visual_foot_for_render(leg)
+                points = creature._sprite_leg_chain_points(leg, ax, ay, fx, fy, chain_config)
+                direct = math.hypot(points[-1][0] - points[0][0], points[-1][1] - points[0][1])
+                path = sum(math.hypot(points[i + 1][0] - points[i][0], points[i + 1][1] - points[i][1]) for i in range(len(points) - 1))
+                if direct > 1e-6:
+                    max_chain_stretch = max(max_chain_stretch, path / direct)
+                upper = max(creature.size * 0.22, float(leg.definition.get("upper_len", 0.85)) * creature.size)
+                lower = max(creature.size * 0.22, float(leg.definition.get("lower_len", 1.05)) * creature.size)
+                length_weights = chain_config["segment_lengths"]
+                weight_total = max(1e-4, sum(length_weights))
+                segment_limits = [
+                    (upper + lower) * chain_config["max_stretch"] * weight / weight_total
+                    for weight in length_weights
+                ]
+                for segment_index, limit in enumerate(segment_limits):
+                    length = math.hypot(
+                        points[segment_index + 1][0] - points[segment_index][0],
+                        points[segment_index + 1][1] - points[segment_index][1],
+                    )
+                    max_segment_ratio = max(max_segment_ratio, length / max(1e-4, limit))
+
+        current_joint_bends = [tuple(leg.joint_bends) for leg in creature.legs]
+        for bends in current_joint_bends:
+            if bends:
+                max_joint_bend_range = max(max_joint_bend_range, max(bends) - min(bends))
+        if previous_joint_bends is not None:
+            for before, after in zip(previous_joint_bends, current_joint_bends):
+                deltas = [abs(current - prior) for prior, current in zip(before, after)]
+                if deltas:
+                    max_joint_motion_spread = max(max_joint_motion_spread, max(deltas) - min(deltas))
+        previous_joint_bends = current_joint_bends
+
+    return {
+        "creature": creature,
+        "starts": normal_starts,
+        "outside": outside_starts,
+        "max_airborne": max_airborne,
+        "planted_displacements": planted_displacements,
+        "max_chain_stretch": max_chain_stretch,
+        "max_segment_ratio": max_segment_ratio,
+        "max_pose_jump": max_pose_jump,
+        "max_heading_jump": max_heading_jump,
+        "min_supports": min_supports,
+        "max_joint_bend_range": max_joint_bend_range,
+        "max_joint_motion_spread": max_joint_motion_spread,
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--seconds", type=float, default=8.0)
+    parser.add_argument("--speed", type=float, default=80.0)
+    parser.add_argument("--turn-rate", type=float, default=0.0,
+                        help="Body turn rate in radians/second for turning checks")
+    args = parser.parse_args()
+
+    root = ROOT
+    random.seed(19)
+    model = json.loads((root / "models/plush_snow_hybrid_2/model.json").read_text())
+    personality = json.loads((root / "personalities/cuddly.json").read_text())
+    config = build_creature(model, personality)._spider_gait_config()
+    # Causality checks specifically guard against reintroducing body-first motion.
+    random.seed(19)
+    run_causality_checks(model, personality, config)
+    random.seed(19)
+    result = run_walk(model, personality, config, args.seconds, args.speed, args.turn_rate, 1.0 / 60.0)
+    assert result["starts"] > 0, "no spider gait steps started"
+    assert result["max_airborne"] <= config["max_airborne"], result["max_airborne"]
+    assert result["planted_displacements"] == 0, result["planted_displacements"]
+    assert result["outside"] == 0, (result["outside"], result["starts"])
+    assert result["max_chain_stretch"] <= 1.35, result["max_chain_stretch"]
+    assert result["max_segment_ratio"] <= 1.001, result["max_segment_ratio"]
+    assert result["min_supports"] >= len(model["legs"]) - config["max_airborne"]
+    # Pose changes are bounded by the support solve, not by a direct body teleport.
+    assert result["max_pose_jump"] < max(12.0, args.speed * 0.05)
+    assert result["max_heading_jump"] < 0.16
+    if abs(args.turn_rate) > 1e-6:
+        final_turn = abs(((result["creature"].heading + math.pi) % math.tau) - math.pi)
+        assert final_turn > 0.50, final_turn
+
+    consistency = []
+    for frame_dt in (1.0 / 30.0, 1.0 / 60.0, 1.0 / 120.0):
+        random.seed(19)
+        consistency.append(run_walk(model, personality, config, args.seconds, args.speed, args.turn_rate, frame_dt)["creature"])
+    base = consistency[1]
+    for other in (consistency[0], consistency[2]):
+        assert math.hypot(other.x - base.x, other.y - base.y) < 32.0
+        assert abs(((other.heading - base.heading + math.pi) % math.tau) - math.pi) < 0.35
+
+    print(
+        f"spider-movement-smoke: starts={result['starts']} outside={result['outside']} "
+        f"max_airborne={result['max_airborne']} supports>={result['min_supports']} "
+        f"planted_displacements={result['planted_displacements']} "
+        f"max_pose_jump={result['max_pose_jump']:.2f} "
+        f"max_heading_jump={result['max_heading_jump']:.3f} "
+        f"max_chain_stretch={result['max_chain_stretch']:.3f} "
+        f"max_segment_ratio={result['max_segment_ratio']:.3f}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

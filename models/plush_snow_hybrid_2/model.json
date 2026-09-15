@@ -1,0 +1,229 @@
+{
+  "id": "plush_snow_hybrid_2",
+  "display_name": "Snowpuff-2",
+  "base_size": 28,
+  "default_personality": "cuddly",
+  "colors": {
+    "body": [
+      236,
+      232,
+      226
+    ],
+    "legs": [
+      212,
+      204,
+      194
+    ],
+    "highlight": [
+      255,
+      255,
+      252
+    ],
+    "eyes": [
+      70,
+      66,
+      74
+    ]
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -35,
+      "rest_angle": -50,
+      "reach": 1.598,
+      "upper_len": 0.856,
+      "lower_len": 1.035,
+      "attach_forward": 0.36,
+      "attach_side": 0.22,
+      "rest_forward": 1.32,
+      "rest_side": 1.062,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.26,
+      "stride_forward": 0.474
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 35,
+      "rest_angle": 50,
+      "reach": 1.598,
+      "upper_len": 0.856,
+      "lower_len": 1.035,
+      "attach_forward": 0.36,
+      "attach_side": 0.22,
+      "rest_forward": 1.32,
+      "rest_side": 1.062,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.26,
+      "stride_forward": 0.474
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -75,
+      "rest_angle": -92,
+      "reach": 1.486,
+      "upper_len": 0.818,
+      "lower_len": 1.044,
+      "attach_forward": 0.12,
+      "attach_side": 0.31,
+      "rest_forward": 0.46,
+      "rest_side": 1.212,
+      "rest_jitter": 0.016,
+      "coxa_len": 0.25,
+      "stride_forward": 0.406
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 75,
+      "rest_angle": 92,
+      "reach": 1.486,
+      "upper_len": 0.818,
+      "lower_len": 1.044,
+      "attach_forward": 0.12,
+      "attach_side": 0.31,
+      "rest_forward": 0.46,
+      "rest_side": 1.212,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.25,
+      "stride_forward": 0.406
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -108,
+      "rest_angle": -118,
+      "reach": 1.469,
+      "upper_len": 0.837,
+      "lower_len": 1.008,
+      "attach_forward": -0.12,
+      "attach_side": 0.31,
+      "rest_forward": -0.46,
+      "rest_side": 1.171,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.25,
+      "stride_forward": 0.383
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 108,
+      "rest_angle": 118,
+      "reach": 1.469,
+      "upper_len": 0.837,
+      "lower_len": 1.008,
+      "attach_forward": -0.12,
+      "attach_side": 0.31,
+      "rest_forward": -0.46,
+      "rest_side": 1.171,
+      "rest_jitter": 0.018,
+      "coxa_len": 0.25,
+      "stride_forward": 0.383
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -142,
+      "rest_angle": -150,
+      "reach": 1.469,
+      "upper_len": 0.856,
+      "lower_len": 1.008,
+      "attach_forward": -0.36,
+      "attach_side": 0.23,
+      "rest_forward": -1.28,
+      "rest_side": 0.926,
+      "rest_jitter": 0.016,
+      "coxa_len": 0.26,
+      "stride_forward": 0.349
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 142,
+      "rest_angle": 150,
+      "reach": 1.469,
+      "upper_len": 0.856,
+      "lower_len": 1.008,
+      "attach_forward": -0.36,
+      "attach_side": 0.23,
+      "rest_forward": -1.28,
+      "rest_side": 0.926,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.26,
+      "stride_forward": 0.349
+    }
+  ],
+  "render_mode": "sprite_rig",
+  "appearance": {
+    "abdomen_scale": [
+      1.3,
+      1.14
+    ],
+    "cephalothorax_scale": [
+      1.0,
+      0.94
+    ],
+    "abdomen_offset_x": -0.24,
+    "cephalothorax_offset_x": 0.22,
+    "pedipalp_scale": 0.95,
+    "eye_scale": 1.9,
+    "eye_count": 6,
+    "cute_blush": 0.9,
+    "shadow_scale": 2.0,
+    "leg_segment_thickness": 15.0,
+    "leg_tip_thickness": 7.6,
+    "foot_bulb": 1.7,
+    "leg_chain": {
+      "enabled": true,
+      "segment_count": 4,
+      "extra_segment_asset": "leg_knuckle",
+      "knuckle_split": 0.46,
+      "knuckle_bend": 0.16,
+      "bend_profile": [
+        1.0,
+        0.64,
+        0.28
+      ],
+      "max_stretch": 1.05,
+      "segment_scales": [
+        1.0,
+        0.84,
+        0.68,
+        0.82
+      ],
+      "joint_scales": [
+        0.95,
+        0.72,
+        0.60
+      ]
+    },
+    "spider_gait": {
+      "enabled": true,
+      "max_airborne": 3,
+      "swing_arc_outward": 0.10,
+      "swing_arc_forward": 0.26,
+      "swing_height": 0.60,
+      "front_stride_bias": 0.18,
+      "swing_fraction": 0.29,
+      "cycle_hz": 2.10,
+      "speed_cycle_gain": 1.45,
+      "step_lookahead": 0.72,
+      "front_phase_offset": 0.035,
+      "refractory_fraction": 0.16,
+      "support_stroke_limit": 0.62,
+      "support_turn_limit": 0.58,
+      "support_blend_time": 0.10,
+      "max_body_turn_rate": 2.60
+    }
+  }
+}

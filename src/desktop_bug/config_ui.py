@@ -562,7 +562,11 @@ class ConfigWindow(QMainWindow):
     def refresh_presets(self):
         self.preset_combo.clear()
         for path in discover_presets(self.root):
-            self.preset_combo.addItem(path.stem, str(path))
+            try:
+                label = load_preset(path).get("name", path.stem)
+            except Exception:
+                label = path.stem
+            self.preset_combo.addItem(str(label), str(path))
 
     def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None):
         row = self.table.rowCount()
@@ -573,7 +577,17 @@ class ConfigWindow(QMainWindow):
         model_box.setIconSize(QSize(MODEL_ICON_SIZE, MODEL_ICON_SIZE))
         model_box.setMinimumWidth(285)
         model_box.addItem(self._random_model_icon(), "Random model at launch", RANDOM_MODEL_ID)
-        for model in sorted(self.models.values(), key=lambda m: m.get("display_name", m.get("id", ""))):
+        # Keep the newest model at the top of every slot dropdown. Discovery
+        # already preserves this order, but sort here too because this widget
+        # is rebuilt from a dictionary after every refresh.
+        def newest_model_key(model):
+            try:
+                added_time = Path(model.get("_path", "")).stat().st_ctime
+            except (OSError, ValueError):
+                added_time = 0.0
+            return (-added_time, model.get("display_name", model.get("id", "")).casefold())
+
+        for model in sorted(self.models.values(), key=newest_model_key):
             model_box.addItem(self._model_icon(model), model.get("display_name", model["id"]), model["id"])
         if model_id:
             idx = model_box.findData(model_id)

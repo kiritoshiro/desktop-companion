@@ -1,0 +1,268 @@
+{
+  "id": "chosen_one",
+  "display_name": "Chosen One",
+  "base_size": 31,
+  "default_personality": "curious",
+  "render_mode": "procedural",
+  "colors": {
+    "body": [
+      28,
+      24,
+      43
+    ],
+    "legs": [
+      46,
+      37,
+      68
+    ],
+    "highlight": [
+      225,
+      181,
+      71
+    ],
+    "eyes": [
+      255,
+      239,
+      161
+    ]
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "phase_offset": 0.00,
+      "attach_angle": -29,
+      "rest_angle": -43,
+      "reach": 1.56,
+      "upper_len": 0.76,
+      "lower_len": 0.92,
+      "attach_forward": 0.42,
+      "attach_side": 0.23,
+      "rest_forward": 1.24,
+      "rest_side": 0.90,
+      "rest_jitter": 0.008,
+      "coxa_len": 0.22,
+      "stride_forward": 0.38
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "phase_offset": 0.50,
+      "attach_angle": 29,
+      "rest_angle": 43,
+      "reach": 1.56,
+      "upper_len": 0.76,
+      "lower_len": 0.92,
+      "attach_forward": 0.42,
+      "attach_side": 0.23,
+      "rest_forward": 1.24,
+      "rest_side": 0.90,
+      "rest_jitter": 0.008,
+      "coxa_len": 0.22,
+      "stride_forward": 0.38
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "phase_offset": 0.74,
+      "attach_angle": -70,
+      "rest_angle": -84,
+      "reach": 1.51,
+      "upper_len": 0.72,
+      "lower_len": 0.94,
+      "attach_forward": 0.13,
+      "attach_side": 0.33,
+      "rest_forward": 0.38,
+      "rest_side": 1.12,
+      "rest_jitter": 0.009,
+      "coxa_len": 0.23,
+      "stride_forward": 0.34
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "phase_offset": 0.12,
+      "attach_angle": 70,
+      "rest_angle": 84,
+      "reach": 1.51,
+      "upper_len": 0.72,
+      "lower_len": 0.94,
+      "attach_forward": 0.13,
+      "attach_side": 0.33,
+      "rest_forward": 0.38,
+      "rest_side": 1.12,
+      "rest_jitter": 0.009,
+      "coxa_len": 0.23,
+      "stride_forward": 0.34
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "phase_offset": 0.24,
+      "attach_angle": -109,
+      "rest_angle": -119,
+      "reach": 1.49,
+      "upper_len": 0.74,
+      "lower_len": 0.92,
+      "attach_forward": -0.14,
+      "attach_side": 0.33,
+      "rest_forward": -0.42,
+      "rest_side": 1.09,
+      "rest_jitter": 0.008,
+      "coxa_len": 0.23,
+      "stride_forward": 0.32
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "phase_offset": 0.62,
+      "attach_angle": 109,
+      "rest_angle": 119,
+      "reach": 1.49,
+      "upper_len": 0.74,
+      "lower_len": 0.92,
+      "attach_forward": -0.14,
+      "attach_side": 0.33,
+      "rest_forward": -0.42,
+      "rest_side": 1.09,
+      "rest_jitter": 0.008,
+      "coxa_len": 0.23,
+      "stride_forward": 0.32
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "phase_offset": 0.86,
+      "attach_angle": -146,
+      "rest_angle": -151,
+      "reach": 1.51,
+      "upper_len": 0.78,
+      "lower_len": 0.90,
+      "attach_forward": -0.42,
+      "attach_side": 0.24,
+      "rest_forward": -1.16,
+      "rest_side": 0.84,
+      "rest_jitter": 0.008,
+      "coxa_len": 0.22,
+      "stride_forward": 0.30
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "phase_offset": 0.36,
+      "attach_angle": 146,
+      "rest_angle": 151,
+      "reach": 1.51,
+      "upper_len": 0.78,
+      "lower_len": 0.90,
+      "attach_forward": -0.42,
+      "attach_side": 0.24,
+      "rest_forward": -1.16,
+      "rest_side": 0.84,
+      "rest_jitter": 0.008,
+      "coxa_len": 0.22,
+      "stride_forward": 0.30
+    }
+  ],
+  "appearance": {
+    "abdomen_scale": [
+      1.20,
+      0.88
+    ],
+    "cephalothorax_scale": [
+      0.78,
+      0.62
+    ],
+    "abdomen_offset_x": -0.25,
+    "cephalothorax_offset_x": 0.39,
+    "pedipalp_scale": 0.86,
+    "eye_scale": 1.22,
+    "eye_count": 8,
+    "highlight_alpha": 170,
+    "leg_thickness": 0.92,
+    "coxa_thickness_scale": 1.12,
+    "segmented_legs": true,
+    "show_joint_nodes": true,
+    "joint_node_scale": 1.32,
+    "stripe_color": [
+      177,
+      121,
+      38
+    ],
+    "stripe_alpha": 92,
+    "stripe_count": 3,
+    "leg_chain": {
+      "enabled": true,
+      "segment_count": 5,
+      "extra_segment_asset": "leg_knuckle",
+      "knuckle_split": 0.42,
+      "knuckle_bend": 0.19,
+      "bend_profile": [
+        0.72,
+        1.0,
+        0.68,
+        0.42
+      ],
+      "max_stretch": 1.04,
+      "segment_lengths": [
+        1.00,
+        1.05,
+        0.78,
+        0.56,
+        0.44
+      ],
+      "segment_scales": [
+        0.86,
+        1.0,
+        0.72,
+        0.66,
+        0.48
+      ],
+      "joint_scales": [
+        0.88,
+        1.12,
+        0.90,
+        0.65
+      ],
+      "joint_phase_offsets": [
+        0.00,
+        0.42,
+        -0.28,
+        0.58
+      ],
+      "bend_directions": [
+        1.00,
+        1.08,
+        0.44,
+        -0.24
+      ]
+    },
+    "spider_gait": {
+      "enabled": true,
+      "profile": "chosen_one",
+      "max_airborne": 2,
+      "swing_arc_outward": 0.045,
+      "swing_arc_forward": 0.22,
+      "swing_height": 0.48,
+      "front_stride_bias": 0.12,
+      "swing_fraction": 0.22,
+      "cycle_hz": 1.95,
+      "speed_cycle_gain": 1.10,
+      "step_lookahead": 0.46,
+      "front_phase_offset": 0.018,
+      "refractory_fraction": 0.12,
+      "support_stroke_limit": 0.52,
+      "support_turn_limit": 0.44,
+      "support_blend_time": 0.12,
+      "max_body_turn_rate": 1.80
+    }
+  }
+}
