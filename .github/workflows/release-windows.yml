@@ -1,0 +1,164 @@
+name: Build and Release Windows EXE
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: Create or update a GitHub Release after building
+        required: true
+        default: false
+        type: boolean
+      tag_name:
+        description: Release tag, for example v1.0.0 (required when creating a release)
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: python -m pip install -r requirements.txt
+
+      - name: Validate source and data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PYTHONPATH = Join-Path $PWD 'src'
+
+          python -m compileall -q src tools launcher.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          Get-ChildItem models -Recurse -Filter model.json -File | ForEach-Object {
+            python tools/validate_model.py $_.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+          Get-ChildItem presets -Filter *.json -File | ForEach-Object {
+            python tools/validate_preset.py $_.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Build one-file executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --onefile `
+            --windowed `
+            --name DesktopBugCompanion `
+            --paths src `
+            --add-data 'models;models' `
+            --add-data 'personalities;personalities' `
+            --add-data 'presets;presets' `
+            --hidden-import desktop_bug.engine `
+            launcher.py
+
+          if (-not (Test-Path -LiteralPath 'dist/DesktopBugCompanion.exe')) {
+            throw 'PyInstaller did not produce dist/DesktopBugCompanion.exe'
+          }
+
+          Compress-Archive `
+            -Path 'dist/DesktopBugCompanion.exe', 'README.md' `
+            -DestinationPath 'dist/DesktopBugCompanion-windows-x64.zip' `
+            -CompressionLevel Optimal
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DesktopBugCompanion-windows-x64
+          path: |
+            dist/DesktopBugCompanion.exe
+            dist/DesktopBugCompanion-windows-x64.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - name: Resolve release tag
+        id: release_tag
+        shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:EVENT_NAME -eq 'push') {
+            $tag = $env:REF_NAME
+          } else {
+            $tag = $env:INPUT_TAG
+          }
+
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw 'A release tag is required. Use a tag such as v1.0.0.'
+          }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
+            throw "Invalid release tag '$tag'. Use semantic version tags such as v1.0.0."
+          }
+
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: DesktopBugCompanion-windows-x64
+          path: release-assets
+
+      - name: Rename versioned assets
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Rename-Item `
+            -LiteralPath 'release-assets/DesktopBugCompanion.exe' `
+            -NewName "DesktopBugCompanion-$env:RELEASE_TAG-windows-x64.exe"
+          Rename-Item `
+            -LiteralPath 'release-assets/DesktopBugCompanion-windows-x64.zip' `
+            -NewName "DesktopBugCompanion-$env:RELEASE_TAG-windows-x64.zip"
+
+      - name: Create or update GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
+          REPOSITORY: ${{ github.repository }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $assets = @(Get-ChildItem -LiteralPath 'release-assets' -File | ForEach-Object FullName)
+
+          gh release view $env:RELEASE_TAG --repo $env:REPOSITORY *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:RELEASE_TAG @assets --repo $env:REPOSITORY --clobber
+          } else {
+            gh release create $env:RELEASE_TAG @assets `
+              --repo $env:REPOSITORY `
+              --target $env:TARGET_SHA `
+              --title "Desktop Bug Companion $env:RELEASE_TAG" `
+              --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

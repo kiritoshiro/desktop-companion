@@ -283,6 +283,22 @@ dist\DesktopBugCompanion\presets\
 
 Run the executable from `dist\DesktopBugCompanion\DesktopBugCompanion.exe`. If you move the app, move the whole `DesktopBugCompanion` folder, not just the `.exe`, so the editable data folders stay beside it.
 
+## GitHub Actions builds and releases
+
+The repository includes Windows workflows under `.github/workflows/`:
+
+- `ci.yml` runs on pushes and pull requests targeting `main`. It compiles the Python sources, validates every model and preset, and performs a PyInstaller build smoke test.
+- `release-windows.yml` runs for version tags such as `v1.0.0`. It builds the one-file Windows executable with all current creature models, personalities, and presets bundled, then publishes the `.exe` and a ZIP containing the executable and README to a GitHub Release.
+
+To publish a release, push a semantic-version tag:
+
+```bat
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+You can also run **Build and Release Windows EXE** manually from the Actions tab. Enable **Create or update a GitHub Release** and provide a tag such as `v1.0.0`; leaving it disabled produces a downloadable workflow artifact without creating a release.
+
 ## Project structure
 
 ```text
