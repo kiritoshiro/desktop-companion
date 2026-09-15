@@ -55,6 +55,52 @@ MOOD_OPTIONS = [
     ("Curious", "curious"),
     ("Calm", "calm"),
 ]
+MOVEMENT_OPTIONS = [
+    ("Classic - original gait", "classic"),
+    ("Lively - lifts legs + feels objects", "lively"),
+    ("Skitter - rapid bursts + tiny stops", "skitter"),
+]
+
+
+class NoScrollComboBox(QComboBox):
+    """Combo box that ignores mouse-wheel scrolling.
+
+    Dropdowns sit inside the scrollable creature list, so a stray wheel turn
+    while the cursor passes over one used to silently change its value (and
+    swallow the scroll) instead of moving the list. Ignoring the wheel here
+    lets the event bubble up so the list of spiders scrolls as expected; the
+    value can still be changed by clicking or with the keyboard.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Drop WheelFocus so hovering + scrolling never grabs focus either.
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt API name
+        event.ignore()
+
+
+class NoScrollSpinBox(QSpinBox):
+    """Spin box that ignores mouse-wheel scrolling (see NoScrollComboBox)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt API name
+        event.ignore()
+
+
+class NoScrollDoubleSpinBox(QDoubleSpinBox):
+    """Double spin box that ignores mouse-wheel scrolling (see NoScrollComboBox)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def wheelEvent(self, event):  # noqa: N802 - Qt API name
+        event.ignore()
 
 
 class SlotTable(QTableWidget):
@@ -74,7 +120,9 @@ class SlotTable(QTableWidget):
         self.setSelectionMode(self.SingleSelection)
         self.setEditTriggers(self.NoEditTriggers)
         self.setShowGrid(False)
-        self.setMinimumHeight(190)
+        # Taller by default so several creature rows are visible at once and the
+        # model thumbnails are not crowded by their labels.
+        self.setMinimumHeight(240)
 
 
 class ConfigWindow(QMainWindow):
@@ -90,8 +138,8 @@ class ConfigWindow(QMainWindow):
         # reloads, so edits apply live without stopping it.
         self.launched_preset_path = None
         self.setWindowTitle("Desktop Bug Companion")
-        self.resize(920, 560)
-        self.setMinimumSize(820, 500)
+        self.resize(960, 860)
+        self.setMinimumSize(840, 560)
         self._build_ui()
         self.refresh_discovery()
         self.refresh_presets()
@@ -108,37 +156,115 @@ class ConfigWindow(QMainWindow):
     def _build_ui(self):
         self.setStyleSheet(
             """
-            QWidget { font-size: 10pt; }
+            QWidget { font-size: 10pt; color: #1f2430; }
+            QMainWindow, QMainWindow > QWidget { background: #eef1f8; }
+
             QGroupBox {
                 font-weight: 600;
-                border: 1px solid #d5dbe3;
-                border-radius: 8px;
-                margin-top: 8px;
-                padding: 7px;
+                border: 1px solid #cdd5e3;
+                border-radius: 10px;
+                margin-top: 13px;
+                padding: 11px 10px 9px 10px;
+                background: #ffffff;
             }
             QGroupBox::title {
                 subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 4px;
+                subcontrol-position: top left;
+                left: 12px;
+                padding: 2px 9px;
+                border-radius: 7px;
+                color: #ffffff;
             }
-            QPushButton { padding: 4px 8px; border-radius: 5px; }
-            QPushButton#primaryButton { font-weight: 700; padding: 6px 12px; }
-            QLabel#pageTitle { font-size: 16pt; font-weight: 700; }
+            /* Each section gets its own accent so it is easy to scan. */
+            QGroupBox#presetGroup { border-color: #b8d0f0; }
+            QGroupBox#presetGroup::title { background: #3b82c4; }
+            QGroupBox#creaturesGroup { border-color: #cbbdf0; }
+            QGroupBox#creaturesGroup::title { background: #6d4ed6; }
+            QGroupBox#behaviorGroup { border-color: #a9e0d6; }
+            QGroupBox#behaviorGroup::title { background: #199e8c; }
+            QGroupBox#fliesGroup { border-color: #f2d49b; }
+            QGroupBox#fliesGroup::title { background: #d9881a; }
+            QGroupBox#launchGroup { border-color: #b3e0bd; }
+            QGroupBox#launchGroup::title { background: #2f9e44; }
+
+            QLabel#pageTitle {
+                font-size: 17pt;
+                font-weight: 800;
+                color: #3a2e7a;
+                padding: 2px 2px 2px 2px;
+            }
             QLabel#hintLabel { color: #57606a; }
-            QLabel#summaryLabel {
+            QLabel#summaryLabel, QLabel#statusLabel {
                 color: #24292f;
                 background: #f6f8fa;
                 border: 1px solid #d0d7de;
                 border-radius: 6px;
                 padding: 8px;
             }
-            QLabel#statusLabel {
-                color: #24292f;
-                background: #f6f8fa;
-                border: 1px solid #d0d7de;
+
+            QPushButton {
+                padding: 5px 11px;
                 border-radius: 6px;
-                padding: 8px;
+                background: #f1f4fa;
+                border: 1px solid #c7d0de;
+                color: #25304a;
             }
+            QPushButton:hover { background: #e4ebf6; border-color: #a9b6cc; }
+            QPushButton:pressed { background: #d6e0f0; }
+
+            QPushButton#primaryButton {
+                font-weight: 700;
+                padding: 7px 16px;
+                color: #ffffff;
+                background: #2f9e44;
+                border: 1px solid #2b8a3e;
+            }
+            QPushButton#primaryButton:hover { background: #2c903d; }
+            QPushButton#primaryButton:pressed { background: #277834; }
+            QPushButton#stopButton:hover {
+                background: #fbe4e4; border-color: #e0a3a3; color: #9c2b2b;
+            }
+
+            QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
+                border: 1px solid #c7d0de;
+                border-radius: 6px;
+                padding: 3px 6px;
+                background: #ffffff;
+            }
+            QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
+                border-color: #6d4ed6;
+            }
+            QComboBox QAbstractItemView {
+                border: 1px solid #cbbdf0;
+                background: #ffffff;
+                selection-background-color: #6d4ed6;
+                selection-color: #ffffff;
+                outline: none;
+            }
+
+            QCheckBox { spacing: 6px; }
+            QCheckBox#fliesToggle { font-weight: 700; color: #b56a12; }
+
+            QTableWidget {
+                border: 1px solid #cbbdf0;
+                border-radius: 8px;
+                background: #ffffff;
+                gridline-color: #ececf4;
+                selection-background-color: #ece7fb;
+                selection-color: #1f2430;
+            }
+            QTableWidget::item { padding: 2px; }
+            QTableWidget::item:alternate { background: #faf9fe; }
+            QHeaderView::section {
+                background: #efeafb;
+                color: #4a3da0;
+                font-weight: 600;
+                border: none;
+                border-right: 1px solid #e2dbf4;
+                padding: 6px 6px;
+            }
+
+            QStatusBar { background: #e7ebf4; }
             """
         )
 
@@ -159,12 +285,13 @@ class ConfigWindow(QMainWindow):
         layout.addWidget(title)
 
         self.preset_group = QGroupBox("Preset")
+        self.preset_group.setObjectName("presetGroup")
         preset_layout = QGridLayout(self.preset_group)
         preset_layout.setColumnStretch(1, 2)
         preset_layout.setColumnStretch(3, 2)
         self.preset_name = QLineEdit("Default")
         self.preset_name.setPlaceholderText("Preset name")
-        self.preset_combo = QComboBox()
+        self.preset_combo = NoScrollComboBox()
         self.load_btn = QPushButton("Load")
         self.save_btn = QPushButton("Save")
         self.refresh_btn = QPushButton("Refresh library")
@@ -178,6 +305,7 @@ class ConfigWindow(QMainWindow):
         layout.addWidget(self.preset_group)
 
         self.creatures_group = QGroupBox("Creatures")
+        self.creatures_group.setObjectName("creaturesGroup")
         self.creatures_group.setToolTip(
             "Each row is one creature group. Use Skills to choose which abilities those spiders get at launch."
         )
@@ -211,14 +339,19 @@ class ConfigWindow(QMainWindow):
         layout.addWidget(self.creatures_group, 1)
 
         self.behavior_group = QGroupBox("Overlay behavior")
+        self.behavior_group.setObjectName("behaviorGroup")
         behavior_layout = QGridLayout(self.behavior_group)
-        self.size_combo = QComboBox()
+        self.size_combo = NoScrollComboBox()
         for label, scale in SIZE_OPTIONS:
             self.size_combo.addItem(label, scale)
         self.size_combo.setCurrentIndex(2)
-        self.mood_combo = QComboBox()
+        self.mood_combo = NoScrollComboBox()
         for label, mode in MOOD_OPTIONS:
             self.mood_combo.addItem(label, mode)
+        self.movement_combo = NoScrollComboBox()
+        for label, style in MOVEMENT_OPTIONS:
+            self.movement_combo.addItem(label, style)
+        self.movement_combo.setCurrentIndex(0)
         self.interferable_check = QCheckBox("Allow dragging spiders")
         self.interferable_check.setChecked(True)
         self.social_play_check = QCheckBox("Allow spiders to play together")
@@ -227,50 +360,70 @@ class ConfigWindow(QMainWindow):
         behavior_layout.addWidget(self.size_combo, 0, 1)
         behavior_layout.addWidget(QLabel("Mood:"), 0, 2)
         behavior_layout.addWidget(self.mood_combo, 0, 3)
-        behavior_layout.addWidget(self.interferable_check, 1, 1)
-        behavior_layout.addWidget(self.social_play_check, 1, 3)
+        behavior_layout.addWidget(QLabel("Movement:"), 1, 0)
+        behavior_layout.addWidget(self.movement_combo, 1, 1)
+        movement_hint = QLabel("Lively lifts and probes. Skitter uses lively legs but moves in quick burst-burst-stop successions like the reference gif.")
+        movement_hint.setObjectName("hintLabel")
+        movement_hint.setWordWrap(True)
+        behavior_layout.addWidget(movement_hint, 1, 2, 1, 2)
+        behavior_layout.addWidget(self.interferable_check, 2, 1)
+        behavior_layout.addWidget(self.social_play_check, 2, 3)
         behavior_layout.setColumnStretch(1, 1)
         behavior_layout.setColumnStretch(3, 1)
         layout.addWidget(self.behavior_group)
 
         self.flies_group = QGroupBox("Flies")
-        flies_layout = QGridLayout(self.flies_group)
+        self.flies_group.setObjectName("fliesGroup")
+        flies_outer = QVBoxLayout(self.flies_group)
+        flies_outer.setContentsMargins(8, 8, 8, 8)
+        flies_outer.setSpacing(6)
+
         self.flies_enabled_check = QCheckBox("Spawn flies for the spiders to hunt")
-        self.flies_enabled_check.setChecked(True)
-        self.fly_min_spin = QDoubleSpinBox()
+        self.flies_enabled_check.setObjectName("fliesToggle")
+        self.flies_enabled_check.setChecked(False)
+        flies_outer.addWidget(self.flies_enabled_check)
+
+        # Timing, fly count, and the nest only matter once flies are on, so they
+        # live in a panel that stays hidden until the spawner is enabled. Turning
+        # flies on reveals these extra options; turning it off tucks them away.
+        self.flies_details = QWidget()
+        flies_layout = QGridLayout(self.flies_details)
+        flies_layout.setContentsMargins(2, 2, 2, 0)
+        self.fly_min_spin = NoScrollDoubleSpinBox()
         self.fly_min_spin.setRange(0.3, 120.0)
         self.fly_min_spin.setDecimals(1)
         self.fly_min_spin.setSingleStep(0.5)
         self.fly_min_spin.setSuffix(" s")
         self.fly_min_spin.setValue(4.0)
-        self.fly_max_spin = QDoubleSpinBox()
+        self.fly_max_spin = NoScrollDoubleSpinBox()
         self.fly_max_spin.setRange(0.4, 240.0)
         self.fly_max_spin.setDecimals(1)
         self.fly_max_spin.setSingleStep(0.5)
         self.fly_max_spin.setSuffix(" s")
         self.fly_max_spin.setValue(9.0)
-        self.fly_count_spin = QSpinBox()
+        self.fly_count_spin = NoScrollSpinBox()
         self.fly_count_spin.setRange(0, 40)
         self.fly_count_spin.setValue(6)
         self.fly_spawner_check = QCheckBox("Flies emerge from a movable nest object")
-        self.fly_spawner_check.setChecked(True)
+        self.fly_spawner_check.setChecked(False)
         self.fly_spawner_check.setToolTip(
             "When on, flies crawl out of a nest you can drag around the screen. "
             "When off, they drift in from the screen edges."
         )
-        flies_layout.addWidget(self.flies_enabled_check, 0, 0, 1, 4)
-        flies_layout.addWidget(QLabel("Spawn every (min):"), 1, 0)
-        flies_layout.addWidget(self.fly_min_spin, 1, 1)
-        flies_layout.addWidget(QLabel("to (max):"), 1, 2)
-        flies_layout.addWidget(self.fly_max_spin, 1, 3)
-        flies_layout.addWidget(QLabel("Max flies at once:"), 2, 0)
-        flies_layout.addWidget(self.fly_count_spin, 2, 1)
-        flies_layout.addWidget(self.fly_spawner_check, 3, 0, 1, 4)
+        flies_layout.addWidget(QLabel("Spawn every (min):"), 0, 0)
+        flies_layout.addWidget(self.fly_min_spin, 0, 1)
+        flies_layout.addWidget(QLabel("to (max):"), 0, 2)
+        flies_layout.addWidget(self.fly_max_spin, 0, 3)
+        flies_layout.addWidget(QLabel("Max flies at once:"), 1, 0)
+        flies_layout.addWidget(self.fly_count_spin, 1, 1)
+        flies_layout.addWidget(self.fly_spawner_check, 2, 0, 1, 4)
         flies_layout.setColumnStretch(1, 1)
         flies_layout.setColumnStretch(3, 1)
+        flies_outer.addWidget(self.flies_details)
         layout.addWidget(self.flies_group)
 
         self.launch_group = QGroupBox("Launch")
+        self.launch_group.setObjectName("launchGroup")
         launch_layout = QVBoxLayout(self.launch_group)
         launch_layout.setContentsMargins(8, 8, 8, 8)
         launch_layout.setSpacing(6)
@@ -280,6 +433,7 @@ class ConfigWindow(QMainWindow):
         launch_row = QHBoxLayout()
         self.open_folder_btn = QPushButton("Open project folder")
         self.stop_btn = QPushButton("Stop overlay")
+        self.stop_btn.setObjectName("stopButton")
         self.launch_btn = QPushButton("Save and launch overlay")
         self.launch_btn.setObjectName("primaryButton")
         self.launch_btn.setDefault(True)
@@ -309,16 +463,23 @@ class ConfigWindow(QMainWindow):
         self.random_all_btn.clicked.connect(self.set_random_all_options)
         self.size_combo.currentIndexChanged.connect(self.update_summary)
         self.mood_combo.currentIndexChanged.connect(self.update_summary)
+        self.movement_combo.currentIndexChanged.connect(self.update_summary)
         self.interferable_check.toggled.connect(self.update_summary)
         self.social_play_check.toggled.connect(self.update_summary)
         self.flies_enabled_check.toggled.connect(self.update_summary)
+        self.flies_enabled_check.toggled.connect(self._update_flies_details_visibility)
         self.fly_min_spin.valueChanged.connect(self._on_fly_min_changed)
         self.fly_max_spin.valueChanged.connect(self._on_fly_max_changed)
         self.fly_count_spin.valueChanged.connect(self.update_summary)
         self.fly_spawner_check.toggled.connect(self.update_summary)
 
         self._set_tooltips()
+        self._update_flies_details_visibility()
         self.update_summary()
+
+    def _update_flies_details_visibility(self) -> None:
+        # Only show the timing / fly-count / nest options when flies are enabled.
+        self.flies_details.setVisible(self.flies_enabled_check.isChecked())
 
     def _on_fly_min_changed(self, value: float) -> None:
         # Keep the max at or above the min so the spawn range stays valid.
@@ -354,6 +515,12 @@ class ConfigWindow(QMainWindow):
         self.random_all_btn.setToolTip("Randomize model, personality, and count for every slot.")
         self.size_combo.setToolTip("Scale all creatures in the overlay.")
         self.mood_combo.setToolTip("Override moods, or leave Auto to use personality defaults.")
+        self.movement_combo.setToolTip(
+            "How the spiders walk. Classic is the original gait. Lively lifts the legs "
+            "off the ground while stepping, walks the feet around through turns, and "
+            "reaches out with the front legs and pedipalps to feel nearby objects. "
+            "Skitter is based on Lively but adds quick burst-burst-stop movement."
+        )
         self.interferable_check.setToolTip("When enabled, you can grab spiders; empty overlay space still remains click-through.")
         self.social_play_check.setToolTip("When enabled, multiple spiders may seek each other out and play.")
         self.save_btn.setToolTip("Save the current preset. While the overlay is running, this also applies your changes to it live.")
@@ -400,9 +567,9 @@ class ConfigWindow(QMainWindow):
     def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setRowHeight(row, max(58, MODEL_ICON_SIZE + 8))
+        self.table.setRowHeight(row, max(64, MODEL_ICON_SIZE + 12))
 
-        model_box = QComboBox()
+        model_box = NoScrollComboBox()
         model_box.setIconSize(QSize(MODEL_ICON_SIZE, MODEL_ICON_SIZE))
         model_box.setMinimumWidth(285)
         model_box.addItem(self._random_model_icon(), "Random model at launch", RANDOM_MODEL_ID)
@@ -417,7 +584,7 @@ class ConfigWindow(QMainWindow):
             if idx >= 0:
                 model_box.setCurrentIndex(idx)
 
-        personality_box = QComboBox()
+        personality_box = NoScrollComboBox()
         personality_box.addItem("Random personality at launch", RANDOM_PERSONALITY_ID)
         for personality in sorted(self.personalities.values(), key=lambda p: p.get("display_name", p.get("id", ""))):
             personality_box.addItem(personality.get("display_name", personality["id"]), personality["id"])
@@ -430,7 +597,7 @@ class ConfigWindow(QMainWindow):
             if idx >= 0:
                 personality_box.setCurrentIndex(idx)
 
-        count_spin = QSpinBox()
+        count_spin = NoScrollSpinBox()
         count_spin.setMinimum(1)
         count_spin.setMaximum(50)
         count_spin.setValue(max(1, min(50, int(count))))
@@ -680,6 +847,7 @@ class ConfigWindow(QMainWindow):
             "interferable": bool(self.interferable_check.isChecked()),
             "mood_mode": str(self.mood_combo.currentData() or "auto"),
             "social_play": bool(self.social_play_check.isChecked()),
+            "gait_style": str(self.movement_combo.currentData() or "classic"),
             "flies": {
                 "enabled": bool(self.flies_enabled_check.isChecked()),
                 "min_interval": round(float(self.fly_min_spin.value()), 2),
@@ -720,9 +888,13 @@ class ConfigWindow(QMainWindow):
         mood_idx = self.mood_combo.findData(mood_mode)
         self.mood_combo.setCurrentIndex(mood_idx if mood_idx >= 0 else 0)
 
+        gait_style = str(settings.get("gait_style", "classic") or "classic").lower()
+        gait_idx = self.movement_combo.findData(gait_style)
+        self.movement_combo.setCurrentIndex(gait_idx if gait_idx >= 0 else 0)
+
         flies = settings.get("flies")
         flies = flies if isinstance(flies, dict) else {}
-        self.flies_enabled_check.setChecked(bool(flies.get("enabled", True)))
+        self.flies_enabled_check.setChecked(bool(flies.get("enabled", False)))
         try:
             mn = float(flies.get("min_interval", 4.0))
             mx = float(flies.get("max_interval", 9.0))
@@ -740,7 +912,8 @@ class ConfigWindow(QMainWindow):
             self.fly_count_spin.setValue(int(flies.get("max_flies", 6)))
         except (TypeError, ValueError):
             self.fly_count_spin.setValue(6)
-        self.fly_spawner_check.setChecked(bool(flies.get("spawner", True)))
+        self.fly_spawner_check.setChecked(bool(flies.get("spawner", False)))
+        self._update_flies_details_visibility()
         self.update_summary()
 
     def _iter_row_widgets(self):
@@ -784,9 +957,10 @@ class ConfigWindow(QMainWindow):
 
         size_text = self.size_combo.currentText() if hasattr(self, "size_combo") else "Normal (100%)"
         mood_text = self.mood_combo.currentText() if hasattr(self, "mood_combo") else "Auto"
+        move_text = self.movement_combo.currentData() if hasattr(self, "movement_combo") else "classic"
         drag_text = "dragging on" if self.interferable_check.isChecked() else "dragging off"
         social_text = "social play on" if self.social_play_check.isChecked() else "social play off"
-        summary = f"Preset summary: {creature_text} Size: {size_text}. Mood: {mood_text}. {drag_text}; {social_text}."
+        summary = f"Preset summary: {creature_text} Size: {size_text}. Mood: {mood_text}. Movement: {move_text}. {drag_text}; {social_text}."
         self.summary.setText(summary)
         if hasattr(self, "launch_group"):
             self.launch_group.setToolTip(summary)

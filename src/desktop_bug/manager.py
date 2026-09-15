@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from .creature import Creature
+from .creature import Creature, GAIT_LABELS, normalize_gait_style
 from .cage import Cage
 from .webs import WebWorld
 from .mouse_webs import MouseWebWorld
@@ -40,6 +40,7 @@ class CreatureManager:
         self.interferable = True
         self.mood_mode = "auto"
         self.social_play = False
+        self.gait_style = "classic"
         # Right-click naming and the hover/always-on name label.
         self.naming_enabled = True
         self.always_show_names = False
@@ -97,7 +98,7 @@ class CreatureManager:
         pos: Tuple[float, float] | None = None,
         skills: list[str] | None = None,
     ) -> Creature:
-        creature = Creature(model, personality, self.screen_w, self.screen_h, index=index, size_scale=self.size_scale, skills=skills)
+        creature = Creature(model, personality, self.screen_w, self.screen_h, index=index, size_scale=self.size_scale, skills=skills, gait_style=self.gait_style)
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
@@ -205,6 +206,7 @@ class CreatureManager:
             self.interferable = bool(settings.get("interferable", self.interferable))
             self.mood_mode = str(settings.get("mood_mode", self.mood_mode) or "auto").lower()
             self.social_play = bool(settings.get("social_play", self.social_play))
+            self.gait_style = normalize_gait_style(settings.get("gait_style", self.gait_style))
             self.apply_fly_settings(settings)
 
         index = 0
@@ -489,6 +491,14 @@ class CreatureManager:
         label = "Auto (per personality)" if self.mood_mode == "auto" else self.mood_mode.capitalize()
         return f"Mood set to {label} for {len(self.creatures)} spider(s)."
 
+    def set_gait_style(self, style: str) -> str:
+        """Set the movement/leg-animation style for every spider at runtime."""
+        self.gait_style = normalize_gait_style(style)
+        for creature in self.creatures:
+            creature.set_gait_style(self.gait_style)
+        label = GAIT_LABELS.get(self.gait_style, "Classic")
+        return f"Movement set to {label} for {len(self.creatures)} spider(s)."
+
     def set_social_play(self, enabled: bool) -> str:
         """Enable or disable spiders seeking each other out to play."""
         self.social_play = bool(enabled)
@@ -700,6 +710,8 @@ class CreatureManager:
                 self.set_mood_mode(str(settings.get("mood_mode") or "auto"))
             if "social_play" in settings:
                 self.set_social_play(bool(settings.get("social_play")))
+            if "gait_style" in settings:
+                self.set_gait_style(str(settings.get("gait_style") or "classic"))
             if "allow_mouse_capture" in settings:
                 self.set_allow_mouse_capture(bool(settings.get("allow_mouse_capture")))
             self.apply_fly_settings(settings)

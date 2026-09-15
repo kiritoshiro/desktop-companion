@@ -26,6 +26,19 @@ def smootherstep(t: float) -> float:
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
 
 
+VALID_GAIT_STYLES = ("classic", "lively", "skitter")
+GAIT_LABELS = {
+    "classic": "Classic",
+    "lively": "Lively (lifted legs)",
+    "skitter": "Skitter (rapid bursts)",
+}
+
+
+def normalize_gait_style(style: str | None) -> str:
+    style = str(style or "classic").strip().lower()
+    return style if style in VALID_GAIT_STYLES else "classic"
+
+
 @dataclass
 class LegState:
     definition: dict
@@ -66,6 +79,7 @@ class Creature:
         index: int = 0,
         size_scale: float = 1.0,
         skills: list[str] | None = None,
+        gait_style: str = "classic",
     ):
         self.model = model
         self.personality = personality
@@ -161,6 +175,27 @@ class Creature:
         self.gait_groups = sorted({int(leg.definition.get("gait_group", 0)) for leg in self.legs}) or [0]
         self.active_gait_index = random.randrange(len(self.gait_groups))
         self.stepping_group = None
+        # Movement style. "classic" keeps the original reactive gait. "lively"
+        # drives a clearer alternating-tetrapod cadence, lifts the swinging legs
+        # visibly off the ground, and probes with front feelers. "skitter" is
+        # based on lively but runs in quick burst-burst-stop successions, like
+        # a small jumping spider in a macro video.
+        self.gait_style = normalize_gait_style(gait_style)
+        self._lively_gait_phase = random.random()
+        self._skitter_burst_timer = random.uniform(0.14, 0.34)
+        self._skitter_pause_timer = 0.0
+        self._skitter_phase = random.random() * math.tau
+        self._skitter_burst_jitter = random.uniform(0.94, 1.16)
+        self._prev_heading_gait = self.heading
+        # Feeler-probe pacing (lively style only): a gap timer between probes and
+        # the current probe pulse envelope.
+        self._feeler_clock = random.uniform(0.4, 1.4)
+        self._feeler_pulse = 0.0
+        self._feeler_pulse_dur = 0.0
+        self._feeler_pulse_t = 0.0
+        # Per-leg angular territories for the lively gait (built below once the
+        # leg list and size are known).  Keeps legs from crossing into a pinwheel.
+        self._leg_sectors = {}
         self.idle_twitch_timer = random.uniform(0.6, 1.8)
         self.turn_rehome_pressure = 0.0
 
@@ -340,6 +375,7 @@ class Creature:
         self.fly_world = None
         self._web_shot_prey = None
 
+        self._compute_leg_sectors()
         self._initialize_legs()
 
     # ------------------------------------------------------------------
@@ -366,6 +402,70 @@ class Creature:
     def _body_local_to_world(self, forward: float, side: float) -> Tuple[float, float]:
         fx, fy, rx, ry = self._basis()
         return self.x + fx * forward + rx * side, self.y + fy * forward + ry * side
+
+    def _compute_leg_sectors(self) -> None:
+        """Give each leg its own angular territory around the body.
+
+        The lively gait confines every foot to a wedge between the midpoints to
+        its angular neighbours, so legs can never cross into one another (the
+        "pinwheel/swastika" tangle when turning).  Wedges are derived from where
+        each leg naturally rests, so the real per-row stance is preserved: front
+        legs point forward, rear legs trail back.  A per-leg distance range is
+        stored too, so a foot can never sit absurdly far from the body.
+        """
+        self._leg_sectors = {}
+
+        def rest_polar(leg: LegState):
+            d = leg.definition
+            if "rest_forward" in d or "rest_side" in d:
+                rf = float(d.get("rest_forward", 0.0))
+                rs = abs(float(d.get("rest_side", 1.0)))
+                ang = math.degrees(math.atan2(rs, rf))  # 0 = straight forward, 180 = straight back
+                dist = math.hypot(rf, rs)
+            else:
+                ang = abs(float(d.get("rest_angle", 90.0)))
+                dist = float(d.get("reach", 1.8)) * 0.62
+            return ang, max(0.6, dist)
+
+        for side in ("left", "right"):
+            idxs = [i for i, leg in enumerate(self.legs)
+                    if str(leg.definition.get("side", "right")).lower().startswith(side[0])]
+            idxs.sort(key=lambda i: rest_polar(self.legs[i])[0])
+            n = len(idxs)
+            for k, i in enumerate(idxs):
+                ang, dist = rest_polar(self.legs[i])
+                prev_ang = rest_polar(self.legs[idxs[k - 1]])[0] if k > 0 else None
+                next_ang = rest_polar(self.legs[idxs[k + 1]])[0] if k + 1 < n else None
+                lo = (ang + prev_ang) * 0.5 if prev_ang is not None else max(6.0, ang - 26.0)
+                hi = (ang + next_ang) * 0.5 if next_ang is not None else min(174.0, ang + 26.0)
+                lo += 2.5   # small buffer so neighbouring wedges never touch
+                hi -= 2.5
+                if hi <= lo:
+                    lo = hi = (lo + hi) * 0.5
+                self._leg_sectors[id(self.legs[i])] = (
+                    math.radians(lo), math.radians(hi), dist * 0.42, dist * 1.30,
+                )
+
+    def _clamp_to_sector(self, leg: LegState, x: float, y: float) -> Tuple[float, float]:
+        """Pull a foot into its leg's angular wedge and distance range.
+
+        Operates in body-centred polar coordinates so a foot is always on the
+        leg's own side, inside its wedge, and within a believable distance; this
+        is what guarantees the lively gait never crosses or overstretches a leg.
+        """
+        sec = getattr(self, "_leg_sectors", {}).get(id(leg))
+        if not sec:
+            return x, y
+        lo, hi, rmin_m, rmax_m = sec
+        sign = self._side_sign(leg.definition.get("side", "right"))
+        f, s_signed = self._world_to_body_local(x, y)
+        s = s_signed * sign                       # own-side component
+        r = clamp(math.hypot(f, s), self.size * rmin_m, self.size * rmax_m)
+        ang = math.atan2(max(s, 1e-4), f)         # forced onto the leg's own side
+        ang = clamp(ang, lo, hi)
+        f2 = r * math.cos(ang)
+        s2 = r * math.sin(ang)
+        return self._body_local_to_world(f2, s2 * sign)
 
     def _leg_max_reach(self, leg: LegState, visual: bool = False) -> float:
         """Maximum believable coxa-to-tarsus reach for one leg.
@@ -525,6 +625,12 @@ class Creature:
             local_s = sign * min_side
         return self._body_local_to_world(local_f, local_s)
 
+    def _uses_lively_gait(self) -> bool:
+        return getattr(self, "gait_style", "classic") in ("lively", "skitter")
+
+    def _uses_skitter_gait(self) -> bool:
+        return getattr(self, "gait_style", "classic") == "skitter"
+
     def _visual_foot_for_render(self, leg: LegState) -> Tuple[float, float]:
         """Return the visible foot location without making planted feet slide with the body.
 
@@ -532,7 +638,28 @@ class Creature:
         turn, drag, or throw has made a foot visually impossible, only the rendered
         position is eased toward a safe body-local lane until the next corrective step
         replants it.  This prevents rubber-band legs without breaking gait urgency.
+
+        The lively gait pulls misplaced feet fully into their sector (no crossed,
+        pinwheel legs while turning) and reach-limits every foot (no front legs
+        stretching off into the distance).  The classic gait is unchanged.
         """
+        lively = self._uses_lively_gait()
+        if lively:
+            # Hard guarantee for the lively gait: pull the rendered foot into the
+            # leg's own angular wedge (no crossing) and cap the leg length tightly
+            # from the coxa (no front-leg overstretch).  For a well-placed foot
+            # this is a no-op; it only corrects feet that drifted during a turn.
+            vx, vy = self._clamp_to_sector(leg, leg.foot_x, leg.foot_y)
+            ax, ay = self._leg_attach(leg)
+            d = leg.definition
+            cap = min(float(d.get("reach", 1.8)) * 1.02,
+                      (float(d.get("upper_len", 0.85)) + float(d.get("lower_len", 1.05))) * 1.05) * self.size
+            ddx, ddy = vx - ax, vy - ay
+            dl = math.hypot(ddx, ddy)
+            if dl > cap and dl > 1e-5:
+                scale = cap / dl
+                vx, vy = ax + ddx * scale, ay + ddy * scale
+            return vx, vy
         safe_x, safe_y = self._constrain_leg_point(leg, leg.foot_x, leg.foot_y)
         safe_x, safe_y = self._limit_world_point_to_leg_reach(leg, safe_x, safe_y, visual=True)
         local_f, local_s, min_side, rest_f, wrong_side, severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
@@ -592,11 +719,15 @@ class Creature:
             micro_y = math.cos(self.breath_phase * 0.7 + leg.phase_seed * 1.13) * jitter
             wx = self.x + fx * rf + rx * rs + micro_x
             wy = self.y + fy * rf + ry * rs + micro_y
+            if self._uses_lively_gait():
+                wx, wy = self._clamp_to_sector(leg, wx, wy)
             return self._constrain_leg_point(leg, wx, wy)
         angle = self.heading + math.radians(float(d.get("rest_angle", 0.0)))
         reach = float(d.get("reach", 1.8)) * self.size
         wx = self.x + math.cos(angle) * reach
         wy = self.y + math.sin(angle) * reach
+        if self._uses_lively_gait():
+            wx, wy = self._clamp_to_sector(leg, wx, wy)
         return self._constrain_leg_point(leg, wx, wy)
 
     def _initialize_legs(self) -> None:
@@ -1845,6 +1976,17 @@ class Creature:
         if not self.allow_social and self.state in ("Play",):
             self.social_target = None
             self.enter_idle()
+
+    def set_gait_style(self, style: str) -> None:
+        """Switch the movement/leg-animation style at runtime.
+
+        ``classic`` is the original reactive gait; ``lively`` lifts the legs
+        visibly while stepping, replants the feet through turns, and probes
+        nearby objects with the front legs and pedipalps. ``skitter`` keeps
+        the lively leg logic but makes it faster and broken into short bursts
+        with momentary stillness.
+        """
+        self.gait_style = normalize_gait_style(style)
 
     def update(self, dt: float, mx: float, my: float, sw: int, sh: int) -> None:
         dt = clamp(dt, 0.001, 0.05)
@@ -3340,6 +3482,48 @@ class Creature:
             self.social_target = None
             self.enter_idle()
 
+    def _skitter_motion_factor(self, dt: float, desired_speed: float, target_dist: float) -> float:
+        """Return a stop-go speed multiplier for the Skitter movement style.
+
+        It leaves ordinary behaviour decisions alone, but changes how the body
+        covers distance: very short rapid runs are interrupted by tiny still
+        moments, matching the quick-successions-and-freeze feel of the reference
+        spider gif.
+        """
+        if not self._uses_skitter_gait():
+            return 1.0
+        if desired_speed <= 5.0 or target_dist < max(10.0, self.size * 0.70):
+            # Reset to a fresh burst when movement starts again, rather than
+            # unexpectedly beginning inside a pause.
+            self._skitter_pause_timer = 0.0
+            self._skitter_burst_timer = min(self._skitter_burst_timer, random.uniform(0.12, 0.24))
+            return 1.0
+        # Do not make low-grip drifting more nervous; that personality already
+        # has its own momentum rhythm.
+        if self.state == "DriftRun" and self._is_drift_sliding():
+            return 1.0
+
+        speed01 = clamp(desired_speed / 160.0, 0.0, 1.0)
+        self._skitter_phase = (self._skitter_phase + dt * (18.0 + speed01 * 16.0)) % math.tau
+
+        if self._skitter_pause_timer > 0.0:
+            self._skitter_pause_timer = max(0.0, self._skitter_pause_timer - dt)
+            return 0.0
+
+        self._skitter_burst_timer -= dt
+        if self._skitter_burst_timer <= 0.0:
+            fast_state = self.state in ("Chase", "Retreat", "Startled")
+            self._skitter_pause_timer = random.uniform(0.055, 0.135) if fast_state else random.uniform(0.085, 0.22)
+            self._skitter_burst_timer = random.uniform(0.10, 0.24) if fast_state else random.uniform(0.16, 0.36)
+            self._skitter_burst_jitter = random.uniform(0.94, 1.20)
+            return 0.0
+
+        # The burst is not perfectly steady: a tiny internal pulse makes the run
+        # read as several fast pushes in succession rather than one smooth glide.
+        pulse = 0.90 + 0.16 * max(0.0, math.sin(self._skitter_phase))
+        state_boost = 1.34 if self.state in ("Chase", "Retreat", "Startled") else 1.18
+        return state_boost * self._skitter_burst_jitter * pulse
+
     def _move_body(self, dt: float) -> None:
         edge_push_x = 0.0
         edge_push_y = 0.0
@@ -3454,7 +3638,12 @@ class Creature:
             else:
                 alignment = clamp(1.0 - angle_error / (math.pi * 0.75), 0.15, 1.0)
         desired_speed *= clamp(alignment, 0.15, 1.0)
+        skitter_factor = self._skitter_motion_factor(dt, desired_speed, target_dist)
+        desired_speed *= skitter_factor
         accel_mult = float(self.personality.get("acceleration_multiplier", 1.0))
+        if self._uses_skitter_gait():
+            # Snappy acceleration and braking make the little pauses visible.
+            accel_mult *= 1.55 if desired_speed > self.current_speed else 2.35
         if self.state == "DriftRun" and self._is_drift_sliding():
             accel_mult *= float(self.personality.get("drift_slide_accel_grip", 0.46))
         accel = (420.0 if desired_speed > self.current_speed else 580.0) * accel_mult
@@ -3504,11 +3693,12 @@ class Creature:
         self.x, self.y = clamp_point(self.x, self.y, self.margin * 0.4, self.screen_w, self.screen_h)
 
         speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
-        self.bob_phase += dt * (3.6 + self.current_speed * 0.095)
-        self.breath_phase += dt * (1.55 + 0.35 * speed01)
-        self.body_bob = math.sin(self.bob_phase) * speed01 * 1.55
+        skitter = self._uses_skitter_gait()
+        self.bob_phase += dt * ((5.2 if skitter else 3.6) + self.current_speed * (0.135 if skitter else 0.095))
+        self.breath_phase += dt * ((1.85 if skitter else 1.55) + 0.35 * speed01)
+        self.body_bob = math.sin(self.bob_phase) * speed01 * (1.20 if skitter else 1.55)
         self.body_sway = (
-            math.sin(self.bob_phase * 0.5) * speed01 * self.size * 0.030
+            math.sin(self.bob_phase * (0.78 if skitter else 0.5)) * speed01 * self.size * (0.022 if skitter else 0.030)
             + turn_delta * self.size * 0.55
             + drift_amount * self.size * 0.26
             + float(getattr(self, "drift_lean", 0.0)) * self.size * 0.62
@@ -3656,11 +3846,17 @@ class Creature:
         sliding = self._is_drift_sliding()
         if force_fast or (self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun") and not sliding) or (abs(getattr(self, "last_drift_amount", 0.0)) > 0.22 and not sliding):
             leg.step_duration *= 0.72
+        if self._uses_skitter_gait() and not sliding:
+            # The third movement option is based on lively, but its tarsi flick
+            # forward much faster so each burst reads as several quick steps.
+            leg.step_duration *= 0.58 if force_fast else 0.66
         if sliding:
             # During the visible slide, feet should look light and skiddy rather
             # than gripping hard and machine-gunning new steps.
             leg.step_duration *= float(self.personality.get("drift_slide_step_slowdown", 1.42))
-        leg.step_duration = clamp(leg.step_duration, 0.095, 0.40)
+        min_step = 0.052 if self._uses_skitter_gait() and not sliding else 0.095
+        max_step = 0.26 if self._uses_skitter_gait() and not sliding else 0.40
+        leg.step_duration = clamp(leg.step_duration, min_step, max_step)
         _, _, _, _, _, start_severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
         if start_severe_wrong:
             # If a planted foot crossed to the wrong side after a sharp turn, start
@@ -3695,21 +3891,17 @@ class Creature:
         if nx * out_x + ny * out_y < 0.0:
             nx, ny = -nx, -ny
         arc = clamp(path_len * random.uniform(0.22, 0.36), self.size * 0.12, self.size * 0.56)
+        if self._uses_skitter_gait():
+            arc *= 0.78
         leg.step_control_x = mid_x + nx * arc
         leg.step_control_y = mid_y + ny * arc
 
-    def _update_legs(self, dt: float) -> None:
-        """Update spider legs using leg-level coordination instead of locked groups.
+    def _advance_active_steps(self, dt: float) -> None:
+        """Advance any in-flight foot swings and per-leg cooldowns.
 
-        Real spiders often approximate an alternating tetrapod gait, but individual
-        legs are not mechanically welded into two perfect four-leg teams.  Opposite
-        and neighboring legs tend toward antiphase while each leg still has its own
-        phase drift, urgency threshold, and footfall target.
+        Shared by both gait styles: it integrates the quadratic-Bezier swing
+        arc, drives ``leg.lift`` across the swing, and plants the foot at the end.
         """
-        if self.airborne:
-            # Feet are tucked in flight (handled by the renderer) and carried with
-            # the body; the gait scheduler resumes after landing.
-            return
         for leg in self.legs:
             leg.step_cooldown = max(0.0, leg.step_cooldown - dt)
 
@@ -3739,7 +3931,27 @@ class Creature:
                     leg.foot_x = leg.step_target_x
                     leg.foot_y = leg.step_target_y
                     speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
-                    leg.step_cooldown = random.uniform(0.035, 0.095) * (1.15 - speed01 * 0.45)
+                    if self._uses_skitter_gait():
+                        leg.step_cooldown = random.uniform(0.012, 0.045) * (1.08 - speed01 * 0.36)
+                    else:
+                        leg.step_cooldown = random.uniform(0.035, 0.095) * (1.15 - speed01 * 0.45)
+
+    def _update_legs(self, dt: float) -> None:
+        """Update spider legs using leg-level coordination instead of locked groups.
+
+        Real spiders often approximate an alternating tetrapod gait, but individual
+        legs are not mechanically welded into two perfect four-leg teams.  Opposite
+        and neighboring legs tend toward antiphase while each leg still has its own
+        phase drift, urgency threshold, and footfall target.
+        """
+        if self._uses_lively_gait():
+            self._update_legs_lively(dt)
+            return
+        if self.airborne:
+            # Feet are tucked in flight (handled by the renderer) and carried with
+            # the body; the gait scheduler resumes after landing.
+            return
+        self._advance_active_steps(dt)
 
         moving = self.current_speed > 4.0
         # Once the spider has actually stopped, leave its feet planted exactly where
@@ -3902,6 +4114,196 @@ class Creature:
         if started:
             self.turn_rehome_pressure = max(0.0, self.turn_rehome_pressure - 0.18)
 
+    def _update_legs_lively(self, dt: float) -> None:
+        """Visible alternating-tetrapod gait with lifted legs and object probing.
+
+        Unlike the classic reactive gait, this drives a steady stepping cadence
+        tied to body speed (and to turning, so a pivot steps the feet around
+        instead of pinning them).  Swinging legs are clearly lifted by the
+        renderer.  When the spider is settled near something it is attending to,
+        it reaches a front leg out to tap the object and waves its pedipalps.
+        """
+        if self.airborne:
+            return
+        self._advance_active_steps(dt)
+
+        # Turn signal: both the steering error and the rotation actually applied
+        # this frame.  A pivot in place still advances the gait clock, so the legs
+        # visibly walk the body around to its new facing instead of staying rooted.
+        dheading = ((self.heading - self._prev_heading_gait + math.pi) % math.tau) - math.pi
+        self._prev_heading_gait = self.heading
+        turn_speed = abs(dheading) / max(dt, 1e-3)
+        turn_err = abs(((self.target_heading - self.heading + math.pi) % math.tau) - math.pi)
+
+        moving = self.current_speed > 4.0
+        turning = turn_speed > 0.30 or turn_err > 0.12
+        skitter = self._uses_skitter_gait()
+        hold_still = (self.current_speed < (4.5 if skitter else 3.0)) and not turning and not self.dragging
+        speed01 = clamp(self.current_speed / 150.0, 0.0, 1.0)
+        sliding = self._is_drift_sliding()
+        fast_state = self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun")
+
+        max_air = 3 if skitter else 2
+        if moving and speed01 >= (0.34 if skitter else 0.5):
+            max_air = 4 if skitter else 3
+        if fast_state or self.dragging:
+            max_air = 5 if skitter else 4
+        if turning:
+            # A turn needs several feet free to walk the body around quickly so
+            # legs do not linger crossed over one another.
+            max_air = max(max_air, 4 if skitter else 3)
+        swinging_now = sum(1 for leg in self.legs if leg.stepping or leg.pending_step)
+
+        # Emergency repair: never allow an impossible pose, but fix it with a
+        # visible lifted step rather than snapping the foot into place.
+        broken_candidates = []
+        for i, leg in enumerate(self.legs):
+            _, _, _, _, wrong_side, severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
+            _, _, too_far, very_far = self._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
+            broken = severe_wrong or (very_far if hold_still else too_far)
+            if broken and not leg.stepping and not leg.pending_step and leg.step_cooldown <= 0.0:
+                ix, iy = self._leg_ideal_foot(leg)
+                dist = math.hypot(leg.foot_x - ix, leg.foot_y - iy) + (self.size * 0.6 if very_far else 0.0)
+                broken_candidates.append((dist, i, leg, ix, iy))
+        broken_candidates.sort(reverse=True, key=lambda it: it[0])
+        for _, i, leg, ix, iy in broken_candidates[:max(0, max_air - swinging_now)]:
+            self._schedule_step(leg, ix, iy, delay=0.0, force_fast=True)
+            leg.step_cooldown = random.uniform(0.010, 0.032) if skitter else random.uniform(0.02, 0.05)
+            swinging_now += 1
+
+        # Feeler probing runs whether or not the body is moving.
+        self._update_feelers(dt, moving=moving, turning=turning)
+
+        if hold_still:
+            # Settled: keep planted feet exactly where they are (besides repairs
+            # and feeler probes), so a watching spider truly holds still.
+            return
+
+        # Cadence clock.  Faster body => quicker steps; a pivot keeps the clock
+        # turning so the feet shuffle around the turn.
+        cadence_hz = (2.85 + speed01 * 6.2) if skitter else (1.05 + speed01 * 3.0)
+        if fast_state:
+            cadence_hz += 2.4 if skitter else 1.2
+        if turning:
+            cadence_hz = max(cadence_hz, (1.65 if skitter else 0.9) + min(turn_speed, 5.5) * (0.86 if skitter else 0.55))
+        self._lively_gait_phase = (self._lively_gait_phase + dt * cadence_hz) % 1.0
+
+        # Alternating tetrapod: two leg groups half a cycle out of phase. Skitter
+        # uses the same idea as lively, but with a shorter swing window, lower
+        # replant threshold, and faster clock so feet tick in quick succession.
+        swing_frac = 0.31 if skitter else 0.40
+        group_count = max(1, len(self.gait_groups))
+        replant_thresh = self.size * ((0.095 if (moving or sliding) else 0.080) if skitter else (0.16 if (moving or sliding) else 0.12))
+        if fast_state:
+            replant_thresh *= 0.72 if skitter else 0.8
+        if turning:
+            replant_thresh = min(replant_thresh, self.size * (0.065 if skitter else 0.10))
+
+        candidates = []
+        for i, leg in enumerate(self.legs):
+            if leg.stepping or leg.pending_step or leg.step_cooldown > 0.0:
+                continue
+            group = int(leg.definition.get("gait_group", 0))
+            g = (group % 2) if group_count >= 2 else 0
+            window_pos = (self._lively_gait_phase - 0.5 * g) % 1.0
+            in_window = window_pos < swing_frac
+            ix, iy = self._leg_ideal_foot(leg)
+            dist = math.hypot(leg.foot_x - ix, leg.foot_y - iy)
+            _, _, _, _, wrong_side, severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
+            _, _, too_far, very_far = self._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
+            # A foot that has slipped to the wrong side of the body, or out of
+            # reach, is what produces the crossed / pinwheel tangle when turning.
+            # Such feet must step back into their own sector right now, regardless
+            # of the cadence window.
+            urgent = wrong_side or too_far
+            if not (urgent or dist > replant_thresh):
+                continue
+            score = dist / max(1.0, replant_thresh)
+            if urgent:
+                score += 3.0 + (1.5 if (severe_wrong or very_far) else 0.0)
+            elif in_window:
+                score += 1.8 if skitter else 1.4
+            else:
+                # Outside its swing window only a clearly out-of-place foot steps.
+                if score < (1.08 if skitter else 1.25):
+                    continue
+                score *= 0.74 if skitter else 0.6
+            candidates.append((score, i, leg, ix, iy))
+
+        candidates.sort(reverse=True, key=lambda it: it[0])
+        slots = max(0, max_air - swinging_now)
+        used = set()
+        for _, i, leg, ix, iy in candidates:
+            if slots <= 0:
+                break
+            # Keep diagonally opposed / neighbouring legs from lifting together so
+            # the four planted feet stay well spread for balance.
+            if any(abs(i - j) in (1, 2) for j in used):
+                continue
+            if skitter:
+                delay = random.uniform(0.0, 0.010 if fast_state else 0.020)
+                cooldown = random.uniform(0.012, 0.044)
+            else:
+                delay = random.uniform(0.0, 0.02 if fast_state else 0.05)
+                cooldown = random.uniform(0.04, 0.10)
+            self._schedule_step(leg, ix, iy, delay=delay, force_fast=fast_state or skitter)
+            leg.step_cooldown = cooldown
+            used.add(i)
+            slots -= 1
+
+        if used:
+            self.turn_rehome_pressure = max(0.0, self.turn_rehome_pressure - 0.18)
+
+    def _update_feelers(self, dt: float, moving: bool, turning: bool) -> None:
+        """Reach a front leg out to tap what the spider is attending to and wave
+        the pedipalps, the way a wandering spider feels an object.
+
+        Only runs in calm, attentive states so it never fights hunting, feeding,
+        web work, or play.  It raises floors on the existing ``catch_blend`` and
+        ``inspect_intent`` channels, which the renderer already turns into a
+        front-leg reach and palp motion; pulsing them produces a tap-tap probe.
+        """
+        if self.state not in ("Idle", "Wander", "Observe", "Inspect", "Alert", "Approach"):
+            self._feeler_pulse = 0.0
+            self._feeler_pulse_t = 0.0
+            return
+        # Feeling is a slow, careful act; do not probe while scurrying quickly.
+        if self.current_speed > 70.0:
+            self._feeler_pulse = 0.0
+            self._feeler_pulse_t = 0.0
+            return
+        focus = clamp(self.focus_strength, 0.0, 1.0)
+        attentive = self.state in ("Observe", "Inspect")
+        if focus < 0.25 and not attentive:
+            self._feeler_pulse = 0.0
+            self._feeler_pulse_t = 0.0
+            return
+        d = math.hypot(self.focus_x - self.x, self.focus_y - self.y)
+        if d > self.size * 7.0 and not attentive:
+            self._feeler_pulse = 0.0
+            self._feeler_pulse_t = 0.0
+            return
+
+        if self._feeler_pulse_t > 0.0:
+            # Mid-pulse: advance the tap envelope (a smooth reach-out / draw-back).
+            self._feeler_pulse_t = max(0.0, self._feeler_pulse_t - dt)
+            phase = 1.0 - (self._feeler_pulse_t / max(1e-3, self._feeler_pulse_dur))
+            self._feeler_pulse = math.sin(math.pi * clamp(phase, 0.0, 1.0))
+        else:
+            self._feeler_pulse = 0.0
+            self._feeler_clock -= dt
+            if self._feeler_clock <= 0.0:
+                self._feeler_pulse_dur = random.uniform(0.45, 0.85)
+                self._feeler_pulse_t = self._feeler_pulse_dur
+                self._feeler_clock = random.uniform(0.5, 1.5)
+
+        if self._feeler_pulse > 0.001:
+            # Reach the front legs toward the object and let the palps probe it.
+            # Kept modest so the front legs tap rather than overstretch.
+            self.catch_point = (self.focus_x, self.focus_y)
+            self.catch_blend = max(self.catch_blend, self._feeler_pulse * 0.5)
+            self.inspect_intent = max(self.inspect_intent, self._feeler_pulse * 0.9)
+
     # ------------------------------------------------------------------
     # Rendering
     # ------------------------------------------------------------------
@@ -4036,11 +4438,26 @@ class Creature:
 
         leg_width_scale = float(self._appearance("leg_thickness", 1.0))
         fluffiness = clamp(float(self._appearance("fluffiness", 0.0)), 0.0, 1.0)
+        segmented_legs = bool(self._appearance("segmented_legs", False))
+        show_joint_nodes = bool(self._appearance("show_joint_nodes", False))
+        joint_node_scale = float(self._appearance("joint_node_scale", 1.0))
+        coxa_width_scale = float(self._appearance("coxa_thickness_scale", 1.0))
 
         # Legs first, underneath body. Segment thickness tapers from coxa to tarsus.
         for leg in self.legs:
             ax, ay, foot_x, foot_y = self._leg_draw_points(leg)
             kx, ky = self._solve_knee(ax, ay, foot_x, foot_y, leg)
+            # Lift the swinging / reaching leg up off the ground (lively gait).
+            # Pure draw-time screen offset applied after the knee solve so the
+            # ground-plane IK stays correct; the foot also tucks slightly toward
+            # the body as it rises, like a real leg flexing through its arc.
+            lift_px = self._leg_lift_px(leg)
+            if lift_px > 0.0:
+                flex = leg.lift * 0.08
+                foot_x += (ax - foot_x) * flex
+                foot_y += (ay - foot_y) * flex
+                foot_y -= lift_px
+                ky -= lift_px * 0.45
             _, _, rx, ry = self._basis()
             side = self._side_sign(leg.definition.get("side", "right"))
             coxa_len = float(leg.definition.get("coxa_len", 0.20)) * self.size
@@ -4056,6 +4473,10 @@ class Creature:
                 foot_y += leg_y_off
 
             base_width = max(1.4, self.size * (0.066 + leg.lift * 0.016) * leg_width_scale) * (1.0 + startle * 0.10)
+            coxa_width = max(1.2, base_width * 1.08 * coxa_width_scale)
+            femur_width = max(1.0, base_width * 0.98)
+            tibia_width = max(1.0, base_width * 0.78)
+            tarsus_width = max(1.0, base_width * 0.42)
             if fluffiness > 0.0:
                 painter.setPen(QPen(self._qcolor("highlight", int(40 + fluffiness * 50)), base_width * (1.4 + fluffiness * 0.6), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                 fuzzy_path = QPainterPath(QPointF(ax, ay))
@@ -4065,14 +4486,34 @@ class Creature:
                 painter.drawPath(fuzzy_path)
 
             color = self._qcolor("highlight" if (leg.stepping or startle > 0.35) else "legs", 230 if (leg.stepping or startle > 0.35) else 245)
-            painter.setPen(QPen(color, base_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-            path = QPainterPath(QPointF(ax, ay))
-            path.cubicTo(QPointF(coxa_x, coxa_y), QPointF(coxa_x, coxa_y), QPointF(kx, ky))
-            path.lineTo(QPointF(tarsus_x, tarsus_y))
-            path.lineTo(QPointF(foot_x, foot_y))
-            painter.drawPath(path)
-            painter.setPen(QPen(self._qcolor("legs", 210), max(1.0, base_width * 0.48), Qt.SolidLine, Qt.RoundCap))
-            painter.drawLine(QPointF(tarsus_x, tarsus_y), QPointF(foot_x, foot_y))
+            if segmented_legs:
+                painter.setPen(QPen(color, coxa_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                painter.drawLine(QPointF(ax, ay), QPointF(coxa_x, coxa_y))
+                painter.setPen(QPen(color, femur_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                painter.drawLine(QPointF(coxa_x, coxa_y), QPointF(kx, ky))
+                painter.setPen(QPen(color, tibia_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                painter.drawLine(QPointF(kx, ky), QPointF(tarsus_x, tarsus_y))
+                painter.setPen(QPen(self._qcolor("legs", 210), tarsus_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                painter.drawLine(QPointF(tarsus_x, tarsus_y), QPointF(foot_x, foot_y))
+            else:
+                painter.setPen(QPen(color, base_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                path = QPainterPath(QPointF(ax, ay))
+                path.cubicTo(QPointF(coxa_x, coxa_y), QPointF(coxa_x, coxa_y), QPointF(kx, ky))
+                path.lineTo(QPointF(tarsus_x, tarsus_y))
+                path.lineTo(QPointF(foot_x, foot_y))
+                painter.drawPath(path)
+                painter.setPen(QPen(self._qcolor("legs", 210), max(1.0, base_width * 0.48), Qt.SolidLine, Qt.RoundCap))
+                painter.drawLine(QPointF(tarsus_x, tarsus_y), QPointF(foot_x, foot_y))
+            if show_joint_nodes:
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(self._qcolor("legs", 220)))
+                node_r = max(1.0, base_width * 0.18 * joint_node_scale)
+                painter.drawEllipse(QPointF(coxa_x, coxa_y), node_r * 1.05, node_r * 1.05)
+                painter.drawEllipse(QPointF(kx, ky), node_r * 1.30, node_r * 1.30)
+                painter.drawEllipse(QPointF(tarsus_x, tarsus_y), node_r * 0.98, node_r * 0.98)
+                painter.setBrush(QBrush(self._qcolor("highlight", 210)))
+                painter.drawEllipse(QPointF(kx, ky), node_r * 0.60, node_r * 0.60)
+            painter.setPen(QPen(self._qcolor("highlight" if (leg.stepping or startle > 0.35) else "legs", 220), max(1.0, tarsus_width * 0.8), Qt.SolidLine, Qt.RoundCap))
             painter.drawPoint(QPointF(foot_x, foot_y))
 
         crouch_drop = self.crouch * self.size * 0.06
@@ -4217,6 +4658,14 @@ class Creature:
         for leg in self.legs:
             ax, ay, foot_x, foot_y = self._leg_draw_points(leg)
             kx, ky = self._solve_knee(ax, ay, foot_x, foot_y, leg)
+            # Lift the swinging / reaching leg off the ground (lively gait).
+            lift_px = self._leg_lift_px(leg)
+            if lift_px > 0.0:
+                flex = leg.lift * 0.08
+                foot_x += (ax - foot_x) * flex
+                foot_y += (ay - foot_y) * flex
+                foot_y -= lift_px
+                ky -= lift_px * 0.45
             tarsus_x = kx + (foot_x - kx) * 0.72
             tarsus_y = ky + (foot_y - ky) * 0.72
             if leg_y_off:
@@ -4318,6 +4767,59 @@ class Creature:
             return clamp(float(d.get("rest_forward", 0.0)), -1.0, 1.0)
         return math.cos(math.radians(float(d.get("attach_angle", 0.0))))
 
+    def _leg_lift_px(self, leg: LegState) -> float:
+        """Screen-space height a swinging (or reaching) leg is raised, for the
+        lively gait.  Returns 0 for the classic gait so its look is unchanged.
+
+        The swing lift peels a stepping foot off the ground in a visible arc;
+        front legs that are reaching out to feel an object rise a little extra.
+        """
+        if not self._uses_lively_gait():
+            return 0.0
+        px = leg.lift * self.size * (0.42 if self._uses_skitter_gait() else 0.55)
+        front = self._leg_front_factor(leg)
+        if self.catch_blend > 0.01 and front > 0.15:
+            px += self.catch_blend * clamp((front - 0.15) / 0.85, 0.0, 1.0) * self.size * 0.28
+        return px
+
+    def _front_leg_feeler_pose(self, leg: LegState, ax: float, ay: float, foot_x: float, foot_y: float, front: float) -> Tuple[float, float]:
+        """Optional model-specific pose bias that lets the front legs replace the
+        cartoon antennae.  Only the foremost legs are affected, and only for
+        models that opt into it through appearance settings.
+        """
+        if not bool(self._appearance("front_leg_feeler_mode", False)) or front <= 0.18:
+            return foot_x, foot_y
+
+        strength = clamp((front - 0.18) / 0.82, 0.0, 1.0)
+        idle_lift = float(self._appearance("front_leg_idle_lift", 0.0)) * self.size * strength
+        idle_forward = float(self._appearance("front_leg_idle_forward", 0.0)) * self.size * strength
+        sway = float(self._appearance("front_leg_feeler_sway", 0.0)) * self.size * strength
+
+        forward_dx = math.cos(self.heading) * idle_forward
+        forward_dy = math.sin(self.heading) * idle_forward
+        side_sign = self._side_sign(leg.definition.get("side", "right"))
+        side_dx = -math.sin(self.heading) * sway * side_sign
+        side_dy = math.cos(self.heading) * sway * side_sign
+
+        # Small organic probing motion: quick little feeler sweeps with pauses.
+        # The lively/skitter gait already handles the planted stepping; this is
+        # only a presentational bias layered on top.
+        feel_clock = self.breath_phase * (2.9 if self._uses_skitter_gait() else 2.1) + leg.phase_seed * 0.9
+        pulse = 0.5 + 0.5 * math.sin(feel_clock)
+        foot_x += forward_dx * (0.60 + pulse * 0.40) + side_dx * math.sin(feel_clock * 1.8)
+        foot_y += forward_dy * (0.60 + pulse * 0.40) + side_dy * math.sin(feel_clock * 1.8)
+        foot_y -= idle_lift * (0.65 + pulse * 0.35)
+
+        # Keep the reach believable.
+        max_span = self.size * (float(leg.definition.get("reach", 1.8)) + 0.45)
+        ddx, ddy = foot_x - ax, foot_y - ay
+        dlen = math.hypot(ddx, ddy)
+        if dlen > max_span and dlen > 1e-4:
+            scale = max_span / dlen
+            foot_x = ax + ddx * scale
+            foot_y = ay + ddy * scale
+        return foot_x, foot_y
+
     def _leg_draw_points(self, leg: LegState) -> Tuple[float, float, float, float]:
         """World-space (attach, foot) for rendering with catch-reach + airborne tuck.
 
@@ -4359,6 +4861,7 @@ class Creature:
             knead = math.sin(paw * 17.0 + leg.phase_seed)
             foot_x += -uy * amp * 0.5 * knead
             foot_y += ux * amp * 0.5 * knead
+        foot_x, foot_y = self._front_leg_feeler_pose(leg, ax, ay, foot_x, foot_y, front)
         if self.airborne and self.jump_peak > 1e-3:
             tuck = clamp(self.jump_z / self.jump_peak, 0.0, 1.0) * 0.8
             foot_x += (ax - foot_x) * tuck

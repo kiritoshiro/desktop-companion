@@ -2,8 +2,8 @@
   "name": "Default",
   "slots": [
     {
-      "model": "jumping_spider_hybrid",
-      "personality": "playful",
+      "model": "knuckle_skitter_stalker",
+      "personality": "curious",
       "count": 1,
       "count_random": false
     }
@@ -19,6 +19,7 @@
       "max_interval": 9.0,
       "max_flies": 6,
       "spawner": false
-    }
+    },
+    "gait_style": "skitter"
   }
 }
