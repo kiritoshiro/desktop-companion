@@ -1,0 +1,196 @@
+{
+  "id": "mossback",
+  "display_name": "Mossback",
+  "base_size": 27,
+  "default_personality": "curious",
+  "colors": {
+    "body": [
+      120,
+      138,
+      96
+    ],
+    "legs": [
+      96,
+      112,
+      76
+    ],
+    "highlight": [
+      176,
+      192,
+      140
+    ],
+    "eyes": [
+      40,
+      46,
+      32
+    ]
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -35,
+      "rest_angle": -50,
+      "reach": 1.829,
+      "upper_len": 0.909,
+      "lower_len": 1.137,
+      "attach_forward": 0.36,
+      "attach_side": 0.22,
+      "rest_forward": 1.305,
+      "rest_side": 1.13,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.3,
+      "stride_forward": 0.509
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 35,
+      "rest_angle": 50,
+      "reach": 1.829,
+      "upper_len": 0.909,
+      "lower_len": 1.137,
+      "attach_forward": 0.36,
+      "attach_side": 0.22,
+      "rest_forward": 1.305,
+      "rest_side": 1.13,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.3,
+      "stride_forward": 0.509
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -75,
+      "rest_angle": -92,
+      "reach": 1.701,
+      "upper_len": 0.87,
+      "lower_len": 1.147,
+      "attach_forward": 0.12,
+      "attach_side": 0.31,
+      "rest_forward": 0.455,
+      "rest_side": 1.289,
+      "rest_jitter": 0.016,
+      "coxa_len": 0.288,
+      "stride_forward": 0.437
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 75,
+      "rest_angle": 92,
+      "reach": 1.701,
+      "upper_len": 0.87,
+      "lower_len": 1.147,
+      "attach_forward": 0.12,
+      "attach_side": 0.31,
+      "rest_forward": 0.455,
+      "rest_side": 1.289,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.288,
+      "stride_forward": 0.437
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -108,
+      "rest_angle": -118,
+      "reach": 1.681,
+      "upper_len": 0.89,
+      "lower_len": 1.107,
+      "attach_forward": -0.12,
+      "attach_side": 0.31,
+      "rest_forward": -0.455,
+      "rest_side": 1.245,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.288,
+      "stride_forward": 0.413
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 108,
+      "rest_angle": 118,
+      "reach": 1.681,
+      "upper_len": 0.89,
+      "lower_len": 1.107,
+      "attach_forward": -0.12,
+      "attach_side": 0.31,
+      "rest_forward": -0.455,
+      "rest_side": 1.245,
+      "rest_jitter": 0.018,
+      "coxa_len": 0.288,
+      "stride_forward": 0.413
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -142,
+      "rest_angle": -150,
+      "reach": 1.681,
+      "upper_len": 0.909,
+      "lower_len": 1.107,
+      "attach_forward": -0.36,
+      "attach_side": 0.23,
+      "rest_forward": -1.266,
+      "rest_side": 0.985,
+      "rest_jitter": 0.016,
+      "coxa_len": 0.3,
+      "stride_forward": 0.376
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 142,
+      "rest_angle": 150,
+      "reach": 1.681,
+      "upper_len": 0.909,
+      "lower_len": 1.107,
+      "attach_forward": -0.36,
+      "attach_side": 0.23,
+      "rest_forward": -1.266,
+      "rest_side": 0.985,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.3,
+      "stride_forward": 0.376
+    }
+  ],
+  "appearance": {
+    "fluffiness": 0.88,
+    "fluff_color": [
+      156,
+      172,
+      124
+    ],
+    "leg_thickness": 1.22,
+    "abdomen_scale": [
+      1.12,
+      1.0
+    ],
+    "cephalothorax_scale": [
+      0.8,
+      0.74
+    ],
+    "pedipalp_scale": 1.08,
+    "eye_scale": 1.3,
+    "eye_count": 6,
+    "stripe_color": [
+      92,
+      108,
+      72
+    ],
+    "stripe_alpha": 65,
+    "stripe_count": 3,
+    "highlight_alpha": 130,
+    "abdomen_offset_x": -0.2,
+    "cephalothorax_offset_x": 0.35
+  }
+}

@@ -1,0 +1,51 @@
+{
+  "id": "zoomy",
+  "display_name": "Zoomy",
+  "mood": "zoomy",
+  "speed_multiplier": 1.5,
+  "reaction_radius": 420,
+  "threat_radius": 150,
+  "threat_cursor_speed": 1000,
+  "chase_persistence": 2.8,
+  "boldness": 0.8,
+  "wander_frequency": 0.72,
+  "approach_move_time": [
+    0.35,
+    0.9
+  ],
+  "approach_pause_time": [
+    0.15,
+    0.45
+  ],
+  "idle_time": [
+    0.5,
+    1.6
+  ],
+  "alert_time": [
+    0.2,
+    0.6
+  ],
+  "retreat_time": [
+    0.4,
+    0.85
+  ],
+  "retreat_distance": [
+    160,
+    300
+  ],
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

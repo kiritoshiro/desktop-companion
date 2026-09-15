@@ -1,0 +1,118 @@
+import json
+import re
+from pathlib import Path
+from typing import Dict, List
+
+from .discovery import app_root
+from .skills import SKILL_BY_ID
+
+_SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_. -]+")
+
+
+def safe_preset_filename(name: str) -> str:
+    clean = _SAFE_NAME_RE.sub("_", name.strip()).strip(" ._")
+    if not clean:
+        clean = "preset"
+    return f"{clean}.json"
+
+
+def validate_preset(data: dict) -> None:
+    if not isinstance(data, dict):
+        raise ValueError("Preset must be a JSON object")
+    if not isinstance(data.get("name"), str) or not data["name"].strip():
+        raise ValueError("Preset requires a non-empty name")
+    if not isinstance(data.get("slots"), list):
+        raise ValueError("Preset requires a slots list")
+
+    settings = data.get("settings", {})
+    if settings is not None:
+        if not isinstance(settings, dict):
+            raise ValueError("Preset settings must be an object")
+        if "size_scale" in settings:
+            try:
+                size_scale = float(settings["size_scale"])
+            except Exception as exc:
+                raise ValueError("Preset settings.size_scale must be a number") from exc
+            if size_scale < 0.45 or size_scale > 2.25:
+                raise ValueError("Preset settings.size_scale must be between 0.45 and 2.25")
+        if "interferable" in settings and not isinstance(settings["interferable"], bool):
+            raise ValueError("Preset settings.interferable must be true or false")
+        if "social_play" in settings and not isinstance(settings["social_play"], bool):
+            raise ValueError("Preset settings.social_play must be true or false")
+        if "mood_mode" in settings:
+            valid_moods = {"auto", "playful", "cuddly", "curious", "calm"}
+            if not isinstance(settings["mood_mode"], str) or settings["mood_mode"].lower() not in valid_moods:
+                raise ValueError("Preset settings.mood_mode must be auto, playful, cuddly, curious, or calm")
+        if "flies" in settings and settings["flies"] is not None:
+            flies = settings["flies"]
+            if not isinstance(flies, dict):
+                raise ValueError("Preset settings.flies must be an object")
+            if "enabled" in flies and not isinstance(flies["enabled"], bool):
+                raise ValueError("Preset settings.flies.enabled must be true or false")
+            for key in ("min_interval", "max_interval"):
+                if key in flies:
+                    try:
+                        value = float(flies[key])
+                    except Exception as exc:
+                        raise ValueError(f"Preset settings.flies.{key} must be a number") from exc
+                    if value <= 0 or value > 600:
+                        raise ValueError(f"Preset settings.flies.{key} must be between 0 and 600 seconds")
+            if "max_flies" in flies:
+                try:
+                    max_flies = int(flies["max_flies"])
+                except Exception as exc:
+                    raise ValueError("Preset settings.flies.max_flies must be an integer") from exc
+                if max_flies < 0 or max_flies > 40:
+                    raise ValueError("Preset settings.flies.max_flies must be between 0 and 40")
+            if "spawner" in flies and not isinstance(flies["spawner"], bool):
+                raise ValueError("Preset settings.flies.spawner must be true or false")
+
+    for index, slot in enumerate(data["slots"]):
+        if not isinstance(slot, dict):
+            raise ValueError(f"Slot {index + 1} must be an object")
+        for key in ["model", "personality", "count"]:
+            if key not in slot:
+                raise ValueError(f"Slot {index + 1} missing {key}")
+        if not isinstance(slot["model"], str) or not slot["model"].strip():
+            raise ValueError(f"Slot {index + 1} model must be a non-empty string")
+        if not isinstance(slot["personality"], str) or not slot["personality"].strip():
+            raise ValueError(f"Slot {index + 1} personality must be a non-empty string")
+        if "count_random" in slot and not isinstance(slot["count_random"], bool):
+            raise ValueError(f"Slot {index + 1} count_random must be true or false")
+        if "skills" in slot:
+            if not isinstance(slot["skills"], list):
+                raise ValueError(f"Slot {index + 1} skills must be a list")
+            for skill in slot["skills"]:
+                if not isinstance(skill, str):
+                    raise ValueError(f"Slot {index + 1} skills must contain only strings")
+                if skill.strip().lower() not in SKILL_BY_ID:
+                    raise ValueError(f"Slot {index + 1} has unknown skill: {skill}")
+        try:
+            count = int(slot["count"])
+        except Exception as exc:
+            raise ValueError(f"Slot {index + 1} count must be an integer") from exc
+        if count < 1 or count > 50:
+            raise ValueError(f"Slot {index + 1} count must be between 1 and 50")
+
+
+def load_preset(path: Path) -> Dict:
+    path = Path(path)
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    validate_preset(data)
+    return data
+
+
+def save_preset(data: Dict, path: Path = None) -> Path:
+    validate_preset(data)
+    root = app_root()
+    presets_dir = root / "presets"
+    presets_dir.mkdir(parents=True, exist_ok=True)
+    path = Path(path) if path else presets_dir / safe_preset_filename(data["name"])
+    if not path.is_absolute():
+        path = root / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+    return path

@@ -1,0 +1,91 @@
+{
+  "id": "trapper",
+  "display_name": "Trapper",
+  "mood": "hunter",
+  "mouse_hunter": true,
+  "web_shooter": true,
+  "speed_multiplier": 1.0,
+  "reaction_radius": 720,
+  "threat_radius": 90,
+  "threat_cursor_speed": 1700,
+  "chase_persistence": 4.0,
+  "boldness": 0.9,
+  "wander_frequency": 0.12,
+  "approach_move_time": [
+    0.18,
+    0.4
+  ],
+  "approach_pause_time": [
+    0.1,
+    0.24
+  ],
+  "idle_time": [
+    0.4,
+    1.1
+  ],
+  "alert_time": [
+    0.1,
+    0.24
+  ],
+  "retreat_time": [
+    0.26,
+    0.5
+  ],
+  "retreat_distance": [
+    90,
+    170
+  ],
+  "hunt_approach_speed": [
+    66,
+    176
+  ],
+  "hunt_chase_speed": 210,
+  "chase_retarget_time": [
+    0.06,
+    0.14
+  ],
+  "observe_cursor_speed": 30,
+  "observe_pause_time": [
+    0.2,
+    0.5
+  ],
+  "hunt_catch_distance_mult": 2.4,
+  "turn_rate_multiplier": 2.0,
+  "acceleration_multiplier": 1.6,
+  "web_shot_chance": 0.72,
+  "web_shot_range_mult": 0.9,
+  "web_shot_cooldown": [
+    7.0,
+    13.0
+  ],
+  "web_shot_retry_cooldown": [
+    1.6,
+    3.2
+  ],
+  "wall_web_bias": 0.28,
+  "web_aim_time": [
+    0.28,
+    0.5
+  ],
+  "web_recoil_time": [
+    0.18,
+    0.3
+  ],
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk",
+    "shoot_web",
+    "wall_web"
+  ]
+}

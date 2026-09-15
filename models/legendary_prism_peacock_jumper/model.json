@@ -1,0 +1,196 @@
+{
+  "id": "legendary_prism_peacock_jumper",
+  "display_name": "Prism Peacock Jumper",
+  "base_size": 26,
+  "default_personality": "jumper",
+  "colors": {
+    "body": [
+      28,
+      48,
+      65
+    ],
+    "legs": [
+      25,
+      55,
+      72
+    ],
+    "highlight": [
+      115,
+      240,
+      232
+    ],
+    "eyes": [
+      245,
+      255,
+      255
+    ]
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -35,
+      "rest_angle": -50,
+      "reach": 1.316,
+      "upper_len": 0.68,
+      "lower_len": 0.831,
+      "attach_forward": 0.36,
+      "attach_side": 0.189,
+      "rest_forward": 1.32,
+      "rest_side": 0.844,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.239,
+      "stride_forward": 0.597
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 35,
+      "rest_angle": 50,
+      "reach": 1.316,
+      "upper_len": 0.68,
+      "lower_len": 0.831,
+      "attach_forward": 0.36,
+      "attach_side": 0.189,
+      "rest_forward": 1.32,
+      "rest_side": 0.844,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.239,
+      "stride_forward": 0.597
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -75,
+      "rest_angle": -92,
+      "reach": 1.223,
+      "upper_len": 0.65,
+      "lower_len": 0.838,
+      "attach_forward": 0.12,
+      "attach_side": 0.267,
+      "rest_forward": 0.46,
+      "rest_side": 0.963,
+      "rest_jitter": 0.02,
+      "coxa_len": 0.23,
+      "stride_forward": 0.513
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 75,
+      "rest_angle": 92,
+      "reach": 1.223,
+      "upper_len": 0.65,
+      "lower_len": 0.838,
+      "attach_forward": 0.12,
+      "attach_side": 0.267,
+      "rest_forward": 0.46,
+      "rest_side": 0.963,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.23,
+      "stride_forward": 0.513
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -108,
+      "rest_angle": -118,
+      "reach": 1.21,
+      "upper_len": 0.665,
+      "lower_len": 0.809,
+      "attach_forward": -0.12,
+      "attach_side": 0.267,
+      "rest_forward": -0.46,
+      "rest_side": 0.931,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.23,
+      "stride_forward": 0.484
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 108,
+      "rest_angle": 118,
+      "reach": 1.21,
+      "upper_len": 0.665,
+      "lower_len": 0.809,
+      "attach_forward": -0.12,
+      "attach_side": 0.267,
+      "rest_forward": -0.46,
+      "rest_side": 0.931,
+      "rest_jitter": 0.022,
+      "coxa_len": 0.23,
+      "stride_forward": 0.484
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -142,
+      "rest_angle": -150,
+      "reach": 1.21,
+      "upper_len": 0.68,
+      "lower_len": 0.809,
+      "attach_forward": -0.36,
+      "attach_side": 0.198,
+      "rest_forward": -1.28,
+      "rest_side": 0.735,
+      "rest_jitter": 0.02,
+      "coxa_len": 0.239,
+      "stride_forward": 0.442
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 142,
+      "rest_angle": 150,
+      "reach": 1.21,
+      "upper_len": 0.68,
+      "lower_len": 0.809,
+      "attach_forward": -0.36,
+      "attach_side": 0.198,
+      "rest_forward": -1.28,
+      "rest_side": 0.735,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.239,
+      "stride_forward": 0.442
+    }
+  ],
+  "render_mode": "sprite_rig",
+  "appearance": {
+    "abdomen_scale": [
+      1.04,
+      1.02
+    ],
+    "cephalothorax_scale": [
+      1.12,
+      1.02
+    ],
+    "abdomen_offset_x": -0.22,
+    "cephalothorax_offset_x": 0.18,
+    "pedipalp_scale": 1.25,
+    "eye_scale": 1.95,
+    "eye_count": 6,
+    "eye_layout": "jumping_spider",
+    "shadow_scale": 1.75,
+    "leg_segment_thickness": 9.6,
+    "leg_tip_thickness": 5.4,
+    "foot_bulb": 1.16,
+    "cute_blush": 0.1,
+    "softness_profile": "silky-short",
+    "species_style": "peacock jumping spider",
+    "antennae": {
+      "length": 1.2,
+      "thickness": 0.048,
+      "tip_color_key": "highlight"
+    },
+    "legendary_principle": "prism / speed / acrobatic lure"
+  }
+}

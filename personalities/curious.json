@@ -1,0 +1,50 @@
+{
+  "id": "curious",
+  "display_name": "Curious",
+  "speed_multiplier": 1.05,
+  "reaction_radius": 390,
+  "threat_radius": 180,
+  "threat_cursor_speed": 820,
+  "chase_persistence": 2.2,
+  "boldness": 0.58,
+  "wander_frequency": 0.52,
+  "approach_move_time": [
+    0.45,
+    1.15
+  ],
+  "approach_pause_time": [
+    0.35,
+    0.85
+  ],
+  "idle_time": [
+    1.0,
+    2.8
+  ],
+  "alert_time": [
+    0.35,
+    1.0
+  ],
+  "retreat_time": [
+    0.6,
+    1.2
+  ],
+  "retreat_distance": [
+    210,
+    350
+  ],
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "id": "explorer",
+  "display_name": "Explorer",
+  "mood": "curious",
+  "speed_multiplier": 1.08,
+  "reaction_radius": 430,
+  "threat_radius": 135,
+  "threat_cursor_speed": 1150,
+  "chase_persistence": 1.2,
+  "boldness": 0.76,
+  "wander_frequency": 0.58,
+  "approach_move_time": [
+    0.42,
+    0.95
+  ],
+  "approach_pause_time": [
+    0.12,
+    0.32
+  ],
+  "idle_time": [
+    0.55,
+    1.5
+  ],
+  "alert_time": [
+    0.18,
+    0.42
+  ],
+  "retreat_time": [
+    0.38,
+    0.82
+  ],
+  "retreat_distance": [
+    135,
+    250
+  ],
+  "turn_rate_multiplier": 1.45,
+  "acceleration_multiplier": 1.16,
+  "observe_cursor_speed": 34,
+  "observe_pause_time": [
+    0.18,
+    0.42
+  ],
+  "desktop_hide_seek_interval": [
+    1.6,
+    4.2
+  ],
+  "desktop_hide_chance": 0.92,
+  "desktop_hide_max_distance": 1250,
+  "desktop_hide_max_area_ratio": 0.82,
+  "desktop_hide_duration": [
+    14.0,
+    28.0
+  ],
+  "desktop_hide_approach_time": [
+    4.2,
+    8.0
+  ],
+  "desktop_hide_speed_multiplier": 1.42,
+  "desktop_hidden_linger": 1.0,
+  "desktop_window_weight": 1.2,
+  "desktop_folder_weight": 14.0,
+  "folder_hider": true,
+  "folder_portal_cooldown": [
+    1.0,
+    3.4
+  ],
+  "folder_portal_exit_cooldown": [
+    2.0,
+    6.0
+  ],
+  "folder_portal_dwell": [
+    0.12,
+    0.3
+  ],
+  "folder_portal_exit_time": [
+    1.0,
+    1.9
+  ],
+  "desktop_hide_mouse_safety_radius": 170,
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

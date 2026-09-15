@@ -1,0 +1,115 @@
+{
+  "id": "drifter",
+  "display_name": "Drifter",
+  "mood": "drifter",
+  "drifter": true,
+  "drift_movement": true,
+  "speed_multiplier": 1.22,
+  "reaction_radius": 455,
+  "threat_radius": 145,
+  "threat_cursor_speed": 1120,
+  "chase_persistence": 2.8,
+  "boldness": 0.72,
+  "wander_frequency": 0.54,
+  "approach_move_time": [
+    0.3,
+    0.78
+  ],
+  "approach_pause_time": [
+    0.1,
+    0.3
+  ],
+  "idle_time": [
+    0.65,
+    1.8
+  ],
+  "alert_time": [
+    0.12,
+    0.38
+  ],
+  "retreat_time": [
+    0.34,
+    0.82
+  ],
+  "retreat_distance": [
+    185,
+    340
+  ],
+  "turn_rate_multiplier": 0.96,
+  "acceleration_multiplier": 1.18,
+  "drift_slip": 0.56,
+  "drift_throw_slip": 0.68,
+  "drift_countersteer": 0.46,
+  "drift_wave_speed": 2.35,
+  "drift_switch_time": [
+    1.25,
+    2.85
+  ],
+  "drift_boost_decay": 1.15,
+  "drift_min_speed": 78.0,
+  "drift_full_speed": 190.0,
+  "drift_run_interval": [
+    4.8,
+    10.8
+  ],
+  "drift_run_time": [
+    2.5,
+    4.9
+  ],
+  "drift_run_speed": [
+    160.0,
+    220.0
+  ],
+  "drift_run_start_chance": 0.88,
+  "drift_run_wander_chance": 0.42,
+  "drift_corner_chance": 0.46,
+  "drift_circle_radius": [
+    120.0,
+    260.0
+  ],
+  "drift_circle_turn_rate": [
+    0.9,
+    1.75
+  ],
+  "drift_run_lead": 0.48,
+  "drift_run_radius_wobble": 0.045,
+  "drift_run_flip_chance": 0.06,
+  "drift_run_chain_chance": 0.2,
+  "drift_flip_chance": 0.12,
+  "drift_momentum_build": 1.45,
+  "drift_momentum_decay": 0.92,
+  "drift_breakaway": 0.48,
+  "drift_slide_lead_extra": 0.92,
+  "drift_charge_time": [
+    0.62,
+    1.12
+  ],
+  "drift_slide_time": [
+    1.05,
+    1.85
+  ],
+  "drift_charge_turn_grip": 0.64,
+  "drift_slide_turn_grip": 0.32,
+  "drift_slide_body_turn": 0.4,
+  "drift_slide_accel_grip": 0.44,
+  "drift_inertia_keep": 0.8,
+  "drift_slide_step_slowdown": 1.46,
+  "drift_slide_rehome_slop": 1.62,
+  "drift_slide_max_swinging": 2,
+  "skills": [
+    "approach",
+    "wander",
+    "drift",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

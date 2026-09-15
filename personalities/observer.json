@@ -1,0 +1,72 @@
+{
+  "id": "observer",
+  "display_name": "Observer",
+  "mood": "curious",
+  "horizontal_orbit_observer": true,
+  "speed_multiplier": 0.96,
+  "reaction_radius": 430,
+  "threat_radius": 125,
+  "threat_cursor_speed": 1180,
+  "chase_persistence": 1.4,
+  "boldness": 0.78,
+  "wander_frequency": 0.26,
+  "approach_move_time": [
+    0.45,
+    0.95
+  ],
+  "approach_pause_time": [
+    0.24,
+    0.55
+  ],
+  "idle_time": [
+    0.55,
+    1.6
+  ],
+  "alert_time": [
+    0.22,
+    0.52
+  ],
+  "retreat_time": [
+    0.42,
+    0.9
+  ],
+  "retreat_distance": [
+    145,
+    260
+  ],
+  "observe_orbit_time": [
+    3.2,
+    7.0
+  ],
+  "observe_radius_mult": [
+    4.3,
+    7.1
+  ],
+  "observe_backoff_mult": 1.6,
+  "observe_speed": 44.0,
+  "observe_angular_speed": 1.8,
+  "observe_vertical_scale": 0.56,
+  "observe_horizontal_scale": 1.22,
+  "observe_linger_chance": 0.84,
+  "observe_cursor_range_mult": 1.2,
+  "observe_social_range_mult": 1.0,
+  "observe_social_preference": 0.68,
+  "turn_rate_multiplier": 1.55,
+  "acceleration_multiplier": 1.05,
+  "observe_strafe_alignment": 1.0,
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

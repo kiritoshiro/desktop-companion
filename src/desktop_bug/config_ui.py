@@ -1,0 +1,994 @@
+from __future__ import annotations
+
+import argparse
+import os
+import random
+import subprocess
+import sys
+from pathlib import Path
+
+from PyQt5.QtCore import QSize, QTimer, Qt
+from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file
+from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
+from .skills import DEFAULT_SKILL_IDS, SKILLS, compact_skill_summary, normalize_skill_ids, default_skills_for_personality, COMMON_SKILL_IDS
+
+
+RANDOM_MODEL_ID = "__random_model__"
+RANDOM_PERSONALITY_ID = "__random_personality__"
+MODEL_ICON_SIZE = 56
+MODEL_ICON_CANVAS = 96
+SIZE_OPTIONS = [
+    ("Tiny (60%)", 0.60),
+    ("Small (80%)", 0.80),
+    ("Normal (100%)", 1.00),
+    ("Large (125%)", 1.25),
+    ("Huge (160%)", 1.60),
+]
+MOOD_OPTIONS = [
+    ("Auto - use each personality", "auto"),
+    ("Playful", "playful"),
+    ("Cuddly", "cuddly"),
+    ("Curious", "curious"),
+    ("Calm", "calm"),
+]
+
+
+class SlotTable(QTableWidget):
+    def __init__(self, parent=None):
+        super().__init__(0, 6, parent)
+        self.setHorizontalHeaderLabels(["Creature model", "Personality", "How many", "Pick 1-10", "Skills", ""])
+        self.horizontalHeader().setStretchLastSection(False)
+        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.verticalHeader().setVisible(False)
+        self.setAlternatingRowColors(True)
+        self.setSelectionBehavior(self.SelectRows)
+        self.setSelectionMode(self.SingleSelection)
+        self.setEditTriggers(self.NoEditTriggers)
+        self.setShowGrid(False)
+        self.setMinimumHeight(190)
+
+
+class ConfigWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.root = app_root()
+        self.models = {}
+        self.personalities = {}
+        self.model_icon_cache = {}
+        self.overlay_process = None
+        # Path of the preset the running overlay was launched from.  Saving while
+        # the overlay runs rewrites this file, which the overlay watches and
+        # reloads, so edits apply live without stopping it.
+        self.launched_preset_path = None
+        self.setWindowTitle("Desktop Bug Companion")
+        self.resize(920, 560)
+        self.setMinimumSize(820, 500)
+        self._build_ui()
+        self.refresh_discovery()
+        self.refresh_presets()
+        default_path = find_data_file("presets", "default.json", root=self.root)
+        if default_path.exists():
+            self.load_preset_path(default_path)
+        else:
+            self.add_slot()
+
+        self.status_timer = QTimer(self)
+        self.status_timer.timeout.connect(self.update_process_status)
+        self.status_timer.start(1000)
+
+    def _build_ui(self):
+        self.setStyleSheet(
+            """
+            QWidget { font-size: 10pt; }
+            QGroupBox {
+                font-weight: 600;
+                border: 1px solid #d5dbe3;
+                border-radius: 8px;
+                margin-top: 8px;
+                padding: 7px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+            }
+            QPushButton { padding: 4px 8px; border-radius: 5px; }
+            QPushButton#primaryButton { font-weight: 700; padding: 6px 12px; }
+            QLabel#pageTitle { font-size: 16pt; font-weight: 700; }
+            QLabel#hintLabel { color: #57606a; }
+            QLabel#summaryLabel {
+                color: #24292f;
+                background: #f6f8fa;
+                border: 1px solid #d0d7de;
+                border-radius: 6px;
+                padding: 8px;
+            }
+            QLabel#statusLabel {
+                color: #24292f;
+                background: #f6f8fa;
+                border: 1px solid #d0d7de;
+                border-radius: 6px;
+                padding: 8px;
+            }
+            """
+        )
+
+        root_widget = QWidget(self)
+        self.setCentralWidget(root_widget)
+        layout = QVBoxLayout(root_widget)
+        layout.setContentsMargins(12, 10, 12, 8)
+        layout.setSpacing(6)
+
+        title = QLabel("Desktop Bug Companion")
+        title.setObjectName("pageTitle")
+        intro_tip = (
+            "Build a creature preset by choosing a preset, adding creature slots, "
+            "tuning overlay behavior, then launching. Settings are saved automatically when you launch."
+        )
+        title.setToolTip(intro_tip)
+        root_widget.setToolTip(intro_tip)
+        layout.addWidget(title)
+
+        self.preset_group = QGroupBox("Preset")
+        preset_layout = QGridLayout(self.preset_group)
+        preset_layout.setColumnStretch(1, 2)
+        preset_layout.setColumnStretch(3, 2)
+        self.preset_name = QLineEdit("Default")
+        self.preset_name.setPlaceholderText("Preset name")
+        self.preset_combo = QComboBox()
+        self.load_btn = QPushButton("Load")
+        self.save_btn = QPushButton("Save")
+        self.refresh_btn = QPushButton("Refresh library")
+        preset_layout.addWidget(QLabel("Name:"), 0, 0)
+        preset_layout.addWidget(self.preset_name, 0, 1)
+        preset_layout.addWidget(QLabel("Saved preset:"), 0, 2)
+        preset_layout.addWidget(self.preset_combo, 0, 3)
+        preset_layout.addWidget(self.load_btn, 0, 4)
+        preset_layout.addWidget(self.save_btn, 0, 5)
+        preset_layout.addWidget(self.refresh_btn, 1, 3, 1, 3)
+        layout.addWidget(self.preset_group)
+
+        self.creatures_group = QGroupBox("Creatures")
+        self.creatures_group.setToolTip(
+            "Each row is one creature group. Use Skills to choose which abilities those spiders get at launch."
+        )
+        creatures_layout = QVBoxLayout(self.creatures_group)
+        creatures_layout.setContentsMargins(8, 8, 8, 8)
+        creatures_layout.setSpacing(6)
+
+        quick_row = QHBoxLayout()
+        self.random_model_btn = QPushButton("Random models")
+        self.random_personality_btn = QPushButton("Random personalities")
+        self.random_count_btn = QPushButton("Random counts")
+        self.random_all_btn = QPushButton("Surprise me")
+        quick_row.addWidget(QLabel("Quick set:"))
+        quick_row.addWidget(self.random_model_btn)
+        quick_row.addWidget(self.random_personality_btn)
+        quick_row.addWidget(self.random_count_btn)
+        quick_row.addWidget(self.random_all_btn)
+        quick_row.addStretch(1)
+        creatures_layout.addLayout(quick_row)
+
+        self.table = SlotTable()
+        creatures_layout.addWidget(self.table, 1)
+
+        slot_buttons = QHBoxLayout()
+        self.add_slot_btn = QPushButton("Add creature slot")
+        self.clear_slots_btn = QPushButton("Clear slots")
+        slot_buttons.addWidget(self.add_slot_btn)
+        slot_buttons.addWidget(self.clear_slots_btn)
+        slot_buttons.addStretch(1)
+        creatures_layout.addLayout(slot_buttons)
+        layout.addWidget(self.creatures_group, 1)
+
+        self.behavior_group = QGroupBox("Overlay behavior")
+        behavior_layout = QGridLayout(self.behavior_group)
+        self.size_combo = QComboBox()
+        for label, scale in SIZE_OPTIONS:
+            self.size_combo.addItem(label, scale)
+        self.size_combo.setCurrentIndex(2)
+        self.mood_combo = QComboBox()
+        for label, mode in MOOD_OPTIONS:
+            self.mood_combo.addItem(label, mode)
+        self.interferable_check = QCheckBox("Allow dragging spiders")
+        self.interferable_check.setChecked(True)
+        self.social_play_check = QCheckBox("Allow spiders to play together")
+        self.social_play_check.setChecked(True)
+        behavior_layout.addWidget(QLabel("Size:"), 0, 0)
+        behavior_layout.addWidget(self.size_combo, 0, 1)
+        behavior_layout.addWidget(QLabel("Mood:"), 0, 2)
+        behavior_layout.addWidget(self.mood_combo, 0, 3)
+        behavior_layout.addWidget(self.interferable_check, 1, 1)
+        behavior_layout.addWidget(self.social_play_check, 1, 3)
+        behavior_layout.setColumnStretch(1, 1)
+        behavior_layout.setColumnStretch(3, 1)
+        layout.addWidget(self.behavior_group)
+
+        self.flies_group = QGroupBox("Flies")
+        flies_layout = QGridLayout(self.flies_group)
+        self.flies_enabled_check = QCheckBox("Spawn flies for the spiders to hunt")
+        self.flies_enabled_check.setChecked(True)
+        self.fly_min_spin = QDoubleSpinBox()
+        self.fly_min_spin.setRange(0.3, 120.0)
+        self.fly_min_spin.setDecimals(1)
+        self.fly_min_spin.setSingleStep(0.5)
+        self.fly_min_spin.setSuffix(" s")
+        self.fly_min_spin.setValue(4.0)
+        self.fly_max_spin = QDoubleSpinBox()
+        self.fly_max_spin.setRange(0.4, 240.0)
+        self.fly_max_spin.setDecimals(1)
+        self.fly_max_spin.setSingleStep(0.5)
+        self.fly_max_spin.setSuffix(" s")
+        self.fly_max_spin.setValue(9.0)
+        self.fly_count_spin = QSpinBox()
+        self.fly_count_spin.setRange(0, 40)
+        self.fly_count_spin.setValue(6)
+        self.fly_spawner_check = QCheckBox("Flies emerge from a movable nest object")
+        self.fly_spawner_check.setChecked(True)
+        self.fly_spawner_check.setToolTip(
+            "When on, flies crawl out of a nest you can drag around the screen. "
+            "When off, they drift in from the screen edges."
+        )
+        flies_layout.addWidget(self.flies_enabled_check, 0, 0, 1, 4)
+        flies_layout.addWidget(QLabel("Spawn every (min):"), 1, 0)
+        flies_layout.addWidget(self.fly_min_spin, 1, 1)
+        flies_layout.addWidget(QLabel("to (max):"), 1, 2)
+        flies_layout.addWidget(self.fly_max_spin, 1, 3)
+        flies_layout.addWidget(QLabel("Max flies at once:"), 2, 0)
+        flies_layout.addWidget(self.fly_count_spin, 2, 1)
+        flies_layout.addWidget(self.fly_spawner_check, 3, 0, 1, 4)
+        flies_layout.setColumnStretch(1, 1)
+        flies_layout.setColumnStretch(3, 1)
+        layout.addWidget(self.flies_group)
+
+        self.launch_group = QGroupBox("Launch")
+        launch_layout = QVBoxLayout(self.launch_group)
+        launch_layout.setContentsMargins(8, 8, 8, 8)
+        launch_layout.setSpacing(6)
+        self.summary = QLabel("")
+        self.summary.setVisible(False)
+
+        launch_row = QHBoxLayout()
+        self.open_folder_btn = QPushButton("Open project folder")
+        self.stop_btn = QPushButton("Stop overlay")
+        self.launch_btn = QPushButton("Save and launch overlay")
+        self.launch_btn.setObjectName("primaryButton")
+        self.launch_btn.setDefault(True)
+        launch_row.addWidget(self.open_folder_btn)
+        launch_row.addStretch(1)
+        launch_row.addWidget(self.stop_btn)
+        launch_row.addWidget(self.launch_btn)
+        launch_layout.addLayout(launch_row)
+
+        layout.addWidget(self.launch_group)
+
+        self.status = QLabel("")
+        self.status.setWordWrap(False)
+        self.statusBar().addPermanentWidget(self.status, 1)
+
+        self.add_slot_btn.clicked.connect(self.add_slot)
+        self.clear_slots_btn.clicked.connect(self.clear_slots)
+        self.save_btn.clicked.connect(self.save_current_preset)
+        self.load_btn.clicked.connect(self.load_selected_preset)
+        self.launch_btn.clicked.connect(self.launch_engine)
+        self.stop_btn.clicked.connect(self.stop_overlay)
+        self.refresh_btn.clicked.connect(self.refresh_all)
+        self.open_folder_btn.clicked.connect(self.open_project_folder)
+        self.random_model_btn.clicked.connect(self.set_random_model_options)
+        self.random_personality_btn.clicked.connect(self.set_random_personality_options)
+        self.random_count_btn.clicked.connect(self.set_random_count_options)
+        self.random_all_btn.clicked.connect(self.set_random_all_options)
+        self.size_combo.currentIndexChanged.connect(self.update_summary)
+        self.mood_combo.currentIndexChanged.connect(self.update_summary)
+        self.interferable_check.toggled.connect(self.update_summary)
+        self.social_play_check.toggled.connect(self.update_summary)
+        self.flies_enabled_check.toggled.connect(self.update_summary)
+        self.fly_min_spin.valueChanged.connect(self._on_fly_min_changed)
+        self.fly_max_spin.valueChanged.connect(self._on_fly_max_changed)
+        self.fly_count_spin.valueChanged.connect(self.update_summary)
+        self.fly_spawner_check.toggled.connect(self.update_summary)
+
+        self._set_tooltips()
+        self.update_summary()
+
+    def _on_fly_min_changed(self, value: float) -> None:
+        # Keep the max at or above the min so the spawn range stays valid.
+        if self.fly_max_spin.value() < value:
+            self.fly_max_spin.blockSignals(True)
+            self.fly_max_spin.setValue(value)
+            self.fly_max_spin.blockSignals(False)
+        self.update_summary()
+
+    def _on_fly_max_changed(self, value: float) -> None:
+        if value < self.fly_min_spin.value():
+            self.fly_min_spin.blockSignals(True)
+            self.fly_min_spin.setValue(value)
+            self.fly_min_spin.blockSignals(False)
+        self.update_summary()
+
+    def _set_tooltips(self):
+        self.preset_group.setToolTip("Name, load, save, or refresh presets from the presets folder.")
+        self.behavior_group.setToolTip("Tune global overlay behavior for all launched creatures.")
+        self.flies_group.setToolTip("Flies are prey that buzz around the screen; the spiders hunt, trap, and eat them.")
+        self.flies_enabled_check.setToolTip("Turn the fly spawner on or off. With flies off the spiders ignore prey.")
+        self.fly_min_spin.setToolTip("Shortest gap between fly spawns. Set equal to the max for a fixed timer.")
+        self.fly_max_spin.setToolTip("Longest gap between fly spawns. Each spawn waits a random time in this range.")
+        self.fly_count_spin.setToolTip("How many live flies may share the screen at once.")
+        self.launch_group.setToolTip("Save the current preset and start or stop the overlay.")
+        self.table.setToolTip("Each row is one creature group. Use Skills to choose abilities for that slot.")
+        self.preset_name.setToolTip("This becomes the saved preset file name.")
+        self.preset_combo.setToolTip("Choose an existing preset from the presets folder.")
+        self.refresh_btn.setToolTip("Reload models, personalities, and presets from disk.")
+        self.random_model_btn.setToolTip("Set every slot to choose a random creature model when launched.")
+        self.random_personality_btn.setToolTip("Set every slot to choose a random personality when launched.")
+        self.random_count_btn.setToolTip("Set every slot to spawn a random count from 1 to 10 when launched.")
+        self.random_all_btn.setToolTip("Randomize model, personality, and count for every slot.")
+        self.size_combo.setToolTip("Scale all creatures in the overlay.")
+        self.mood_combo.setToolTip("Override moods, or leave Auto to use personality defaults.")
+        self.interferable_check.setToolTip("When enabled, you can grab spiders; empty overlay space still remains click-through.")
+        self.social_play_check.setToolTip("When enabled, multiple spiders may seek each other out and play.")
+        self.save_btn.setToolTip("Save the current preset. While the overlay is running, this also applies your changes to it live.")
+        self.launch_btn.setToolTip("Start the overlay. While it is already running, this applies your changes live instead of restarting.")
+        self.stop_btn.setToolTip("Stop the overlay process launched from this window.")
+        self.add_slot_btn.setToolTip("Add another creature group row.")
+        self.clear_slots_btn.setToolTip("Remove every creature group row.")
+        self.open_folder_btn.setToolTip("Open the project folder where presets, models, and personalities live.")
+
+    def refresh_all(self):
+        current_rows = self.collect_slots(silent=True)
+        self.refresh_discovery()
+        self.refresh_presets()
+        self.table.setRowCount(0)
+        if current_rows:
+            for slot in current_rows:
+                self.add_slot(
+                    slot.get("model"),
+                    slot.get("personality"),
+                    slot.get("count", 1),
+                    bool(slot.get("count_random", False)),
+                    slot.get("skills"),
+                )
+        else:
+            self.add_slot()
+        self.update_summary()
+
+    def refresh_discovery(self):
+        self.models, model_warnings = discover_models(self.root)
+        self.personalities, personality_warnings = discover_personalities(self.root)
+        self.model_icon_cache = {}
+        warnings = model_warnings + personality_warnings
+        if not self.models:
+            warnings.append("No valid models found in models/*/model.json")
+        if not self.personalities:
+            warnings.append("No valid personalities found in personalities/*.json")
+        self.status.setText("\n".join(warnings) if warnings else "Ready. Build a preset, then press Save and launch overlay.")
+
+    def refresh_presets(self):
+        self.preset_combo.clear()
+        for path in discover_presets(self.root):
+            self.preset_combo.addItem(path.stem, str(path))
+
+    def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None):
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        self.table.setRowHeight(row, max(58, MODEL_ICON_SIZE + 8))
+
+        model_box = QComboBox()
+        model_box.setIconSize(QSize(MODEL_ICON_SIZE, MODEL_ICON_SIZE))
+        model_box.setMinimumWidth(285)
+        model_box.addItem(self._random_model_icon(), "Random model at launch", RANDOM_MODEL_ID)
+        for model in sorted(self.models.values(), key=lambda m: m.get("display_name", m.get("id", ""))):
+            model_box.addItem(self._model_icon(model), model.get("display_name", model["id"]), model["id"])
+        if model_id:
+            idx = model_box.findData(model_id)
+            if idx >= 0:
+                model_box.setCurrentIndex(idx)
+        else:
+            idx = model_box.findData("spider")
+            if idx >= 0:
+                model_box.setCurrentIndex(idx)
+
+        personality_box = QComboBox()
+        personality_box.addItem("Random personality at launch", RANDOM_PERSONALITY_ID)
+        for personality in sorted(self.personalities.values(), key=lambda p: p.get("display_name", p.get("id", ""))):
+            personality_box.addItem(personality.get("display_name", personality["id"]), personality["id"])
+        if personality_id:
+            idx = personality_box.findData(personality_id)
+            if idx >= 0:
+                personality_box.setCurrentIndex(idx)
+        else:
+            idx = personality_box.findData("hunter")
+            if idx >= 0:
+                personality_box.setCurrentIndex(idx)
+
+        count_spin = QSpinBox()
+        count_spin.setMinimum(1)
+        count_spin.setMaximum(50)
+        count_spin.setValue(max(1, min(50, int(count))))
+
+        count_random_check = QCheckBox("Random")
+        count_random_check.setChecked(bool(count_random))
+        count_spin.setEnabled(not count_random_check.isChecked())
+        count_random_check.toggled.connect(lambda enabled, spin=count_spin: spin.setEnabled(not enabled))
+
+        skills_btn = QPushButton()
+        # A slot with no explicit skills follows its personality's default
+        # abilities (common set plus that personality's specialty), so spiders
+        # are not all handed every ability.  Only an explicit skills list from a
+        # saved preset, or a manual edit, counts as "custom" and sticks when the
+        # personality changes.
+        if skills is None:
+            effective_pid = personality_box.currentData()
+            skills_btn.setProperty("skill_ids", self._default_skills_for(effective_pid))
+            skills_btn.setProperty("skills_custom", False)
+        else:
+            skills_btn.setProperty("skill_ids", normalize_skill_ids(skills))
+            skills_btn.setProperty("skills_custom", True)
+        self._refresh_skills_button(skills_btn)
+        skills_btn.clicked.connect(lambda _checked=False, button=skills_btn: self.edit_skills_for_button(button))
+
+        remove_btn = QPushButton("Remove")
+        remove_btn.clicked.connect(lambda: self.remove_slot_by_button(remove_btn))
+
+        self.table.setCellWidget(row, 0, model_box)
+        self.table.setCellWidget(row, 1, personality_box)
+        self.table.setCellWidget(row, 2, count_spin)
+        self.table.setCellWidget(row, 3, count_random_check)
+        self.table.setCellWidget(row, 4, skills_btn)
+        self.table.setCellWidget(row, 5, remove_btn)
+        for col in range(6):
+            self.table.setItem(row, col, QTableWidgetItem(""))
+
+        model_box.currentIndexChanged.connect(self.update_summary)
+        personality_box.currentIndexChanged.connect(
+            lambda _i=0, pb=personality_box, sb=skills_btn: self._on_personality_changed(pb, sb))
+        count_spin.valueChanged.connect(self.update_summary)
+        count_random_check.toggled.connect(self.update_summary)
+        self.update_summary()
+
+    def _random_model_icon(self) -> QIcon:
+        """Small dice-like icon for the random model option."""
+        cache_key = RANDOM_MODEL_ID
+        if cache_key in self.model_icon_cache:
+            return self.model_icon_cache[cache_key]
+        pixmap = QPixmap(MODEL_ICON_CANVAS, MODEL_ICON_CANVAS)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(52, 47, 60, 235))
+        painter.drawRoundedRect(24, 24, 48, 48, 10, 10)
+        painter.setBrush(QColor(245, 238, 255, 245))
+        for x, y in [(36, 36), (60, 36), (48, 48), (36, 60), (60, 60)]:
+            painter.drawEllipse(x - 4, y - 4, 8, 8)
+        painter.end()
+        icon = QIcon(pixmap)
+        self.model_icon_cache[cache_key] = icon
+        return icon
+
+    def _model_icon(self, model: dict) -> QIcon:
+        """Render a live preview thumbnail for a model and cache it for combo boxes.
+
+        The preview uses the same Creature renderer as the overlay, so procedural
+        models and sprite-rig models both get recognizable thumbnails without
+        needing hand-made icon files in every model folder.
+        """
+        cache_key = model.get("id") or model.get("_folder") or repr(model)
+        if cache_key in self.model_icon_cache:
+            return self.model_icon_cache[cache_key]
+
+        pixmap = QPixmap(MODEL_ICON_CANVAS, MODEL_ICON_CANVAS)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        try:
+            from .creature import Creature
+
+            preview_personality = {
+                "id": "preview",
+                "display_name": "Preview",
+                "speed_multiplier": 1.0,
+                "reaction_radius": 120,
+                "boldness": 0.5,
+                "wander_frequency": 0.0,
+                "idle_time": [1.0, 2.0],
+                "move_time": [1.0, 2.0],
+                "mood": model.get("default_personality", "auto"),
+            }
+            creature = Creature(dict(model), preview_personality, MODEL_ICON_CANVAS, MODEL_ICON_CANVAS, size_scale=1.0)
+            creature.x = MODEL_ICON_CANVAS * 0.47
+            creature.y = MODEL_ICON_CANVAS * 0.50
+            creature.heading = 0.0
+            creature.target_heading = 0.0
+            creature.current_speed = 0.0
+            creature.speed = 0.0
+            creature.body_bob = 0.0
+            creature.abdomen_pulse = 0.0
+            creature.ceph_pulse = 0.0
+            # Keep every model readable in the same icon space; this is a visual
+            # swatch, not a scale comparison between species.
+            creature.size = max(16.0, min(22.0, float(model.get("base_size", 25)) * 0.82))
+            creature._initialize_legs()
+            creature.render(painter)
+        except Exception:
+            self._draw_fallback_model_icon(painter, model)
+        painter.end()
+
+        icon = QIcon(pixmap)
+        self.model_icon_cache[cache_key] = icon
+        return icon
+
+    def _draw_fallback_model_icon(self, painter: QPainter, model: dict) -> None:
+        """Simple color-based spider thumbnail used only if the full preview fails."""
+        colors = model.get("colors", {}) if isinstance(model, dict) else {}
+
+        def qcolor(name: str, default, alpha=255):
+            raw = colors.get(name, default)
+            return QColor(int(raw[0]), int(raw[1]), int(raw[2]), alpha)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(qcolor("legs", [26, 22, 20], 135))
+        painter.drawEllipse(18, 39, 60, 25)
+        painter.setBrush(qcolor("body", [48, 38, 33], 255))
+        painter.drawEllipse(26, 34, 31, 28)
+        painter.drawEllipse(51, 37, 24, 22)
+        painter.setBrush(qcolor("highlight", [95, 82, 70], 175))
+        painter.drawEllipse(32, 39, 15, 10)
+        painter.setBrush(qcolor("eyes", [185, 55, 48], 245))
+        painter.drawEllipse(64, 43, 5, 5)
+        painter.drawEllipse(64, 51, 5, 5)
+
+    def _default_skills_for(self, personality_id):
+        """Default abilities for a personality combo value.
+
+        A real personality resolves to its common-plus-specialty default; a
+        Random/unknown selection falls back to the common set (the actual
+        personality's specialty is resolved when the overlay launches).
+        """
+        personality = self.personalities.get(personality_id) if personality_id else None
+        if personality is None:
+            return list(COMMON_SKILL_IDS)
+        return default_skills_for_personality(personality)
+
+    def _on_personality_changed(self, personality_box, skills_btn) -> None:
+        # Follow the new personality's default abilities unless the user has
+        # deliberately customised this slot's skills.
+        if not bool(skills_btn.property("skills_custom")):
+            skills_btn.setProperty("skill_ids", self._default_skills_for(personality_box.currentData()))
+            self._refresh_skills_button(skills_btn)
+        self.update_summary()
+
+    def _refresh_skills_button(self, button: QPushButton) -> None:
+        ids = normalize_skill_ids(button.property("skill_ids"))
+        button.setProperty("skill_ids", ids)
+        button.setText(compact_skill_summary(ids))
+        button.setToolTip("Choose which abilities this creature slot can use at launch.")
+
+    def edit_skills_for_button(self, button: QPushButton) -> None:
+        current = set(normalize_skill_ids(button.property("skill_ids")))
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Choose spider skills")
+        layout = QVBoxLayout(dialog)
+        dialog.setToolTip("Select the abilities that spiders in this slot may use. Leaving this unchanged keeps the personality's default abilities.")
+
+        checks = []
+        for skill in SKILLS:
+            cb = QCheckBox(skill.display_name)
+            cb.setChecked(skill.id in current)
+            cb.setToolTip(skill.description)
+            checks.append((skill.id, cb))
+            layout.addWidget(cb)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        all_btn = buttons.addButton("All", QDialogButtonBox.ActionRole)
+        none_btn = buttons.addButton("None", QDialogButtonBox.ActionRole)
+        all_btn.clicked.connect(lambda: [cb.setChecked(True) for _skill_id, cb in checks])
+        none_btn.clicked.connect(lambda: [cb.setChecked(False) for _skill_id, cb in checks])
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            selected = [skill_id for skill_id, cb in checks if cb.isChecked()]
+            button.setProperty("skill_ids", selected)
+            button.setProperty("skills_custom", True)
+            self._refresh_skills_button(button)
+            self.update_summary()
+
+    def clear_slots(self):
+        if self.table.rowCount() == 0:
+            self.status.setText("There are no creature slots to clear.")
+            return
+        reply = QMessageBox.question(
+            self,
+            "Clear creature slots?",
+            "Remove every creature slot from this preset?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            self.table.setRowCount(0)
+            self.status.setText("All creature slots cleared. Add a slot before saving or launching.")
+            self.update_summary()
+
+    def remove_slot_by_button(self, button):
+        for row in range(self.table.rowCount()):
+            if self.table.cellWidget(row, 5) is button:
+                self.table.removeRow(row)
+                break
+        self.update_summary()
+
+    def collect_slots(self, silent=False):
+        slots = []
+        for row in range(self.table.rowCount()):
+            model_box = self.table.cellWidget(row, 0)
+            personality_box = self.table.cellWidget(row, 1)
+            count_spin = self.table.cellWidget(row, 2)
+            count_random_check = self.table.cellWidget(row, 3)
+            skills_btn = self.table.cellWidget(row, 4)
+            if not model_box or not personality_box or model_box.currentData() is None or personality_box.currentData() is None:
+                continue
+            count_random = bool(count_random_check.isChecked()) if count_random_check else False
+            slot = {
+                "model": model_box.currentData(),
+                "personality": personality_box.currentData(),
+                "count": int(count_spin.value()),
+                "count_random": count_random,
+            }
+            # Only write an explicit skills list when the user customised it.
+            # Otherwise the slot stays personality-driven: the spider uses its
+            # personality's default abilities, resolved when the overlay loads.
+            if skills_btn is not None and bool(skills_btn.property("skills_custom")):
+                slot["skills"] = normalize_skill_ids(skills_btn.property("skill_ids"))
+            slots.append(slot)
+        if not slots and not silent:
+            QMessageBox.warning(self, "No creature slots", "Add at least one creature slot before saving or launching.")
+        return slots
+
+    def current_settings_data(self):
+        return {
+            "size_scale": float(self.size_combo.currentData() or 1.0),
+            "interferable": bool(self.interferable_check.isChecked()),
+            "mood_mode": str(self.mood_combo.currentData() or "auto"),
+            "social_play": bool(self.social_play_check.isChecked()),
+            "flies": {
+                "enabled": bool(self.flies_enabled_check.isChecked()),
+                "min_interval": round(float(self.fly_min_spin.value()), 2),
+                "max_interval": round(float(self.fly_max_spin.value()), 2),
+                "max_flies": int(self.fly_count_spin.value()),
+                "spawner": bool(self.fly_spawner_check.isChecked()),
+            },
+        }
+
+    def current_preset_data(self):
+        data = {
+            "name": self.preset_name.text().strip() or "Default",
+            "slots": self.collect_slots(),
+            "settings": self.current_settings_data(),
+        }
+        validate_preset(data)
+        return data
+
+    def _combo_set_data(self, combo: QComboBox, value) -> None:
+        idx = combo.findData(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+
+    def apply_settings_to_ui(self, settings: dict | None) -> None:
+        settings = settings if isinstance(settings, dict) else {}
+        size_scale = float(settings.get("size_scale", 1.0))
+        closest_index = 0
+        closest_distance = float("inf")
+        for idx in range(self.size_combo.count()):
+            distance = abs(float(self.size_combo.itemData(idx)) - size_scale)
+            if distance < closest_distance:
+                closest_distance = distance
+                closest_index = idx
+        self.size_combo.setCurrentIndex(closest_index)
+        self.interferable_check.setChecked(bool(settings.get("interferable", True)))
+        self.social_play_check.setChecked(bool(settings.get("social_play", True)))
+        mood_mode = str(settings.get("mood_mode", "auto") or "auto").lower()
+        mood_idx = self.mood_combo.findData(mood_mode)
+        self.mood_combo.setCurrentIndex(mood_idx if mood_idx >= 0 else 0)
+
+        flies = settings.get("flies")
+        flies = flies if isinstance(flies, dict) else {}
+        self.flies_enabled_check.setChecked(bool(flies.get("enabled", True)))
+        try:
+            mn = float(flies.get("min_interval", 4.0))
+            mx = float(flies.get("max_interval", 9.0))
+        except (TypeError, ValueError):
+            mn, mx = 4.0, 9.0
+        if mx < mn:
+            mx = mn
+        self.fly_min_spin.blockSignals(True)
+        self.fly_max_spin.blockSignals(True)
+        self.fly_min_spin.setValue(mn)
+        self.fly_max_spin.setValue(mx)
+        self.fly_min_spin.blockSignals(False)
+        self.fly_max_spin.blockSignals(False)
+        try:
+            self.fly_count_spin.setValue(int(flies.get("max_flies", 6)))
+        except (TypeError, ValueError):
+            self.fly_count_spin.setValue(6)
+        self.fly_spawner_check.setChecked(bool(flies.get("spawner", True)))
+        self.update_summary()
+
+    def _iter_row_widgets(self):
+        for row in range(self.table.rowCount()):
+            yield (
+                self.table.cellWidget(row, 0),
+                self.table.cellWidget(row, 1),
+                self.table.cellWidget(row, 2),
+                self.table.cellWidget(row, 3),
+                self.table.cellWidget(row, 4),
+            )
+
+    def update_summary(self):
+        rows = self.table.rowCount()
+        fixed_count = 0
+        random_count_rows = 0
+        random_models = 0
+        random_personalities = 0
+        custom_skill_rows = 0
+        for model_box, personality_box, count_spin, count_random_check, skills_btn in self._iter_row_widgets():
+            if model_box and model_box.currentData() == RANDOM_MODEL_ID:
+                random_models += 1
+            if personality_box and personality_box.currentData() == RANDOM_PERSONALITY_ID:
+                random_personalities += 1
+            if count_random_check and count_random_check.isChecked():
+                random_count_rows += 1
+            elif count_spin:
+                fixed_count += int(count_spin.value())
+            if skills_btn and bool(skills_btn.property("skills_custom")):
+                custom_skill_rows += 1
+
+        if rows == 0:
+            creature_text = "No creature slots yet. Add at least one slot to launch."
+        else:
+            random_text = f" plus {random_count_rows} random-count slot(s)" if random_count_rows else ""
+            creature_text = f"{rows} slot(s), {fixed_count} fixed creature(s){random_text}."
+            if random_models or random_personalities:
+                creature_text += f" Random choices: {random_models} model slot(s), {random_personalities} personality slot(s)."
+            if custom_skill_rows:
+                creature_text += f" Custom skills: {custom_skill_rows} slot(s)."
+
+        size_text = self.size_combo.currentText() if hasattr(self, "size_combo") else "Normal (100%)"
+        mood_text = self.mood_combo.currentText() if hasattr(self, "mood_combo") else "Auto"
+        drag_text = "dragging on" if self.interferable_check.isChecked() else "dragging off"
+        social_text = "social play on" if self.social_play_check.isChecked() else "social play off"
+        summary = f"Preset summary: {creature_text} Size: {size_text}. Mood: {mood_text}. {drag_text}; {social_text}."
+        self.summary.setText(summary)
+        if hasattr(self, "launch_group"):
+            self.launch_group.setToolTip(summary)
+        if hasattr(self, "launch_btn"):
+            self.launch_btn.setToolTip(summary + " Start the overlay, or apply changes live if it is already running.")
+
+    def set_random_model_options(self):
+        if self.table.rowCount() == 0:
+            self.add_slot(RANDOM_MODEL_ID, None, 1, False)
+        for model_box, _personality_box, _count_spin, _count_random_check, _skills_btn in self._iter_row_widgets():
+            if model_box:
+                self._combo_set_data(model_box, RANDOM_MODEL_ID)
+        self.status.setText("Every slot will choose a random model when the overlay launches.")
+        self.update_summary()
+
+    def set_random_personality_options(self):
+        if self.table.rowCount() == 0:
+            self.add_slot(None, RANDOM_PERSONALITY_ID, 1, False)
+        for _model_box, personality_box, _count_spin, _count_random_check, _skills_btn in self._iter_row_widgets():
+            if personality_box:
+                self._combo_set_data(personality_box, RANDOM_PERSONALITY_ID)
+        self.status.setText("Every slot will choose a random personality when the overlay launches.")
+        self.update_summary()
+
+    def set_random_count_options(self):
+        if self.table.rowCount() == 0:
+            self.add_slot(None, None, 1, True)
+        for _model_box, _personality_box, count_spin, count_random_check, _skills_btn in self._iter_row_widgets():
+            if count_spin:
+                count_spin.setValue(random.randint(1, 10))
+            if count_random_check:
+                count_random_check.setChecked(True)
+        self.status.setText("Every slot will spawn a random count from 1 to 10 when the overlay launches.")
+        self.update_summary()
+
+    def set_random_all_options(self):
+        if self.table.rowCount() == 0:
+            self.add_slot(RANDOM_MODEL_ID, RANDOM_PERSONALITY_ID, 1, True)
+        for model_box, personality_box, count_spin, count_random_check, _skills_btn in self._iter_row_widgets():
+            if model_box:
+                self._combo_set_data(model_box, RANDOM_MODEL_ID)
+            if personality_box:
+                self._combo_set_data(personality_box, RANDOM_PERSONALITY_ID)
+            if count_spin:
+                count_spin.setValue(random.randint(1, 10))
+            if count_random_check:
+                count_random_check.setChecked(True)
+        self.status.setText("Surprise mode set: random model, personality, and count for each slot.")
+        self.update_summary()
+
+    def _overlay_running(self) -> bool:
+        return bool(self.overlay_process and self.overlay_process.poll() is None)
+
+    def _apply_live_if_running(self) -> bool:
+        """If the overlay is running, rewrite its preset so it reloads live."""
+        if not self._overlay_running() or not self.launched_preset_path:
+            return False
+        try:
+            save_preset(self.current_preset_data(), Path(self.launched_preset_path))
+            return True
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not apply live", str(exc))
+            return False
+
+    def save_current_preset(self):
+        try:
+            data = self.current_preset_data()
+            path = save_preset(data)
+            self.refresh_presets()
+            idx = self.preset_combo.findData(str(path))
+            if idx >= 0:
+                self.preset_combo.setCurrentIndex(idx)
+            applied = self._apply_live_if_running()
+            if applied:
+                self.status.setText(f"Saved preset: {path}\nApplied changes to the running overlay.")
+            else:
+                self.status.setText(f"Saved preset: {path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Could not save preset", str(exc))
+
+    def load_selected_preset(self):
+        path = self.preset_combo.currentData()
+        if path:
+            self.load_preset_path(Path(path))
+
+    def load_preset_path(self, path: Path):
+        try:
+            data = load_preset(path)
+            self.preset_name.setText(data.get("name", path.stem))
+            self.table.setRowCount(0)
+            for slot in data.get("slots", []):
+                self.add_slot(
+                    slot.get("model"),
+                    slot.get("personality"),
+                    int(slot.get("count", 1)),
+                    bool(slot.get("count_random", False)),
+                    slot.get("skills"),
+                )
+            self.apply_settings_to_ui(data.get("settings"))
+            self.status.setText(f"Loaded preset: {path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Could not load preset", str(exc))
+
+    def ensure_saved_for_launch(self) -> Path:
+        data = self.current_preset_data()
+        path = self.root / "presets" / safe_preset_filename(data["name"])
+        return save_preset(data, path)
+
+    def launch_engine(self):
+        # If an overlay is already running, do not force a stop: rewrite its
+        # preset and let it reload the new models, personalities, counts, skills,
+        # and settings live.
+        if self._overlay_running():
+            if self._apply_live_if_running():
+                self.status.setText("Applied changes to the running overlay. No restart needed.")
+            return
+        try:
+            preset_path = self.ensure_saved_for_launch()
+        except Exception as exc:
+            QMessageBox.critical(self, "Could not prepare preset", str(exc))
+            return
+        if getattr(sys, "frozen", False):
+            cmd = [sys.executable, "--engine", "--preset", str(preset_path)]
+            env = None
+            cwd = str(self.root)
+        else:
+            cmd = [sys.executable, "-m", "desktop_bug.engine", "--preset", str(preset_path)]
+            env = os.environ.copy()
+            existing = env.get("PYTHONPATH", "")
+            src_path = str(self.root / "src")
+            env["PYTHONPATH"] = src_path + (os.pathsep + existing if existing else "")
+            cwd = str(self.root)
+        try:
+            self.overlay_process = subprocess.Popen(cmd, cwd=cwd, env=env)
+            self.launched_preset_path = str(preset_path)
+            self.status.setText("Overlay launched. Edit and press Save to apply changes live, or Stop overlay to close it.")
+        except Exception as exc:
+            QMessageBox.critical(self, "Could not launch overlay", str(exc))
+
+    def stop_overlay(self):
+        if self.overlay_process and self.overlay_process.poll() is None:
+            self.overlay_process.terminate()
+            self.launched_preset_path = None
+            self.status.setText("Stopping overlay...")
+        else:
+            self.launched_preset_path = None
+            self.status.setText("No overlay process is running from this window.")
+
+    def update_process_status(self):
+        if self.overlay_process and self.overlay_process.poll() is not None:
+            code = self.overlay_process.returncode
+            self.overlay_process = None
+            self.launched_preset_path = None
+            self.status.setText(f"Overlay exited with code {code}.")
+
+    def open_project_folder(self):
+        path = str(self.root)
+        try:
+            if sys.platform.startswith("win"):
+                os.startfile(path)  # type: ignore[attr-defined]
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as exc:
+            QMessageBox.warning(self, "Could not open folder", str(exc))
+
+    def closeEvent(self, event):  # noqa: N802 - Qt API name
+        if self.overlay_process and self.overlay_process.poll() is None:
+            reply = QMessageBox.question(
+                self,
+                "Overlay is running",
+                "The spider overlay is still running. Stop it too?",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            )
+            if reply == QMessageBox.Cancel:
+                event.ignore()
+                return
+            if reply == QMessageBox.Yes:
+                self.stop_overlay()
+        super().closeEvent(event)
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description="Desktop Bug Companion settings UI")
+    parser.add_argument("--engine", action="store_true", help="Internal: run the overlay engine from the packaged executable")
+    parser.add_argument("--preset", default=None, help="Preset to use when --engine is present")
+    args, remaining = parser.parse_known_args(argv)
+    if args.engine:
+        from .engine import main as engine_main
+
+        engine_args = []
+        if args.preset:
+            engine_args.extend(["--preset", args.preset])
+        engine_args.extend(remaining)
+        return engine_main(engine_args)
+
+    app = QApplication.instance() or QApplication(sys.argv[:1])
+    window = ConfigWindow()
+    window.show()
+    return app.exec_()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

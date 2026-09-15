@@ -1,0 +1,190 @@
+{
+  "id": "velvet_regal_jumper",
+  "display_name": "Velvet Regal Jumper",
+  "base_size": 25,
+  "default_personality": "curious",
+  "colors": {
+    "body": [
+      38,
+      42,
+      48
+    ],
+    "legs": [
+      52,
+      56,
+      64
+    ],
+    "highlight": [
+      214,
+      218,
+      224
+    ],
+    "eyes": [
+      248,
+      252,
+      255
+    ]
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -35,
+      "rest_angle": -50,
+      "reach": 1.313,
+      "upper_len": 0.713,
+      "lower_len": 0.87,
+      "attach_forward": 0.36,
+      "attach_side": 0.198,
+      "rest_forward": 1.32,
+      "rest_side": 0.883,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.247,
+      "stride_forward": 0.493
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 35,
+      "rest_angle": 50,
+      "reach": 1.313,
+      "upper_len": 0.713,
+      "lower_len": 0.87,
+      "attach_forward": 0.36,
+      "attach_side": 0.198,
+      "rest_forward": 1.32,
+      "rest_side": 0.883,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.247,
+      "stride_forward": 0.493
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -75,
+      "rest_angle": -92,
+      "reach": 1.221,
+      "upper_len": 0.681,
+      "lower_len": 0.878,
+      "attach_forward": 0.12,
+      "attach_side": 0.279,
+      "rest_forward": 0.46,
+      "rest_side": 1.008,
+      "rest_jitter": 0.019,
+      "coxa_len": 0.237,
+      "stride_forward": 0.423
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 75,
+      "rest_angle": 92,
+      "reach": 1.221,
+      "upper_len": 0.681,
+      "lower_len": 0.878,
+      "attach_forward": 0.12,
+      "attach_side": 0.279,
+      "rest_forward": 0.46,
+      "rest_side": 1.008,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.237,
+      "stride_forward": 0.423
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -108,
+      "rest_angle": -118,
+      "reach": 1.206,
+      "upper_len": 0.697,
+      "lower_len": 0.847,
+      "attach_forward": -0.12,
+      "attach_side": 0.279,
+      "rest_forward": -0.46,
+      "rest_side": 0.974,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.237,
+      "stride_forward": 0.4
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 108,
+      "rest_angle": 118,
+      "reach": 1.206,
+      "upper_len": 0.697,
+      "lower_len": 0.847,
+      "attach_forward": -0.12,
+      "attach_side": 0.279,
+      "rest_forward": -0.46,
+      "rest_side": 0.974,
+      "rest_jitter": 0.021,
+      "coxa_len": 0.237,
+      "stride_forward": 0.4
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -142,
+      "rest_angle": -150,
+      "reach": 1.206,
+      "upper_len": 0.713,
+      "lower_len": 0.847,
+      "attach_forward": -0.36,
+      "attach_side": 0.207,
+      "rest_forward": -1.28,
+      "rest_side": 0.769,
+      "rest_jitter": 0.019,
+      "coxa_len": 0.247,
+      "stride_forward": 0.364
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 142,
+      "rest_angle": 150,
+      "reach": 1.206,
+      "upper_len": 0.713,
+      "lower_len": 0.847,
+      "attach_forward": -0.36,
+      "attach_side": 0.207,
+      "rest_forward": -1.28,
+      "rest_side": 0.769,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.247,
+      "stride_forward": 0.364
+    }
+  ],
+  "render_mode": "sprite_rig",
+  "appearance": {
+    "abdomen_scale": [
+      1.02,
+      1.02
+    ],
+    "cephalothorax_scale": [
+      1.11,
+      1.02
+    ],
+    "abdomen_offset_x": -0.24,
+    "cephalothorax_offset_x": 0.16,
+    "pedipalp_scale": 1.18,
+    "eye_scale": 1.75,
+    "eye_count": 6,
+    "eye_layout": "jumping_spider",
+    "shadow_scale": 1.72,
+    "leg_segment_thickness": 9.8,
+    "leg_tip_thickness": 5.4,
+    "foot_bulb": 1.28,
+    "cute_blush": 0.2,
+    "softness_profile": "velvet-low-pile",
+    "species_style": "regal jumping spider"
+  }
+}

@@ -1,0 +1,189 @@
+{
+  "id": "moss_velvet_orbweaver",
+  "display_name": "Moss Velvet Orbweaver",
+  "base_size": 27,
+  "default_personality": "bashful",
+  "colors": {
+    "body": [
+      88,
+      116,
+      74
+    ],
+    "legs": [
+      72,
+      92,
+      58
+    ],
+    "highlight": [
+      172,
+      198,
+      132
+    ],
+    "eyes": [
+      232,
+      238,
+      214
+    ]
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -35,
+      "rest_angle": -50,
+      "reach": 2.096,
+      "upper_len": 1.042,
+      "lower_len": 1.303,
+      "attach_forward": 0.36,
+      "attach_side": 0.26,
+      "rest_forward": 1.267,
+      "rest_side": 1.294,
+      "rest_jitter": 0.015,
+      "coxa_len": 0.297,
+      "stride_forward": 0.484
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 35,
+      "rest_angle": 50,
+      "reach": 2.096,
+      "upper_len": 1.042,
+      "lower_len": 1.303,
+      "attach_forward": 0.36,
+      "attach_side": 0.26,
+      "rest_forward": 1.267,
+      "rest_side": 1.294,
+      "rest_jitter": 0.015,
+      "coxa_len": 0.297,
+      "stride_forward": 0.484
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -75,
+      "rest_angle": -92,
+      "reach": 1.948,
+      "upper_len": 0.997,
+      "lower_len": 1.315,
+      "attach_forward": 0.12,
+      "attach_side": 0.366,
+      "rest_forward": 0.442,
+      "rest_side": 1.476,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.286,
+      "stride_forward": 0.416
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 75,
+      "rest_angle": 92,
+      "reach": 1.948,
+      "upper_len": 0.997,
+      "lower_len": 1.315,
+      "attach_forward": 0.12,
+      "attach_side": 0.366,
+      "rest_forward": 0.442,
+      "rest_side": 1.476,
+      "rest_jitter": 0.015,
+      "coxa_len": 0.286,
+      "stride_forward": 0.416
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -108,
+      "rest_angle": -118,
+      "reach": 1.926,
+      "upper_len": 1.02,
+      "lower_len": 1.268,
+      "attach_forward": -0.12,
+      "attach_side": 0.366,
+      "rest_forward": -0.442,
+      "rest_side": 1.427,
+      "rest_jitter": 0.015,
+      "coxa_len": 0.286,
+      "stride_forward": 0.393
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 108,
+      "rest_angle": 118,
+      "reach": 1.926,
+      "upper_len": 1.02,
+      "lower_len": 1.268,
+      "attach_forward": -0.12,
+      "attach_side": 0.366,
+      "rest_forward": -0.442,
+      "rest_side": 1.427,
+      "rest_jitter": 0.019,
+      "coxa_len": 0.286,
+      "stride_forward": 0.393
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -142,
+      "rest_angle": -150,
+      "reach": 1.926,
+      "upper_len": 1.042,
+      "lower_len": 1.268,
+      "attach_forward": -0.36,
+      "attach_side": 0.271,
+      "rest_forward": -1.229,
+      "rest_side": 1.128,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.297,
+      "stride_forward": 0.358
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 142,
+      "rest_angle": 150,
+      "reach": 1.926,
+      "upper_len": 1.042,
+      "lower_len": 1.268,
+      "attach_forward": -0.36,
+      "attach_side": 0.271,
+      "rest_forward": -1.229,
+      "rest_side": 1.128,
+      "rest_jitter": 0.015,
+      "coxa_len": 0.297,
+      "stride_forward": 0.358
+    }
+  ],
+  "appearance": {
+    "abdomen_scale": [
+      1.24,
+      1.12
+    ],
+    "cephalothorax_scale": [
+      0.86,
+      0.78
+    ],
+    "abdomen_offset_x": -0.25,
+    "cephalothorax_offset_x": 0.36,
+    "pedipalp_scale": 1.02,
+    "eye_scale": 1.05,
+    "eye_count": 8,
+    "shadow_scale": 1.94,
+    "leg_segment_thickness": 10.6,
+    "leg_tip_thickness": 5.9,
+    "foot_bulb": 1.35,
+    "cute_blush": 0.1,
+    "softness_profile": "mossy-soft",
+    "species_style": "orbweaver"
+  },
+  "render_mode": "sprite_rig"
+}

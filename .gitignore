@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Local virtual environments
+.venv/
+venv/
+env/
+
+# PyInstaller/build outputs
+build/
+dist/
+*.spec.bak
+
+# Runtime/user-created data
+presets/*.local.json
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+Desktop.ini

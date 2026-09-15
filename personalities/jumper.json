@@ -1,0 +1,64 @@
+{
+  "id": "jumper",
+  "display_name": "Jumper",
+  "mood": "playful",
+  "constant_small_hops": true,
+  "speed_multiplier": 1.02,
+  "reaction_radius": 390,
+  "threat_radius": 150,
+  "threat_cursor_speed": 1050,
+  "chase_persistence": 2.4,
+  "boldness": 0.72,
+  "wander_frequency": 0.78,
+  "approach_move_time": [
+    0.3,
+    0.7
+  ],
+  "approach_pause_time": [
+    0.1,
+    0.26
+  ],
+  "idle_time": [
+    0.35,
+    1.15
+  ],
+  "alert_time": [
+    0.18,
+    0.48
+  ],
+  "retreat_time": [
+    0.36,
+    0.85
+  ],
+  "retreat_distance": [
+    150,
+    270
+  ],
+  "idle_hop_chance": 0.75,
+  "hop_interval": [
+    0.13,
+    0.32
+  ],
+  "hop_power": [
+    0.4,
+    0.58
+  ],
+  "hop_peak_multiplier": 0.62,
+  "hop_duration_multiplier": 0.72,
+  "acceleration_multiplier": 1.15,
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

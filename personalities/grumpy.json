@@ -1,0 +1,51 @@
+{
+  "id": "grumpy",
+  "display_name": "Grumpy",
+  "mood": "grumpy",
+  "speed_multiplier": 0.82,
+  "reaction_radius": 320,
+  "threat_radius": 200,
+  "threat_cursor_speed": 720,
+  "chase_persistence": 1.2,
+  "boldness": 0.5,
+  "wander_frequency": 0.22,
+  "approach_move_time": [
+    0.4,
+    0.95
+  ],
+  "approach_pause_time": [
+    0.6,
+    1.4
+  ],
+  "idle_time": [
+    1.6,
+    4.2
+  ],
+  "alert_time": [
+    0.4,
+    1.1
+  ],
+  "retreat_time": [
+    0.5,
+    1.0
+  ],
+  "retreat_distance": [
+    150,
+    260
+  ],
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

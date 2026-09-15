@@ -1,0 +1,71 @@
+{
+  "id": "webber",
+  "display_name": "Webber",
+  "mood": "calm",
+  "web_weaver": true,
+  "speed_multiplier": 0.95,
+  "reaction_radius": 320,
+  "threat_radius": 120,
+  "threat_cursor_speed": 1400,
+  "boldness": 0.5,
+  "wander_frequency": 0.16,
+  "chase_persistence": 1.8,
+  "idle_time": [
+    0.6,
+    1.6
+  ],
+  "alert_time": [
+    0.18,
+    0.45
+  ],
+  "approach_move_time": [
+    0.4,
+    1.0
+  ],
+  "approach_pause_time": [
+    0.15,
+    0.4
+  ],
+  "retreat_time": [
+    0.3,
+    0.7
+  ],
+  "retreat_distance": [
+    150,
+    300
+  ],
+  "turn_rate_multiplier": 1.0,
+  "acceleration_multiplier": 1.0,
+  "weave_cooldown": [
+    6.0,
+    12.0
+  ],
+  "weave_retry_cooldown": [
+    4.0,
+    8.0
+  ],
+  "weave_speed": [
+    300.0,
+    400.0
+  ],
+  "web_walk_cooldown": [
+    10.0,
+    22.0
+  ],
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "weave_web",
+    "web_walk"
+  ]
+}

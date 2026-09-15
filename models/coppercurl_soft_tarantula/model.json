@@ -1,0 +1,188 @@
+{
+  "id": "coppercurl_soft_tarantula",
+  "display_name": "Coppercurl Soft Tarantula",
+  "base_size": 29,
+  "default_personality": "mellow",
+  "colors": {
+    "body": [
+      158,
+      94,
+      46
+    ],
+    "legs": [
+      126,
+      76,
+      38
+    ],
+    "highlight": [
+      238,
+      176,
+      92
+    ],
+    "eyes": [
+      68,
+      44,
+      26
+    ]
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -35,
+      "rest_angle": -50,
+      "reach": 1.63,
+      "upper_len": 0.873,
+      "lower_len": 1.056,
+      "attach_forward": 0.36,
+      "attach_side": 0.231,
+      "rest_forward": 1.32,
+      "rest_side": 1.115,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.286,
+      "stride_forward": 0.436
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 35,
+      "rest_angle": 50,
+      "reach": 1.63,
+      "upper_len": 0.873,
+      "lower_len": 1.056,
+      "attach_forward": 0.36,
+      "attach_side": 0.231,
+      "rest_forward": 1.32,
+      "rest_side": 1.115,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.286,
+      "stride_forward": 0.436
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -75,
+      "rest_angle": -92,
+      "reach": 1.516,
+      "upper_len": 0.834,
+      "lower_len": 1.065,
+      "attach_forward": 0.12,
+      "attach_side": 0.326,
+      "rest_forward": 0.46,
+      "rest_side": 1.273,
+      "rest_jitter": 0.016,
+      "coxa_len": 0.275,
+      "stride_forward": 0.374
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 75,
+      "rest_angle": 92,
+      "reach": 1.516,
+      "upper_len": 0.834,
+      "lower_len": 1.065,
+      "attach_forward": 0.12,
+      "attach_side": 0.326,
+      "rest_forward": 0.46,
+      "rest_side": 1.273,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.275,
+      "stride_forward": 0.374
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -108,
+      "rest_angle": -118,
+      "reach": 1.498,
+      "upper_len": 0.854,
+      "lower_len": 1.028,
+      "attach_forward": -0.12,
+      "attach_side": 0.326,
+      "rest_forward": -0.46,
+      "rest_side": 1.23,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.275,
+      "stride_forward": 0.352
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 108,
+      "rest_angle": 118,
+      "reach": 1.498,
+      "upper_len": 0.854,
+      "lower_len": 1.028,
+      "attach_forward": -0.12,
+      "attach_side": 0.326,
+      "rest_forward": -0.46,
+      "rest_side": 1.23,
+      "rest_jitter": 0.018,
+      "coxa_len": 0.275,
+      "stride_forward": 0.352
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -142,
+      "rest_angle": -150,
+      "reach": 1.498,
+      "upper_len": 0.873,
+      "lower_len": 1.028,
+      "attach_forward": -0.36,
+      "attach_side": 0.242,
+      "rest_forward": -1.28,
+      "rest_side": 0.972,
+      "rest_jitter": 0.016,
+      "coxa_len": 0.286,
+      "stride_forward": 0.321
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 142,
+      "rest_angle": 150,
+      "reach": 1.498,
+      "upper_len": 0.873,
+      "lower_len": 1.028,
+      "attach_forward": -0.36,
+      "attach_side": 0.242,
+      "rest_forward": -1.28,
+      "rest_side": 0.972,
+      "rest_jitter": 0.014,
+      "coxa_len": 0.286,
+      "stride_forward": 0.321
+    }
+  ],
+  "render_mode": "sprite_rig",
+  "appearance": {
+    "abdomen_scale": [
+      1.3,
+      1.12
+    ],
+    "cephalothorax_scale": [
+      1.0,
+      0.9
+    ],
+    "abdomen_offset_x": -0.24,
+    "cephalothorax_offset_x": 0.27,
+    "pedipalp_scale": 1.08,
+    "eye_scale": 0.92,
+    "eye_count": 8,
+    "shadow_scale": 2.0,
+    "leg_segment_thickness": 15.3,
+    "leg_tip_thickness": 7.9,
+    "foot_bulb": 1.72,
+    "softness_profile": "curly-plush",
+    "species_style": "curlyhair tarantula"
+  }
+}

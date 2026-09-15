@@ -1,0 +1,50 @@
+{
+  "id": "skittish",
+  "display_name": "Skittish",
+  "speed_multiplier": 1.55,
+  "reaction_radius": 430,
+  "threat_radius": 260,
+  "threat_cursor_speed": 520,
+  "chase_persistence": 0.9,
+  "boldness": 0.14,
+  "wander_frequency": 0.48,
+  "approach_move_time": [
+    0.35,
+    0.8
+  ],
+  "approach_pause_time": [
+    0.25,
+    0.65
+  ],
+  "idle_time": [
+    0.7,
+    2.0
+  ],
+  "alert_time": [
+    0.2,
+    0.7
+  ],
+  "retreat_time": [
+    0.55,
+    1.0
+  ],
+  "retreat_distance": [
+    300,
+    500
+  ],
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

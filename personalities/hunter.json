@@ -1,0 +1,69 @@
+{
+  "id": "hunter",
+  "display_name": "Hunter",
+  "mood": "hunter",
+  "mouse_hunter": true,
+  "speed_multiplier": 1.2,
+  "reaction_radius": 760,
+  "threat_radius": 80,
+  "threat_cursor_speed": 1900,
+  "chase_persistence": 5.6,
+  "boldness": 0.96,
+  "wander_frequency": 0.1,
+  "approach_move_time": [
+    0.12,
+    0.28
+  ],
+  "approach_pause_time": [
+    0.07,
+    0.18
+  ],
+  "idle_time": [
+    0.35,
+    1.1
+  ],
+  "alert_time": [
+    0.08,
+    0.18
+  ],
+  "retreat_time": [
+    0.28,
+    0.55
+  ],
+  "retreat_distance": [
+    90,
+    160
+  ],
+  "hunt_approach_speed": [
+    74,
+    198
+  ],
+  "hunt_chase_speed": 220,
+  "chase_retarget_time": [
+    0.05,
+    0.12
+  ],
+  "observe_cursor_speed": 28,
+  "observe_pause_time": [
+    0.2,
+    0.52
+  ],
+  "hunt_catch_distance_mult": 2.25,
+  "turn_rate_multiplier": 2.25,
+  "acceleration_multiplier": 1.8,
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}

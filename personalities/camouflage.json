@@ -1,0 +1,83 @@
+{
+  "id": "camouflage",
+  "display_name": "Camouflage",
+  "mood": "mellow",
+  "speed_multiplier": 0.92,
+  "reaction_radius": 320,
+  "threat_radius": 175,
+  "threat_cursor_speed": 900,
+  "chase_persistence": 0.8,
+  "boldness": 0.38,
+  "wander_frequency": 0.3,
+  "approach_move_time": [
+    0.55,
+    1.2
+  ],
+  "approach_pause_time": [
+    0.35,
+    0.85
+  ],
+  "idle_time": [
+    1.1,
+    2.8
+  ],
+  "alert_time": [
+    0.35,
+    0.85
+  ],
+  "retreat_time": [
+    0.55,
+    1.15
+  ],
+  "retreat_distance": [
+    190,
+    330
+  ],
+  "turn_rate_multiplier": 1.05,
+  "acceleration_multiplier": 0.95,
+  "observe_cursor_speed": 22,
+  "observe_pause_time": [
+    0.36,
+    0.78
+  ],
+  "camouflage_strength": 0.9,
+  "camouflage_opacity_drop": 0.82,
+  "desktop_hide_seek_interval": [
+    58.0,
+    120.0
+  ],
+  "desktop_hide_chance": 0.012,
+  "desktop_window_weight": 0.4,
+  "desktop_folder_weight": 0.15,
+  "camouflage_color_blend": 0.0,
+  "camouflage_fade_speed": 0.16,
+  "camouflage_initial_visible_time": [
+    4.0,
+    7.0
+  ],
+  "camouflage_touch_visible_time": [
+    5.5,
+    9.0
+  ],
+  "camouflage_idle_delay": 5.0,
+  "camouflage_hide_fade_time": 3.8,
+  "camouflage_reveal_speed": 0.92,
+  "camouflage_cursor_touch_padding": 0.12,
+  "camouflage_social_touch_radius_mult": 1.15,
+  "camouflage_motion_visible_time": 1.15,
+  "skills": [
+    "approach",
+    "wander",
+    "jump",
+    "roll",
+    "chase",
+    "observe",
+    "run_away",
+    "prepare_jump_attack",
+    "inspect",
+    "cuddle",
+    "social_play",
+    "zoomies",
+    "web_walk"
+  ]
+}
