@@ -78,6 +78,12 @@ class LegState:
     last_step_emergency: bool = False
     joint_phase: float = 0.0
     joint_bends: List[float] = field(default_factory=list)
+    # Suspended/carry pose dynamics. These are screen-space spring offsets for
+    # the visible foot and are deliberately separate from grounded contacts.
+    held_spring_x: float = 0.0
+    held_spring_y: float = 0.0
+    held_spring_vx: float = 0.0
+    held_spring_vy: float = 0.0
 
 
 class Creature:
@@ -142,6 +148,11 @@ class Creature:
         self.held_drag_response = 0.0
         self.held_drag_sway_x = 0.0
         self.held_drag_sway_y = 0.0
+        self.held_prev_drag_vx = 0.0
+        self.held_prev_drag_vy = 0.0
+        self.held_drag_accel_x = 0.0
+        self.held_drag_accel_y = 0.0
+        self.held_release_timer = 0.0
         self.inertia_vx = 0.0
         self.inertia_vy = 0.0
         self.inertia_timer = 0.0
@@ -212,6 +223,10 @@ class Creature:
         self._skitter_phase = random.random() * math.tau
         self._skitter_burst_jitter = random.uniform(0.94, 1.16)
         self._prev_heading_gait = self.heading
+        # The cursor is an intent signal, not a torque command.  Keep a
+        # filtered heading target so a zig-zagging mouse produces one graceful
+        # pursuit arc instead of reversing the body every render frame.
+        self._spider_heading_filter = self.heading
         self._spider_locomotion_active = False
         self._spider_gait_frame_updated = False
         # Feeler-probe pacing (lively style only): a gap timer between probes and
@@ -706,9 +721,27 @@ class Creature:
                 "support_stroke_limit": clamp(float(raw.get("support_stroke_limit", 0.62)), 0.35, 1.10),
                 "support_turn_limit": clamp(float(raw.get("support_turn_limit", 0.58)), 0.25, 1.20),
                 "support_blend_time": clamp(float(raw.get("support_blend_time", 0.10)), 0.04, 0.30),
-                "max_body_turn_rate": clamp(float(raw.get("max_body_turn_rate", 2.60)), 0.80, 4.50),
-                "turn_gain": clamp(float(raw.get("turn_gain", 1.0)), 0.80, 2.20),
+                "max_body_turn_rate": clamp(float(raw.get("max_body_turn_rate", 2.60)), 0.80, 8.00),
+                "turn_gain": clamp(float(raw.get("turn_gain", 1.0)), 0.80, 3.00),
+                # A turn is primarily a stance action: the inside legs shorten
+                # while the outside legs lengthen.  This lets the body rotate
+                # through its existing foot contacts instead of demanding a
+                # fresh swing for every few degrees of heading change.
+                "turn_radial_gain": clamp(float(raw.get("turn_radial_gain", 0.34)), 0.0, 0.80),
+                "turn_radial_limit": clamp(float(raw.get("turn_radial_limit", 0.28)), 0.08, 0.55),
+                # Turning has a separate handoff threshold and cadence boost.
+                # A stance should be released before the rigid support fit
+                # stalls, rather than waiting for the generic stride trigger.
+                "turn_step_pressure": clamp(float(raw.get("turn_step_pressure", 0.62)), 0.45, 0.88),
+                "turn_cycle_gain": clamp(float(raw.get("turn_cycle_gain", 0.26)), 0.08, 0.80),
+                "turn_error_drive": clamp(float(raw.get("turn_error_drive", 1.25)), 0.40, 2.40),
                 "turn_speed_floor": clamp(float(raw.get("turn_speed_floor", 0.15)), 0.10, 0.60),
+                # Mouse/target bearing is intentionally filtered separately
+                # from the mechanical body turn.  This removes high-frequency
+                # target reversals while preserving a quick response to a
+                # sustained turn request.
+                "heading_smoothing": clamp(float(raw.get("heading_smoothing", 7.0)), 3.0, 18.0),
+                "heading_deadband": clamp(float(raw.get("heading_deadband", 0.045)), 0.015, 0.16),
             }
         except (TypeError, ValueError):
             return None
@@ -728,6 +761,11 @@ class Creature:
 
     def _spider_reanchor_contacts(self) -> None:
         """Re-establish contacts after an externally controlled movement mode."""
+        # External movement (dragging, throwing, jumping) may have changed the
+        # body heading without going through the grounded controller.  Start
+        # the next pursuit from that real pose instead of replaying a stale
+        # filtered cursor bearing.
+        self._spider_heading_filter = self.heading
         for leg in self.legs:
             if leg.stepping:
                 leg.contact_state = "swing"
@@ -753,6 +791,52 @@ class Creature:
         ca, sa = math.cos(angle), math.sin(angle)
         return forward * ca - side * sa, forward * sa + side * ca
 
+    def _spider_turn_radial_adjustment(
+        self, leg: LegState, forward: float, side: float,
+        turn_delta: float, config: dict,
+    ) -> float:
+        """Return a bounded stance-length change for one incremental turn.
+
+        ``side`` is in the controller's screen-relative body frame, where a
+        positive heading change turns toward the positive-side legs.  Those
+        inside legs contract and the opposite-side legs extend.  The change is
+        deliberately an instantaneous actuation cue, not a stored foot move:
+        the tarsus remains fixed in world space while the support fit uses the
+        cue to find the next body pose.
+        """
+        if abs(turn_delta) <= 1e-7:
+            return 0.0
+        radius = math.hypot(forward, side)
+        if radius <= 1e-5:
+            return 0.0
+        side_sign = self._side_sign(leg.definition.get("side", "right"))
+        lateral_leverage = clamp(abs(side) / radius, 0.35, 1.0)
+        # Positive turn -> positive-side/inside legs contract.  The sign is
+        # reversed for the opposite side, producing the outside push.
+        signed_change = -turn_delta * side_sign
+        gain = config.get("turn_radial_gain", 0.34)
+        limit = config.get("turn_radial_limit", 0.28) * self.size
+        change = signed_change * self.size * gain * (0.72 + 0.28 * lateral_leverage)
+        return clamp(change, -limit, limit)
+
+    def _spider_turn_rehome_allowance(self, leg: LegState, config: dict) -> float:
+        """Allow a planted foot to follow the body's turn without replanting.
+
+        A fixed contact naturally sweeps through a larger body-relative arc as
+        the body rotates.  That displacement is not a bad foot placement.  Only
+        translation, a reach violation, or a near-limit stance should trigger a
+        swing, which removes the tiny corrective taps during quick turns.
+        """
+        if leg.contact_state != "stance" or leg.stepping or leg.pending_step:
+            return 0.0
+        local_f, local_s = self._world_to_body_local(leg.foot_x, leg.foot_y)
+        radius = math.hypot(local_f, local_s)
+        turn_limit = max(0.05, float(config.get("support_turn_limit", 0.58)))
+        accumulated = clamp(abs(float(getattr(leg, "stance_turn", 0.0))), 0.0, turn_limit)
+        # Arc length is a conservative allowance for the rotation-only part of
+        # the target error; the reach/side checks below still remain hard gates.
+        return radius * accumulated * 0.92
+
     def _spider_support_pose(self, scale: float, move_f: float, move_s: float,
                              turn_delta: float, config: dict):
         """Fit a rigid body pose to the fixed feet after one proposed stroke."""
@@ -775,6 +859,13 @@ class Creature:
             )
             q_f = base_f + stroke_f
             q_s = base_s + stroke_s
+            radial_change = self._spider_turn_radial_adjustment(
+                leg, base_f, base_s, turn_delta * scale, config
+            )
+            if radial_change:
+                base_radius = max(1e-5, math.hypot(base_f, base_s))
+                q_f += base_f / base_radius * radial_change
+                q_s += base_s / base_radius * radial_change
             weight = max(0.01, float(leg.support_weight))
             records.append((leg, q_f, q_s, stroke_f, stroke_s, stance_turn, weight))
             total_weight += weight
@@ -837,7 +928,15 @@ class Creature:
                 float(leg.definition.get("attach_side", 0.30)) * self.size * 0.72,
                 float(leg.definition.get("rest_side", 1.0)) * self.size * 0.30,
             )
-            if side * local_s < min_side:
+            # A fixed tarsus can sweep inward during a turn.  Keep a hard
+            # anti-crossing floor, but do not reject the support pose merely
+            # because the foot has temporarily moved inside its neutral side
+            # lane; that rejection was what stalled rotation and triggered a
+            # burst of corrective taps.
+            side_floor = min_side
+            if abs(stance_turn) > 1e-4 or abs(turn_delta) > 1e-4:
+                side_floor = max(self.size * 0.05, min_side * 0.20)
+            if side * local_s < side_floor:
                 return None
             if abs(local_f) > self.size * 2.45:
                 return None
@@ -853,6 +952,24 @@ class Creature:
         # re-anchoring the contacts on the next controller frame.
         return self.state not in ("Jump", "Land", "Roll", "DriftRun", "Dragged")
 
+    def _spider_filtered_heading(self, raw_heading: float, dt: float, config: dict) -> float:
+        """Filter target bearing without slowing the actual body solver.
+
+        A cursor can change direction several times between two meaningful
+        locomotion decisions.  A first-order angular filter makes those changes
+        readable as an intentional arc.  The deadband prevents tiny bearing
+        noise around the cursor from constantly waking the turn/gait scheduler.
+        The wrapped error keeps the filter stable across +/- pi.
+        """
+        current = float(getattr(self, "_spider_heading_filter", self.heading))
+        error = ((raw_heading - current + math.pi) % math.tau) - math.pi
+        if abs(error) <= config["heading_deadband"]:
+            return current
+        alpha = 1.0 - math.exp(-config["heading_smoothing"] * max(0.0, min(dt, 0.10)))
+        current += error * alpha
+        self._spider_heading_filter = current
+        return current
+
     def _spider_locomotion_intent(self, dt: float) -> Tuple[float, float, float]:
         """Convert behavior state into a local stroke and turn request."""
         dx = self.target_x - self.x
@@ -861,7 +978,12 @@ class Creature:
         strafe = self.state == "Observe" and self._is_observer_personality()
         self.strafe_observe = strafe
         if target_dist > 2.0 and not strafe:
-            self.target_heading = math.atan2(dy, dx)
+            raw_heading = math.atan2(dy, dx)
+            spider_gait = self._spider_gait_config()
+            if spider_gait is not None:
+                self.target_heading = self._spider_filtered_heading(raw_heading, dt, spider_gait)
+            else:
+                self.target_heading = raw_heading
 
         desired_speed = self.speed if not self.motion_paused else 0.0
         if target_dist < 15.0 and self.state not in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun"):
@@ -888,6 +1010,11 @@ class Creature:
         request_f = (req_vx * fx + req_vy * fy) * dt
         request_s = (req_vx * rx + req_vy * ry) * dt
         turn_mult = 1.35 if self.state in ("Chase", "Retreat", "Startled") else 1.0
+        if self.state in ("Alert", "Approach", "Chase", "Observe", "Retreat", "Startled"):
+            # The legacy body path already honors this personality control. Keep
+            # the stance-driven path equally responsive for hunters and skittish
+            # spiders instead of silently falling back to the base turn rate.
+            turn_mult *= float(self.personality.get("turn_rate_multiplier", 1.0))
         if spider_gait is not None:
             turn_mult *= spider_gait["turn_gain"]
         requested_turn = clamp(angle_error, -self.turn_rate * turn_mult * dt, self.turn_rate * turn_mult * dt)
@@ -997,7 +1124,11 @@ class Creature:
             # with the body and made planted feet slide visibly while walking.
             # The scheduler now replants before this becomes a long limb.  Active
             # swings may still use a safety envelope because they are not contacts.
-            if not leg.stepping and not leg.pending_step:
+            if (
+                not leg.stepping
+                and not leg.pending_step
+                and self.held_release_timer <= 0.0
+            ):
                 return leg.foot_x, leg.foot_y
             return self._limit_world_point_to_leg_reach(leg, leg.foot_x, leg.foot_y, visual=True)
         if lively:
@@ -2117,6 +2248,60 @@ class Creature:
             # Keep some scrabble/stretch, but never let the visible leg become elastic.
             self._soft_limit_leg_state(leg, blend=0.55 if factor >= 0.50 else 0.78)
 
+    def _update_held_leg_springs(self, dt: float) -> None:
+        """Drive a damped, per-leg carry response from hand motion.
+
+        A held spider has no ground contact, so its feet must not be advanced by
+        the walking gait. They should still react to the acceleration of the
+        hand: proximal mass lags, then the relaxed chain settles with a small
+        phase difference from its neighbors. The spring offsets are applied only
+        to the rendered carried pose; stored ground contacts remain untouched.
+        """
+        chain_config = self._sprite_leg_chain_config() or {}
+        try:
+            bounce = clamp(float(chain_config.get("carry_bounce", 0.18)), 0.04, 0.36)
+            stiffness = clamp(float(chain_config.get("carry_spring", 1.0)), 0.65, 1.50)
+        except (TypeError, ValueError):
+            bounce, stiffness = 0.18, 1.0
+        speed01 = clamp(self.current_speed / 260.0, 0.0, 1.0)
+        response = clamp(float(getattr(self, "held_drag_response", 0.0)), 0.0, 1.0)
+        accel_scale = max(1.0, self.size * 18.0)
+        accel_x = clamp(float(getattr(self, "held_drag_accel_x", 0.0)) / accel_scale, -1.0, 1.0)
+        accel_y = clamp(float(getattr(self, "held_drag_accel_y", 0.0)) / accel_scale, -1.0, 1.0)
+        acceleration_level = clamp(math.hypot(accel_x, accel_y), 0.0, 1.0)
+        motion_level = clamp(max(response, acceleration_level * 0.62), 0.0, 1.0)
+        held_clock = float(getattr(self, "held_pose_clock", 0.0))
+
+        for index, leg in enumerate(self.legs):
+            phase = float(getattr(leg, "phase_seed", 0.0))
+            # Each foot has its own delayed wave. The acceleration term creates
+            # a genuine hand-following lag; the smaller wave prevents eight
+            # legs from moving as one rigid fan while the hand is in motion.
+            wave_phase = held_clock * (3.0 + speed01 * 1.5) + phase * 0.42 + index * 0.57
+            wave_x = math.sin(wave_phase) * bounce * (0.16 + response * 0.24)
+            wave_y = math.cos(wave_phase * 0.86 + 0.7) * bounce * (0.20 + response * 0.32)
+            target_x = self.size * (
+                -accel_x * (0.10 + response * 0.20)
+                + wave_x * motion_level
+            )
+            target_y = self.size * (
+                -accel_y * (0.08 + response * 0.16)
+                + wave_y * motion_level
+            )
+            target_x = clamp(target_x, -self.size * 0.30, self.size * 0.30)
+            target_y = clamp(target_y, -self.size * 0.24, self.size * 0.24)
+
+            spring_k = (38.0 + speed01 * 16.0) * stiffness
+            damping = 5.8 + response * 1.8
+            leg.held_spring_vx += (target_x - leg.held_spring_x) * spring_k * dt
+            leg.held_spring_vy += (target_y - leg.held_spring_y) * spring_k * dt
+            leg.held_spring_vx *= math.exp(-damping * dt)
+            leg.held_spring_vy *= math.exp(-damping * dt)
+            leg.held_spring_x += leg.held_spring_vx * dt
+            leg.held_spring_y += leg.held_spring_vy * dt
+            leg.held_spring_x = clamp(leg.held_spring_x, -self.size * 0.30, self.size * 0.30)
+            leg.held_spring_y = clamp(leg.held_spring_y, -self.size * 0.25, self.size * 0.25)
+
     def _startle_amount(self) -> float:
         if self.dragging:
             return 1.0
@@ -2251,6 +2436,11 @@ class Creature:
         self.held_drag_response = 0.0
         self.held_drag_sway_x = 0.0
         self.held_drag_sway_y = 0.0
+        self.held_prev_drag_vx = 0.0
+        self.held_prev_drag_vy = 0.0
+        self.held_drag_accel_x = 0.0
+        self.held_drag_accel_y = 0.0
+        self.held_release_timer = 0.0
         self.grab_offset_x = self.x - mx
         self.grab_offset_y = self.y - my
         self.drag_vel_x = 0.0
@@ -2264,6 +2454,10 @@ class Creature:
             leg.stepping = False
             leg.pending_step = False
             leg.lift = 0.0
+            leg.held_spring_x = 0.0
+            leg.held_spring_y = 0.0
+            leg.held_spring_vx = 0.0
+            leg.held_spring_vy = 0.0
             leg.contact_state = "air"
             leg.support_weight = 0.0
             leg.contact_age = 0.0
@@ -2324,6 +2518,10 @@ class Creature:
         if not self.dragging:
             return
         self.dragging = False
+        # The first paint after release must not expose a carried contact that
+        # is still outside the grounded chain envelope. Keep a short safety
+        # window while the gait scheduler starts its visible replant steps.
+        self.held_release_timer = 0.24
         self.motion_paused = False
         speed = math.hypot(self.drag_vel_x, self.drag_vel_y)
         if speed > 1.0:
@@ -2450,11 +2648,19 @@ class Creature:
             response_blend = 1.0 - math.exp(-dt * 7.0)
             self.held_drag_response += (response_target - self.held_drag_response) * response_blend
             self.held_pose_clock += dt * (1.15 + self.held_drag_response * 2.35)
+            drag_accel_x = (self.drag_vel_x - self.held_prev_drag_vx) / dt
+            drag_accel_y = (self.drag_vel_y - self.held_prev_drag_vy) / dt
+            self.held_prev_drag_vx = self.drag_vel_x
+            self.held_prev_drag_vy = self.drag_vel_y
+            accel_blend = 1.0 - math.exp(-dt * 10.0)
+            self.held_drag_accel_x += (drag_accel_x - self.held_drag_accel_x) * accel_blend
+            self.held_drag_accel_y += (drag_accel_y - self.held_drag_accel_y) * accel_blend
             sway_target_x = clamp(self.drag_vel_x / 520.0, -1.0, 1.0) * self.size * 0.15
             sway_target_y = clamp(self.drag_vel_y / 520.0, -1.0, 1.0) * self.size * 0.07
             sway_blend = 1.0 - math.exp(-dt * 8.0)
             self.held_drag_sway_x += (sway_target_x - self.held_drag_sway_x) * sway_blend
             self.held_drag_sway_y += (sway_target_y - self.held_drag_sway_y) * sway_blend
+            self._update_held_leg_springs(dt)
             # Being held is a quiet, timid pose: preserve gentle breathing but
             # remove the high-frequency bob/sway that previously looked like a
             # frightened tremor and made the legs shake against their roots.
@@ -2481,6 +2687,7 @@ class Creature:
             return
 
         self.startled_timer = max(0.0, self.startled_timer - dt)
+        self.held_release_timer = max(0.0, self.held_release_timer - dt)
         self._startle_highlight_suppression = max(
             0.0, self._startle_highlight_suppression - dt
         )
@@ -4255,9 +4462,9 @@ class Creature:
             phase_rate = 0.0
         elif custom_hand_palps:
             # Keep a slow, visible palp-work cycle alive even when the legs are
-            # planted.  The previous clock was so slow, and its joint wave so
-            # small, that the two appendages looked like solid rods.
-            phase_rate = 0.86 + m.arousal * 0.72 + m.curiosity * 0.46 + speed01 * 0.24
+            # planted.  A palp is a free sensory hand, not a stance leg: it can
+            # make a larger exploratory stroke without waiting for the gait.
+            phase_rate = 1.08 + m.arousal * 0.86 + m.curiosity * 0.58 + speed01 * 0.30
         else:
             phase_rate = 1.8 + m.arousal * 3.2 + m.curiosity * 1.6 + speed01 * 2.0
         for i in range(2):
@@ -4282,7 +4489,11 @@ class Creature:
         # sensory hand; keeping the chain short prevents an antler silhouette.
         # Models may provide their own anatomical rest pose, but malformed
         # values fall back to this deliberately folded tarantula profile.
-        default_angle_profile = [0.80, 0.22, -0.18, -0.34, -0.48]
+        # Absolute link bearings form a smooth serial curl. The old profile
+        # changed most of its heading in the first two links, which made the
+        # palp read like a row of rigid insect teeth instead of a hand bending
+        # through its knuckles.
+        default_angle_profile = [0.90, 0.56, 0.22, -0.13, -0.46]
         raw_angle_profile = cfg.get("rest_angles", default_angle_profile)
         if not isinstance(raw_angle_profile, list):
             raw_angle_profile = default_angle_profile
@@ -4295,7 +4506,7 @@ class Creature:
         ):
             angle_profile = list(default_angle_profile[:segments])
         lift_profile = [1.00, 0.55, 0.20, 0.06, 0.0]
-        phase_offsets = [0.00, 0.18, 0.34, 0.50, 0.64]
+        phase_offsets = [0.00, 0.12, 0.24, 0.34, 0.44]
         angle_profile = angle_profile[:segments]
         lift_profile = lift_profile[:segments]
         phase_offsets = phase_offsets[:segments]
@@ -4327,14 +4538,30 @@ class Creature:
             return values
 
         joint_steering = _joint_profile(
-            "joint_steering", [0.10, 0.18, 0.11, 0.04, 0.02]
+            "joint_steering", [0.24, 0.40, 0.34, 0.24, 0.14]
         )
         joint_steering_limits = _joint_profile(
-            "joint_steering_limits", [0.12, 0.24, 0.16, 0.08, 0.05]
+            "joint_steering_limits", [0.42, 0.66, 0.58, 0.44, 0.30]
         )
+        serial_follow = clamp(float(cfg.get("serial_follow", 0.68)), 0.0, 0.94)
         joint_angle_limits = _joint_profile(
-            "joint_angle_limits", [0.18, 0.24, 0.21, 0.15, 0.09]
+            "joint_angle_limits", [0.38, 0.60, 0.54, 0.40, 0.26]
         )
+        # Walking legs are constrained by stance support.  Pedipalps are free
+        # sensory/manipulation appendages, so give their knuckles a separate
+        # larger ROM envelope.  This is a joint envelope, not extra segment
+        # length: every rendered link still uses its fixed model length.
+        free_rom = _joint_profile(
+            "free_range_of_motion", [0.48, 0.78, 0.68, 0.54, 0.38]
+        )
+        joint_angle_limits = [
+            max(limit, free_rom[index])
+            for index, limit in enumerate(joint_angle_limits)
+        ]
+        joint_steering_limits = [
+            max(limit, free_rom[index] * 1.12)
+            for index, limit in enumerate(joint_steering_limits)
+        ]
 
         if len(self.antenna_segment_angles) != 2:
             self.antenna_segment_angles = [[], []]
@@ -4381,10 +4608,12 @@ class Creature:
         min_lateral = clamp(float(cfg.get("hand_min_lateral", 0.20)), 0.10, rest_lateral)
         max_lateral = clamp(float(cfg.get("hand_max_lateral", 0.86)), rest_lateral, 1.30)
         rub_frequency = clamp(float(cfg.get("rub_frequency", 0.92)), 0.45, 1.80)
-        rub_lateral_amount = clamp(float(cfg.get("rub_lateral_amount", 0.12)), 0.0, 0.24)
-        rub_forward_amount = clamp(float(cfg.get("rub_forward_amount", 0.045)), 0.0, 0.12)
-        rub_joint_angle = clamp(float(cfg.get("rub_joint_angle", 0.10)), 0.02, 0.22)
-        rub_lift_amount = clamp(float(cfg.get("rub_lift_amount", 0.08)), 0.0, 0.18)
+        rub_lateral_amount = clamp(float(cfg.get("rub_lateral_amount", 0.18)), 0.0, 0.34)
+        rub_forward_amount = clamp(float(cfg.get("rub_forward_amount", 0.09)), 0.0, 0.20)
+        rub_joint_angle = clamp(float(cfg.get("rub_joint_angle", 0.42)), 0.02, 0.72)
+        rub_lift_amount = clamp(float(cfg.get("rub_lift_amount", 0.24)), 0.0, 0.42)
+        knuckle_wave_delay = clamp(float(cfg.get("knuckle_wave_delay", 0.18)), 0.08, 0.36)
+        knuckle_lift_delay = clamp(float(cfg.get("knuckle_lift_delay", 0.24)), 0.10, 0.44)
         try:
             ceph_scale = self._appearance("cephalothorax_scale", [0.70, 0.66])
             ceph_forward = float(self._appearance("cephalothorax_offset_x", 0.40))
@@ -4414,7 +4643,11 @@ class Creature:
         )
         if explicit_hand_target:
             gesture_level = max(gesture_level, 0.72 * hand_activity)
-        joint_rub_profile = [0.55, 0.95, 1.10, 0.82, 0.52]
+        # The flex wave peaks in the middle knuckles, then tapers toward the
+        # small terminal claw. Every link follows the same curl with a short
+        # delay; independently alternating waves made the old palp zigzag like
+        # a row of teeth instead of bending as a small hand.
+        joint_rub_profile = [0.32, 0.70, 1.00, 0.82, 0.56]
 
         for side_index, side_sign in enumerate((-1.0, 1.0)):
             if len(self.antenna_segment_angles[side_index]) != segments:
@@ -4422,7 +4655,8 @@ class Creature:
             if len(self.antenna_joint_lifts[side_index]) != segments:
                 self.antenna_joint_lifts[side_index] = [proximal_rise * lift for lift in lift_profile]
 
-            phase = self.antenna_phase[side_index]
+            side_phase = self.antenna_phase[side_index]
+            phase = side_phase
             if custom_hand_palps and bool(cfg.get("symmetric_rest", False)):
                 # The two pedipalps are independent when commanded, but their
                 # neutral pose should be a mirrored pair.  A random phase per
@@ -4482,6 +4716,7 @@ class Creature:
                 grip_target - self.antenna_hand_grips[side_index]
             ) * (1.0 - math.exp(-dt * 9.0))
 
+            inherited_delta = 0.0
             for segment_index in range(segments):
                 delayed_phase = phase - phase_offsets[segment_index]
                 joint_wave = math.sin(delayed_phase) * (0.018 + m.curiosity * 0.022)
@@ -4511,17 +4746,51 @@ class Creature:
                 if hand_activity > 0.01:
                     target_angle += side_sign * hand_activity * 0.010 * math.sin(delayed_phase * 0.85)
                 if custom_hand_palps and not self.dragging:
-                    # Let the rub travel through the knuckles with a delayed,
-                    # tapered wave. The middle joints do most of the folding;
-                    # the distal claw stays controlled instead of whipping.
+                    # Let one coherent curl travel through the knuckles with a
+                    # short proximal-to-distal delay. Keeping adjacent phases
+                    # close prevents the alternating bends that read as scary
+                    # insect teeth or antlers.
                     joint_wave_scale = joint_rub_profile[min(segment_index, len(joint_rub_profile) - 1)]
+                    knuckle_phase = (
+                        rub_phase
+                        - segment_index * knuckle_wave_delay
+                        + side_index * 0.08
+                    )
                     target_angle += (
                         side_sign
-                        * math.sin(rub_phase - segment_index * 0.64)
+                        * math.sin(knuckle_phase)
                         * rub_joint_angle
                         * gesture_level
                         * joint_wave_scale
                     )
+                    # Preserve a little independent left/right hand motion,
+                    # but keep it smooth along the chain instead of giving
+                    # every knuckle a different direction.
+                    side_wave = math.sin(
+                        side_phase * 0.82 + 0.65 + segment_index * 0.04
+                    )
+                    target_angle += (
+                        side_wave
+                        * rub_joint_angle
+                        * gesture_level
+                        * 0.24
+                    )
+                    # Attention opens the hand in a second, gentle plane. The
+                    # proximal links lift first and the distal links fold back,
+                    # like a tiny hand feeling its way around an object.
+                    if attention_level > 0.01:
+                        probe_fold = math.sin(
+                            rub_phase * 0.62
+                            - segment_index * knuckle_wave_delay * 1.25
+                            + side_index * 0.11
+                        )
+                        target_angle += (
+                            side_sign
+                            * attention_level
+                            * rub_joint_angle
+                            * (0.18 if segment_index < 2 else -0.11)
+                            * probe_fold
+                        )
 
                 # A hand target can steer a knuckle, but it cannot erase the
                 # folded anatomy of the palp.  Clamp every joint around its
@@ -4531,27 +4800,59 @@ class Creature:
                     math.sin(target_angle - profile_angle),
                     math.cos(target_angle - profile_angle),
                 )
+                if segment_index > 0:
+                    # A real appendage joint rotates the links distal to it.
+                    # Carry part of the previous knuckle's bend forward before
+                    # clamping this joint. This creates a continuous curled
+                    # palp rather than five independently angled "teeth".
+                    angle_delta += inherited_delta * serial_follow * 0.56
+                    angle_delta = math.atan2(math.sin(angle_delta), math.cos(angle_delta))
                 target_angle = profile_angle + clamp(
                     angle_delta,
                     -joint_angle_limits[segment_index],
                     joint_angle_limits[segment_index],
                 )
+                inherited_delta = inherited_delta * 0.34 + (
+                    target_angle - profile_angle
+                ) * 0.66
 
                 lift_target = proximal_rise * lift_profile[segment_index]
                 lift_target *= 0.90 + hand_activity * 0.34 + self.antenna_hand_grips[side_index] * 0.16
                 lift_target += proximal_rise * 0.08 * max(0.0, math.sin(delayed_phase))
                 if custom_hand_palps and not self.dragging:
+                    # Unlike the old one-way lift, this is signed: the
+                    # knuckles gently rise and settle downward around their
+                    # neutral pose. The proximal link has the largest motion;
+                    # the claw remains small and controlled.
+                    lift_phase = (
+                        rub_phase
+                        - segment_index * knuckle_lift_delay
+                        + side_index * 0.09
+                    )
+                    lift_scale = 1.0 if segment_index < 2 else (0.68 if segment_index < 4 else 0.42)
                     lift_target += (
                         proximal_rise
                         * rub_lift_amount
                         * gesture_level
-                        * max(0.0, math.sin(rub_phase - segment_index * 0.58))
+                        * math.sin(lift_phase)
+                        * lift_scale
                     )
-                lift_target = clamp(lift_target, 0.0, 0.34)
+                    if attention_level > 0.01:
+                        lift_target += (
+                            proximal_rise
+                            * attention_level
+                            * (0.12 if segment_index < 2 else 0.06)
+                            * math.sin(
+                                rub_phase * 0.62
+                                - segment_index * knuckle_lift_delay
+                                + side_index * 0.13
+                            )
+                        )
+                lift_target = clamp(lift_target, 0.0, 0.48)
                 # The movement wave travels from the base toward the hand:
                 # proximal joints lead and the distal claw settles last.
-                angle_rate = max(3.4, 5.8 - segment_index * 0.55)
-                lift_rate = max(3.6, 6.1 - segment_index * 0.60)
+                angle_rate = max(4.6, 8.2 - segment_index * 0.50 + hand_activity * 1.4)
+                lift_rate = max(4.8, 8.0 - segment_index * 0.56 + hand_activity * 1.0)
                 angle_alpha = 1.0 - math.exp(-dt * angle_rate)
                 lift_alpha = 1.0 - math.exp(-dt * lift_rate)
                 self.antenna_segment_angles[side_index][segment_index] += (
@@ -4931,7 +5232,7 @@ class Creature:
         """Return the one cadence used by both phase windows and foot swings."""
         hz = config["cycle_hz"] + speed01 * config["speed_cycle_gain"]
         if turn_speed > 0.30:
-            hz += min(turn_speed, 4.5) * 0.10
+            hz += min(turn_speed, 5.5) * config.get("turn_cycle_gain", 0.10)
         return clamp(hz, 1.20, 4.50)
 
     def _spider_step_duration(self, config: dict, speed01: float,
@@ -4994,6 +5295,14 @@ class Creature:
         turn_err = abs(((self.target_heading - self.heading + math.pi) % math.tau) - math.pi)
         moving = self.current_speed > 4.0
         turning = turn_speed > 0.30 or turn_err > 0.12
+        # When the body is temporarily held by its support envelope, use the
+        # outstanding turn request to keep foot handoffs moving.  Without this,
+        # a stalled turn reports zero actual turn speed and falls back to the
+        # slow walking cadence precisely when a quicker replant is needed.
+        turn_drive = max(
+            turn_speed,
+            turn_err * config.get("turn_error_drive", 1.25),
+        ) if turning else 0.0
         speed01 = clamp(self.current_speed / 150.0, 0.0, 1.0)
         fast_state = self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun")
         max_air = config["max_airborne"]
@@ -5002,7 +5311,7 @@ class Creature:
         # Advance the same clock that defines the swing duration before choosing
         # launches, so this frame's candidates are evaluated in the current window.
         self._lively_gait_phase = (
-            self._lively_gait_phase + dt * self._spider_cycle_hz(config, speed01, turn_speed)
+            self._lively_gait_phase + dt * self._spider_cycle_hz(config, speed01, turn_drive)
         ) % 1.0
 
         # Only severe wrong-side/overreach poses bypass the phase window.  Normal
@@ -5011,7 +5320,9 @@ class Creature:
         for i, leg in enumerate(self.legs):
             if leg.stepping or leg.pending_step or leg.step_cooldown > 0.0:
                 continue
-            _, _, _, _, _, severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
+            local_f0, local_s0, min_side0, _, _, severe_wrong = self._leg_alignment_metrics(
+                leg, leg.foot_x, leg.foot_y
+            )
             _, _, _, very_far = self._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
             # A support stroke that is nearly full is a real mechanical limit,
             # even if the foot is still inside the loose reach envelope. Free
@@ -5019,23 +5330,70 @@ class Creature:
             # narrow phase window; this is the long retract/attract stroke that
             # makes spider locomotion efficient instead of tip-tapping in place.
             stroke_pressure = leg.stroke_progress >= 0.80
-            turn_pressure = abs(leg.stance_turn) >= config["support_turn_limit"] * 0.80
-            emergency = severe_wrong or very_far or stroke_pressure or turn_pressure
-            target = self._spider_predicted_target(leg, config, turn_speed)
+            turn_pressure = abs(leg.stance_turn) >= (
+                config["support_turn_limit"] * config.get("turn_step_pressure", 0.62)
+            )
+            side_sign0 = self._side_sign(leg.definition.get("side", "right"))
+            side_magnitude0 = side_sign0 * local_s0
+            # Release a contact before a sharp turn drives it into the body's
+            # centre. One deliberate replant is cheaper and more stable than
+            # several failed support fits followed by rapid tap corrections.
+            turn_side_pressure = (
+                turning
+                and side_magnitude0 < max(self.size * 0.10, min_side0 * 0.72)
+                and abs(leg.stance_turn) > config["support_turn_limit"] * 0.28
+            )
+            emergency = severe_wrong or very_far or stroke_pressure or turn_pressure or turn_side_pressure
+            target = self._spider_predicted_target(leg, config, turn_drive)
             distance_to_target = math.hypot(leg.foot_x - target[0], leg.foot_y - target[1])
+            # During a turn, most of the apparent target error is the expected
+            # body-relative sweep of a fixed tarsus.  Discount that component so
+            # stance legs can use their contraction/extension range before a
+            # true swing is requested.
+            turn_allowance = self._spider_turn_rehome_allowance(leg, config) if turning else 0.0
+            step_distance = max(0.0, distance_to_target - turn_allowance)
             threshold = self.size * max(config["step_trigger"], config["stance_deadband"])
             if not moving and not turning:
                 threshold *= 0.78
             if fast_state:
                 threshold *= 0.82
+            if turning:
+                threshold *= 1.08
             _, relative, group = self._spider_phase_window(leg, self._lively_gait_phase, config)
             in_window = relative < config["swing_fraction"]
-            _, _, _, _, wrong_side, _ = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
+            local_f, local_s, _, _, wrong_side, _ = self._leg_alignment_metrics(
+                leg, leg.foot_x, leg.foot_y
+            )
             _, _, too_far, _ = self._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
-            needs_step = distance_to_target > threshold or wrong_side or too_far
+            # The neutral side lane is intentionally relaxed while the body is
+            # turning.  A non-severe inward sweep is the expected result of a
+            # planted foot rotating with the body, not a crossed leg.  Severe
+            # wrong-side and reach violations remain emergency step triggers.
+            turn_side_safe = (
+                turning
+                and not too_far
+                and self._side_sign(leg.definition.get("side", "right")) * local_s >= self.size * 0.07
+                and abs(leg.stance_turn) < config["support_turn_limit"] * 0.98
+            )
+            if turn_side_safe:
+                # A fixed contact can also appear forward/backward of its
+                # neutral lane as the body rotates.  Keep it usable until it
+                # is genuinely close to crossing or overstretching.
+                wrong_side = False
+                if abs(local_f - float(leg.definition.get("rest_forward", 0.0)) * self.size) < self.size * 1.40:
+                    severe_wrong = False
+            if (
+                turning
+                and wrong_side
+                and not severe_wrong
+                and not too_far
+                and abs(leg.stance_turn) < config["support_turn_limit"] * 0.98
+            ):
+                wrong_side = False
+            needs_step = step_distance > threshold or wrong_side or too_far
             if not emergency and (not needs_step or not in_window):
                 continue
-            score = distance_to_target / max(1.0, threshold)
+            score = step_distance / max(1.0, threshold)
             if emergency:
                 score += 3.0
             score += max(0.0, config["swing_fraction"] - relative) * 0.35
@@ -5467,7 +5825,12 @@ class Creature:
     def _safe_sprite_leg_foot(self, leg: LegState, x: float, y: float, chain_config=None) -> Tuple[float, float]:
         """Keep rendered sprite feet inside the same reach envelope as the IK knee."""
         spider_gait = self._spider_gait_config()
-        if spider_gait is not None and not leg.stepping and not leg.pending_step:
+        if (
+            spider_gait is not None
+            and not leg.stepping
+            and not leg.pending_step
+            and self.held_release_timer <= 0.0
+        ):
             # Do not move a planted contact point just because the attachment
             # moved with the body.  Corrective steps are scheduled by the gait
             # controller before the foot becomes impossible.
@@ -5545,6 +5908,15 @@ class Creature:
             forward_bias *= 0.35
             elevated_arc = 0.0
             proximal_lift = 1.0
+            carry_wave_amount = clamp(
+                float(chain_config.get("carry_joint_wave", 0.42)), 0.0, 0.65
+            )
+            carry_wave_phase = float(getattr(self, "held_pose_clock", 0.0)) * 3.0
+            carry_wave_phase += float(getattr(leg, "phase_seed", 0.0)) * 0.38
+        else:
+            held_response = 0.0
+            carry_wave_amount = 0.0
+            carry_wave_phase = 0.0
         joint_bends = leg.joint_bends
         if len(joint_bends) != len(profiles):
             joint_bends = [0.90 + 0.06 * index for index in range(len(profiles))]
@@ -5593,6 +5965,18 @@ class Creature:
             seed_points = [(ax, ay)]
             for index, fraction in enumerate(fractions):
                 bend = bend_base * profiles[index] * directions[index] * joint_bends[index] * bend_scale
+                if self.dragging:
+                    # A carried leg is not frozen at one folded silhouette. Let
+                    # each knuckle alternately loosen and tighten in response
+                    # to the hand's movement, with the middle joints doing most
+                    # of the visible work.
+                    joint_wave = math.sin(
+                        carry_wave_phase + index * 0.74
+                    )
+                    joint_gain = 0.55 + 0.14 * min(index, 2)
+                    bend *= 1.0 + carry_wave_amount * joint_gain * (
+                        0.24 + 0.76 * held_response
+                    ) * joint_wave
                 if catch_strength > 0.0:
                     bend += (
                         self.size * 0.075 * catch_strength
@@ -5616,6 +6000,9 @@ class Creature:
                     # sag follows each leg's own lane; it is not a pull toward
                     # a central point below the body.
                     point_y += self.size * (0.105 + held_response * 0.075) * math.sin(math.pi * fraction)
+                    point_y += self.size * carry_wave_amount * (0.012 + held_response * 0.028) * math.sin(
+                        carry_wave_phase + index * 0.86
+                    )
                     # A relaxed suspended leg folds slightly back toward its
                     # own body lane before the distal links fall away again.
                     local_s -= side * self.size * (0.055 + held_response * 0.025) * math.sin(math.pi * fraction)
@@ -5630,7 +6017,7 @@ class Creature:
         points, path_len = build(1.0)
         # A bent chain may be a little longer than the direct anchor-to-foot
         # line, but never enough to look like a stretched rubber limb.
-        path_ratio = 1.42 if self.dragging else 1.28
+        path_ratio = 1.56 if self.dragging else 1.28
         path_budget = min((upper + lower) * chain_config["max_stretch"], direct * path_ratio)
         if path_len > path_budget:
             extra = max(1e-4, path_len - direct)
@@ -5745,6 +6132,13 @@ class Creature:
         # Legs first, underneath body. Segment thickness tapers from coxa to tarsus.
         for leg in self.legs:
             ax, ay, foot_x, foot_y = self._leg_draw_points(leg)
+            if chain_config and segmented_legs:
+                # Procedural tarantula legs need the same post-drag endpoint
+                # guard as sprite-rig legs. Without this, a released carried
+                # contact could flash as a long raw leg for one paint cycle.
+                foot_x, foot_y = self._safe_sprite_leg_foot(
+                    leg, foot_x, foot_y, chain_config
+                )
             kx, ky = self._solve_knee(ax, ay, foot_x, foot_y, leg)
             # Lift the swinging / reaching leg up off the ground (lively gait).
             # Pure draw-time screen offset applied after the knee solve so the
@@ -6364,9 +6758,15 @@ class Creature:
         bottom_band = self.y + self.size * (0.52 + 0.022 * math.sin(phase * 1.13 + held_clock * 0.24))
         natural_drop = clamp(lane_source_y - ay, 0.0, self.size * 0.45)
         gravity_floor = bottom_band + self.size * (0.10 + held_speed01 * 0.045) + natural_drop * 0.10
-        bounce_amp = self.size * (0.018 + held_response * 0.075)
+        bounce_amp = self.size * (0.012 + held_response * 0.052)
         bounce = bounce_amp * math.sin(held_clock * 1.10 + phase * 0.31)
         foot_y = max(foot_y, gravity_floor + bounce)
+        # Unlike the old single floor-relative wobble, these offsets are driven
+        # by the hand's acceleration and stored per leg. They lag, overshoot,
+        # and settle independently, so a fast drag produces a soft dangling
+        # bounce instead of a static dead fold or one synchronized fan.
+        foot_x += float(getattr(leg, "held_spring_x", 0.0))
+        foot_y += float(getattr(leg, "held_spring_y", 0.0))
         return foot_x, foot_y
 
     def _leg_draw_points(self, leg: LegState) -> Tuple[float, float, float, float]:
@@ -6581,7 +6981,7 @@ class Creature:
             length_total = max(1e-4, sum(lengths))
             # Leg-like palp silhouette: the proximal link rises, then the
             # remaining links reverse through the knee and descend to the tip.
-            default_angle_profile = [0.80, 0.22, -0.18, -0.34, -0.48]
+            default_angle_profile = [0.90, 0.56, 0.22, -0.13, -0.46]
             raw_angle_profile = cfg.get("rest_angles", default_angle_profile)
             if not isinstance(raw_angle_profile, list):
                 raw_angle_profile = default_angle_profile

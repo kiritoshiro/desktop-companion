@@ -35,25 +35,31 @@ value, and joint trajectory rather than following the eight-leg gait. In a
 passive idle or wander state they settle near the compact rest pose; the cursor
 is only used as a target during an explicit inspect, aim, or catch interaction.
 
-The hands are not frozen in that rest pose. A slow shared rub cycle periodically
-draws both palps inward and outward, with a delayed flex wave through the
-knuckles. Observe, inspect, aim, and catch states increase the stroke into a
-small deliberate touch/probe; releasing the intent returns them to rest. The
-stroke is bounded by the same short lateral and forward envelope as the hand
-controller, so it cannot become cursor-chasing or turn into a long reaching
-leg.
+The hands are not frozen in that rest pose. A slow grooming/search cycle
+periodically draws both palps inward and outward, with one smooth delayed flex
+wave travelling from the proximal joint through the middle knuckles. The left
+and right controllers share the quiet rest silhouette but retain a small
+independent side phase, so one hand can lead while the other settles without
+turning the chain into a zigzag. Signed lift motion makes the knuckles rise and
+settle downward around the neutral pose; the distal claw has the smallest
+motion. Observe, inspect, aim, and catch states open the stroke into a deliberate
+touch/probe; releasing the intent returns them to rest. Their lateral and
+vertical joint envelope is intentionally wider than a walking leg's stance
+envelope because the palps are free sensory hands, but the link lengths remain
+fixed and the distal claw tapers back instead of becoming a long reaching rod.
 
 The target command is applied at the knuckles, not to the finished chain. The
-proximal joint leads, the middle joint has the largest flexion authority, and
-the distal joints have smaller limits so the final segment remains a curled
-sensory claw. The free-link proportions follow the published tarantula
-pedipalp measurements (approximately femur 0.34, patella 0.21, tibia 0.24,
-tarsus 0.21 of the free palp length), while the angle limits deliberately
-decrease toward the claw. This also prevents the draw pass from replacing the
-articulated pose with a single mouse-facing line. The behavior is based on the
-anatomical role of spider pedipalps as shortened, leg-like sensory and
-prey-manipulation appendages; they are not insect antennae and are not used to
-propel the body.
+proximal joint leads, the femur/patella and tibia joints carry the largest
+flexion authority, and the distal joints use a smaller but still visible curl
+range so the final segment remains a pointed sensory claw. The free-link
+proportions follow the six-podomere spider palp plan (coxa, trochanter, femur,
+patella, tibia, tarsus); the short coxa is represented by the painted base
+socket and the five visible links are the remaining chain. A coherent flexion
+wave is delayed slightly per knuckle, while attention adds a separate lift and
+fold component. This prevents the draw pass from replacing the articulated pose
+with a single mouse-facing line. The behavior is based on the anatomical role of
+spider pedipalps as shortened, leg-like sensory and prey-manipulation appendages;
+they are not insect antennae and are not used to propel the body.
 
 Each walking leg also has a painted coxa/trochanter bridge at the lateral
 cephalothorax. The bridge and socket are drawn over the shell after the
@@ -73,9 +79,20 @@ around the body.
 
 The grounded gait uses a longer stance stroke and a wider turn envelope. A
 supporting leg is allowed to pull or push the body through most of its usable
-stroke before it swings, while a support near its rotational limit is released
-early. Three legs may swing while five keep support, which keeps the tarantula
-stable without forcing a sequence of tiny corrective taps.
+stroke before it swings, while a support near its rotational or side-crossing
+limit is released early. During a turn, the positive-side/inside supports
+contract and the outside supports extend; the tarsus stays planted while the
+body pose solver uses that bounded asymmetry. Three legs may swing while five
+keep support, which keeps the tarantula stable without forcing a sequence of
+tiny corrective taps.
+
+Turns use a separate handoff path: a support leg is released near the outer
+part of the rotational comfort envelope, or earlier if its lateral lane is
+approaching the body centre. The phase clock accelerates from the remaining
+heading error, and hunter personalities carry their turn-rate multiplier into
+the grounded solver. This lets the body pivot promptly instead of waiting for
+a slow forward-walking step window, while the same five-leg support and reach
+validation still prevents foot crossing, overstretching, or snapping.
 
 The coxa roots sit close to the carapace perimeter, partly embedded in the
 fuller flat prosoma rather than suspended outside it. The socket overlay follows

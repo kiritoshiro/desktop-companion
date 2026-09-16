@@ -64,6 +64,48 @@ def run_causality_checks(model: dict, personality: dict, config: dict) -> None:
     assert abs(((after[2] - before[2] + math.pi) % math.tau) - math.pi) < 1e-6
 
 
+def run_heading_filter_check(model: dict, personality: dict) -> dict:
+    """Check that cursor reversals do not become body-heading twitch commands."""
+    creature = build_creature(model, personality)
+    creature.state = "Chase"
+    creature.speed = creature.current_speed = 0.0
+    creature._spider_heading_filter = creature.heading
+    config = creature._spider_gait_config()
+    assert config is not None
+
+    previous = creature.target_heading
+    max_target_step = 0.0
+    zigzag_values = []
+    dt = 1.0 / 60.0
+    for frame in range(180):
+        raw_angle = 0.78 if frame % 2 else -0.78
+        creature.target_x = creature.x + math.cos(raw_angle) * 500.0
+        creature.target_y = creature.y + math.sin(raw_angle) * 500.0
+        creature._spider_locomotion_intent(dt)
+        step = abs(((creature.target_heading - previous + math.pi) % math.tau) - math.pi)
+        max_target_step = max(max_target_step, step)
+        zigzag_values.append(creature.target_heading)
+        previous = creature.target_heading
+
+    settled_amplitude = max(abs(value) for value in zigzag_values[-60:])
+    assert max_target_step < 0.20, max_target_step
+    assert settled_amplitude < 0.13, settled_amplitude
+
+    # A deliberate, sustained turn must still arrive promptly; the filter is
+    # for cursor noise, not a multi-second turn-rate penalty.
+    creature.target_x = creature.x + math.cos(0.78) * 500.0
+    creature.target_y = creature.y + math.sin(0.78) * 500.0
+    for _ in range(30):
+        creature._spider_locomotion_intent(dt)
+    sustained_error = abs(((creature.target_heading - 0.78 + math.pi) % math.tau) - math.pi)
+    assert sustained_error < 0.14, sustained_error
+    return {
+        "max_target_step": max_target_step,
+        "settled_amplitude": settled_amplitude,
+        "sustained_error": sustained_error,
+    }
+
+
 def run_walk(model: dict, personality: dict, config: dict, seconds: float,
              speed: float, turn_rate: float, dt: float):
     creature = build_creature(model, personality)
@@ -90,6 +132,14 @@ def run_walk(model: dict, personality: dict, config: dict, seconds: float,
     min_supports = len(creature.legs)
     frames = max(1, round(seconds / dt))
     for _ in range(frames):
+        if abs(turn_rate) > 1e-6:
+            # Keep this benchmark a pure mechanical pivot.  The production
+            # controller normally derives heading from a moving target, but
+            # allowing that target to drift as the support solver translates
+            # the body turns this check into a pursuit test.
+            creature.target_x = creature.x
+            creature.target_y = creature.y
+            creature.target_heading = math.copysign(math.pi * 0.5, turn_rate)
         old_pose = (creature.x, creature.y, creature.heading)
         old_contacts = {
             id(leg): (leg.foot_x, leg.foot_y)
@@ -192,6 +242,8 @@ def main() -> int:
     random.seed(19)
     run_causality_checks(model, personality, config)
     random.seed(19)
+    heading_filter = run_heading_filter_check(model, personality)
+    random.seed(19)
     result = run_walk(model, personality, config, args.seconds, args.speed, args.turn_rate, 1.0 / 60.0)
     assert result["starts"] > 0, "no spider gait steps started"
     assert result["max_airborne"] <= config["max_airborne"], result["max_airborne"]
@@ -222,6 +274,8 @@ def main() -> int:
         f"planted_displacements={result['planted_displacements']} "
         f"max_pose_jump={result['max_pose_jump']:.2f} "
         f"max_heading_jump={result['max_heading_jump']:.3f} "
+        f"zigzag_target_step={heading_filter['max_target_step']:.3f} "
+        f"zigzag_settled={heading_filter['settled_amplitude']:.3f} "
         f"max_chain_stretch={result['max_chain_stretch']:.3f} "
         f"max_segment_ratio={result['max_segment_ratio']:.3f}"
     )

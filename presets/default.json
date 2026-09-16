@@ -3,13 +3,13 @@
   "slots": [
     {
       "model": "tarantula",
-      "personality": "curious",
+      "personality": "hunter",
       "count": 4,
       "count_random": true
     },
     {
-      "model": "tarantula_hybrid",
-      "personality": "cuddly",
+      "model": "plush_snow_hybrid_2",
+      "personality": "hunter",
       "count": 1,
       "count_random": false
     }
