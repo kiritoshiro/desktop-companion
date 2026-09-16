@@ -4,7 +4,13 @@
     {
       "model": "tarantula",
       "personality": "curious",
-      "count": 8,
+      "count": 4,
+      "count_random": true
+    },
+    {
+      "model": "tarantula_hybrid",
+      "personality": "cuddly",
+      "count": 1,
       "count_random": false
     }
   ],

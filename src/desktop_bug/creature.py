@@ -5,7 +5,7 @@ import os
 import random
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 from .math_utils import (
     angle_lerp,
@@ -137,10 +137,19 @@ class Creature:
         self.grab_offset_y = 0.0
         self.drag_vel_x = 0.0
         self.drag_vel_y = 0.0
+        self.held_leg_relax = 0.0
+        self.held_pose_clock = 0.0
+        self.held_drag_response = 0.0
+        self.held_drag_sway_x = 0.0
+        self.held_drag_sway_y = 0.0
         self.inertia_vx = 0.0
         self.inertia_vy = 0.0
         self.inertia_timer = 0.0
         self.startled_timer = 0.0
+        # Pickup/release uses the pose to communicate a timid reaction. Keep
+        # the leg palette unchanged during that transition; color should not
+        # flash when the spider is grabbed or set down.
+        self._startle_highlight_suppression = 0.0
         self.startle_phase = random.random() * math.tau
 
         # Drift movement: a deliberate sideways slip layered on top of normal
@@ -281,6 +290,14 @@ class Creature:
 
         # Antenna animation clocks.
         self.antenna_phase = [random.random() * math.tau, random.random() * math.tau]
+        # Some models use these as sensory front legs rather than thin cartoon
+        # antennae.  Each side keeps its own per-segment pose so proximal lift,
+        # knee flexion, and distal probing can travel through the chain in order.
+        self.antenna_segment_angles: List[List[float]] = [[], []]
+        self.antenna_joint_lifts: List[List[float]] = [[], []]
+        self.antenna_extension = [0.0, 0.0]
+        self.antenna_hand_targets: List[Tuple[float, float]] = [(0.0, 0.0), (0.0, 0.0)]
+        self.antenna_hand_grips = [0.0, 0.0]
         self.aim_intent = 0.0           # smoothed 0..1 hunting-aim weight
         self.inspect_intent = 0.0       # smoothed 0..1 inspecting weight
         self.cuddle_intent = 0.0        # smoothed 0..1 cuddling weight
@@ -667,6 +684,7 @@ class Creature:
                 "swing_arc_forward": clamp(float(raw.get("swing_arc_forward", 0.24)), 0.0, 0.50),
                 "swing_height": clamp(float(raw.get("swing_height", 0.56)), 0.35, 0.85),
                 "front_stride_bias": clamp(float(raw.get("front_stride_bias", 0.16)), 0.0, 0.35),
+                "stride_gain": clamp(float(raw.get("stride_gain", 1.0)), 0.75, 1.80),
                 "swing_fraction": clamp(float(raw.get("swing_fraction", 0.29)), 0.20, 0.40),
                 # One clock drives both the group launch window and the swing
                 # duration.  This prevents the old 47 ms window / 122 ms swing
@@ -674,6 +692,12 @@ class Creature:
                 "cycle_hz": clamp(float(raw.get("cycle_hz", 2.10)), 1.20, 4.50),
                 "speed_cycle_gain": clamp(float(raw.get("speed_cycle_gain", 1.45)), 0.0, 3.0),
                 "step_lookahead": clamp(float(raw.get("step_lookahead", 0.72)), 0.25, 1.20),
+                "step_trigger": clamp(float(raw.get("step_trigger", 0.18)), 0.12, 0.34),
+                # Feet may remain planted inside this comfort band even when
+                # the default rest pose would be slightly different. Replant
+                # only when the stance is leaving that band or a hard support
+                # limit is approaching.
+                "stance_deadband": clamp(float(raw.get("stance_deadband", 0.36)), 0.18, 0.80),
                 "front_phase_offset": clamp(float(raw.get("front_phase_offset", 0.035)), 0.0, 0.10),
                 "refractory_fraction": clamp(float(raw.get("refractory_fraction", 0.16)), 0.04, 0.35),
                 # Limits for the support-driven body solver.  They are expressed
@@ -683,6 +707,8 @@ class Creature:
                 "support_turn_limit": clamp(float(raw.get("support_turn_limit", 0.58)), 0.25, 1.20),
                 "support_blend_time": clamp(float(raw.get("support_blend_time", 0.10)), 0.04, 0.30),
                 "max_body_turn_rate": clamp(float(raw.get("max_body_turn_rate", 2.60)), 0.80, 4.50),
+                "turn_gain": clamp(float(raw.get("turn_gain", 1.0)), 0.80, 2.20),
+                "turn_speed_floor": clamp(float(raw.get("turn_speed_floor", 0.15)), 0.10, 0.60),
             }
         except (TypeError, ValueError):
             return None
@@ -773,6 +799,17 @@ class Creature:
         max_heading_step = config["max_body_turn_rate"] * max(0.001, getattr(self, "_spider_solver_dt", 0.016))
         heading_step = ((solved_heading - self.heading + math.pi) % math.tau) - math.pi
         heading_step = clamp(heading_step, -max_heading_step, max_heading_step)
+        # The support fit can retain rotational residual after the requested
+        # turn has already arrived. Never let that residual carry the body past
+        # its requested heading; feet may continue cycling, but the body must
+        # not slowly spin beyond the target.
+        target_error = ((self.target_heading - self.heading + math.pi) % math.tau) - math.pi
+        if abs(target_error) <= 1e-4:
+            heading_step = 0.0
+        elif heading_step * target_error <= 0.0:
+            heading_step = 0.0
+        else:
+            heading_step = math.copysign(min(abs(heading_step), abs(target_error)), target_error)
         solved_heading = self.heading + heading_step
         fx, fy = math.cos(solved_heading), math.sin(solved_heading)
         rx, ry = -math.sin(solved_heading), math.cos(solved_heading)
@@ -830,7 +867,9 @@ class Creature:
         if target_dist < 15.0 and self.state not in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun"):
             desired_speed *= target_dist / 15.0
         angle_error = ((self.target_heading - self.heading + math.pi) % math.tau) - math.pi
-        alignment = clamp(1.0 - abs(angle_error) / (math.pi * 0.75), 0.15, 1.0)
+        spider_gait = self._spider_gait_config()
+        alignment_floor = spider_gait["turn_speed_floor"] if spider_gait is not None else 0.15
+        alignment = clamp(1.0 - abs(angle_error) / (math.pi * 0.75), alignment_floor, 1.0)
         desired_speed *= alignment
         desired_speed *= self._skitter_motion_factor(dt, desired_speed, target_dist)
         accel_mult = float(self.personality.get("acceleration_multiplier", 1.0))
@@ -849,6 +888,8 @@ class Creature:
         request_f = (req_vx * fx + req_vy * fy) * dt
         request_s = (req_vx * rx + req_vy * ry) * dt
         turn_mult = 1.35 if self.state in ("Chase", "Retreat", "Startled") else 1.0
+        if spider_gait is not None:
+            turn_mult *= spider_gait["turn_gain"]
         requested_turn = clamp(angle_error, -self.turn_rate * turn_mult * dt, self.turn_rate * turn_mult * dt)
         return request_f, request_s, requested_turn
 
@@ -1015,6 +1056,9 @@ class Creature:
             stride = float(d.get("stride_forward", 0.34)) * self.size
             jitter = float(d.get("rest_jitter", 0.0)) * self.size
             speed01 = clamp(self.current_speed / 145.0, 0.0, 1.0)
+            spider_gait = self._spider_gait_config()
+            if spider_gait is not None and self._uses_lively_gait():
+                stride *= spider_gait["stride_gain"]
             # Feet anticipate the next body position, especially during a scurry.
             # Normal personalities plant ahead of the body-facing direction. Observer
             # is special: it keeps its head aimed at its focus while the body backs
@@ -1029,7 +1073,6 @@ class Creature:
                 rs += stride * speed01 * move_s * lateral_mult
             else:
                 rf += stride * speed01 * (1.05 if self.state not in ("Chase", "Retreat", "Dragged", "Startled") else 1.35)
-            spider_gait = self._spider_gait_config()
             if spider_gait is not None and self._uses_lively_gait():
                 # Leading legs reach a little farther ahead while rear legs
                 # retain a shorter stroke.  The side lane stays fixed, so a
@@ -2079,12 +2122,22 @@ class Creature:
             return 1.0
         return clamp(self.startled_timer / 1.15, 0.0, 1.0)
 
+    def _startle_highlight_active(self, startle: float) -> bool:
+        """Return whether the startle palette should alter leg colors.
+
+        Dragging keeps a timid expression, but it must not recolor the spider.
+        The grab should communicate through its suspended pose only.
+        """
+        return (
+            startle > 0.35
+            and not self.dragging
+            and self._startle_highlight_suppression <= 0.0
+        )
+
     def _eye_startle_amount(self, startle: float) -> float:
-        """Reduced startle intensity for eyes so grabbing does not balloon them."""
-        # Keep the cute startled expression, but make the size change subtle.
-        # During a grab ``_startle_amount`` is pinned at 1.0, which previously
-        # made eyes grow by ~70-80%.  This caps the visual eye reaction to a
-        # much smaller amount while leaving body/leg startle motion unchanged.
+        """Keep a small timid eye reaction without ballooning the eyes."""
+        # During a grab ``_startle_amount`` is pinned at 1.0. Cap the visual eye
+        # reaction to a small, cute change rather than a frightened exaggeration.
         cap = 0.28 if self.dragging else 0.45
         return clamp(startle, 0.0, 1.0) * cap
 
@@ -2192,13 +2245,29 @@ class Creature:
         self.inertia_vy = 0.0
         self.inertia_timer = 0.0
         self.startled_timer = 1.2
+        self._startle_highlight_suppression = 1.35
+        self.held_leg_relax = 0.0
+        self.held_pose_clock = 0.0
+        self.held_drag_response = 0.0
+        self.held_drag_sway_x = 0.0
+        self.held_drag_sway_y = 0.0
         self.grab_offset_x = self.x - mx
         self.grab_offset_y = self.y - my
         self.drag_vel_x = 0.0
         self.drag_vel_y = 0.0
         self.state_timer = 0.25
         self.register_camouflage_touch()
-        self._panic_rehome_legs(0.75)
+        # A carried spider is not walking. Freeze the gait at pickup so a leg
+        # that happened to be mid-step cannot keep twitching beneath the body;
+        # release_drag will rehome the feet before grounded locomotion resumes.
+        for leg in self.legs:
+            leg.stepping = False
+            leg.pending_step = False
+            leg.lift = 0.0
+            leg.contact_state = "air"
+            leg.support_weight = 0.0
+            leg.contact_age = 0.0
+            leg.step_cooldown = 0.0
 
     def drag_to(self, dt: float, mx: float, my: float) -> None:
         dt = clamp(dt, 0.001, 0.05)
@@ -2270,6 +2339,11 @@ class Creature:
             self.inertia_timer = 0.0
         self.register_camouflage_touch()
         self.enter_startled(mx, my)
+        # Keep the normal startle response (eyes/body) but suppress the leg
+        # highlight for the entire pickup/release transition.
+        self._startle_highlight_suppression = max(
+            self._startle_highlight_suppression, 1.35
+        )
         for leg in self.legs:
             self._soft_limit_leg_state(leg, blend=0.45)
         self._panic_rehome_legs(clamp(speed / 850.0, 0.55, 1.0))
@@ -2367,16 +2441,29 @@ class Creature:
             self.startled_timer = 1.2
             self._set_focus(mx, my, 1.0)
             speed01 = clamp(self.current_speed / 260.0, 0.0, 1.0)
-            self.bob_phase += dt * (7.5 + self.current_speed * 0.035)
-            self.breath_phase += dt * (3.4 + speed01 * 1.3)
-            self.body_bob = math.sin(self.bob_phase * 1.35) * (0.75 + speed01 * 1.45)
-            drag_drift = self._drift_amount(dt, self.current_speed) if self._is_drifter_personality() else 0.0
-            self.body_sway = (
-                math.sin(self.bob_phase * 1.8) * self.size * (0.025 + speed01 * 0.035)
-                + drag_drift * self.size * 0.42
-            )
-            self.abdomen_pulse = math.sin(self.breath_phase * 1.6) * 0.065
-            self.ceph_pulse = -math.sin(self.breath_phase * 1.45 + 0.85) * 0.040
+            self.held_leg_relax = min(1.0, self.held_leg_relax + dt * 4.5)
+            # A carried spider is quiet, but not a frozen sticker. Feed the
+            # smoothed hand velocity into a heavily damped pose response: fast
+            # drags create a small shared lag and slow settling bounce, while a
+            # stopped cursor lets the legs become still again without tremble.
+            response_target = clamp(math.hypot(self.drag_vel_x, self.drag_vel_y) / 420.0, 0.0, 1.0)
+            response_blend = 1.0 - math.exp(-dt * 7.0)
+            self.held_drag_response += (response_target - self.held_drag_response) * response_blend
+            self.held_pose_clock += dt * (1.15 + self.held_drag_response * 2.35)
+            sway_target_x = clamp(self.drag_vel_x / 520.0, -1.0, 1.0) * self.size * 0.15
+            sway_target_y = clamp(self.drag_vel_y / 520.0, -1.0, 1.0) * self.size * 0.07
+            sway_blend = 1.0 - math.exp(-dt * 8.0)
+            self.held_drag_sway_x += (sway_target_x - self.held_drag_sway_x) * sway_blend
+            self.held_drag_sway_y += (sway_target_y - self.held_drag_sway_y) * sway_blend
+            # Being held is a quiet, timid pose: preserve gentle breathing but
+            # remove the high-frequency bob/sway that previously looked like a
+            # frightened tremor and made the legs shake against their roots.
+            self.bob_phase += dt * 1.2
+            self.breath_phase += dt * (1.45 + speed01 * 0.20)
+            self.body_bob = 0.0
+            self.body_sway = 0.0
+            self.abdomen_pulse = math.sin(self.breath_phase * 1.05) * 0.032
+            self.ceph_pulse = -math.sin(self.breath_phase * 0.92 + 0.85) * 0.016
             self.mood.bump(arousal=dt * 0.7, valence=-dt * 0.25)
             # A spider being carried can still aim and fire trapping silk at a
             # fly it has locked onto, so advance an in-progress web shot here
@@ -2394,6 +2481,9 @@ class Creature:
             return
 
         self.startled_timer = max(0.0, self.startled_timer - dt)
+        self._startle_highlight_suppression = max(
+            0.0, self._startle_highlight_suppression - dt
+        )
 
         # Threat reflex, softened by mood: a content/cuddly/playful spider tolerates
         # the cursor far more than a skittish one, and committed social/jump states
@@ -4151,8 +4241,325 @@ class Creature:
     def _update_antennae(self, dt: float) -> None:
         m = self.mood
         speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
+        cfg = self._appearance("antennae", {})
+        style = str(cfg.get("style", "")).strip().lower() if isinstance(cfg, dict) else ""
+        custom_hand_palps = style in (
+            "front_leg", "tarantula_front_legs", "tarantula_hand_palps"
+        )
+
+        # Tarantula pedipalps are short, load-bearing-looking hand appendages,
+        # not insect feelers. Keep their idle clock deliberately slow so the
+        # pose settles between small probing strokes instead of visibly chasing
+        # every mouse update.
+        if self.dragging:
+            phase_rate = 0.0
+        elif custom_hand_palps:
+            # Keep a slow, visible palp-work cycle alive even when the legs are
+            # planted.  The previous clock was so slow, and its joint wave so
+            # small, that the two appendages looked like solid rods.
+            phase_rate = 0.86 + m.arousal * 0.72 + m.curiosity * 0.46 + speed01 * 0.24
+        else:
+            phase_rate = 1.8 + m.arousal * 3.2 + m.curiosity * 1.6 + speed01 * 2.0
         for i in range(2):
-            self.antenna_phase[i] += dt * (1.8 + m.arousal * 3.2 + m.curiosity * 1.6 + speed01 * 2.0)
+            self.antenna_phase[i] += dt * phase_rate
+
+        if not custom_hand_palps:
+            return
+        try:
+            segments = max(3, int(cfg.get("segments", 5)))
+        except (TypeError, ValueError):
+            segments = 5
+
+        drive = antenna_drive_from_mood(
+            self.mood,
+            aiming=0.0 if self.dragging else clamp(self.aim_intent, 0.0, 1.0),
+            inspecting=0.0 if self.dragging else clamp(self.inspect_intent, 0.0, 1.0),
+            cuddling=0.0 if self.dragging else clamp(max(self.cuddle_intent, self.catch_blend), 0.0, 1.0),
+            aim_angle=self._antenna_aim_angle(),
+        )
+        # The first link must visibly lift like a spider-leg femur.  The
+        # following links reverse through the knee and descend toward the
+        # sensory hand; keeping the chain short prevents an antler silhouette.
+        # Models may provide their own anatomical rest pose, but malformed
+        # values fall back to this deliberately folded tarantula profile.
+        default_angle_profile = [0.80, 0.22, -0.18, -0.34, -0.48]
+        raw_angle_profile = cfg.get("rest_angles", default_angle_profile)
+        if not isinstance(raw_angle_profile, list):
+            raw_angle_profile = default_angle_profile
+        try:
+            angle_profile = [float(value) for value in raw_angle_profile[:segments]]
+        except (TypeError, ValueError):
+            angle_profile = []
+        if len(angle_profile) != segments or any(
+            not math.isfinite(value) for value in angle_profile
+        ):
+            angle_profile = list(default_angle_profile[:segments])
+        lift_profile = [1.00, 0.55, 0.20, 0.06, 0.0]
+        phase_offsets = [0.00, 0.18, 0.34, 0.50, 0.64]
+        angle_profile = angle_profile[:segments]
+        lift_profile = lift_profile[:segments]
+        phase_offsets = phase_offsets[:segments]
+        while len(angle_profile) < segments:
+            angle_profile.append(angle_profile[-1] * 0.72)
+        while len(lift_profile) < segments:
+            lift_profile.append(max(0.0, lift_profile[-1] * 0.55))
+        while len(phase_offsets) < segments:
+            phase_offsets.append(phase_offsets[-1] + 0.14)
+
+        # Pedipalps are controlled as a short serial chain, not as one pointer
+        # aimed at the cursor.  The proximal link can make the largest useful
+        # adjustment; the distal links have progressively smaller authority so
+        # the knee and terminal claw keep their folded, hand-like silhouette.
+        def _joint_profile(name: str, fallback: list[float]) -> list[float]:
+            raw = cfg.get(name, fallback)
+            if not isinstance(raw, list):
+                raw = fallback
+            try:
+                values = [float(value) for value in raw[:segments]]
+            except (TypeError, ValueError):
+                values = []
+            if len(values) != segments or any(
+                not math.isfinite(value) or value < 0.0 for value in values
+            ):
+                values = list(fallback[:segments])
+            while len(values) < segments:
+                values.append(values[-1] if values else 0.0)
+            return values
+
+        joint_steering = _joint_profile(
+            "joint_steering", [0.10, 0.18, 0.11, 0.04, 0.02]
+        )
+        joint_steering_limits = _joint_profile(
+            "joint_steering_limits", [0.12, 0.24, 0.16, 0.08, 0.05]
+        )
+        joint_angle_limits = _joint_profile(
+            "joint_angle_limits", [0.18, 0.24, 0.21, 0.15, 0.09]
+        )
+
+        if len(self.antenna_segment_angles) != 2:
+            self.antenna_segment_angles = [[], []]
+        if len(self.antenna_joint_lifts) != 2:
+            self.antenna_joint_lifts = [[], []]
+        if len(self.antenna_extension) != 2:
+            self.antenna_extension = [0.0, 0.0]
+        if len(self.antenna_hand_targets) != 2:
+            self.antenna_hand_targets = [(0.0, 0.0), (0.0, 0.0)]
+        if len(self.antenna_hand_grips) != 2:
+            self.antenna_hand_grips = [0.0, 0.0]
+
+        probing = 0.0 if self.dragging else clamp(max(self._feeler_pulse, self.inspect_intent * 0.55), 0.0, 1.0)
+        # These appendages are sensory hands, not locomotion legs: their target
+        # and stroke are driven by attention/contact intent, never by a leg's
+        # stepping state or by the body gait clock.
+        explicit_hand_target = (
+            not self.dragging
+            and (
+                self.catch_blend > 0.08
+                or self.inspect_intent > 0.40
+                or self.aim_intent > 0.55
+            )
+        )
+        target_world = None
+        if explicit_hand_target:
+            target_world = self.catch_point if self.catch_blend > 0.08 else (self.focus_x, self.focus_y)
+        hand_activity = 0.0 if self.dragging else clamp(
+            max(
+                probing * 0.55,
+                self.inspect_intent * 0.35,
+                self.aim_intent * 0.25,
+                self.catch_blend * 0.70,
+            ),
+            0.0, 1.0,
+        )
+        if explicit_hand_target:
+            hand_activity = max(hand_activity, self.focus_strength * 0.25)
+        proximal_rise = clamp(float(cfg.get("proximal_rise", 0.12)), 0.0, 0.28)
+        rest_forward = clamp(float(cfg.get("hand_rest_forward", 1.02)), 0.28, 1.45)
+        rest_lateral = clamp(float(cfg.get("hand_rest_lateral", 0.52)), 0.14, 1.10)
+        min_forward = clamp(float(cfg.get("hand_min_forward", 0.34)), 0.16, rest_forward)
+        max_forward = clamp(float(cfg.get("hand_max_forward", 1.52)), rest_forward, 2.20)
+        min_lateral = clamp(float(cfg.get("hand_min_lateral", 0.20)), 0.10, rest_lateral)
+        max_lateral = clamp(float(cfg.get("hand_max_lateral", 0.86)), rest_lateral, 1.30)
+        rub_frequency = clamp(float(cfg.get("rub_frequency", 0.92)), 0.45, 1.80)
+        rub_lateral_amount = clamp(float(cfg.get("rub_lateral_amount", 0.12)), 0.0, 0.24)
+        rub_forward_amount = clamp(float(cfg.get("rub_forward_amount", 0.045)), 0.0, 0.12)
+        rub_joint_angle = clamp(float(cfg.get("rub_joint_angle", 0.10)), 0.02, 0.22)
+        rub_lift_amount = clamp(float(cfg.get("rub_lift_amount", 0.08)), 0.0, 0.18)
+        try:
+            ceph_scale = self._appearance("cephalothorax_scale", [0.70, 0.66])
+            ceph_forward = float(self._appearance("cephalothorax_offset_x", 0.40))
+            base_forward = ceph_forward + float(ceph_scale[0]) * float(cfg.get("base_forward", 0.34))
+            base_lateral = float(ceph_scale[1]) * float(cfg.get("base_side", 0.26))
+        except (TypeError, ValueError, IndexError):
+            base_forward, base_lateral = 0.64, 0.18
+
+        shared_phase = (self.antenna_phase[0] + self.antenna_phase[1]) * 0.5
+        rub_phase = shared_phase * rub_frequency
+        observing = self.state in ("Observe", "Inspect", "Aim", "Catch", "Alert")
+        attention_level = clamp(
+            max(
+                self.inspect_intent,
+                self.aim_intent,
+                self.catch_blend,
+                0.82 if observing and self.focus_strength > 0.15 else 0.0,
+            ),
+            0.0, 1.0,
+        )
+        # In a quiet state the rubbing is occasional and subtle. Attention or
+        # a touch command opens the same stroke into a deliberate probe.
+        idle_rub_gate = 0.5 + 0.5 * math.sin(rub_phase * 0.52 - 1.15)
+        gesture_level = clamp(
+            max(attention_level, idle_rub_gate * (0.52 if observing else 0.48)),
+            0.0, 1.0,
+        )
+        if explicit_hand_target:
+            gesture_level = max(gesture_level, 0.72 * hand_activity)
+        joint_rub_profile = [0.55, 0.95, 1.10, 0.82, 0.52]
+
+        for side_index, side_sign in enumerate((-1.0, 1.0)):
+            if len(self.antenna_segment_angles[side_index]) != segments:
+                self.antenna_segment_angles[side_index] = [side_sign * angle for angle in angle_profile]
+            if len(self.antenna_joint_lifts[side_index]) != segments:
+                self.antenna_joint_lifts[side_index] = [proximal_rise * lift for lift in lift_profile]
+
+            phase = self.antenna_phase[side_index]
+            if custom_hand_palps and bool(cfg.get("symmetric_rest", False)):
+                # The two pedipalps are independent when commanded, but their
+                # neutral pose should be a mirrored pair.  A random phase per
+                # side made one hand rise while the other sagged even at rest.
+                phase = (self.antenna_phase[0] + self.antenna_phase[1]) * 0.5
+            desired_f = rest_forward
+            desired_s = side_sign * rest_lateral
+            if target_world is not None:
+                target_f, target_s = self._world_to_body_local(*target_world)
+                target_f = target_f / max(1.0, self.size) - base_forward
+                target_s = target_s / max(1.0, self.size) - side_sign * base_lateral
+                target_f = clamp(target_f, min_forward, max_forward)
+                target_s = side_sign * clamp(side_sign * target_s, min_lateral, max_lateral)
+                desired_f += (target_f - desired_f) * hand_activity
+                desired_s += (target_s - desired_s) * hand_activity
+            elif not self.dragging:
+                # Relaxed searching is a small shared hand stroke, not a
+                # synchronized leg cadence.  Side mirroring is supplied by
+                # the signed lateral target, so the rest silhouette stays
+                # symmetrical until an explicit hand target arrives.
+                desired_f += 0.006 * math.sin(phase)
+                desired_s += side_sign * 0.004 * math.cos(phase * 0.91)
+            if custom_hand_palps and not self.dragging:
+                # A palp stroke is a small inward/outward hand-rub, not a
+                # mouse-following reach. Both hands keep their mirrored lane;
+                # the shared phase makes them close and open together.
+                rub_wave = 0.5 + 0.5 * math.sin(rub_phase)
+                desired_f += math.cos(rub_phase) * rub_forward_amount * gesture_level
+                desired_s = side_sign * (
+                    abs(desired_s)
+                    - rub_lateral_amount * gesture_level * rub_wave
+                )
+            desired_f = clamp(desired_f, min_forward, max_forward)
+            desired_s = side_sign * clamp(side_sign * desired_s, min_lateral, max_lateral)
+            self.antenna_hand_targets[side_index] = (
+                desired_f * self.size,
+                desired_s * self.size,
+            )
+            hand_reach = math.hypot(desired_f, desired_s)
+            extension_target = clamp(
+                max(0.0, hand_reach - math.hypot(rest_forward, rest_lateral)) * 0.10
+                + hand_activity * 0.025
+                + max(0.0, math.sin(phase)) * 0.006,
+                0.0, 0.10,
+            )
+            self.antenna_extension[side_index] += (
+                extension_target - self.antenna_extension[side_index]
+            ) * (1.0 - math.exp(-dt * 4.5))
+
+            grip_target = 0.0 if self.dragging else clamp(
+                self.catch_blend * 0.72 + self.inspect_intent * 0.24
+                + hand_activity * 0.12
+                + max(0.0, math.sin(phase)) * 0.03,
+                0.0, 1.0,
+            )
+            self.antenna_hand_grips[side_index] += (
+                grip_target - self.antenna_hand_grips[side_index]
+            ) * (1.0 - math.exp(-dt * 9.0))
+
+            for segment_index in range(segments):
+                delayed_phase = phase - phase_offsets[segment_index]
+                joint_wave = math.sin(delayed_phase) * (0.018 + m.curiosity * 0.022)
+                profile_angle = side_sign * angle_profile[segment_index]
+                target_angle = profile_angle
+                target_angle += side_sign * (drive.curl * 0.045 + (drive.base_angle - 0.62) * 0.18)
+                target_angle += side_sign * joint_wave
+                if target_world is not None:
+                    desired_angle = math.atan2(desired_s, max(0.05, desired_f))
+                    # Apply a bounded command to this knuckle only.  Keeping
+                    # the delta relative to the anatomical rest angle means a
+                    # target cannot flatten the chain into a straight pointer.
+                    aim_delta = math.atan2(
+                        math.sin(desired_angle - profile_angle),
+                        math.cos(desired_angle - profile_angle),
+                    )
+                    target_angle += clamp(
+                        aim_delta * joint_steering[segment_index],
+                        -joint_steering_limits[segment_index],
+                        joint_steering_limits[segment_index],
+                    )
+                # A sensory stroke starts at the proximal link and propagates
+                # toward the toe; it is not a single rigid antenna sway.
+                stroke = 0.5 + 0.5 * math.sin(delayed_phase)
+                if probing > 0.01:
+                    target_angle += side_sign * probing * (0.025 if segment_index < 2 else -0.018) * stroke
+                if hand_activity > 0.01:
+                    target_angle += side_sign * hand_activity * 0.010 * math.sin(delayed_phase * 0.85)
+                if custom_hand_palps and not self.dragging:
+                    # Let the rub travel through the knuckles with a delayed,
+                    # tapered wave. The middle joints do most of the folding;
+                    # the distal claw stays controlled instead of whipping.
+                    joint_wave_scale = joint_rub_profile[min(segment_index, len(joint_rub_profile) - 1)]
+                    target_angle += (
+                        side_sign
+                        * math.sin(rub_phase - segment_index * 0.64)
+                        * rub_joint_angle
+                        * gesture_level
+                        * joint_wave_scale
+                    )
+
+                # A hand target can steer a knuckle, but it cannot erase the
+                # folded anatomy of the palp.  Clamp every joint around its
+                # signed rest angle so the appendage remains a chain instead
+                # of becoming a straight cursor pointer.
+                angle_delta = math.atan2(
+                    math.sin(target_angle - profile_angle),
+                    math.cos(target_angle - profile_angle),
+                )
+                target_angle = profile_angle + clamp(
+                    angle_delta,
+                    -joint_angle_limits[segment_index],
+                    joint_angle_limits[segment_index],
+                )
+
+                lift_target = proximal_rise * lift_profile[segment_index]
+                lift_target *= 0.90 + hand_activity * 0.34 + self.antenna_hand_grips[side_index] * 0.16
+                lift_target += proximal_rise * 0.08 * max(0.0, math.sin(delayed_phase))
+                if custom_hand_palps and not self.dragging:
+                    lift_target += (
+                        proximal_rise
+                        * rub_lift_amount
+                        * gesture_level
+                        * max(0.0, math.sin(rub_phase - segment_index * 0.58))
+                    )
+                lift_target = clamp(lift_target, 0.0, 0.34)
+                # The movement wave travels from the base toward the hand:
+                # proximal joints lead and the distal claw settles last.
+                angle_rate = max(3.4, 5.8 - segment_index * 0.55)
+                lift_rate = max(3.6, 6.1 - segment_index * 0.60)
+                angle_alpha = 1.0 - math.exp(-dt * angle_rate)
+                lift_alpha = 1.0 - math.exp(-dt * lift_rate)
+                self.antenna_segment_angles[side_index][segment_index] += (
+                    target_angle - self.antenna_segment_angles[side_index][segment_index]
+                ) * angle_alpha
+                self.antenna_joint_lifts[side_index][segment_index] += (
+                    lift_target - self.antenna_joint_lifts[side_index][segment_index]
+                ) * lift_alpha
 
     def _antenna_aim_angle(self) -> float:
         local_f, local_s = self._world_to_body_local(self.focus_x, self.focus_y)
@@ -4331,6 +4738,11 @@ class Creature:
         and neighboring legs tend toward antiphase while each leg still has its own
         phase drift, urgency threshold, and footfall target.
         """
+        if self.dragging:
+            # Dragging is a suspended pose, not a gait state. Keep the leg chain
+            # and its joints still until release_drag asks the ground controller
+            # to rehome the feet.
+            return
         if self._uses_lively_gait():
             self._update_legs_lively(dt)
             return
@@ -4601,10 +5013,19 @@ class Creature:
                 continue
             _, _, _, _, _, severe_wrong = self._leg_alignment_metrics(leg, leg.foot_x, leg.foot_y)
             _, _, _, very_far = self._leg_reach_metrics(leg, leg.foot_x, leg.foot_y, visual=False)
-            emergency = severe_wrong or very_far
+            # A support stroke that is nearly full is a real mechanical limit,
+            # even if the foot is still inside the loose reach envelope. Free
+            # that leg before the solver stalls the whole body waiting for a
+            # narrow phase window; this is the long retract/attract stroke that
+            # makes spider locomotion efficient instead of tip-tapping in place.
+            stroke_pressure = leg.stroke_progress >= 0.80
+            turn_pressure = abs(leg.stance_turn) >= config["support_turn_limit"] * 0.80
+            emergency = severe_wrong or very_far or stroke_pressure or turn_pressure
             target = self._spider_predicted_target(leg, config, turn_speed)
             distance_to_target = math.hypot(leg.foot_x - target[0], leg.foot_y - target[1])
-            threshold = self.size * (0.14 if moving or turning else 0.10)
+            threshold = self.size * max(config["step_trigger"], config["stance_deadband"])
+            if not moving and not turning:
+                threshold *= 0.78
             if fast_state:
                 threshold *= 0.82
             _, relative, group = self._spider_phase_window(leg, self._lively_gait_phase, config)
@@ -4818,6 +5239,18 @@ class Creature:
         ``inspect_intent`` channels, which the renderer already turns into a
         front-leg reach and palp motion; pulsing them produces a tap-tap probe.
         """
+        antenna_cfg = self._appearance("antennae", {})
+        # Tarantula pedipalps should not inherit the generic cursor-probing
+        # behavior used by insect-like feelers. Their behavior channels are
+        # raised by explicit inspect/catch/aim actions instead, so a passive
+        # mouse position cannot repeatedly pull the hands out of their rest pose.
+        if (
+            isinstance(antenna_cfg, dict)
+            and str(antenna_cfg.get("style", "")).strip().lower() == "tarantula_hand_palps"
+        ):
+            self._feeler_pulse = 0.0
+            self._feeler_pulse_t = 0.0
+            return
         if self.state not in ("Idle", "Wander", "Observe", "Inspect", "Alert", "Approach"):
             self._feeler_pulse = 0.0
             self._feeler_pulse_t = 0.0
@@ -4947,19 +5380,26 @@ class Creature:
             default_phase_offsets = [0.0, 0.32, -0.22, 0.44][:segment_count - 1]
             default_bend_directions = [1.0, 1.0, 0.72, 0.42][:segment_count - 1]
             segment_scales = [float(value) for value in raw.get("segment_scales", default_scales)]
+            width_scales = [float(value) for value in raw.get("width_scales", segment_scales)]
+            raw_color_keys = raw.get("segment_color_keys", ["legs"] * segment_count)
+            if not isinstance(raw_color_keys, list):
+                raw_color_keys = ["legs"] * segment_count
+            segment_color_keys = [str(value).strip() or "legs" for value in raw_color_keys]
             segment_lengths = [float(value) for value in raw.get("segment_lengths", default_lengths)]
             joint_scales = [float(value) for value in raw.get("joint_scales", default_joints)]
             bend_profile = [float(value) for value in raw.get("bend_profile", default_profile)]
             joint_phase_offsets = [clamp(float(value), -math.tau, math.tau) for value in raw.get("joint_phase_offsets", default_phase_offsets)]
             bend_directions = [clamp(float(value), -1.4, 1.4) for value in raw.get("bend_directions", default_bend_directions)]
             joint_count = segment_count - 1
-            if (len(segment_scales) != segment_count or len(segment_lengths) != segment_count
+            if (len(segment_scales) != segment_count or len(width_scales) != segment_count
+                    or len(segment_color_keys) != segment_count
+                    or len(segment_lengths) != segment_count
                     or len(joint_scales) != joint_count
                     or len(bend_profile) != joint_count or len(joint_phase_offsets) != joint_count
                     or len(bend_directions) != joint_count):
                 return None
             if any(value <= 0.0 or not math.isfinite(value)
-                   for value in segment_scales + segment_lengths + joint_scales + bend_profile):
+                   for value in segment_scales + width_scales + segment_lengths + joint_scales + bend_profile):
                 return None
             if any(not math.isfinite(value) for value in joint_phase_offsets + bend_directions):
                 return None
@@ -4974,6 +5414,10 @@ class Creature:
                 "hairy": hairy,
                 "hair_scale": hair_scale,
                 "segment_scales": segment_scales,
+                "width_scales": width_scales,
+                "segment_color_keys": segment_color_keys,
+                "joint_color_key": str(raw.get("joint_color_key", "legs")).strip() or "legs",
+                "tip_color_key": str(raw.get("tip_color_key", "legs")).strip() or "legs",
                 "segment_lengths": segment_lengths,
                 "joint_scales": joint_scales,
                 "bend_profile": bend_profile,
@@ -5074,8 +5518,33 @@ class Creature:
         forward_bias = self.size * 0.075 * front * (0.72 + 0.28 * leg.lift)
         profiles = chain_config["bend_profile"]
         directions = chain_config["bend_directions"]
+        catch_strength = 0.0
+        if not self.dragging and self.catch_blend > 0.001 and front > 0.15:
+            catch_strength = clamp(
+                self.catch_blend * (front - 0.15) / 0.85,
+                0.0, 1.0,
+            )
+        # Catching must flex through the individual knuckles. This modest arc
+        # is intentionally strongest at the first two interior joints, then
+        # tapers toward the tarsus so a cursor target cannot make a straight,
+        # rubbery front limb.
+        catch_bend_profile = [0.55, 1.00, 0.72, 0.34]
         elevated_arc = chain_config["elevated_arc"]
         proximal_lift = chain_config["proximal_lift"]
+        if self.dragging:
+            # _leg_draw_points has already tucked and lowered the endpoint. Do
+            # not add the walking rig's high proximal arc on top of that pose.
+            # Keep a small gravity sag and let faster hand motion increase the
+            # relaxed bend instead of making every leg point at one center.
+            held_speed01 = clamp(self.current_speed / 260.0, 0.0, 1.0)
+            held_response = clamp(float(getattr(self, "held_drag_response", 0.0)), 0.0, 1.0)
+            # Fold the suspended chain through its knuckles. The walking pose
+            # is deliberately restrained, but a carried spider needs a visible
+            # soft knee instead of a straight radial spoke.
+            bend_base *= 3.40 + held_response * 0.90
+            forward_bias *= 0.35
+            elevated_arc = 0.0
+            proximal_lift = 1.0
         joint_bends = leg.joint_bends
         if len(joint_bends) != len(profiles):
             joint_bends = [0.90 + 0.06 * index for index in range(len(profiles))]
@@ -5124,6 +5593,11 @@ class Creature:
             seed_points = [(ax, ay)]
             for index, fraction in enumerate(fractions):
                 bend = bend_base * profiles[index] * directions[index] * joint_bends[index] * bend_scale
+                if catch_strength > 0.0:
+                    bend += (
+                        self.size * 0.075 * catch_strength
+                        * catch_bend_profile[index]
+                    )
                 local_f = a_f + (f_f - a_f) * fraction + forward_bias * profiles[index]
                 local_s = a_s + (f_s - a_s) * fraction + side * bend
                 point_x, point_y = self._body_local_to_world(local_f, local_s)
@@ -5137,6 +5611,14 @@ class Creature:
                         * (1.0 + 0.18 * leg.lift) * bend_scale)
                 if index == 0:
                     rise *= proximal_lift
+                if self.dragging:
+                    # Screen-down gravity acts on every suspended joint.  The
+                    # sag follows each leg's own lane; it is not a pull toward
+                    # a central point below the body.
+                    point_y += self.size * (0.105 + held_response * 0.075) * math.sin(math.pi * fraction)
+                    # A relaxed suspended leg folds slightly back toward its
+                    # own body lane before the distal links fall away again.
+                    local_s -= side * self.size * (0.055 + held_response * 0.025) * math.sin(math.pi * fraction)
                 seed_points.append((point_x, point_y - rise))
             seed_points.append((fx, fy))
             points = constrain_to_segment_limits(seed_points)
@@ -5148,7 +5630,8 @@ class Creature:
         points, path_len = build(1.0)
         # A bent chain may be a little longer than the direct anchor-to-foot
         # line, but never enough to look like a stretched rubber limb.
-        path_budget = min((upper + lower) * chain_config["max_stretch"], direct * 1.28)
+        path_ratio = 1.42 if self.dragging else 1.28
+        path_budget = min((upper + lower) * chain_config["max_stretch"], direct * path_ratio)
         if path_len > path_budget:
             extra = max(1e-4, path_len - direct)
             bend_scale = clamp((path_budget - direct) / extra, 0.0, 1.0)
@@ -5197,6 +5680,19 @@ class Creature:
         a_f, a_s = self._world_to_body_local(ax, ay)
         f_f, f_s = self._world_to_body_local(fx, fy)
 
+        if self.dragging:
+            # A held spider has no stance to brace against. Use a small,
+            # phase-varied bend around the midpoint instead of the strong
+            # outward walking-knee rule, so every leg hangs loosely in the air.
+            phase = float(getattr(leg, "phase_seed", 0.0))
+            held_speed01 = clamp(self.current_speed / 260.0, 0.0, 1.0)
+            held_response = clamp(float(getattr(self, "held_drag_response", 0.0)), 0.0, 1.0)
+            relax = 0.105 + held_response * 0.035 + 0.018 * (0.5 + 0.5 * math.sin(phase)) + held_speed01 * 0.020
+            knee_f = a_f + (f_f - a_f) * (0.44 - held_speed01 * 0.035)
+            knee_s = a_s + (f_s - a_s) * 0.48 + sign * self.size * relax
+            knee_x, knee_y = self._body_local_to_world(knee_f, knee_s)
+            return knee_x, knee_y + self.size * (0.040 + held_speed01 * 0.045)
+
         rest_f = float(d.get("rest_forward", 0.0)) * self.size
         rest_s = abs(float(d.get("rest_side", 1.0)) * self.size)
         attach_s = abs(float(d.get("attach_side", 0.30)) * self.size)
@@ -5226,8 +5722,10 @@ class Creature:
         from PyQt5.QtGui import QBrush, QPainterPath, QPen
 
         startle = self._startle_amount()
-        tremble_x = math.sin(self.breath_phase * 17.0 + self.startle_phase) * self.size * 0.018 * startle
-        tremble_y = math.cos(self.breath_phase * 19.0 + self.startle_phase * 0.7) * self.size * 0.018 * startle
+        startle_highlight = self._startle_highlight_active(startle)
+        motion_startle = 0.0 if self.dragging else startle
+        tremble_x = math.sin(self.breath_phase * 17.0 + self.startle_phase) * self.size * 0.018 * motion_startle
+        tremble_y = math.cos(self.breath_phase * 19.0 + self.startle_phase * 0.7) * self.size * 0.018 * motion_startle
         leg_y_off = -self.jump_z
         jz_shadow = clamp(self.jump_z / max(1.0, self.size), 0.0, 3.0)
         shadow_shrink = 1.0 / (1.0 + jz_shadow * 0.55)
@@ -5308,7 +5806,7 @@ class Creature:
             # Leg motion is communicated by the articulated pose. Do not make
             # the swinging leg glow; highlight remains reserved for a genuine
             # startled state shared by the whole creature.
-            color = self._qcolor("highlight" if startle > 0.35 else "legs", 230 if startle > 0.35 else 245)
+            color = self._qcolor("highlight" if startle_highlight else "legs", 230 if startle_highlight else 245)
             if chain_points is not None:
                 # Keep a distinct narrow metatarsus between the tibia and toe.
                 # The previous four-entry list silently dropped the fifth
@@ -5320,7 +5818,10 @@ class Creature:
                     max(tarsus_width, tibia_width * 0.72),
                     tarsus_width,
                 ]
-                scales = chain_config["segment_scales"]
+                scales = chain_config["width_scales"]
+                segment_color_keys = chain_config.get(
+                    "segment_color_keys", ["legs"] * (len(chain_points) - 1)
+                )
                 chain_widths = [width_bases[index] * scales[index] for index in range(len(chain_points) - 1)]
                 for index, width in enumerate(chain_widths):
                     start_x, start_y = chain_points[index]
@@ -5332,7 +5833,14 @@ class Creature:
                         )
                         painter.setPen(QPen(hair_color, width * (1.12 + chain_config["hair_scale"] * 0.55), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                         painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
-                    painter.setPen(QPen(color if index < len(chain_widths) - 1 else self._qcolor("legs", 210), width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    if startle_highlight:
+                        segment_color = self._qcolor("highlight", 230)
+                    else:
+                        segment_color = self._qcolor(
+                            segment_color_keys[index] if index < len(segment_color_keys) else "legs",
+                            245 if index < len(chain_widths) - 1 else 220,
+                        )
+                    painter.setPen(QPen(segment_color, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                     painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
             elif segmented_legs:
                 painter.setPen(QPen(color, coxa_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
@@ -5354,7 +5862,12 @@ class Creature:
                 painter.drawLine(QPointF(tarsus_x, tarsus_y), QPointF(foot_x, foot_y))
             if show_joint_nodes:
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(self._qcolor("legs", 220)))
+                painter.setBrush(QBrush(
+                    self._qcolor(
+                        chain_config.get("joint_color_key", "legs") if chain_config else "legs",
+                        225,
+                    )
+                ))
                 node_r = max(1.0, base_width * 0.24 * joint_node_scale)
                 if chain_points is not None:
                     joint_scales = chain_config["joint_scales"]
@@ -5366,7 +5879,7 @@ class Creature:
                     # A small core on every joint makes all four independently
                     # animated pivots readable at desktop scale. The patella
                     # and distal hinge receive a slightly stronger core.
-                    painter.setBrush(QBrush(self._qcolor("highlight", 210)))
+                    painter.setBrush(QBrush(self._qcolor(chain_config.get("joint_color_key", "legs"), 230)))
                     for joint_index, (joint_x, joint_y) in enumerate(joints):
                         core_scale = 0.48 if joint_index in (1, len(joints) - 1) else 0.34
                         painter.drawEllipse(QPointF(joint_x, joint_y), node_r * core_scale, node_r * core_scale)
@@ -5376,7 +5889,10 @@ class Creature:
                     painter.drawEllipse(QPointF(tarsus_x, tarsus_y), node_r * 0.98, node_r * 0.98)
                     painter.setBrush(QBrush(self._qcolor("highlight", 210)))
                     painter.drawEllipse(QPointF(kx, ky), node_r * 0.60, node_r * 0.60)
-            painter.setPen(QPen(self._qcolor("highlight" if startle > 0.35 else "legs", 220), max(1.0, tarsus_width * 0.8), Qt.SolidLine, Qt.RoundCap))
+            foot_key = "highlight" if startle_highlight else (
+                chain_config.get("tip_color_key", "legs") if chain_config else "legs"
+            )
+            painter.setPen(QPen(self._qcolor(foot_key, 220), max(1.0, tarsus_width * 0.8), Qt.SolidLine, Qt.RoundCap))
             painter.drawPoint(QPointF(foot_x, foot_y))
 
         crouch_drop = self.crouch * self.size * 0.06
@@ -5401,6 +5917,8 @@ class Creature:
         ceph_scale = self._appearance("cephalothorax_scale", [0.70, 0.66])
         abdomen_offset_x = float(self._appearance("abdomen_offset_x", -0.18)) * self.size
         ceph_offset_x = float(self._appearance("cephalothorax_offset_x", 0.40)) * self.size
+        pedicel_cfg = self._appearance("pedicel", {})
+        head_cfg = self._appearance("head", {})
         pedipalp_scale = float(self._appearance("pedipalp_scale", 1.0))
         eye_scale = float(self._appearance("eye_scale", 1.0))
         eye_count = max(2, int(self._appearance("eye_count", 2)))
@@ -5414,6 +5932,17 @@ class Creature:
         ceph_offset_x += self.rear * self.size * 0.05
         abdo_wag = self.abdomen_wag * self.size * 0.45
 
+        pedicel_enabled = isinstance(pedicel_cfg, dict) and bool(pedicel_cfg.get("enabled", True))
+        pedicel_offset_x = float(pedicel_cfg.get("offset_x", -0.04)) * self.size if pedicel_enabled else 0.0
+        pedicel_scale = pedicel_cfg.get("scale", [0.20, 0.12]) if pedicel_enabled else [0.0, 0.0]
+        pedicel_w = self.size * float(pedicel_scale[0]) if len(pedicel_scale) >= 2 else 0.0
+        pedicel_h = self.size * float(pedicel_scale[1]) if len(pedicel_scale) >= 2 else 0.0
+        head_enabled = isinstance(head_cfg, dict) and bool(head_cfg.get("enabled", True))
+        head_offset_x = float(head_cfg.get("offset_x", 0.49)) * self.size if head_enabled else ceph_offset_x
+        head_scale = head_cfg.get("scale", [0.22, 0.20]) if head_enabled else [0.0, 0.0]
+        head_w = self.size * float(head_scale[0]) if len(head_scale) >= 2 else 0.0
+        head_h = self.size * float(head_scale[1]) if len(head_scale) >= 2 else 0.0
+
         if fluffiness > 0.0:
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(fluff_color))
@@ -5422,18 +5951,41 @@ class Creature:
                 (abdomen_offset_x - self.size * 0.13, self.size * 0.12, abdomen_w * 0.58, abdomen_h * 0.46),
                 (ceph_offset_x + self.size * 0.01, -self.size * 0.06, ceph_w * 0.62, ceph_h * 0.52),
                 (ceph_offset_x + self.size * 0.02, self.size * 0.08, ceph_w * 0.54, ceph_h * 0.42),
+                (head_offset_x, -self.size * 0.02, head_w * 0.66, head_h * 0.56),
             ]:
                 painter.drawEllipse(QRectF(ox - sx * 0.5, oy - sy * 0.5, sx, sy))
 
         painter.setPen(QPen(leg_color, max(1.0, self.size * 0.035), Qt.SolidLine, Qt.RoundCap))
         painter.setBrush(QBrush(body))
         painter.drawEllipse(QRectF(abdomen_offset_x - abdomen_w * 0.5, -abdomen_h * 0.5 + abdo_wag, abdomen_w, abdomen_h))
+        if pedicel_enabled and pedicel_w > 0.0 and pedicel_h > 0.0:
+            pedicel_color = self._qcolor(str(pedicel_cfg.get("color_key", "body")), 255)
+            pedicel_outline = self._qcolor(str(pedicel_cfg.get("outline_key", "legs")), 210)
+            pedicel_outline_width = max(1.0, self.size * clamp(float(pedicel_cfg.get("outline_width", 0.025)), 0.01, 0.07))
+            painter.setPen(QPen(pedicel_outline, pedicel_outline_width, Qt.SolidLine, Qt.RoundCap))
+            painter.setBrush(QBrush(pedicel_color))
+            painter.drawEllipse(QRectF(pedicel_offset_x - pedicel_w * 0.5, -pedicel_h * 0.5, pedicel_w, pedicel_h))
         painter.drawEllipse(QRectF(ceph_offset_x - ceph_w * 0.5, -ceph_h * 0.5, ceph_w, ceph_h))
+        if head_enabled and head_w > 0.0 and head_h > 0.0:
+            head_color = self._qcolor(str(head_cfg.get("color_key", "body")), 255)
+            head_outline = self._qcolor(str(head_cfg.get("outline_key", "legs")), 225)
+            head_outline_width = max(1.0, self.size * clamp(float(head_cfg.get("outline_width", 0.028)), 0.01, 0.07))
+            painter.setPen(QPen(head_outline, head_outline_width, Qt.SolidLine, Qt.RoundCap))
+            painter.setBrush(QBrush(head_color))
+            painter.drawEllipse(QRectF(head_offset_x - head_w * 0.5, -head_h * 0.5, head_w, head_h))
+        self._draw_leg_connections(painter, chain_config)
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(highlight))
         painter.drawEllipse(QRectF(abdomen_offset_x - abdomen_w * 0.18, -abdomen_h * 0.28 + abdo_wag, abdomen_w * 0.28, abdomen_h * 0.18))
         painter.drawEllipse(QRectF(ceph_offset_x - ceph_w * 0.10, -ceph_h * 0.22, ceph_w * 0.20, ceph_h * 0.13))
+        if head_enabled and head_w > 0.0 and head_h > 0.0:
+            head_highlight = self._qcolor(
+                str(head_cfg.get("highlight_key", "highlight")),
+                int(head_cfg.get("highlight_alpha", 115)),
+            )
+            painter.setBrush(QBrush(head_highlight))
+            painter.drawEllipse(QRectF(head_offset_x - head_w * 0.18, -head_h * 0.26, head_w * 0.28, head_h * 0.16))
 
         stripe_color = self._appearance("stripe_color", None)
         if stripe_color:
@@ -5445,17 +5997,34 @@ class Creature:
                 painter.drawEllipse(QRectF(cx - abdomen_w * 0.08, -abdomen_h * 0.28 + t * abdomen_h * 0.16, abdomen_w * 0.16, abdomen_h * 0.10))
 
         painter.setPen(QPen(leg_color, max(1.2, self.size * 0.045), Qt.SolidLine, Qt.RoundCap))
-        palps_y = self.size * 0.12 * pedipalp_scale * (1.0 + startle * 0.55)
-        painter.drawLine(QPointF(ceph_offset_x + ceph_w * 0.25, -palps_y), QPointF(ceph_offset_x + ceph_w * 0.55, -palps_y * 1.85))
-        painter.drawLine(QPointF(ceph_offset_x + ceph_w * 0.25, palps_y), QPointF(ceph_offset_x + ceph_w * 0.55, palps_y * 1.85))
+        antenna_cfg = self._appearance("antennae", {})
+        custom_hand_palps = (
+            isinstance(antenna_cfg, dict)
+            and str(antenna_cfg.get("style", "")).strip().lower()
+            in ("front_leg", "tarantula_front_legs", "tarantula_hand_palps")
+        )
+        if not custom_hand_palps:
+            palps_y = self.size * 0.12 * pedipalp_scale * (1.0 + startle * 0.55)
+            painter.drawLine(QPointF(ceph_offset_x + ceph_w * 0.25, -palps_y), QPointF(ceph_offset_x + ceph_w * 0.55, -palps_y * 1.85))
+            painter.drawLine(QPointF(ceph_offset_x + ceph_w * 0.25, palps_y), QPointF(ceph_offset_x + ceph_w * 0.55, palps_y * 1.85))
 
+        # The head is a small front lobe on the flat carapace. Keep the eyes
+        # and mouthparts there instead of letting them drift over the abdomen.
+        if head_enabled and head_w > 0.0 and head_h > 0.0:
+            face_forward = float(head_cfg.get("face_forward", 0.10))
+            face_side = float(head_cfg.get("face_side", 0.0))
+            head_face_x = head_offset_x + head_w * face_forward
+            head_face_y = head_h * face_side
+        else:
+            head_face_x = ceph_offset_x
+            head_face_y = 0.0
         aiming = clamp(self.aim_intent, 0.0, 1.0)
         eye_startle = self._eye_startle_amount(startle)
         eye_r = max(1.0, self.size * 0.035 * eye_scale) * (1.0 + eye_startle * 0.72)
         eyes = []
         if eye_count <= 2:
-            eyes.append((ceph_offset_x + ceph_w * 0.20, -ceph_h * 0.16, eye_r))
-            eyes.append((ceph_offset_x + ceph_w * 0.20, ceph_h * 0.16, eye_r))
+            eyes.append((head_face_x, head_face_y - head_h * 0.16, eye_r))
+            eyes.append((head_face_x, head_face_y + head_h * 0.16, eye_r))
         else:
             rows = 2
             cols = max(2, eye_count // 2)
@@ -5463,9 +6032,18 @@ class Creature:
                 for c in range(cols):
                     if r * cols + c >= eye_count:
                         break
-                    eyex = ceph_offset_x + ceph_w * (0.10 + c * 0.08)
-                    eyey = (-0.18 + r * 0.18 + (c % 2) * 0.02) * ceph_h
+                    eyex = head_face_x - head_w * 0.20 + head_w * (0.08 + c * 0.13)
+                    eyey = head_face_y + (-0.18 + r * 0.18 + (c % 2) * 0.02) * head_h
                     eyes.append((eyex, eyey, eye_r * (0.85 if c % 2 else 1.0)))
+        if head_enabled and head_w > 0.0 and head_h > 0.0:
+            fang_color = self._qcolor("legs", 235)
+            painter.setPen(QPen(fang_color, max(1.0, self.size * 0.018), Qt.SolidLine, Qt.RoundCap))
+            fang_x = head_offset_x + head_w * 0.33
+            for side_sign in (-1.0, 1.0):
+                painter.drawLine(
+                    QPointF(fang_x, side_sign * head_h * 0.13),
+                    QPointF(fang_x + head_w * 0.04, side_sign * head_h * 0.42),
+                )
         self._draw_eyes(painter, eyes, ceph_offset_x, ceph_w, ceph_h, startle, aiming)
         self._draw_antennae(painter, ceph_offset_x, ceph_w, ceph_h, startle)
         painter.restore()
@@ -5475,8 +6053,10 @@ class Creature:
         from PyQt5.QtGui import QBrush, QPen, QPainter
 
         startle = self._startle_amount()
-        tremble_x = math.sin(self.breath_phase * 17.0 + self.startle_phase) * self.size * 0.018 * startle
-        tremble_y = math.cos(self.breath_phase * 19.0 + self.startle_phase * 0.7) * self.size * 0.018 * startle
+        startle_highlight = self._startle_highlight_active(startle)
+        motion_startle = 0.0 if self.dragging else startle
+        tremble_x = math.sin(self.breath_phase * 17.0 + self.startle_phase) * self.size * 0.018 * motion_startle
+        tremble_y = math.cos(self.breath_phase * 19.0 + self.startle_phase * 0.7) * self.size * 0.018 * motion_startle
         leg_y_off = -self.jump_z
         jz_shadow = clamp(self.jump_z / max(1.0, self.size), 0.0, 3.0)
         shadow_shrink = 1.0 / (1.0 + jz_shadow * 0.55)
@@ -5583,7 +6163,7 @@ class Creature:
                 knee_scale = 1.0
                 painter.drawEllipse(QPointF(kx, ky), leg_thick * 0.14 * knee_scale, leg_thick * 0.14 * knee_scale)
                 painter.drawEllipse(QPointF(tarsus_x, tarsus_y), leg_tip_thick * 0.18, leg_tip_thick * 0.18)
-            painter.setBrush(QBrush(self._qcolor("highlight" if startle > 0.35 else "legs", 215 if startle > 0.35 else 180)))
+            painter.setBrush(QBrush(self._qcolor("highlight" if startle_highlight else "legs", 215 if startle_highlight else 180)))
             painter.drawEllipse(QPointF(foot_x, foot_y), foot_bulb * (1.0 + step_gain), foot_bulb * 0.70 * (1.0 + step_gain))
 
         crouch_drop = self.crouch * self.size * 0.06
@@ -5683,7 +6263,10 @@ class Creature:
         px = leg.lift * self.size * lift_scale
         front = self._leg_front_factor(leg)
         if self.catch_blend > 0.01 and front > 0.15:
-            px += self.catch_blend * clamp((front - 0.15) / 0.85, 0.0, 1.0) * self.size * 0.28
+            # A catch is an articulated reach, not a straight upward yank of
+            # all four front feet. Keep only a small clearance so the chain's
+            # knuckles, rather than this endpoint offset, form the bend.
+            px += self.catch_blend * clamp((front - 0.15) / 0.85, 0.0, 1.0) * self.size * 0.12
         return px
 
     def _front_leg_feeler_pose(self, leg: LegState, ax: float, ay: float, foot_x: float, foot_y: float, front: float) -> Tuple[float, float]:
@@ -5724,22 +6307,93 @@ class Creature:
             foot_y = ay + ddy * scale
         return foot_x, foot_y
 
+    def _picked_up_leg_pose(self, leg: LegState, ax: float, ay: float, foot_x: float, foot_y: float) -> Tuple[float, float]:
+        """Let each carried leg sag in its own lane under screen-down gravity."""
+        # A carried spider has no useful ground contact, but its legs should
+        # remain visible around the body. Gravity is a downward field across
+        # the whole lower side of the body, not an attractor at one point. Do
+        # not use breath_phase here: the held pose must not tremble.
+        phase = float(getattr(leg, "phase_seed", 0.0))
+        held_speed01 = clamp(self.current_speed / 260.0, 0.0, 1.0)
+        held_response = clamp(float(getattr(self, "held_drag_response", 0.0)), 0.0, 1.0)
+        held_clock = float(getattr(self, "held_pose_clock", 0.0))
+        settle = clamp(float(getattr(self, "held_leg_relax", 1.0)), 0.0, 1.0)
+        d = leg.definition
+        try:
+            sign = self._side_sign(d.get("side", "right"))
+            lane_f = float(d.get("rest_forward", 0.0)) * self.size
+            lane_s = float(d.get("rest_side", 1.0)) * self.size * sign
+            lane_x, lane_y = self._body_local_to_world(lane_f, lane_s)
+        except (TypeError, ValueError):
+            lane_x, lane_y = self._leg_ideal_foot(leg)
+        # The current foot may still be behind the body after a drag. Gradually
+        # replace that history with the leg's own body-relative lane, so a stop
+        # lets every leg relax southward instead of staying glued to the travel
+        # direction.
+        # Keep only a small amount of the old world-space foot history. A fast
+        # drag can move the body many pixels in one frame; using that history
+        # directly would leave the endpoint behind the body and make the legs
+        # disappear under it. The visible response comes from the damped lag
+        # below, while the pose itself stays in its own body-relative lane.
+        history_blend = (1.0 - settle) * 0.22
+        lane_source_x = lane_x + (foot_x - lane_x) * history_blend
+        lane_source_y = lane_y + (foot_y - lane_y) * history_blend
+        # Pull the endpoints into a relaxed, compact crouch. Preserve each
+        # leg's own lane so the feet remain visible, but do not leave the
+        # picked-up spider in its fully spread walking star.
+        spread = 0.68 - held_response * 0.04 + 0.025 * math.sin(phase * 0.73 + held_clock * 0.34)
+        foot_x = ax + (lane_source_x - ax) * spread
+
+        # The whole leg set follows the hand with a small damped lag. The
+        # phase offset keeps the legs from moving as one rigid fan.
+        leg_phase = held_clock + phase * 0.24
+        foot_x += float(getattr(self, "held_drag_sway_x", 0.0)) * (0.72 + 0.10 * math.sin(leg_phase))
+        foot_y += float(getattr(self, "held_drag_sway_y", 0.0)) * (0.72 + 0.10 * math.cos(leg_phase))
+
+        # A moving hand gives the feet a small, smooth counter-lag. It is
+        # deliberately bounded and horizontal-first so gravity still wins.
+        drag_speed = math.hypot(self.drag_vel_x, self.drag_vel_y)
+        if drag_speed > 1.0:
+            lag = self.size * (0.025 + held_speed01 * 0.16)
+            foot_x -= (self.drag_vel_x / drag_speed) * lag
+            foot_y -= (self.drag_vel_y / drag_speed) * lag * 0.30
+
+        # Gravity is screen-down, not body-relative. Put the feet clearly south
+        # of the abdomen. Each leg receives a slightly different drop along
+        # the same lower gravity band, rather than converging on a small sun.
+        bottom_band = self.y + self.size * (0.52 + 0.022 * math.sin(phase * 1.13 + held_clock * 0.24))
+        natural_drop = clamp(lane_source_y - ay, 0.0, self.size * 0.45)
+        gravity_floor = bottom_band + self.size * (0.10 + held_speed01 * 0.045) + natural_drop * 0.10
+        bounce_amp = self.size * (0.018 + held_response * 0.075)
+        bounce = bounce_amp * math.sin(held_clock * 1.10 + phase * 0.31)
+        foot_y = max(foot_y, gravity_floor + bounce)
+        return foot_x, foot_y
+
     def _leg_draw_points(self, leg: LegState) -> Tuple[float, float, float, float]:
         """World-space (attach, foot) for rendering with catch-reach + airborne tuck.
 
         The tuned gait keeps ``leg.foot_x/foot_y`` planted; this only adjusts the
-        *rendered* foot so the front legs can reach out during a catch and all legs
-        tuck up while the body is in the air.  Vertical jump lift is applied later
-        as a pure draw-time screen offset so the solved knee geometry stays correct.
+        *rendered* foot so the front legs can reach out during a catch, legs tuck
+        during a jump, and a held spider can hang its feet below the body. Vertical
+        jump lift is applied later as a pure draw-time screen offset so the solved
+        knee geometry stays correct.
         """
         ax, ay = self._leg_attach(leg)
         foot_x, foot_y = self._visual_foot_for_render(leg)
         front = self._leg_front_factor(leg)
+        if self.dragging:
+            picked_x, picked_y = self._picked_up_leg_pose(leg, ax, ay, foot_x, foot_y)
+            return ax, ay, picked_x, picked_y
         if self.catch_blend > 0.001 and front > 0.15:
             cx, cy = self.catch_point
             reach = self.catch_blend * clamp((front - 0.15) / 0.85, 0.0, 1.0)
-            rx = foot_x + (cx - foot_x) * 0.55 * reach
-            ry = foot_y + (cy - foot_y) * 0.55 * reach
+            # Constrain the requested hand/catch point to this leg's own
+            # forward/lateral lane before moving the endpoint. Without this,
+            # all four front legs can chase one mouse point across their lanes,
+            # after which the chain renderer is forced into a straight bend.
+            cx, cy = self._constrain_leg_point(leg, cx, cy)
+            rx = foot_x + (cx - foot_x) * 0.40 * reach
+            ry = foot_y + (cy - foot_y) * 0.40 * reach
             # Never let a distant target stretch the leg past a believable span.
             max_span = self.size * (float(leg.definition.get("reach", 1.8)) + 0.4)
             ddx, ddy = rx - ax, ry - ay
@@ -5778,16 +6432,109 @@ class Creature:
             foot_y += (ay - foot_y) * t
         return ax, ay, foot_x, foot_y
 
+    def _draw_leg_connections(self, painter, chain_config: Optional[dict]) -> None:
+        """Paint the short coxa/trochanter bridges that seat legs in the body.
+
+        The articulated leg is intentionally rendered underneath the shell.  A
+        tarantula still needs a visible proximal connection, though: without a
+        painted socket and a short outward coxa, the lateral roots look
+        detached or disappear under the cephalothorax.  This overlay redraws
+        only that first socket-to-coxa portion; the remaining leg chain keeps
+        its normal depth ordering.
+        """
+        from PyQt5.QtCore import QPointF, Qt
+        from PyQt5.QtGui import QBrush, QPen
+
+        cfg = self._appearance("leg_connections", {})
+        if not isinstance(cfg, dict) or cfg.get("enabled", False) is not True or not chain_config:
+            return
+
+        try:
+            socket_radius = clamp(float(cfg.get("socket_radius", 0.09)), 0.04, 0.18) * self.size
+            outline_width = clamp(float(cfg.get("socket_outline_width", 0.035)), 0.01, 0.08) * self.size
+            socket_core_scale = clamp(float(cfg.get("socket_core_scale", 0.66)), 0.35, 0.90)
+            coxa_length = clamp(float(cfg.get("coxa_length", 0.18)), 0.06, 0.32) * self.size
+            trochanter_length = clamp(float(cfg.get("trochanter_length", 0.12)), 0.04, 0.24) * self.size
+            coxa_width = clamp(float(cfg.get("coxa_width", 0.10)), 0.04, 0.18) * self.size
+            trochanter_width = clamp(float(cfg.get("trochanter_width", 0.075)), 0.03, 0.14) * self.size
+            joint_radius = clamp(float(cfg.get("joint_radius", 0.06)), 0.03, 0.12) * self.size
+        except (TypeError, ValueError):
+            return
+
+        socket_color = self._qcolor(str(cfg.get("socket_color_key", "body")), 245)
+        core_color = self._qcolor(str(cfg.get("core_color_key", "legs")), 250)
+        accent_color = self._qcolor(str(cfg.get("accent_color_key", "highlight")), 150)
+        segment_color_keys = chain_config.get("segment_color_keys", ["legs"] * chain_config["segment_count"])
+        proximal_color = self._qcolor(
+            segment_color_keys[0] if segment_color_keys else str(cfg.get("core_color_key", "legs")),
+            245,
+        )
+
+        for leg in self.legs:
+            ax, ay = self._leg_attach(leg)
+            foot_x, foot_y = self._leg_draw_points(leg)[2:]
+            foot_x, foot_y = self._safe_sprite_leg_foot(leg, foot_x, foot_y, chain_config)
+            chain_points = self._sprite_leg_chain_points(leg, ax, ay, foot_x, foot_y, chain_config)
+            root_f, root_s = self._world_to_body_local(*chain_points[0])
+            first_f, first_s = self._world_to_body_local(*chain_points[1])
+            direction_f = first_f - root_f
+            direction_s = first_s - root_s
+            direction_len = math.hypot(direction_f, direction_s)
+            if direction_len < 1e-4 and len(chain_points) > 2:
+                second_f, second_s = self._world_to_body_local(*chain_points[2])
+                direction_f = second_f - root_f
+                direction_s = second_s - root_s
+                direction_len = math.hypot(direction_f, direction_s)
+            if direction_len < 1e-4:
+                continue
+
+            # The root overlay follows the first articulated link outward from
+            # the socket.  The old bridge pointed inward toward the body and
+            # read as a tube disappearing underneath the shell; this makes the
+            # coxa visibly emerge from a lateral carapace socket instead.
+            direction_f /= direction_len
+            direction_s /= direction_len
+            exposed_length = min(
+                coxa_length + trochanter_length,
+                max(self.size * 0.12, direction_len),
+            )
+            end_f = root_f + direction_f * exposed_length
+            end_s = root_s + direction_s * exposed_length
+            split = coxa_length / max(1e-4, coxa_length + trochanter_length)
+            joint_f = root_f + (end_f - root_f) * split
+            joint_s = root_s + (end_s - root_s) * split
+
+            painter.setPen(QPen(socket_color, max(1.0, outline_width), Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(root_f, root_s), QPointF(end_f, end_s))
+            painter.setPen(QPen(proximal_color, max(1.2, coxa_width), Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(root_f, root_s), QPointF(joint_f, joint_s))
+            painter.setPen(QPen(core_color, max(1.0, trochanter_width), Qt.SolidLine, Qt.RoundCap))
+            painter.drawLine(QPointF(joint_f, joint_s), QPointF(end_f, end_s))
+
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(socket_color))
+            painter.drawEllipse(QPointF(root_f, root_s), socket_radius, socket_radius * 0.76)
+            painter.setBrush(QBrush(proximal_color))
+            painter.drawEllipse(
+                QPointF(root_f, root_s),
+                socket_radius * socket_core_scale,
+                socket_radius * socket_core_scale * 0.74,
+            )
+            painter.setBrush(QBrush(accent_color))
+            painter.drawEllipse(QPointF(joint_f, joint_s), joint_radius, joint_radius * 0.72)
+
     def _draw_antennae(self, painter, ceph_offset_x: float, ceph_w: float, ceph_h: float, startle: float) -> None:
         """Two expressive feelers on the head front; shape carries the emotion."""
         from PyQt5.QtCore import QPointF, Qt
-        from PyQt5.QtGui import QBrush, QPen
+        from PyQt5.QtGui import QBrush, QPen, QPolygonF
 
         cfg = self._appearance("antennae", {})
         if not isinstance(cfg, dict):
             cfg = {}
         if cfg.get("enabled", True) is False:
             return
+        style = str(cfg.get("style", "")).strip().lower()
+        hand_palp_style = style == "tarantula_hand_palps"
 
         segments = max(3, int(cfg.get("segments", 5)))
         length_units = float(cfg.get("length", 1.15))
@@ -5797,9 +6544,9 @@ class Creature:
         color_key = str(cfg.get("color_key", "legs"))
         tip_color_key = str(cfg.get("tip_color_key", "highlight"))
 
-        aiming = clamp(self.aim_intent, 0.0, 1.0)
-        inspecting = clamp(self.inspect_intent, 0.0, 1.0)
-        cuddling = clamp(max(self.cuddle_intent, self.catch_blend), 0.0, 1.0)
+        aiming = 0.0 if self.dragging else clamp(self.aim_intent, 0.0, 1.0)
+        inspecting = 0.0 if self.dragging else clamp(self.inspect_intent, 0.0, 1.0)
+        cuddling = 0.0 if self.dragging else clamp(max(self.cuddle_intent, self.catch_blend), 0.0, 1.0)
         aim_angle = self._antenna_aim_angle()
         drive = antenna_drive_from_mood(
             self.mood,
@@ -5810,7 +6557,7 @@ class Creature:
         )
 
         base_x = ceph_offset_x + ceph_w * base_forward
-        span = length_units * self.size * (1.0 + startle * 0.08)
+        span = length_units * self.size * (1.0 + (0.0 if self.dragging else startle) * 0.08)
         line_col = self._qcolor(color_key, 240)
         tip_col = self._qcolor(tip_color_key, 240)
 
@@ -5819,7 +6566,9 @@ class Creature:
         # remaining links descend toward the ground.  Keep this as an explicit
         # model style so the expressive feeler rig remains available to the
         # other creatures.
-        if str(cfg.get("style", "")).strip().lower() in ("front_leg", "tarantula_front_legs"):
+        if style in (
+            "front_leg", "tarantula_front_legs", "tarantula_hand_palps"
+        ):
             raw_lengths = cfg.get("segment_lengths", [0.24, 0.28, 0.22, 0.15, 0.11])
             if not isinstance(raw_lengths, list):
                 raw_lengths = [0.24, 0.28, 0.22, 0.15, 0.11]
@@ -5830,43 +6579,108 @@ class Creature:
             if len(lengths) != segments or any(value <= 0.0 or not math.isfinite(value) for value in lengths):
                 lengths = [1.0 for _ in range(segments)]
             length_total = max(1e-4, sum(lengths))
-            # The proximal link points outward/upward; every following link
-            # turns more forward and then slightly inward, like a tarantula's
-            # femur -> tibia -> metatarsus -> tarsus sequence.
-            angle_profile = [0.86, 0.56, 0.27, 0.08, -0.06]
+            # Leg-like palp silhouette: the proximal link rises, then the
+            # remaining links reverse through the knee and descend to the tip.
+            default_angle_profile = [0.80, 0.22, -0.18, -0.34, -0.48]
+            raw_angle_profile = cfg.get("rest_angles", default_angle_profile)
+            if not isinstance(raw_angle_profile, list):
+                raw_angle_profile = default_angle_profile
+            try:
+                angle_profile = [float(value) for value in raw_angle_profile[:segments]]
+            except (TypeError, ValueError):
+                angle_profile = []
+            if len(angle_profile) != segments or any(
+                not math.isfinite(value) for value in angle_profile
+            ):
+                angle_profile = list(default_angle_profile[:segments])
             while len(angle_profile) < segments:
                 angle_profile.append(angle_profile[-1] * 0.72)
             joint_scale = clamp(float(cfg.get("joint_scale", 0.95)), 0.45, 1.60)
             proximal_rise = clamp(float(cfg.get("proximal_rise", 0.12)), 0.0, 0.28) * self.size
+            screen_lift_scale = clamp(float(cfg.get("screen_lift_scale", 0.22)), 0.0, 0.45)
             leg_thickness = clamp(float(cfg.get("leg_thickness", 1.0)), 0.65, 1.60)
             hairy = bool(cfg.get("hairy", False))
             hair_scale = clamp(float(cfg.get("hair_scale", 0.16)), 0.0, 0.50)
-            span *= clamp(drive.length, 0.65, 1.50)
+            raw_width_profile = cfg.get(
+                "segment_widths", [1.20, 1.08, 0.92, 0.72, 0.48]
+            )
+            if not isinstance(raw_width_profile, list):
+                raw_width_profile = [1.20, 1.08, 0.92, 0.72, 0.48]
+            try:
+                width_profile = [float(value) for value in raw_width_profile[:segments]]
+            except (TypeError, ValueError):
+                width_profile = []
+            if len(width_profile) != segments or any(
+                value <= 0.0 or not math.isfinite(value) for value in width_profile
+            ):
+                width_profile = [1.20, 1.08, 0.92, 0.72, 0.48][:segments]
+            while len(width_profile) < segments:
+                width_profile.append(max(0.30, width_profile[-1] * 0.72))
+            raw_segment_colors = cfg.get("segment_color_keys", [color_key] * segments)
+            if not isinstance(raw_segment_colors, list):
+                raw_segment_colors = [color_key] * segments
+            segment_color_keys = [str(value).strip() or color_key for value in raw_segment_colors]
+            if len(segment_color_keys) != segments:
+                segment_color_keys = [color_key] * segments
+            joint_color_key = str(cfg.get("joint_color_key", segment_color_keys[1] if segments > 1 else color_key)).strip() or color_key
+            claw_color_key = str(cfg.get("claw_color_key", cfg.get("tip_color_key", "highlight"))).strip() or "highlight"
+            if hand_palp_style:
+                # Real tarantula pedipalps are compact appendages tucked beside
+                # the chelicerae. Their attention drive may curl the joints, but
+                # it must not turn the whole palp into a long reaching limb.
+                min_drive_length = clamp(float(cfg.get("min_drive_length", 0.78)), 0.55, 1.0)
+                max_drive_length = clamp(float(cfg.get("max_drive_length", 1.08)), min_drive_length, 1.20)
+                max_extension = clamp(float(cfg.get("max_extension", 0.06)), 0.0, 0.12)
+                span *= clamp(drive.length, min_drive_length, max_drive_length)
+            else:
+                max_extension = 0.24
+                span *= clamp(drive.length, 0.65, 1.50)
 
             for idx, side_sign in enumerate((-1.0, 1.0)):
                 root_y = side_sign * ceph_h * base_side
+                stored_angles = getattr(self, "antenna_segment_angles", [[], []])
+                stored_lifts = getattr(self, "antenna_joint_lifts", [[], []])
+                side_angles = stored_angles[idx] if idx < len(stored_angles) else []
+                side_lifts = stored_lifts[idx] if idx < len(stored_lifts) else []
+                extension = getattr(self, "antenna_extension", [0.0, 0.0])
+                extension = extension[idx] if idx < len(extension) else 0.0
                 fwd = 0.0
                 lateral = 0.0
                 screen = [(base_x, root_y)]
                 for segment_index in range(segments):
-                    angle = side_sign * angle_profile[segment_index]
-                    # Mood motion stays subtle; the silhouette remains a
-                    # controlled leg chain rather than a waving thread.
-                    angle += math.sin(self.antenna_phase[idx] + segment_index * 0.72) * drive.wave_amp * 0.045
-                    if drive.aim_blend > 0.01:
+                    if len(side_angles) == segments:
+                        angle = side_angles[segment_index]
+                    else:
+                        angle = side_sign * angle_profile[segment_index]
+                    # Ordinary feelers may use a shared aim overlay.  Tarantula
+                    # pedipalps must not: the controller above has already
+                    # applied a bounded command to each knuckle, and replacing
+                    # those angles here would turn the articulated hand into a
+                    # single straight mouse pointer.
+                    if drive.aim_blend > 0.01 and not hand_palp_style:
                         angle = angle * (1.0 - drive.aim_blend) + drive.aim_angle * drive.aim_blend
-                    segment = span * lengths[segment_index] / length_total
+                    segment = span * (1.0 + clamp(float(extension), 0.0, max_extension)) * lengths[segment_index] / length_total
                     fwd += math.cos(angle) * segment
                     lateral += math.sin(angle) * segment
                     progress = (segment_index + 1) / max(1, segments)
-                    rise = proximal_rise * max(0.0, 1.0 - progress)
-                    screen.append((base_x + fwd, root_y + lateral - rise))
+                    if len(side_lifts) == segments:
+                        rise = self.size * clamp(float(side_lifts[segment_index]), 0.0, 0.34)
+                    else:
+                        rise = proximal_rise * max(0.0, 1.0 - progress)
+                    # Lift is only a small mirrored screen projection. The old
+                    # unsigned subtraction moved both hands toward the same
+                    # screen side, while projecting the full lift collapsed
+                    # both proximal links into the center. Either mistake made
+                    # a symmetric pair look crossed/broken.
+                    screen.append(
+                        (base_x + fwd, root_y + lateral - side_sign * rise * screen_lift_scale)
+                    )
 
                 for segment_index in range(segments):
                     width = max(
-                        1.5,
+                        0.85,
                         self.size * thickness * drive.thickness * leg_thickness
-                        * (1.18 - 0.13 * segment_index),
+                        * width_profile[segment_index],
                     )
                     x1, y1 = screen[segment_index]
                     x2, y2 = screen[segment_index + 1]
@@ -5877,19 +6691,74 @@ class Creature:
                         )
                         painter.setPen(QPen(hair_color, width * (1.16 + hair_scale * 0.60), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                         painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
-                    painter.setPen(QPen(line_col, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    segment_color = self._qcolor(
+                        "highlight" if startle and not self.dragging else segment_color_keys[segment_index],
+                        240,
+                    )
+                    cap = Qt.FlatCap if segment_index == segments - 1 else Qt.RoundCap
+                    painter.setPen(QPen(segment_color, width, Qt.SolidLine, cap, Qt.RoundJoin))
                     painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
 
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(line_col))
+                painter.setBrush(QBrush(self._qcolor(joint_color_key, 235)))
                 for joint_index, (joint_x, joint_y) in enumerate(screen[1:-1]):
-                    joint_radius = max(1.5, self.size * thickness * drive.thickness * 0.19 * joint_scale)
+                    adjacent_width = width_profile[min(joint_index, segments - 1)]
+                    joint_radius = max(
+                        0.85,
+                        self.size * thickness * drive.thickness * leg_thickness
+                        * adjacent_width * 0.20 * joint_scale,
+                    )
                     joint_radius *= 1.08 if joint_index == 0 else (0.92 - min(0.25, joint_index * 0.05))
-                    painter.drawEllipse(QPointF(joint_x, joint_y), joint_radius, joint_radius)
+                    painter.drawEllipse(QPointF(joint_x, joint_y), joint_radius, joint_radius * 0.82)
                 tx, ty = screen[-1]
-                tip_radius = max(1.6, self.size * thickness * drive.tip_bulb * 0.25)
-                painter.setBrush(QBrush(tip_col))
-                painter.drawEllipse(QPointF(tx, ty), tip_radius, tip_radius)
+                # The terminal tarsus is tapered and ends in one small pointed
+                # claw. A round bulb here was the main visual cue that made the
+                # appendage read like a broken antenna instead of a short leg.
+                if segments >= 2:
+                    nail_length = clamp(float(cfg.get("tip_nail_length", 0.065)), 0.025, 0.12) * span
+                    nail_curl = clamp(float(cfg.get("tip_curl", 0.72)), 0.30, 1.10)
+                    last_dx = screen[-1][0] - screen[-2][0]
+                    last_dy = screen[-1][1] - screen[-2][1]
+                    last_norm = max(1e-4, math.hypot(last_dx, last_dy))
+                    last_angle = math.atan2(last_dy, last_dx)
+                    first_nail = (
+                        tx + last_dx / last_norm * nail_length * 0.42,
+                        ty + last_dy / last_norm * nail_length * 0.42,
+                    )
+                    curl_angle = last_angle - side_sign * nail_curl
+                    nail_end = (
+                        first_nail[0] + math.cos(curl_angle) * nail_length * 0.58,
+                        first_nail[1] + math.sin(curl_angle) * nail_length * 0.58,
+                    )
+                    claw_color = self._qcolor(
+                        "highlight" if startle and not self.dragging else claw_color_key,
+                        245,
+                    )
+                    tip_radius = max(
+                        0.75,
+                        self.size * thickness * drive.thickness * leg_thickness
+                        * width_profile[-1] * 0.24,
+                    )
+                    last_unit_x = last_dx / last_norm
+                    last_unit_y = last_dy / last_norm
+                    claw_base = (
+                        tx + last_unit_x * nail_length * 0.12,
+                        ty + last_unit_y * nail_length * 0.12,
+                    )
+                    perp_x, perp_y = -last_unit_y, last_unit_x
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QBrush(claw_color))
+                    painter.drawPolygon(QPolygonF([
+                        QPointF(
+                            claw_base[0] + perp_x * tip_radius,
+                            claw_base[1] + perp_y * tip_radius,
+                        ),
+                        QPointF(
+                            claw_base[0] - perp_x * tip_radius,
+                            claw_base[1] - perp_y * tip_radius,
+                        ),
+                        QPointF(*nail_end),
+                    ]))
             return
 
         for idx, side_sign in enumerate((-1.0, 1.0)):

@@ -218,6 +218,7 @@
       "cycle_hz": 2.10,
       "speed_cycle_gain": 1.45,
       "step_lookahead": 0.72,
+      "stance_deadband": 0.40,
       "front_phase_offset": 0.035,
       "refractory_fraction": 0.16,
       "support_stroke_limit": 0.62,
