@@ -324,6 +324,20 @@ set PYTHONPATH=%CD%\src
 python -m desktop_bug.engine --preset presets\default.json
 ```
 
+The packaged executable takes the same arguments:
+
+```bat
+dist\DesktopBugCompanion.exe --engine --preset presets\colony.json
+```
+
+A relative preset path is looked up in the same order everywhere: an editable
+copy beside the project or executable first, then the copy bundled inside the
+build. So the command above works against a one-file build even though there is
+no `presets` folder next to the `.exe`, and dropping an edited `colony.json`
+beside the executable overrides the bundled one. Saving a preset always writes
+beside the project or executable, never into the bundle, which is discarded
+when the app exits.
+
 ## Build the Windows executable
 
 Double-click:

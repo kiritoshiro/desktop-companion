@@ -89,6 +89,44 @@ def data_path(*parts: str) -> Path:
     return app_root().joinpath(*parts)
 
 
+def resolve_preset_path(value) -> Path:
+    """Resolve a preset argument for *reading*, in source and frozen builds.
+
+    Reading and writing resolve differently and must not be confused. A read
+    searches every candidate root, including the directory a one-file build
+    extracts itself into, because that is where bundled presets live. A write
+    goes only to the writable root beside the project or executable, because
+    the extraction directory is temporary and is discarded when the app exits.
+
+    Resolving a relative path against the writable root alone is what made the
+    packaged executable crash on ``--preset presets/colony.json``: it looked
+    beside the ``.exe``, where a one-file build keeps no presets at all.
+
+    A path that cannot be found is returned unchanged rather than raised on, so
+    the caller reports the name the user actually typed.
+    """
+    path = Path(value)
+    if path.is_absolute():
+        return path
+
+    parts = path.parts
+    if not parts:
+        return find_data_file("presets", "default.json")
+
+    found = find_data_file(*parts)
+    if found.exists():
+        return found
+
+    # A bare name is almost certainly one of the presets rather than a file in
+    # the application root, so try that before giving up.
+    if len(parts) == 1:
+        bundled = find_data_file("presets", parts[0])
+        if bundled.exists():
+            return bundled
+
+    return found
+
+
 def state_dir() -> Path:
     """Return the directory holding runtime state and session control files.
 

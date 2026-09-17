@@ -29,7 +29,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .discovery import app_root, find_data_file, state_dir
+from .discovery import resolve_preset_path, state_dir
 from .session_control import clear_stop_request, consume_stop_request
 from .manager import CreatureManager
 from .preset_io import load_preset
@@ -1202,14 +1202,14 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the transparent Desktop Bug Companion overlay")
-    parser.add_argument("--preset", default=str(find_data_file("presets", "default.json")), help="Path to preset JSON")
+    parser.add_argument("--preset", default="presets/default.json", help="Path to preset JSON")
     args = parser.parse_args(argv)
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
-    preset = Path(args.preset)
-    if not preset.is_absolute():
-        preset = app_root() / preset
+    # Must search the bundled data too. A one-file build keeps its presets in
+    # the directory it extracts itself into, not beside the executable.
+    preset = resolve_preset_path(args.preset)
     window = OverlayWindow(preset)
     window.show()
     apply_click_through(window)

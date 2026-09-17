@@ -61,6 +61,7 @@ jobs:
           python tools/preset_abilities_smoke.py
           python tools/state_migration_smoke.py
           python tools/shutdown_smoke.py
+          python tools/preset_path_smoke.py
           python tools/spider_movement_smoke.py
           python tools/tarantula_smoke.py
           python tools/chosen_one_smoke.py
