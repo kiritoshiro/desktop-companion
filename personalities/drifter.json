@@ -39,7 +39,7 @@
   "acceleration_multiplier": 1.18,
   "drift_slip": 0.56,
   "drift_throw_slip": 0.68,
-  "drift_countersteer": 0.46,
+  "drift_countersteer": 0.22,
   "drift_wave_speed": 2.35,
   "drift_switch_time": [
     1.25,
@@ -89,27 +89,14 @@
     1.85
   ],
   "drift_charge_turn_grip": 0.64,
-  "drift_slide_turn_grip": 0.32,
-  "drift_slide_body_turn": 0.4,
+  "drift_slide_turn_grip": 0.44,
+  "drift_slide_body_turn": 0.72,
   "drift_slide_accel_grip": 0.44,
-  "drift_inertia_keep": 0.8,
+  "drift_inertia_keep": 0.58,
   "drift_slide_step_slowdown": 1.46,
   "drift_slide_rehome_slop": 1.62,
   "drift_slide_max_swinging": 2,
-  "skills": [
-    "approach",
-    "wander",
-    "drift",
-    "jump",
-    "roll",
-    "chase",
-    "observe",
-    "run_away",
-    "prepare_jump_attack",
-    "inspect",
-    "cuddle",
-    "social_play",
-    "zoomies",
-    "web_walk"
+  "abilities": [
+    "drift"
   ]
 }

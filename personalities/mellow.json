@@ -32,20 +32,5 @@
   "retreat_distance": [
     160,
     280
-  ],
-  "skills": [
-    "approach",
-    "wander",
-    "jump",
-    "roll",
-    "chase",
-    "observe",
-    "run_away",
-    "prepare_jump_attack",
-    "inspect",
-    "cuddle",
-    "social_play",
-    "zoomies",
-    "web_walk"
   ]
 }

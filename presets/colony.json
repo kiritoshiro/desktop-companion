@@ -1,0 +1,47 @@
+{
+  "name": "Colony",
+  "slots": [
+    {
+      "model": "plush_snow_hybrid",
+      "personality": "balanced",
+      "count": 1,
+      "team": "pack_a",
+      "job": "builder"
+    },
+    {
+      "model": "tarantula",
+      "personality": "cautious",
+      "count": 1,
+      "team": "pack_a",
+      "job": "guard"
+    },
+    {
+      "model": "blue_jewel",
+      "personality": "curious",
+      "count": 1,
+      "team": "pack_a",
+      "job": "scout"
+    },
+    {
+      "model": "spider",
+      "personality": "bold",
+      "count": 1,
+      "team": "rivals",
+      "job": "hunter"
+    }
+  ],
+  "settings": {
+    "size_scale": 1.0,
+    "interferable": true,
+    "mood_mode": "auto",
+    "social_play": true,
+    "gait_style": "lively",
+    "flies": {
+      "enabled": true,
+      "min_interval": 4.0,
+      "max_interval": 9.0,
+      "max_flies": 6,
+      "spawner": true
+    }
+  }
+}
