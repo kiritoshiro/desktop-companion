@@ -532,6 +532,7 @@ class OverlayWindow(QWidget):
             origin_y=int(top_left.y()),
             screen_w=int(self.width()),
             screen_h=int(self.height()),
+            include_desktop_icons=self.manager.desktop_icons_enabled,
         ))
 
     def _refresh_camouflage_samples(self) -> None:

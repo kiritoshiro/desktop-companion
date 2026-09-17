@@ -132,6 +132,11 @@ class CreatureManager:
         # never behind lower windows or random incidental crossings.
         self.desktop_surfaces: List[DesktopSurface] = []
         self._surface_by_key = {}
+        # Off by default (D1, DC-13): reading desktop icon positions means
+        # OpenProcess/ReadProcessMemory against Explorer, the specific pattern
+        # antivirus heuristics flag. Window occlusion needs none of that and is
+        # controlled separately, never gated by this.
+        self.desktop_icons_enabled = False
         self._mouse_x = -100000.0
         self._mouse_y = -100000.0
         self._mouse_down = False
@@ -749,6 +754,19 @@ class CreatureManager:
         state = "on" if self.allow_mouse_capture else "off"
         return f"Mouse web-trapping turned {state}."
 
+    def set_desktop_icons_enabled(self, enabled: bool) -> str:
+        """Allow or forbid probing real desktop icon positions (D1, DC-13).
+
+        Off by default: reading them means OpenProcess/ReadProcessMemory
+        against Explorer, which is the specific pattern antivirus heuristics
+        flag, on top of being the more expensive half of desktop probing.
+        Window occlusion (EnumWindows, no process memory) is unaffected and
+        stays on regardless of this setting.
+        """
+        self.desktop_icons_enabled = bool(enabled)
+        state = "on" if self.desktop_icons_enabled else "off"
+        return f"Desktop icon awareness turned {state}."
+
     # ------------------------------------------------------------------
     # Flies
     # ------------------------------------------------------------------
@@ -983,6 +1001,8 @@ class CreatureManager:
                 self.set_gait_style(str(settings.get("gait_style") or "classic"))
             if "allow_mouse_capture" in settings:
                 self.set_allow_mouse_capture(bool(settings.get("allow_mouse_capture")))
+            if "desktop_icons_enabled" in settings:
+                self.set_desktop_icons_enabled(bool(settings.get("desktop_icons_enabled")))
             if "team_relations" in settings:
                 self.set_team_stances(settings.get("team_relations"))
             # A live edit can rename a team or recolour it, and it can also add

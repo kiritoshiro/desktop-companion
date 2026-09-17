@@ -149,6 +149,8 @@ On Windows, the overlay now samples visible top-level app windows a few times pe
 
 File Explorer folder windows act like soft portals when two or more folder windows are open. If a spider crawls deep enough into one Explorer folder window, it can vanish there, reappear just inside another folder window, and crawl out from that folder edge. This uses live Explorer windows, not desktop shortcut icons.
 
+Window occlusion above is enumeration only (`EnumWindows`) and always on. Reading the *positions of your actual desktop icons* is a separate, heavier capability: it means asking Windows to open a handle to Explorer's process and read its memory, which is exactly the pattern antivirus heuristics flag, so it is **off by default**. Set `"desktop_icons_enabled": true` under a preset's `settings` block to turn it on if you want spiders to be aware of real desktop icons specifically, not just windows and folders.
+
 ## Fluffy Friends pack
 
 Six soft, high-fluff procedural spiders ship alongside the originals. They render entirely from the `appearance` block (no PNG assets), so they are light and fully editable.
