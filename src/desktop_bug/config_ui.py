@@ -5,14 +5,17 @@ import os
 import random
 import subprocess
 import sys
+import time
+import uuid
 from pathlib import Path
 
 from PyQt5.QtCore import QSize, QTimer, Qt
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QColorDialog,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -23,6 +26,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -32,10 +36,39 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file
+from . import __version__
+from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, state_dir, user_presets_dir
+from .logging_setup import configure_logging, get_logger
+from .session_control import clear_stop_request, stop_process
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
-from .skills import DEFAULT_SKILL_IDS, SKILLS, compact_skill_summary, normalize_skill_ids, default_skills_for_personality, COMMON_SKILL_IDS
+from .jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
+from .personality_profiles import selectable_personality_ids
+from .progression import normalize_team_id, normalize_team_stances
+from .teams import (
+    HOSTILITY_NOTE,
+    STANCE_LABELS,
+    TeamProfile,
+    default_color,
+    describe_stance,
+    normalize_team_name,
+    normalize_teams,
+    minimal_stances,
+    stance_pairs,
+    team_label,
+    teams_payload,
+)
+from .skills import (
+    SKILLS,
+    compact_ability_summary,
+    normalize_ability_ids,
+    normalize_skill_ids,
+    skills_with_default_abilities,
+    skills_with_selected_abilities,
+    COMMON_SKILL_IDS,
+)
 
+
+log = get_logger("config_ui")
 
 RANDOM_MODEL_ID = "__random_model__"
 RANDOM_PERSONALITY_ID = "__random_personality__"
@@ -60,6 +93,32 @@ MOVEMENT_OPTIONS = [
     ("Lively - lifts legs + feels objects", "lively"),
     ("Skitter - rapid bursts + tiny stops", "skitter"),
 ]
+
+COLOR_KEYS = (
+    ("body", "Body"),
+    ("legs", "Legs"),
+    ("highlight", "Highlights"),
+    ("eyes", "Eyes"),
+    ("leg_band", "Leg bands"),
+    ("leg_dark", "Leg shadows"),
+    ("leg_tip", "Leg tips"),
+)
+
+
+def _normalize_color_overrides(value):
+    """Return safe RGB lists for the optional per-slot palette."""
+    if not isinstance(value, dict):
+        return {}
+    normalized = {}
+    for key, rgb in value.items():
+        if not isinstance(key, str) or not key.strip() or not isinstance(rgb, (list, tuple)) or len(rgb) != 3:
+            continue
+        try:
+            channels = [max(0, min(255, int(float(channel)))) for channel in rgb]
+        except (TypeError, ValueError):
+            continue
+        normalized[key.strip()] = channels
+    return normalized
 
 
 class NoScrollComboBox(QComboBox):
@@ -105,8 +164,11 @@ class NoScrollDoubleSpinBox(QDoubleSpinBox):
 
 class SlotTable(QTableWidget):
     def __init__(self, parent=None):
-        super().__init__(0, 6, parent)
-        self.setHorizontalHeaderLabels(["Creature model", "Personality", "How many", "Pick 1-10", "Skills", ""])
+        super().__init__(0, 9, parent)
+        self.setHorizontalHeaderLabels(["Creature model", "Temperament", "How many", "Pick 1-10", "Abilities", "Colors", "Team", "Job", ""])
+        # The last two columns hold icon-only controls; the header text would be
+        # wider than the button underneath it.
+        self.horizontalHeaderItem(8).setToolTip("Remove a creature slot")
         self.horizontalHeader().setStretchLastSection(False)
         self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
@@ -114,6 +176,9 @@ class SlotTable(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(self.SelectRows)
@@ -137,7 +202,16 @@ class ConfigWindow(QMainWindow):
         # the overlay runs rewrites this file, which the overlay watches and
         # reloads, so edits apply live without stopping it.
         self.launched_preset_path = None
-        self.setWindowTitle("Desktop Bug Companion")
+        self._loaded_settings: dict = {}
+        # The teams this preset knows about, and what stands between them. Held
+        # here rather than read back out of widgets, because the panel is rebuilt
+        # whenever the slots change teams and a rebuild must not lose an edit.
+        self._team_profiles: dict = {}
+        self._team_stances: dict = {}
+        self._teams_signature = None
+        # The version belongs somewhere a user can read it off and quote in
+        # a bug report; it existed in the source and was shown nowhere.
+        self.setWindowTitle(f"Desktop Bug Companion {__version__}")
         self.resize(960, 860)
         self.setMinimumSize(840, 560)
         self._build_ui()
@@ -180,6 +254,10 @@ class ConfigWindow(QMainWindow):
             QGroupBox#presetGroup::title { background: #3b82c4; }
             QGroupBox#creaturesGroup { border-color: #cbbdf0; }
             QGroupBox#creaturesGroup::title { background: #6d4ed6; }
+            QPushButton#removeSlotButton { padding: 0px; }
+            QGroupBox#teamsGroup { border-color: #f0c2d8; }
+            QGroupBox#teamsGroup::title { background: #b8477e; }
+            QLabel#teamsNote { color: #5d6470; }
             QGroupBox#behaviorGroup { border-color: #a9e0d6; }
             QGroupBox#behaviorGroup::title { background: #199e8c; }
             QGroupBox#fliesGroup { border-color: #f2d49b; }
@@ -307,7 +385,7 @@ class ConfigWindow(QMainWindow):
         self.creatures_group = QGroupBox("Creatures")
         self.creatures_group.setObjectName("creaturesGroup")
         self.creatures_group.setToolTip(
-            "Each row is one creature group. Use Skills to choose which abilities those spiders get at launch."
+            "Each row is one creature group. Temperament is stable personality, Job is a separate profession, and Abilities are true capabilities."
         )
         creatures_layout = QVBoxLayout(self.creatures_group)
         creatures_layout.setContentsMargins(8, 8, 8, 8)
@@ -337,6 +415,26 @@ class ConfigWindow(QMainWindow):
         slot_buttons.addStretch(1)
         creatures_layout.addLayout(slot_buttons)
         layout.addWidget(self.creatures_group, 1)
+
+        self.teams_group = QGroupBox("Teams")
+        self.teams_group.setObjectName("teamsGroup")
+        teams_outer = QVBoxLayout(self.teams_group)
+        teams_outer.setContentsMargins(8, 8, 8, 8)
+        teams_outer.setSpacing(6)
+        # The honest description of what a team does, in the one place a person
+        # picking teams will read it. It comes from the teams module so the
+        # window, the tooltips and the README cannot drift apart.
+        self.teams_note = QLabel(HOSTILITY_NOTE)
+        self.teams_note.setWordWrap(True)
+        self.teams_note.setObjectName("teamsNote")
+        teams_outer.addWidget(self.teams_note)
+        self.teams_panel = QWidget()
+        self.teams_layout = QGridLayout(self.teams_panel)
+        self.teams_layout.setContentsMargins(2, 2, 2, 0)
+        self.teams_layout.setHorizontalSpacing(8)
+        self.teams_layout.setVerticalSpacing(4)
+        teams_outer.addWidget(self.teams_panel)
+        layout.addWidget(self.teams_group)
 
         self.behavior_group = QGroupBox("Overlay behavior")
         self.behavior_group.setObjectName("behaviorGroup")
@@ -505,7 +603,11 @@ class ConfigWindow(QMainWindow):
         self.fly_max_spin.setToolTip("Longest gap between fly spawns. Each spawn waits a random time in this range.")
         self.fly_count_spin.setToolTip("How many live flies may share the screen at once.")
         self.launch_group.setToolTip("Save the current preset and start or stop the overlay.")
-        self.table.setToolTip("Each row is one creature group. Use Skills to choose abilities for that slot.")
+        self.table.setToolTip(
+            "Each row is one creature group. Temperament is stable personality, "
+            "Job is a separate profession, Abilities are capabilities, and Team "
+            "groups spiders before launch."
+        )
         self.preset_name.setToolTip("This becomes the saved preset file name.")
         self.preset_combo.setToolTip("Choose an existing preset from the presets folder.")
         self.refresh_btn.setToolTip("Reload models, personalities, and presets from disk.")
@@ -543,6 +645,11 @@ class ConfigWindow(QMainWindow):
                     slot.get("count", 1),
                     bool(slot.get("count_random", False)),
                     slot.get("skills"),
+                    slot.get("abilities"),
+                    slot.get("colors"),
+                    slot.get("slot_id"),
+                    slot.get("team_id", slot.get("team", "neutral")),
+                    slot.get("job", "none"),
                 )
         else:
             self.add_slot()
@@ -568,12 +675,13 @@ class ConfigWindow(QMainWindow):
                 label = path.stem
             self.preset_combo.addItem(str(label), str(path))
 
-    def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None):
+    def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None, abilities=None, colors=None, slot_id=None, team_id="neutral", job_id="none"):
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setRowHeight(row, max(64, MODEL_ICON_SIZE + 12))
 
         model_box = NoScrollComboBox()
+        model_box.setProperty("slot_id", str(slot_id or f"slot-{uuid.uuid4().hex[:12]}"))
         model_box.setIconSize(QSize(MODEL_ICON_SIZE, MODEL_ICON_SIZE))
         model_box.setMinimumWidth(285)
         model_box.addItem(self._random_model_icon(), "Random model at launch", RANDOM_MODEL_ID)
@@ -600,14 +708,33 @@ class ConfigWindow(QMainWindow):
 
         personality_box = NoScrollComboBox()
         personality_box.addItem("Random personality at launch", RANDOM_PERSONALITY_ID)
-        for personality in sorted(self.personalities.values(), key=lambda p: p.get("display_name", p.get("id", ""))):
-            personality_box.addItem(personality.get("display_name", personality["id"]), personality["id"])
+        personality_ids = selectable_personality_ids(self.personalities, personality_id)
+        for personality_id_value in personality_ids:
+            personality = self.personalities.get(personality_id_value)
+            if personality is None:
+                continue
+            label = personality.get("display_name", personality["id"])
+            if not personality.get("_canonical", False):
+                label = f"Legacy: {label}"
+            personality_box.addItem(label, personality["id"])
+            trait_text = personality.get("temperament") or personality.get("traits")
+            if isinstance(trait_text, dict):
+                values = ", ".join(
+                    f"{key} {float(trait_text.get(key, 5)):.0f}/10"
+                    for key in ("energy", "curiosity", "boldness", "sociability", "patience", "caution")
+                    if key in trait_text
+                )
+                personality_box.setItemData(
+                    personality_box.count() - 1,
+                    f"{personality.get('description', '')}\n{values}".strip(),
+                    Qt.ToolTipRole,
+                )
         if personality_id:
             idx = personality_box.findData(personality_id)
             if idx >= 0:
                 personality_box.setCurrentIndex(idx)
         else:
-            idx = personality_box.findData("hunter")
+            idx = personality_box.findData("balanced")
             if idx >= 0:
                 personality_box.setCurrentIndex(idx)
 
@@ -627,17 +754,77 @@ class ConfigWindow(QMainWindow):
         # are not all handed every ability.  Only an explicit skills list from a
         # saved preset, or a manual edit, counts as "custom" and sticks when the
         # personality changes.
-        if skills is None:
+        if abilities is not None:
+            skills_btn.setProperty(
+                "skill_ids",
+                skills_with_selected_abilities(
+                    self.personalities.get(personality_box.currentData()),
+                    abilities,
+                ),
+            )
+            skills_btn.setProperty("ability_ids", normalize_ability_ids(abilities))
+            skills_btn.setProperty("skills_custom", True)
+        elif skills is None:
             effective_pid = personality_box.currentData()
             skills_btn.setProperty("skill_ids", self._default_skills_for(effective_pid))
             skills_btn.setProperty("skills_custom", False)
         else:
             skills_btn.setProperty("skill_ids", normalize_skill_ids(skills))
+            # Legacy presets stored behaviours and abilities together.  Keep
+            # loading them compatible, but migrate their editable portion to
+            # the dedicated abilities field when the preset is saved.
+            skills_btn.setProperty("ability_ids", normalize_ability_ids(skills))
             skills_btn.setProperty("skills_custom", True)
         self._refresh_skills_button(skills_btn)
         skills_btn.clicked.connect(lambda _checked=False, button=skills_btn: self.edit_skills_for_button(button))
 
-        remove_btn = QPushButton("Remove")
+        colors_btn = QPushButton()
+        colors_btn.setFixedSize(QSize(46, 26))
+        colors_btn.setProperty("color_overrides", _normalize_color_overrides(colors))
+        # The swatch shows *this slot's* colours, which means the model's own
+        # palette when nothing has been overridden, so the model box is passed in.
+        self._refresh_colors_button(colors_btn, model_box)
+        colors_btn.clicked.connect(
+            lambda _checked=False, button=colors_btn, mb=model_box: self.edit_colors_for_button(button, mb)
+        )
+
+        team_box = NoScrollComboBox()
+        team_box.setMinimumWidth(110)
+        self._populate_team_box(team_box, team_id)
+        team_box.setToolTip(
+            "Which group this slot belongs to. Name your teams and set what "
+            "stands between them in the Teams panel below."
+            "\n\n" + HOSTILITY_NOTE
+        )
+
+        job_box = NoScrollComboBox()
+        job_box.setMinimumWidth(104)
+        for label, value in JOB_OPTIONS:
+            job_box.addItem(label, value)
+        job_value = normalize_job_id(job_id)
+        job_index = job_box.findData(job_value)
+        job_box.setCurrentIndex(job_index if job_index >= 0 else 0)
+        if not bool(skills_btn.property("skills_custom")):
+            skills_btn.setProperty(
+                "skill_ids",
+                self._default_skills_for(personality_box.currentData(), job_box.currentData()),
+            )
+            self._refresh_skills_button(skills_btn)
+        job_box.setToolTip(
+            "A job is separate from temperament. Builders create a shared base; "
+            "Guards patrol and protect it from declared foes."
+        )
+
+        remove_btn = QPushButton()
+        remove_btn.setFixedSize(QSize(26, 26))
+        remove_btn.setIcon(self._remove_icon())
+        remove_btn.setIconSize(QSize(12, 12))
+        # An icon with no words still has to be reachable by someone who cannot
+        # see it, and understandable by someone who can but does not recognise
+        # it, so both the accessible name and the tooltip stay.
+        remove_btn.setAccessibleName("Remove this creature slot")
+        remove_btn.setToolTip("Remove this creature slot")
+        remove_btn.setObjectName("removeSlotButton")
         remove_btn.clicked.connect(lambda: self.remove_slot_by_button(remove_btn))
 
         self.table.setCellWidget(row, 0, model_box)
@@ -645,16 +832,43 @@ class ConfigWindow(QMainWindow):
         self.table.setCellWidget(row, 2, count_spin)
         self.table.setCellWidget(row, 3, count_random_check)
         self.table.setCellWidget(row, 4, skills_btn)
-        self.table.setCellWidget(row, 5, remove_btn)
-        for col in range(6):
+        self.table.setCellWidget(row, 5, colors_btn)
+        self.table.setCellWidget(row, 6, team_box)
+        self.table.setCellWidget(row, 7, job_box)
+        self.table.setCellWidget(row, 8, remove_btn)
+        for col in range(9):
             self.table.setItem(row, col, QTableWidgetItem(""))
 
         model_box.currentIndexChanged.connect(self.update_summary)
+        model_box.currentIndexChanged.connect(
+            lambda _i=0, button=colors_btn, mb=model_box: self._refresh_colors_button(button, mb))
         personality_box.currentIndexChanged.connect(
-            lambda _i=0, pb=personality_box, sb=skills_btn: self._on_personality_changed(pb, sb))
+            lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_personality_changed(pb, jb, sb))
         count_spin.valueChanged.connect(self.update_summary)
         count_random_check.toggled.connect(self.update_summary)
+        team_box.currentIndexChanged.connect(
+            lambda _i=0, box=team_box: self._on_team_box_changed(box))
+        job_box.currentIndexChanged.connect(self.update_summary)
+        job_box.currentIndexChanged.connect(
+            lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_job_changed(pb, jb, sb)
+        )
         self.update_summary()
+
+    def _remove_icon(self) -> QIcon:
+        """A small cross, drawn rather than shipped as a file."""
+        cached = getattr(self, "_remove_icon_cache", None)
+        if cached is not None:
+            return cached
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(QPen(QColor(196, 72, 72), 3.0, Qt.SolidLine, Qt.RoundCap))
+        painter.drawLine(7, 7, 17, 17)
+        painter.drawLine(17, 7, 7, 17)
+        painter.end()
+        self._remove_icon_cache = QIcon(pixmap)
+        return self._remove_icon_cache
 
     def _random_model_icon(self) -> QIcon:
         """Small dice-like icon for the random model option."""
@@ -749,7 +963,7 @@ class ConfigWindow(QMainWindow):
         painter.drawEllipse(64, 43, 5, 5)
         painter.drawEllipse(64, 51, 5, 5)
 
-    def _default_skills_for(self, personality_id):
+    def _default_skills_for(self, personality_id, job_id="none"):
         """Default abilities for a personality combo value.
 
         A real personality resolves to its common-plus-specialty default; a
@@ -758,32 +972,185 @@ class ConfigWindow(QMainWindow):
         """
         personality = self.personalities.get(personality_id) if personality_id else None
         if personality is None:
-            return list(COMMON_SKILL_IDS)
-        return default_skills_for_personality(personality)
+            return normalize_skill_ids(list(COMMON_SKILL_IDS) + list(job_ability_ids(job_id)))
+        return skills_with_default_abilities(personality, job_ability_ids(job_id))
 
-    def _on_personality_changed(self, personality_box, skills_btn) -> None:
+    def _on_personality_changed(self, personality_box, job_box, skills_btn) -> None:
         # Follow the new personality's default abilities unless the user has
         # deliberately customised this slot's skills.
         if not bool(skills_btn.property("skills_custom")):
-            skills_btn.setProperty("skill_ids", self._default_skills_for(personality_box.currentData()))
+            skills_btn.setProperty("skill_ids", self._default_skills_for(personality_box.currentData(), job_box.currentData()))
+            self._refresh_skills_button(skills_btn)
+        self.update_summary()
+
+    def _on_job_changed(self, personality_box, job_box, skills_btn) -> None:
+        if not bool(skills_btn.property("skills_custom")):
+            skills_btn.setProperty(
+                "skill_ids",
+                self._default_skills_for(personality_box.currentData(), job_box.currentData()),
+            )
             self._refresh_skills_button(skills_btn)
         self.update_summary()
 
     def _refresh_skills_button(self, button: QPushButton) -> None:
         ids = normalize_skill_ids(button.property("skill_ids"))
         button.setProperty("skill_ids", ids)
-        button.setText(compact_skill_summary(ids))
+        button.setText(compact_ability_summary(ids))
         button.setToolTip("Choose which abilities this creature slot can use at launch.")
+
+    # The order colours are shown in, widest part of the creature first, so the
+    # swatch reads like the creature rather than like an arbitrary set.
+    SWATCH_KEY_ORDER = ("body", "abdomen", "legs", "head", "eyes", "accent")
+
+    def _palette_for_button(self, button: QPushButton, model_box: QComboBox | None) -> list:
+        """The colours this slot will actually produce, overrides first."""
+        overrides = _normalize_color_overrides(button.property("color_overrides"))
+        palette = dict(self._model_color_defaults(model_box) if model_box is not None else {})
+        palette.update(overrides)
+        ordered = [palette[key] for key in self.SWATCH_KEY_ORDER if key in palette]
+        rest = [palette[key] for key in sorted(palette) if key not in self.SWATCH_KEY_ORDER]
+        return (ordered + rest)[:4]
+
+    def _swatch_icon(self, colors: list, custom: bool) -> QIcon:
+        """A filled swatch of the slot's colours, or a hint when there are none."""
+        size = 34
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        if not colors:
+            # Nothing to show: an outline, so the control still looks like a
+            # control rather than an empty gap in the row.
+            painter.setBrush(QColor(255, 255, 255, 20))
+            painter.setPen(QPen(QColor(140, 146, 158), 1.4, Qt.DashLine))
+            painter.drawRoundedRect(2, 2, size - 4, size - 4, 6, 6)
+            painter.end()
+            return QIcon(pixmap)
+        painter.setPen(Qt.NoPen)
+        band = (size - 4) / len(colors)
+        for index, color in enumerate(colors):
+            painter.setBrush(QColor(*color[:3]))
+            top = 2 + band * index
+            painter.drawRect(2, int(round(top)), size - 4, int(round(band)) + 1)
+        painter.setBrush(Qt.NoBrush)
+        # A custom palette is outlined brightly so a row that was changed by hand
+        # is obvious at a glance; the count moved out of the label into this.
+        painter.setPen(QPen(QColor(255, 255, 255, 230) if custom else QColor(0, 0, 0, 70),
+                            2.0 if custom else 1.0))
+        painter.drawRoundedRect(2, 2, size - 4, size - 4, 6, 6)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _refresh_colors_button(self, button: QPushButton, model_box: QComboBox | None = None) -> None:
+        overrides = _normalize_color_overrides(button.property("color_overrides"))
+        button.setProperty("color_overrides", overrides)
+        colors = self._palette_for_button(button, model_box)
+        button.setText("")
+        button.setStyleSheet("")
+        button.setIcon(self._swatch_icon(colors, bool(overrides)))
+        button.setIconSize(QSize(34, 34))
+        button.setProperty("swatch_colors", colors)
+        if overrides:
+            description = "Custom palette: " + ", ".join(sorted(overrides)) + ". Click to edit."
+        elif colors:
+            description = "The model's own palette. Click to choose custom colors for this slot."
+        else:
+            description = "Use the model's default palette. Click to choose custom colors for this slot."
+        button.setToolTip(description)
+        button.setAccessibleName(
+            f"Colors for this slot: {len(overrides)} custom" if overrides
+            else "Colors for this slot: model default")
+        button.setAccessibleDescription(description)
+
+    def _model_color_defaults(self, model_box: QComboBox) -> dict:
+        model_id = model_box.currentData() if model_box is not None else None
+        if model_id == RANDOM_MODEL_ID:
+            models = self.models.values()
+        else:
+            model = self.models.get(model_id) if model_id else None
+            models = [model] if model else []
+        defaults = {}
+        for model in models:
+            for key, value in (model.get("colors", {}) or {}).items():
+                normalized = _normalize_color_overrides({key: value})
+                if key not in defaults and key in normalized:
+                    defaults[key] = normalized[key]
+        return defaults
+
+    def edit_colors_for_button(self, button: QPushButton, model_box: QComboBox) -> None:
+        """Edit a slot palette without changing the model's shared defaults."""
+        defaults = self._model_color_defaults(model_box)
+        current = _normalize_color_overrides(button.property("color_overrides"))
+        keys = list(COLOR_KEYS)
+        known = {key for key, _label in keys}
+        for key in defaults:
+            if key not in known:
+                keys.append((key, key.replace("_", " ").title()))
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Customize spider colors")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Choose colors for this creature slot. Unchanged fields use the selected model's defaults."))
+        swatches = {}
+
+        def display_color(key: str):
+            return current.get(key) or defaults.get(key) or [80, 70, 70]
+
+        def refresh_swatch(key: str, swatch: QPushButton):
+            rgb = display_color(key)
+            luminance = rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114
+            text_color = "#17202a" if luminance > 155 else "#ffffff"
+            swatch.setText("Custom" if key in current else "Model default")
+            swatch.setStyleSheet(
+                f"QPushButton {{ background: rgb({rgb[0]}, {rgb[1]}, {rgb[2]}); color: {text_color}; }}"
+            )
+
+        for key, label in keys:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(f"{label}:"))
+            swatch = QPushButton()
+            swatch.setMinimumWidth(125)
+            swatches[key] = swatch
+            refresh_swatch(key, swatch)
+
+            def choose_color(_checked=False, color_key=key, color_button=swatch):
+                rgb = display_color(color_key)
+                chosen = QColorDialog.getColor(QColor(*rgb), self, f"Choose {color_key} color")
+                if chosen.isValid():
+                    current[color_key] = [chosen.red(), chosen.green(), chosen.blue()]
+                    refresh_swatch(color_key, color_button)
+
+            swatch.clicked.connect(choose_color)
+            row.addWidget(swatch)
+            layout.addLayout(row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        reset_btn = buttons.addButton("Reset to model defaults", QDialogButtonBox.ResetRole)
+        reset_btn.clicked.connect(lambda: [current.pop(key, None) for key, _label in keys])
+        reset_btn.clicked.connect(lambda: [refresh_swatch(key, swatches[key]) for key, _label in keys])
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            button.setProperty("color_overrides", _normalize_color_overrides(current))
+            self._refresh_colors_button(button, model_box)
+            self.update_summary()
 
     def edit_skills_for_button(self, button: QPushButton) -> None:
         current = set(normalize_skill_ids(button.property("skill_ids")))
         dialog = QDialog(self)
-        dialog.setWindowTitle("Choose spider skills")
+        dialog.setWindowTitle("Choose spider abilities")
         layout = QVBoxLayout(dialog)
         dialog.setToolTip("Select the abilities that spiders in this slot may use. Leaving this unchanged keeps the personality's default abilities.")
 
         checks = []
+        heading = QLabel("Abilities")
+        heading.setStyleSheet("font-weight: 600; margin-top: 6px;")
+        layout.addWidget(heading)
         for skill in SKILLS:
+            if skill.category != "Ability":
+                continue
             cb = QCheckBox(skill.display_name)
             cb.setChecked(skill.id in current)
             cb.setToolTip(skill.description)
@@ -801,7 +1168,13 @@ class ConfigWindow(QMainWindow):
 
         if dialog.exec_() == QDialog.Accepted:
             selected = [skill_id for skill_id, cb in checks if cb.isChecked()]
-            button.setProperty("skill_ids", selected)
+            button.setProperty("ability_ids", selected)
+            # Keep the legacy in-memory property complete for callers that
+            # still inspect it, while behaviours remain personality-controlled.
+            behaviour_ids = [skill_id for skill_id in current if skill_id not in {
+                skill.id for skill in SKILLS if skill.category == "Ability"
+            }]
+            button.setProperty("skill_ids", behaviour_ids + selected)
             button.setProperty("skills_custom", True)
             self._refresh_skills_button(button)
             self.update_summary()
@@ -823,7 +1196,7 @@ class ConfigWindow(QMainWindow):
 
     def remove_slot_by_button(self, button):
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, 5) is button:
+            if self.table.cellWidget(row, 8) is button:
                 self.table.removeRow(row)
                 break
         self.update_summary()
@@ -836,6 +1209,9 @@ class ConfigWindow(QMainWindow):
             count_spin = self.table.cellWidget(row, 2)
             count_random_check = self.table.cellWidget(row, 3)
             skills_btn = self.table.cellWidget(row, 4)
+            colors_btn = self.table.cellWidget(row, 5)
+            team_box = self.table.cellWidget(row, 6)
+            job_box = self.table.cellWidget(row, 7)
             if not model_box or not personality_box or model_box.currentData() is None or personality_box.currentData() is None:
                 continue
             count_random = bool(count_random_check.isChecked()) if count_random_check else False
@@ -845,23 +1221,44 @@ class ConfigWindow(QMainWindow):
                 "count": int(count_spin.value()),
                 "count_random": count_random,
             }
+            slot["slot_id"] = str(model_box.property("slot_id") or f"slot-{uuid.uuid4().hex[:12]}")
+            slot["team"] = str(team_box.currentData() or "neutral") if team_box is not None else "neutral"
+            slot["job"] = normalize_job_id(job_box.currentData()) if job_box is not None else "none"
             # Only write an explicit skills list when the user customised it.
             # Otherwise the slot stays personality-driven: the spider uses its
             # personality's default abilities, resolved when the overlay loads.
             if skills_btn is not None and bool(skills_btn.property("skills_custom")):
-                slot["skills"] = normalize_skill_ids(skills_btn.property("skill_ids"))
+                slot["abilities"] = normalize_ability_ids(
+                    skills_btn.property("ability_ids")
+                    if skills_btn.property("ability_ids") is not None
+                    else skills_btn.property("skill_ids")
+                )
+            if colors_btn is not None:
+                colors = _normalize_color_overrides(colors_btn.property("color_overrides"))
+                if colors:
+                    slot["colors"] = colors
             slots.append(slot)
         if not slots and not silent:
             QMessageBox.warning(self, "No creature slots", "Add at least one creature slot before saving or launching.")
         return slots
 
     def current_settings_data(self):
-        return {
+        # Start from whatever the preset already had. Settings without a
+        # widget here -- team relations, the mouse-capture switch -- would
+        # otherwise be lost every time the user pressed Save.
+        settings = dict(getattr(self, "_loaded_settings", {}))
+        settings.update({
             "size_scale": float(self.size_combo.currentData() or 1.0),
             "interferable": bool(self.interferable_check.isChecked()),
             "mood_mode": str(self.mood_combo.currentData() or "auto"),
             "social_play": bool(self.social_play_check.isChecked()),
             "gait_style": str(self.movement_combo.currentData() or "classic"),
+            "teams": teams_payload(self._ensure_team_profiles()),
+            # Only what was actually declared. Recomputing this from the pairs on
+            # screen would drop a stance about a team no slot currently uses, and
+            # would write out the implicit "rivals is hostile" rule as though a
+            # person had chosen it.
+            "team_relations": minimal_stances(self._team_stances),
             "flies": {
                 "enabled": bool(self.flies_enabled_check.isChecked()),
                 "min_interval": round(float(self.fly_min_spin.value()), 2),
@@ -869,7 +1266,8 @@ class ConfigWindow(QMainWindow):
                 "max_flies": int(self.fly_count_spin.value()),
                 "spawner": bool(self.fly_spawner_check.isChecked()),
             },
-        }
+        })
+        return settings
 
     def current_preset_data(self):
         data = {
@@ -887,6 +1285,14 @@ class ConfigWindow(QMainWindow):
 
     def apply_settings_to_ui(self, settings: dict | None) -> None:
         settings = settings if isinstance(settings, dict) else {}
+        # Remember everything the preset carried, including settings this
+        # window has no widget for, so saving does not silently drop them.
+        self._loaded_settings = dict(settings)
+        # Teams first: the slot pickers are filled from this, and a preset that
+        # renamed its teams has to show those names rather than the ids.
+        self._team_profiles = normalize_teams(settings.get("teams"))
+        self._team_stances = normalize_team_stances(settings.get("team_relations"))
+        self._teams_signature = None
         size_scale = float(settings.get("size_scale", 1.0))
         closest_index = 0
         closest_distance = float("inf")
@@ -940,6 +1346,243 @@ class ConfigWindow(QMainWindow):
                 self.table.cellWidget(row, 4),
             )
 
+    # ------------------------------------------------------------------
+    # Teams: names, colours, and what stands between them
+    # ------------------------------------------------------------------
+    NEW_TEAM_SENTINEL = "__new_team__"
+
+    def _team_ids_in_use(self) -> list:
+        """Every non-neutral team id a slot currently points at, in row order."""
+        ids = []
+        for row in range(self.table.rowCount()):
+            box = self.table.cellWidget(row, 6)
+            if box is None:
+                continue
+            team_id = normalize_team_id(box.currentData() or "neutral")
+            if team_id != "neutral" and team_id not in ids:
+                ids.append(team_id)
+        return ids
+
+    def _ensure_team_profiles(self) -> dict:
+        """Give every team in use an identity, keeping the ones already named."""
+        self._team_profiles = normalize_teams(
+            teams_payload(self._team_profiles), self._team_ids_in_use())
+        return self._team_profiles
+
+    def _populate_team_box(self, box, selected) -> None:
+        """Fill one slot's team picker from the teams this preset knows about."""
+        selected = normalize_team_id(selected or "neutral")
+        box.blockSignals(True)
+        box.clear()
+        box.addItem("Neutral / solo", "neutral")
+        for team_id in sorted(self._team_profiles):
+            profile = self._team_profiles[team_id]
+            box.addItem(self._team_icon(profile.color), profile.name, team_id)
+        if selected != "neutral" and box.findData(selected) < 0:
+            # A preset can name a team the block never described; it still has to
+            # be selectable, or loading the preset would silently move the slot.
+            profile = TeamProfile(selected, selected.replace("_", " ").title(),
+                                  default_color(selected))
+            self._team_profiles[selected] = profile
+            box.addItem(self._team_icon(profile.color), profile.name, selected)
+        box.insertSeparator(box.count())
+        box.addItem("New team...", self.NEW_TEAM_SENTINEL)
+        index = box.findData(selected)
+        box.setCurrentIndex(index if index >= 0 else 0)
+        box.blockSignals(False)
+
+    @staticmethod
+    def _team_icon(color) -> QIcon:
+        """A filled swatch, so a team is recognisable in the list at a glance."""
+        pixmap = QPixmap(14, 14)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(QColor(0, 0, 0, 90))
+        painter.setBrush(QColor(*color))
+        painter.drawEllipse(1, 1, 12, 12)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _repopulate_team_boxes(self) -> None:
+        for row in range(self.table.rowCount()):
+            box = self.table.cellWidget(row, 6)
+            if box is not None:
+                self._populate_team_box(box, box.currentData())
+
+    def _on_team_box_changed(self, box) -> None:
+        if str(box.currentData() or "") == self.NEW_TEAM_SENTINEL:
+            team_id = self._prompt_for_new_team()
+            # Falls back to the previous choice when the prompt is cancelled,
+            # so a stray click cannot leave a slot pointing at the menu entry.
+            self._populate_team_box(box, team_id or box.property("last_team") or "neutral")
+        box.setProperty("last_team", box.currentData())
+        self._ensure_team_profiles()
+        self._repopulate_team_boxes()
+        self.update_summary()
+
+    def _prompt_for_new_team(self):
+        """Ask for a name and turn it into a team, or return None if cancelled."""
+        name, accepted = QInputDialog.getText(
+            self, "New team", "Name this team (for example: Porch guard)")
+        if not accepted or not str(name).strip():
+            return None
+        team_id = self._unique_team_id(str(name))
+        self._team_profiles[team_id] = TeamProfile(
+            team_id, normalize_team_name(name, team_id), default_color(team_id))
+        return team_id
+
+    def _unique_team_id(self, name: str) -> str:
+        """Turn a name into a stable id that no other team is already using.
+
+        Case-folded like every other id in this project, because on Windows a
+        team called `Rivals` and one called `rivals` are the same folder, the
+        same saved key, and have already been the same bug four times.
+        """
+        slug = "".join(char if char.isalnum() else "_" for char in str(name).strip().lower())
+        slug = "_".join(part for part in slug.split("_") if part)[:32] or "team"
+        if slug == "neutral":
+            slug = "team"
+        candidate = slug
+        suffix = 2
+        while candidate in self._team_profiles:
+            candidate = f"{slug}_{suffix}"[:32]
+            suffix += 1
+        return candidate
+
+    def _refresh_teams_panel(self) -> None:
+        """Rebuild the Teams panel, but only when the set of teams changed.
+
+        Rebuilding on every edit would delete the line edit being typed into and
+        close an open stance menu, which is the same trap the runtime inspector
+        already had to avoid.
+        """
+        self._ensure_team_profiles()
+        signature = tuple(sorted(
+            (team_id, profile.name, profile.color)
+            for team_id, profile in self._team_profiles.items()
+        ))
+        if signature == self._teams_signature:
+            return
+        self._teams_signature = signature
+
+        while self.teams_layout.count():
+            item = self.teams_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not self._team_profiles:
+            empty = QLabel("No teams yet. Give a creature slot a team above, and it "
+                           "appears here to be named and coloured.")
+            empty.setWordWrap(True)
+            self.teams_layout.addWidget(empty, 0, 0, 1, 4)
+            return
+
+        counts = {}
+        for row in range(self.table.rowCount()):
+            box = self.table.cellWidget(row, 6)
+            spin = self.table.cellWidget(row, 2)
+            if box is None:
+                continue
+            team_id = normalize_team_id(box.currentData() or "neutral")
+            if team_id != "neutral":
+                counts[team_id] = counts.get(team_id, 0) + (int(spin.value()) if spin else 1)
+
+        line = 0
+        for team_id in sorted(self._team_profiles):
+            profile = self._team_profiles[team_id]
+            swatch = QPushButton()
+            swatch.setFixedSize(QSize(26, 22))
+            swatch.setToolTip(f"Colour for {profile.name}")
+            swatch.setAccessibleName(f"Colour for {profile.name}")
+            swatch.setIcon(self._team_icon(profile.color))
+            swatch.clicked.connect(lambda _c=False, tid=team_id: self._pick_team_color(tid))
+            name_edit = QLineEdit(profile.name)
+            name_edit.setMaxLength(32)
+            name_edit.setToolTip("What this team is called, wherever it is named.")
+            name_edit.setAccessibleName(f"Name of team {profile.name}")
+            name_edit.editingFinished.connect(
+                lambda edit=name_edit, tid=team_id: self._rename_team(tid, edit.text()))
+            count = counts.get(team_id, 0)
+            members = QLabel(f"{count} spider(s)" if count else "no spiders yet")
+            self.teams_layout.addWidget(swatch, line, 0)
+            self.teams_layout.addWidget(name_edit, line, 1)
+            self.teams_layout.addWidget(members, line, 2)
+            self.teams_layout.addWidget(QLabel(f"id: {team_id}"), line, 3)
+            line += 1
+
+        pairs = stance_pairs(self._team_profiles, self._team_stances)
+        if not pairs:
+            hint = QLabel("Add a second team to choose what stands between them.")
+            hint.setWordWrap(True)
+            self.teams_layout.addWidget(hint, line, 0, 1, 4)
+            return
+        header = QLabel("Between teams")
+        header.setStyleSheet("font-weight: 600;")
+        self.teams_layout.addWidget(header, line, 0, 1, 4)
+        line += 1
+        for left, right, relation in pairs:
+            label = QLabel(f"{team_label(left, self._team_profiles)} and "
+                           f"{team_label(right, self._team_profiles)}")
+            combo = NoScrollComboBox()
+            for value in ("friend", "neutral", "foe"):
+                combo.addItem(STANCE_LABELS[value], value)
+            index = combo.findData(relation)
+            combo.setCurrentIndex(index if index >= 0 else 1)
+            combo.setToolTip(describe_stance(left, right, relation, self._team_profiles))
+            combo.setAccessibleName(
+                f"Relationship between {team_label(left, self._team_profiles)} and "
+                f"{team_label(right, self._team_profiles)}")
+            combo.currentIndexChanged.connect(
+                lambda _i=0, a=left, b=right, box=combo: self._set_stance(a, b, box))
+            self.teams_layout.addWidget(label, line, 0, 1, 2)
+            self.teams_layout.addWidget(combo, line, 2, 1, 2)
+            line += 1
+
+    def _pick_team_color(self, team_id: str) -> None:
+        profile = self._team_profiles.get(team_id)
+        if profile is None:
+            return
+        chosen = QColorDialog.getColor(QColor(*profile.color), self,
+                                       f"Colour for {profile.name}")
+        if not chosen.isValid():
+            return
+        self._team_profiles[team_id] = TeamProfile(
+            team_id, profile.name, (chosen.red(), chosen.green(), chosen.blue()))
+        self._teams_signature = None
+        self._refresh_teams_panel()
+        self._repopulate_team_boxes()
+        self.update_summary()
+
+    def _rename_team(self, team_id: str, text) -> None:
+        profile = self._team_profiles.get(team_id)
+        if profile is None:
+            return
+        name = normalize_team_name(text, team_id)
+        if name == profile.name:
+            return
+        self._team_profiles[team_id] = TeamProfile(team_id, name, profile.color)
+        self._teams_signature = None
+        self._refresh_teams_panel()
+        self._repopulate_team_boxes()
+        self.update_summary()
+
+    def _set_stance(self, left: str, right: str, combo) -> None:
+        """Declare one pair, leaving every other declaration alone.
+
+        Including a chosen "ignore each other": for a team that is hostile by
+        default, that is a real decision, and treating it as "nothing declared"
+        would quietly restore the hostility on the next launch.
+        """
+        relation = str(combo.currentData() or "neutral")
+        declared = {key: dict(row) for key, row in self._team_stances.items()}
+        declared.setdefault(left, {})[right] = relation
+        declared.setdefault(right, {})[left] = relation
+        self._team_stances = normalize_team_stances(declared)
+        combo.setToolTip(describe_stance(left, right, relation, self._team_profiles))
+        self.update_summary()
+
     def update_summary(self):
         rows = self.table.rowCount()
         fixed_count = 0
@@ -959,6 +1602,24 @@ class ConfigWindow(QMainWindow):
             if skills_btn and bool(skills_btn.property("skills_custom")):
                 custom_skill_rows += 1
 
+        custom_color_rows = 0
+        team_counts = {}
+        job_counts = {}
+        for row in range(self.table.rowCount()):
+            colors_btn = self.table.cellWidget(row, 5)
+            if colors_btn is not None and _normalize_color_overrides(colors_btn.property("color_overrides")):
+                custom_color_rows += 1
+            team_box = self.table.cellWidget(row, 6)
+            if team_box is not None:
+                team_id = str(team_box.currentData() or "neutral")
+                if team_id != "neutral":
+                    team_counts[team_id] = team_counts.get(team_id, 0) + 1
+            job_box = self.table.cellWidget(row, 7)
+            if job_box is not None:
+                job_id = str(job_box.currentData() or "none")
+                if job_id != "none":
+                    job_counts[job_id] = job_counts.get(job_id, 0) + 1
+
         if rows == 0:
             creature_text = "No creature slots yet. Add at least one slot to launch."
         else:
@@ -967,7 +1628,20 @@ class ConfigWindow(QMainWindow):
             if random_models or random_personalities:
                 creature_text += f" Random choices: {random_models} model slot(s), {random_personalities} personality slot(s)."
             if custom_skill_rows:
-                creature_text += f" Custom skills: {custom_skill_rows} slot(s)."
+                creature_text += f" Custom abilities: {custom_skill_rows} slot(s)."
+            if custom_color_rows:
+                creature_text += f" Custom colors: {custom_color_rows} slot(s)."
+            if team_counts:
+                creature_text += " Teams: " + ", ".join(
+                    f"{team_label(team_id, self._team_profiles)} ({count})"
+                    for team_id, count in sorted(team_counts.items())
+                ) + "."
+            if job_counts:
+                creature_text += " Jobs: " + ", ".join(
+                    f"{job_id} ({count})" for job_id, count in sorted(job_counts.items())
+                ) + "."
+
+        self._refresh_teams_panel()
 
         size_text = self.size_combo.currentText() if hasattr(self, "size_combo") else "Normal (100%)"
         mood_text = self.mood_combo.currentText() if hasattr(self, "mood_combo") else "Auto"
@@ -1049,9 +1723,9 @@ class ConfigWindow(QMainWindow):
                 self.preset_combo.setCurrentIndex(idx)
             applied = self._apply_live_if_running()
             if applied:
-                self.status.setText(f"Saved preset: {path}\nApplied changes to the running overlay.")
+                self.status.setText(f"Saved your preset to {path}\nApplied changes to the running overlay.")
             else:
-                self.status.setText(f"Saved preset: {path}")
+                self.status.setText(f"Saved your preset to {path}")
         except Exception as exc:
             QMessageBox.critical(self, "Could not save preset", str(exc))
 
@@ -1065,13 +1739,18 @@ class ConfigWindow(QMainWindow):
             data = load_preset(path)
             self.preset_name.setText(data.get("name", path.stem))
             self.table.setRowCount(0)
-            for slot in data.get("slots", []):
+            for slot_index, slot in enumerate(data.get("slots", [])):
                 self.add_slot(
                     slot.get("model"),
                     slot.get("personality"),
                     int(slot.get("count", 1)),
                     bool(slot.get("count_random", False)),
                     slot.get("skills"),
+                    slot.get("abilities"),
+                    slot.get("colors"),
+                    slot.get("slot_id") or f"slot-{slot_index}",
+                    slot.get("team_id", slot.get("team", "neutral")),
+                    slot.get("job", "none"),
                 )
             self.apply_settings_to_ui(data.get("settings"))
             self.status.setText(f"Loaded preset: {path}")
@@ -1079,8 +1758,11 @@ class ConfigWindow(QMainWindow):
             QMessageBox.critical(self, "Could not load preset", str(exc))
 
     def ensure_saved_for_launch(self) -> Path:
+        # Goes to the user's own preset folder: saving used to write over a
+        # preset that shipped with the application, because the filename came
+        # from the preset's name and "Default" collides with "default".
         data = self.current_preset_data()
-        path = self.root / "presets" / safe_preset_filename(data["name"])
+        path = user_presets_dir() / safe_preset_filename(data["name"])
         return save_preset(data, path)
 
     def launch_engine(self):
@@ -1108,19 +1790,43 @@ class ConfigWindow(QMainWindow):
             env["PYTHONPATH"] = src_path + (os.pathsep + existing if existing else "")
             cwd = str(self.root)
         try:
+            # A request left behind by a previous session would stop the new
+            # overlay the moment it finished loading.
+            clear_stop_request(state_dir())
             self.overlay_process = subprocess.Popen(cmd, cwd=cwd, env=env)
             self.launched_preset_path = str(preset_path)
             self.status.setText("Overlay launched. Edit and press Save to apply changes live, or Stop overlay to close it.")
         except Exception as exc:
             QMessageBox.critical(self, "Could not launch overlay", str(exc))
 
+    def _wait_tick(self, seconds: float) -> None:
+        """Sleep without freezing the settings window while the overlay saves."""
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        time.sleep(seconds)
+
     def stop_overlay(self):
-        if self.overlay_process and self.overlay_process.poll() is None:
-            self.overlay_process.terminate()
+        if not (self.overlay_process and self.overlay_process.poll() is None):
             self.launched_preset_path = None
-            self.status.setText("Stopping overlay...")
+            clear_stop_request(state_dir())
+            self.status.setText("No overlay process is running from this window.")
+            return
+
+        self.status.setText("Stopping overlay...")
+        self._wait_tick(0.0)
+        # Ask the overlay to save and quit before killing it. Terminating it
+        # outright discarded any XP, names and base progress that the debounced
+        # flush had not yet written.
+        outcome = stop_process(self.overlay_process, state_dir(), sleep=self._wait_tick)
+        self.launched_preset_path = None
+        if outcome == "graceful":
+            self.status.setText("Overlay stopped and saved its spiders.")
+        elif outcome == "terminated":
+            self.status.setText(
+                "Overlay did not respond and was closed; recent progress may not have been saved."
+            )
         else:
-            self.launched_preset_path = None
             self.status.setText("No overlay process is running from this window.")
 
     def update_process_status(self):
@@ -1171,6 +1877,11 @@ def main(argv=None) -> int:
             engine_args.extend(["--preset", args.preset])
         engine_args.extend(remaining)
         return engine_main(engine_args)
+
+    written_to = configure_logging(state_dir())
+    log.info("Desktop Bug Companion %s settings window starting (frozen=%s)", __version__, getattr(sys, "frozen", False))
+    if written_to is None:
+        log.warning("No log file could be opened under %s", state_dir())
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = ConfigWindow()

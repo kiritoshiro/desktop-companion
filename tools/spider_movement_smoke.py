@@ -106,6 +106,75 @@ def run_heading_filter_check(model: dict, personality: dict) -> dict:
     }
 
 
+def run_roll_recovery_check(model: dict, personality: dict) -> dict:
+    """Ensure a playful roll cannot leave stale or overextended contacts."""
+    creature = build_creature(model, personality)
+    # Exercise the production update order, including scheduler sync. A direct
+    # _update_roll call cannot catch a phase timer ending Roll before the
+    # physical animation reaches progress 1.0.
+    creature.squash = 0.66
+    creature.current_speed = 130.0
+    creature.vel_x = 130.0
+    creature.enter_roll(direction=0.0)
+    assert creature.state == "Roll"
+    for _ in range(180):
+        creature.update(1.0 / 60.0, 0.0, 0.0, 2400, 1400)
+        if creature.state != "Roll" and creature.roll_progress >= 1.0:
+            break
+    assert creature.state == "Idle"
+    assert creature.roll_spin == 0.0
+    assert creature.roll_tuck == 0.0
+    assert creature.squash == 1.0
+    assert creature.current_speed == 0.0
+    assert creature.vel_x == 0.0 and creature.vel_y == 0.0
+    assert not any(leg.stepping or leg.pending_step for leg in creature.legs)
+    for leg in creature.legs:
+        _, _, _, very_far = creature._leg_reach_metrics(
+            leg, leg.foot_x, leg.foot_y, visual=False
+        )
+        assert not very_far
+    return {"contacts": len(creature.legs), "state": creature.state}
+
+
+def run_quick_turn_check(model: dict, personality: dict) -> dict:
+    """Check that a sharp turn is fast, monotonic, and frame-smooth."""
+    creature = build_creature(model, personality)
+    creature.speed = creature.current_speed = 0.0
+    creature.target_x = creature.x + 500.0
+    creature.target_y = creature.y
+    creature.target_heading = 0.0
+    dt = 1.0 / 60.0
+    max_step = 0.0
+    reversals = 0
+    previous_step = 0.0
+    for frame in range(90):
+        angle = 0.0 if frame < 8 else math.pi * 0.5
+        creature.target_x = creature.x + math.cos(angle) * 500.0
+        creature.target_y = creature.y + math.sin(angle) * 500.0
+        creature.target_heading = angle
+        old_heading = creature.heading
+        if creature._spider_gait_config() is not None:
+            creature._update_spider_grounded_frame(dt)
+        else:
+            creature._move_body(dt)
+            creature._update_legs_lively(dt)
+        step = ((creature.heading - old_heading + math.pi) % math.tau) - math.pi
+        max_step = max(max_step, abs(step))
+        if abs(step) > 1e-5 and previous_step * step < -1e-5:
+            reversals += 1
+        previous_step = step
+
+    final_error = abs(((creature.heading - math.pi * 0.5 + math.pi) % math.tau) - math.pi)
+    assert max_step < 0.12, max_step
+    assert reversals == 0, reversals
+    assert final_error < 0.08, final_error
+    return {
+        "max_step": max_step,
+        "reversals": reversals,
+        "final_error": final_error,
+    }
+
+
 def run_walk(model: dict, personality: dict, config: dict, seconds: float,
              speed: float, turn_rate: float, dt: float):
     creature = build_creature(model, personality)
@@ -244,6 +313,10 @@ def main() -> int:
     random.seed(19)
     heading_filter = run_heading_filter_check(model, personality)
     random.seed(19)
+    roll_recovery = run_roll_recovery_check(model, personality)
+    random.seed(19)
+    quick_turn = run_quick_turn_check(model, personality)
+    random.seed(19)
     result = run_walk(model, personality, config, args.seconds, args.speed, args.turn_rate, 1.0 / 60.0)
     assert result["starts"] > 0, "no spider gait steps started"
     assert result["max_airborne"] <= config["max_airborne"], result["max_airborne"]
@@ -276,6 +349,8 @@ def main() -> int:
         f"max_heading_jump={result['max_heading_jump']:.3f} "
         f"zigzag_target_step={heading_filter['max_target_step']:.3f} "
         f"zigzag_settled={heading_filter['settled_amplitude']:.3f} "
+        f"roll_contacts={roll_recovery['contacts']} "
+        f"quick_turn_step={quick_turn['max_step']:.3f} "
         f"max_chain_stretch={result['max_chain_stretch']:.3f} "
         f"max_segment_ratio={result['max_segment_ratio']:.3f}"
     )

@@ -1,19 +1,5 @@
 # Desktop Bug Companion
 
-## Single-file EXE build
-
-This copy is configured for PyInstaller `--onefile`. Run `build_exe.bat`, then use:
-
-```text
-dist\DesktopBugCompanion.exe
-```
-
-Models, personalities, and default presets are bundled inside the EXE. The app can still create a `presets` folder next to the EXE when you save or launch a custom preset, because saved presets must be writable at runtime.
-
----
-
-# Desktop Bug Companion
-
 A Windows desktop overlay app that spawns small cursor-reactive creatures on top of your real desktop. The first included creature is a procedural spider with planted-foot IK, alternating gait groups, stop-look-go stalking, cursor chase, and realistic retreat when the cursor darts toward it.
 
 The overlay is not a game canvas. It uses a frameless, always-on-top, per-pixel transparent Qt window and Windows hit-testing so empty space stays click-through while spider pixels can be grabbed. The only intentional visible pixels are the spider and its soft shadow/highlight pixels. Left-drag a spider to pick it up; releasing it preserves throw inertia and makes it scrabble away startled.
@@ -69,7 +55,7 @@ A curious spider will walk up to its point of interest, lower its body, and insp
 
 ### Choosing a mood at runtime
 
-The mood baseline is set by personality, but you can override it for every spider from the tray **Mood** menu (Auto, Playful, Cuddly, Curious, Calm). **Auto** restores each spider's personality-defined baseline. Two personalities ship specifically for this: **Playful** (energetic, social, quick to play) and **Cuddly** (gentle, affectionate, slow and close). **Hunter** now has a special mouse-hunting mode: it notices the cursor from farther away, bursts closer in short stop-start runs, freezes to observe when the cursor is still, and whips around after catching it. The hunter now moves noticeably faster on its approach and chase, and when it freezes to watch a still cursor it holds completely still rather than shuffling its feet. **Jumper** is a new small-hop personality that bounces constantly while roaming, approaching, or chasing. Two presets show the features off: **Playground** mixes playful and cuddly spiders for social play, and **Jumpers** fills the screen with hunting jumping spiders so the pounce is easy to trigger.
+The mood baseline is set by personality, but you can override it for every spider from the tray **Mood** menu (Auto, Playful, Cuddly, Curious, Calm). **Auto** restores each spider's personality-defined baseline. Two personalities ship specifically for this: **Playful** (energetic, social, quick to play) and **Cuddly** (gentle, affectionate, slow and close). **Hunter** now has a special mouse-hunting mode: it notices the cursor from farther away, bursts closer in short stop-start runs, freezes to observe when the cursor is still, and whips around after catching it. The hunter now moves noticeably faster on its approach and chase, and when it freezes to watch a still cursor it holds completely still rather than shuffling its feet. **Jumper** is a new small-hop personality that bounces constantly while roaming, approaching, or chasing. To see either, add a few slots in the settings window with the Playful or Social temperament and turn social play on; a screen full of Jumper spiders is the quickest way to trigger the pounce.
 
 ### Movement styles
 
@@ -82,6 +68,8 @@ When a spider comes to a stop it now leaves its feet exactly where they landed i
 ### Rolling and tumbling
 
 A happy, excited spider will sometimes tuck its legs in and roll, spinning through a turn or two as it tumbles a short way across the desk before popping back up and carrying on. It is a pure flourish with no target, most common in playful, high-energy spiders, so setting a spider to the **Playful** mood (or using the Playful personality) is the easiest way to see it. A spider close to the cursor may also do a quick tumble away from the pointer when it is in a good mood.
+
+A tumble always turns a whole number of turns, and always tidies up after itself. Both of those used to be untrue and both showed up as broken-looking legs. The spin is a drawing rotation that is dropped the instant the roll ends, while the legs re-plant against a body heading the roll never changed -- so a turn and a half left the body jumping by up to 173 degrees on the final frame. And only a roll that ran to completion put the legs back, so anything that cut one short -- a startle, a grab, a job, the Roll ability being switched off, the spider jumping out of it -- left the body rotated and the legs tucked, permanently.
 
 ### Weaving webs
 
@@ -97,7 +85,7 @@ You can break a web yourself by dragging the mouse pointer across it. Moving the
 
 A web in progress is not owned forever. If the spider building it gets distracted, flees the cursor, or is picked up and dragged, it leaves the unfinished web behind, and any spider that comes across an abandoned, half-built web may adopt it and finish it off, even though it did not start it. Webbers are especially keen to do this and will cross the screen to complete someone else's work. A web that was barely begun is simply dropped rather than left as a stray stub.
 
-Two abilities cover all of this. **Weave web** -- building webs, repairing torn ones, and finishing abandoned ones -- is the Webber's specialty and is on for Webbers by default. **Walk on webs** -- walking onto a finished web and plucking it -- is a common ability that every spider has. You can add or remove either one per spider from the right-click menu or in the settings window like any other ability. The **Webs** preset sets up a scene with a Webber on a moss orb-weaver model alongside a few ordinary spiders, which is the quickest way to watch webs go up, get walked on, get torn, and get repaired or finished by whoever is nearby.
+Two abilities cover all of this. **Weave web** -- building webs, repairing torn ones, and finishing abandoned ones -- is the Webber's specialty and is on for Webbers by default. **Walk on webs** -- walking onto a finished web and plucking it -- is a common ability that every spider has. You can add or remove either one per spider from the right-click menu or in the settings window like any other ability. The quickest way to watch webs go up, get walked on, get torn, and get repaired is a slot on the `moss_velvet_orbweaver` model carrying the **Weave web** ability, alongside a few ordinary spiders.
 
 ### Shooting webs at the cursor
 
@@ -108,11 +96,11 @@ There are two shots, each its own ability:
 - **Shoot trapping web** (`shoot_web`) pins its target roughly where the glob lands. Fired at the pointer it holds the cursor in place, and you break free by **moving the mouse around a bit**. Wiggling fills a small struggle meter; holding still lets it drain, so a quick shake tears the silk in well under a second while a motionless mouse stays caught until a built-in safety timer releases it. The same shot is what a spider flings at a fly to web it from range.
 - **Web-shove to wall** (`wall_web`) is the flashier finisher. The glob slams the pointer to the nearest wall along the spider's firing line and pins it against the edge, where the same wiggle-to-escape rule peels it off.
 
-Before either shot the spider crouches, faces its target, and converges its feelers into a rangefinder, then lets the glob fly with a small recoil. The silk reads as it travels: a trailing thread with a sticky head, then a radiating splat over the trapped target that stretches and tears as the captive struggles against it. The skills are named for the action rather than the target because the spider uses the very same silk on a fly as it does on your pointer.
+Before either shot the spider crouches, faces its target, and converges its feelers into a rangefinder, then lets the glob fly with a small recoil. The silk is thrown, not guided: the spider aims once, leading a moving target by where it is actually going, and the glob then flies straight, so a quick sideways move can make it miss. Correcting in flight is the **Silk tracking** talent, unlocked at level 9 in the skill tree, rather than something every spider starts with. The silk reads as it travels: a trailing thread with a sticky head, then a radiating splat over the trapped target that stretches and tears as the captive struggles against it. The skills are named for the action rather than the target because the spider uses the very same silk on a fly as it does on your pointer.
 
 The dedicated **Trapper** personality hunts the pointer with this silk. It stalks the cursor in the patient stop-start way the Hunter does, then webs it instead of pouncing, favouring an in-place trap and occasionally shoving the pointer to a wall. A still cursor is treated as an easy mark. Any other spider can be given the skills too; without the Trapper temperament they fire only rarely, so an ordinary spider catching your pointer is an occasional surprise rather than a constant one.
 
-Because these shots are the only behaviour that moves your real pointer, there is a single master switch. The tray **Interaction** menu has **Let spiders web-trap the mouse**, on by default; turning it off frees the pointer immediately, cancels any glob in flight, and stops spiders ever moving your cursor again. The two skills are also toggleable per spider from the right-click menu like any other ability, and a hard maximum hold time means a trap can never lock your pointer indefinitely even if you never move it. On non-Windows platforms the silk still animates but never moves the pointer, matching the rest of the overlay's Windows-only cursor behaviour. The **Trappers** preset spawns a pair of Trapper jumping spiders alongside a Hunter that has the in-place trap, which is the quickest way to watch the pointer get caught.
+Because these shots are the only behaviour that moves your real pointer, there is a single master switch. The tray **Interaction** menu has **Let spiders web-trap the mouse**, on by default; turning it off frees the pointer immediately, cancels any glob in flight, and stops spiders ever moving your cursor again. The two skills are also toggleable per spider from the right-click menu like any other ability, and a hard maximum hold time means a trap can never lock your pointer indefinitely even if you never move it. On non-Windows platforms the silk still animates but never moves the pointer, matching the rest of the overlay's Windows-only cursor behaviour. To watch the pointer get caught, give a couple of jumping-spider slots the **Shoot trapping web** and **Web-shove to wall** abilities in the settings window.
 
 ## Flies
 
@@ -183,7 +171,7 @@ Eight new personalities expand the behavior range, each with its own resting emo
 - **Nope** — panics when the mouse approaches, then rapidly backward-jumps in a zigzag chain before running away.
 - **Drifter** — builds momentum, breaks traction, leans into wide sideways slides, sometimes drifts circles/corners on its own, and keeps sliding when grabbed or thrown.
 
-The **Fluffy Friends** preset spawns one of each new spider with a fitting personality so the whole pack is easy to try at once.
+Add one slot per model in the settings window to try the whole pack at once.
 
 ## Plush Tarantulas (hybrid 2D)
 
@@ -196,7 +184,7 @@ A second pack uses the **sprite_rig** renderer (the same "hybrid 2D" system as t
 - **Snowpuff** — cream-white and downy with big eyes and blush. Defaults to Cuddly.
 - **Berry Knee** — near-black body with warm berry-orange foot "socks," red-knee inspired. Defaults to Grumpy.
 
-The **Plush Tarantulas** preset spawns one of each. Because they are sprite_rig models, their look lives in `models/<id>/assets/*.png` and is fully editable or replaceable; the `colors` block still drives the procedural bits (leg joints, feet, pedipalps, antennae, eyes, and blush), so keep it in step with the art. Thickness, eye size, blush, and body proportions are tuned per model through the `appearance` block (`leg_segment_thickness`, `leg_tip_thickness`, `foot_bulb`, `eye_scale`, `eye_count`, `cute_blush`, `abdomen_scale`, `cephalothorax_scale`).
+Because they are sprite_rig models, their look lives in `models/<id>/assets/*.png` and is fully editable or replaceable; the `colors` block still drives the procedural bits (leg joints, feet, pedipalps, antennae, eyes, and blush), so keep it in step with the art. Thickness, eye size, blush, and body proportions are tuned per model through the `appearance` block (`leg_segment_thickness`, `leg_tip_thickness`, `foot_bulb`, `eye_scale`, `eye_count`, `cute_blush`, `abdomen_scale`, `cephalothorax_scale`).
 
 ## Requirements
 
@@ -232,11 +220,186 @@ The settings UI opens first. Choose model, personality, count, save/load a prese
 - **Random personality** sets each personality dropdown to **Random personality (pick at launch)**.
 - **Random count (1-10)** checks the per-slot **Random 1-10** box, so that slot chooses a new count at launch.
 - **Random all** enables random model, random personality, and random count together.
-- **Skills** opens a per-slot checklist of launch abilities. A fresh slot starts with its personality's default abilities -- the common set every spider shares plus that personality's specialty -- and changing a slot's personality updates the defaults unless you have edited the list yourself. Specialist abilities (weave web for a Webber, web trap and wall pin for a Trapper, drift/slide for a Drifter) are off for other personalities by default but can be ticked on for any slot.
+- **Temperament** is the spider's stable personality. The menu now shows six broad choices: Balanced, Playful, Curious, Bold, Cautious, and Social. Their scheduler values are derived from six transparent 0-10 traits -- energy, curiosity, boldness, sociability, patience, and caution -- where 0 means almost never and 10 means strongly/often. Old specialist personality IDs remain readable in saved presets as legacy entries, but no longer crowd new choices.
+- **Job** is separate from temperament and describes colony work. Choose No job, Hunter, Builder, Guard, Scout, or Web tender. Builders establish and upgrade a visible shared team base; Guards patrol it and raise an alert when a declared foe enters its perimeter. Jobs do not silently change personality values.
+- **Abilities** opens a per-slot checklist of true capabilities. A fresh slot starts with the temperament's common abilities plus any job capability, and changing temperament/job updates those defaults unless you have edited the list yourself.
+- **Colors** is a swatch of the colours that slot will actually produce -- the model's own palette until you override it, and your palette once you have, outlined brightly so an edited row stands out. Click it for the per-slot RGB editor: body, leg, highlight, eye, band, shadow, and tip colours, with a reset to the selected model's defaults. The override is saved in the preset and applies to every creature spawned from that slot.
+- The **colour swatch** and the **remove** cross at the end of each row are icons rather than words, because in a row that already carries a model, a temperament, a count, abilities, a team and a job, those two labels were the least informative things in it. Both keep a tooltip and an accessible name, so a screen reader still announces them.
+- **Team** assigns a launch-time team to the whole slot, chosen by the name you gave it. Spiders sharing a team are friends by default, and the **Teams** panel below the table is where teams are named, coloured, and given a stance towards each other. Specific friend/neutral/foe overrides remain available in the right-click inspector after launch. Marking teams as foes does not create combat: a Guard alerts and intercepts, and nothing takes damage.
 - **Size** offers Tiny, Small, Normal, Large, and Huge launch sizes.
 - **Draggable / interferable** toggles whether spiders can be grabbed. When unchecked, clicks pass through spider pixels too.
 
 Changes apply live. While the overlay is running you can pick different models, personalities, counts, skills, or settings and press **Save**: the running overlay reloads the new lineup in place without being stopped or restarted. **Save and launch overlay** does the same when an overlay is already up, so neither button asks you to stop first. Use **Stop overlay** to close it.
+
+**Stop overlay** now asks the overlay to save its spiders and quit, rather than
+killing it outright. It previously terminated the process, so any XP, names or
+base progress earned since the last automatic save was discarded. The settings
+window waits up to five seconds and reports whether the overlay saved; if the
+overlay is wedged and does not answer, it is still closed, and the status line
+says so rather than implying everything was saved.
+
+## Progression, armor, and teams
+
+Each live spider has a separate runtime progression profile. Eating a fly awards
+XP exactly once at the catch point; XP advances the spider through a hard cap of
+30. Higher levels give bounded size and speed growth and improve health, energy,
+armor, and damage. A small data-driven talent tree offers unlockable passive
+bonuses using level-up points, while the older personality/launch skills remain
+separate behavior permissions.
+
+You can pin a small **health bar** above a spider from the same inspector, so
+it stays on screen instead of only appearing while the panel is open. It is
+green, amber or red by how much health is left, and it is remembered between
+launches. Nothing can damage a spider yet, so today it stays full; it is there
+for when that changes, and for watching a spider you have been editing.
+
+Right-click a spider and choose **Inspect progression, inventory, and stats**
+to see its level, XP bar, resources, combat values, talent tree, and armor. The
+inventory contains spider-specific slots such as carapace, abdomen, legs,
+pedipalps, and head; equipment gives derived bonuses and adds restrained visual
+armor accents. The inspector also lets you assign a team and set a symmetric
+friend/neutral/foe relationship with another spider. Relations are descriptive
+until a future combat mode explicitly consumes them, so nothing a spider does
+can cause damage. A Guard does read them: it raises an alert when a spider it
+considers a foe enters its base perimeter, and moves to intercept it.
+
+### There is no combat yet, and "foes" does not create one
+
+This is worth stating plainly, because the words invite the wrong expectation.
+Marking two teams as foes means **a Guard notices an intruder near its base,
+raises an alert and moves to intercept**. Nothing takes damage, no spider can be
+hurt, and no fight can start. Health, armour and damage exist as numbers on the
+inspector and are not consumed by anything. Combat is a later piece of work.
+
+### Naming your own teams
+
+A team has a name you choose and a colour. The settings window has a **Teams**
+panel: every team your slots use appears there with a colour swatch, an editable
+name and how many spiders are on it. "New team..." in a slot's team picker
+creates one from a name you type.
+
+The name is what you see everywhere -- the slot picker, the preset summary and
+the right-click inspector -- while the id underneath it is what presets and saved
+state refer to, so renaming a team never moves a spider off it. Ids are
+case-folded, so `Porch guard` and `porch guard` are the same team rather than two.
+
+The colour is visible on the desktop, which is the point: a base ring is drawn in
+its team's colour, each member wears a small ring of it on the ground, and a
+hovered spider's name label is edged in it. A preset with two teams now looks
+like a preset with two teams.
+
+```json
+"teams": {
+  "pack_a": { "name": "Home colony", "color": "#4fa3d1" },
+  "rivals": { "name": "Intruders",  "color": "#d1534f" }
+}
+```
+
+A team with no entry still works: it gets a name derived from its id and a colour
+derived from it too, so an older preset keeps running and still looks right.
+
+### What stands between two teams
+
+Spiders on the same team are friends and two ordinary teams simply ignore each
+other. **Rivals** is the exception: it is hostile to every other named team
+unless something says otherwise, so choosing it means something without editing
+relations pair by pair.
+
+The Teams panel shows every pair of teams and what stands between them, so this
+is a choice you make while setting up rather than a block of JSON you discover
+afterwards. It is stored in `settings.team_relations`, one direction per pair,
+and read in both:
+
+```json
+"team_relations": { "pack_a": { "rivals": "foe" } }
+```
+
+Choosing **Ignore each other** for a pair is recorded rather than dropped, so it
+can override the Rivals default rather than being restored on the next launch.
+A friend/neutral/foe choice made in the right-click inspector still outranks
+whatever the teams say. Before any of this existed a Guard had nothing to react
+to, because two different teams were merely unrelated, and the shipped
+**Colony** preset could not demonstrate the behaviour it advertises.
+
+Runtime state is saved atomically in `state/creatures.json` beside the project or
+EXE. It stores level, XP, talents, inventory, equipment, names, team, relations,
+the optional pinned level and health labels, and Builder/Guard base progress. Transient
+animation and movement state is intentionally not persisted. Launch presets keep
+model, temperament, job, team, abilities, colors, and global settings; they do
+not contain live HP/energy, animation state, or base build progress. Old presets
+continue to work unchanged.
+
+Each saved spider is keyed by the preset it belongs to. That key is now
+case-insensitive, because Windows treats `Default.json` and `default.json` as
+one file, and previously the two spellings built up two separate profiles for
+the same spider. The file is upgraded in place the first time a newer build
+reads it: keys differing only in case are merged, keeping the higher level, and
+keys from the scheme that predated preset scoping are discarded because they
+cannot be attributed to any preset. An entry for a spider that has not appeared
+for 50 launches is retired, so the file no longer grows forever.
+
+Set `DESKTOP_BUG_STATE_DIR` to keep runtime state somewhere other than beside
+the project or EXE. The headless tests set it so that running them cannot
+rewrite real saved spiders.
+
+## Where your own presets go
+
+Presets you save are written to your own folder beside the runtime state:
+
+```text
+state\presets```
+
+They are read before the ones that ship with the application, so saving a
+preset called `Default` gives you your own `Default` without touching the
+`default.json` that came with the build. The shipped copy stays where it is,
+and the preset list shows one entry per name, yours.
+
+This used to go wrong. The saved filename comes from the preset's *name*, so
+`Default` was written to `presets/Default.json` -- the same file as the shipped
+`presets/default.json` on Windows, where case does not distinguish two names.
+The first **Save** anyone pressed quietly replaced a preset that shipped with
+the application. Writing into the shipped folder is now refused outright.
+
+## Logs and reporting a problem
+
+The executable is built windowed, so it has no console: anything printed would
+go nowhere, and a failure used to leave you with a frozen or vanished spider
+and nothing to send. Both the overlay and the settings window now write to a
+rotating log next to the runtime state:
+
+```text
+state\logs\desktop-bug.log
+```
+
+It records the version, whether the build is packaged, the preset that was
+resolved and where, warnings about unreadable models or presets, Qt's own
+warnings, and the full traceback of anything that goes wrong. Three older files
+are kept and each is capped at 512 KB, so the whole set stays small enough to
+attach to a bug report.
+
+An unhandled error no longer takes the app down in silence. It is written to
+the log and announced once through a tray message naming the log, and the
+overlay keeps running: an oddly behaved spider is recoverable, a disappeared
+application is not. A fault that repeats every frame is counted rather than
+written out sixty times a second, and you are told about it once.
+
+Run the overlay with `--verbose` for debug-level detail. The version is also in
+the settings window title, so it can be quoted without hunting for it.
+
+## Temperament, jobs, and colony bases
+
+The scheduler still chooses temporary action phases (wander, observe, inspect,
+play, and so on), but it reads them from temperament values rather than from a
+long list of professions disguised as personalities. A job is a separate role:
+Builder work advances a shared team `BaseSite` through five upgrade levels,
+while Guard work patrols that site's perimeter and reacts only to explicit
+`foe` relations. The base layer is intentionally non-combat for now; its
+integrity, resources, alert, ownership, and rendering hooks are ready for later
+doors, repairs, crafting, and combat systems.
+
+The shipped **Colony** preset is a quick demonstration: one Builder creates a
+team base, one Guard patrols it, a Scout ranges around it, and a rival Hunter
+provides a separate team/job example.
 
 While the overlay is running, you can also right-click the system-tray icon for live controls:
 
@@ -259,6 +422,20 @@ set PYTHONPATH=%CD%\src
 python -m desktop_bug.engine --preset presets\default.json
 ```
 
+The packaged executable takes the same arguments:
+
+```bat
+dist\DesktopBugCompanion.exe --engine --preset presets\colony.json
+```
+
+A relative preset path is looked up in the same order everywhere: an editable
+copy beside the project or executable first, then the copy bundled inside the
+build. So the command above works against a one-file build even though there is
+no `presets` folder next to the `.exe`, and dropping an edited `colony.json`
+beside the executable overrides the bundled one. Saving a preset always writes
+beside the project or executable, never into the bundle, which is discarded
+when the app exits.
+
 ## Build the Windows executable
 
 Double-click:
@@ -267,28 +444,35 @@ Double-click:
 build_exe.bat
 ```
 
-The build uses PyInstaller one-folder mode and writes:
+`DesktopBugCompanion.spec` is the single definition of the build. The batch
+file and both GitHub workflows run it rather than repeating its flags, so there
+is one place to change and nothing to keep in step.
+
+The build uses PyInstaller one-file mode and writes a single executable:
 
 ```text
-dist\DesktopBugCompanion\DesktopBugCompanion.exe
+dist\DesktopBugCompanion.exe
 ```
 
-The build script bundles the data folders into the PyInstaller build and also copies editable data folders beside the executable:
+Models, personalities and presets are bundled inside it, so the `.exe` can be
+moved on its own. There is no folder to keep beside it.
 
-```text
-dist\DesktopBugCompanion\models\
-dist\DesktopBugCompanion\personalities\
-dist\DesktopBugCompanion\presets\
-```
-
-Run the executable from `dist\DesktopBugCompanion\DesktopBugCompanion.exe`. If you move the app, move the whole `DesktopBugCompanion` folder, not just the `.exe`, so the editable data folders stay beside it.
+To override bundled data, put an edited copy in a `models`, `personalities` or
+`presets` folder next to the executable; those are searched before the bundled
+copies.
 
 ## GitHub Actions builds and releases
 
 The repository includes Windows workflows under `.github/workflows/`:
 
 - `ci.yml` runs on pushes and pull requests targeting `main`. It compiles the Python sources, validates every model and preset, and performs a PyInstaller build smoke test.
-- `release-windows.yml` runs for version tags such as `v1.0.0`. It builds the one-file Windows executable with all current creature models, personalities, and presets bundled, then publishes the `.exe` and a ZIP containing the executable and README to a GitHub Release.
+- Both workflows run `tools/run_all_checks.py`, which compiles the sources,
+  validates every model and preset, and discovers and runs every
+  `tools/*_smoke.py`. A new test is therefore picked up by both without
+  editing a workflow.
+- `release-windows.yml` runs for version tags such as `v1.0.0`. It refuses a
+  tag that disagrees with `__version__` in `src/desktop_bug/__init__.py`, so a
+  published build always reports the version its tag claims. It builds the one-file Windows executable with all current creature models, personalities, and presets bundled, then publishes the `.exe` and a ZIP containing the executable and README to a GitHub Release.
 
 To publish a release, push a semantic-version tag:
 
@@ -307,49 +491,59 @@ DesktopBugCompanion/
   requirements.txt
   run_dev.bat
   build_exe.bat
+  launcher.py
 
   src/
     desktop_bug/
       __init__.py
-      engine.py
-      manager.py
-      creature.py
-      webs.py
-      mouse_webs.py
-      flies.py
+      cage.py
       config_ui.py
+      creature.py
+      desktop_environment.py
       discovery.py
-      preset_io.py
-      overlay_win32.py
+      engine.py
+      flies.py
+      frame_policy.py
+      jobs.py
+      logging_setup.py
+      manager.py
       math_utils.py
+      mood.py
+      mouse_webs.py
+      overlay_win32.py
+      personality_profiles.py
+      phase_scheduler.py
+      preset_io.py
+      profiling.py
+      progression.py
+      runtime_state.py
+      session_control.py
+      skills.py
+      teams.py
+      webs.py
 
   models/
-    spider/
+    <model id>/
       model.json
-      assets/
-        README.md
+      assets/            # optional PNGs, for sprite_rig models
 
   personalities/
-    hunter.json
-    shy.json
-    curious.json
-    sleepy.json
-    skittish.json
-    playful.json
-    cuddly.json
-    webber.json
-    trapper.json
+    <personality id>.json    # legacy specialist temperaments
 
   presets/
+    chosen-one.json
+    colony.json
     default.json
-    playground.json
-    jumpers.json
-    webs.json
-    trappers.json
+    snowpuff-2.json
+    tarantula.json
 
   tools/
+    benchmark.py             # frame cost at 1/5/10/20 spiders
+    benchmark_baseline.json  # what a frame cost before any optimisation
+    run_all_checks.py        # everything CI runs, in one command
     validate_model.py
     validate_preset.py
+    <name>_smoke.py          # 24 headless checks, all run by CI
 ```
 
 ## Add a new creature model
@@ -382,6 +576,8 @@ Each model needs at least:
 
 Every leg entry must include `name`, `side`, `gait_group`, `attach_angle`, `rest_angle`, `reach`, `upper_len`, and `lower_len`. Optional fields such as `attach_forward`, `attach_side`, `rest_forward`, and `rest_side` improve the procedural rig.
 
+The repository includes five additional recolorable procedural variations: `Mini Marble Tarantula` (small), `Velvet Cloud Tarantula` and `Sunset Fuzzball` (fluffy), `Giant Copper Tarantula` (large and fluffy), and `Blue Jewel Tarantula` (sleek and colorful). They use the articulated five-segment leg chain and painted lateral leg connections. Procedural models respond fully to the Colors editor; sprite-rig art keeps its bitmap appearance while still using palette values for generated joints and expressive details.
+
 Validate a model:
 
 ```bat
@@ -398,7 +594,7 @@ personalities\aggressive.json
 
 Restart the settings UI. The personality dropdown auto-discovers `personalities/*.json`. No engine-code edits are required.
 
-Required personality fields include `id`, `display_name`, `speed_multiplier`, `reaction_radius`, `boldness`, and `wander_frequency`. Additional fields tune threat detection, retreat, chase, idle timing, and approach pauses. An optional `mood` field (`playful`, `cuddly`, `curious`, `calm`, `skittish`, `hunter`, `bold`, `grumpy`, `zoomy`, `mellow`, `clingy`, `bashful`, `nope`, `drifter`, or `auto`) sets the spider's resting emotional baseline, which drives its antennae, eyes, body language, and how readily it plays.
+Required personality fields include `id`, `display_name`, `speed_multiplier`, `reaction_radius`, `boldness`, and `wander_frequency`. New temperament definitions should also provide a `temperament` object with `energy`, `curiosity`, `boldness`, `sociability`, `patience`, and `caution`, each from 0 to 10. Additional scalar fields tune threat detection, retreat, chase, idle timing, and approach pauses. Specialist labels from older files remain supported as legacy compatibility data; use a separate slot `job` for work such as `builder` or `guard`.
 
 ## Presets
 
@@ -411,8 +607,14 @@ Presets live in `presets/` and are editable JSON files:
     {
       "model": "spider",
       "personality": "hunter",
+      "job": "hunter",
       "count": 2,
       "count_random": false,
+      "colors": {
+        "body": [80, 40, 30],
+        "legs": [120, 65, 35],
+        "highlight": [220, 140, 60]
+      },
       "skills": [
         "approach",
         "wander",
@@ -443,7 +645,7 @@ Each slot may include an optional `skills` list. Omitting `skills` means the slo
 
 The `settings` block also accepts an optional `mood_mode` (the same values as the tray Mood menu) and `social_play` flag, so a preset can launch straight into a chosen mood with playing on or off. Both default to `auto` and `true` when omitted, so older presets keep working unchanged.
 
-The settings UI can add/remove slots, pick model/personality/count/skills, save a preset, load a preset, and launch the engine using the selected preset.
+The settings UI can add/remove slots, pick model/temperament/job/count/abilities/colors/team, save a preset, load a preset, and launch the engine using the selected preset.
 
 Validate a preset:
 
@@ -490,11 +692,11 @@ If you see a black fullscreen rectangle:
 - Bold spiders crouch, range, and pounce at a target, then resolve into cuddle, run-away, or catch on landing.
 - With more than one spider and social play on, spiders seek each other out to chase and tumble.
 - Tray Mood menu overrides the emotional baseline; Social play toggle enables or disables spider-to-spider play.
-- Playful and Cuddly personalities and the Playground and Jumpers presets ship in the box.
+- Playful and Cuddly personalities ship in the box.
 - Approach and Retreat set their targets immediately.
 - Fast cursor movement toward the spider triggers real retreat.
 - Observer movement backs away along the real opposite vector from the watched cursor/spider instead of choosing only left/right orbit sides.
-- Added the **Nope** personality and **Nope Spiders** preset for rapid backward zigzag escape jumps when the mouse approaches.
+- Added the **Nope** personality for rapid backward zigzag escape jumps when the mouse approaches.
 - Config UI edits preset slots and launches the overlay.
 - Models/personalities/presets are auto-discovered and editable after build.
 - Right-clicking a spider names or renames it; hovering a named spider shows an upright label; tray and right-click menus can always-show every name. The same right-click menu can toggle skills for that individual live spider.
@@ -504,11 +706,11 @@ If you see a black fullscreen rectangle:
 - The hunter approaches and chases the cursor noticeably faster than other spiders.
 - Moving or resizing a cage repaints its whole footprint so no translucent ghost is left at the old position.
 - Playful, excited spiders sometimes tuck in and roll, spinning through a turn or two before resuming.
-- Spiders weave silk webs thread by thread following a real orb-weaver build order (bridge, frame, radii, hub, temporary outward spiral, then sticky inward capture spiral), in four finished forms (corner orb, full orb, funnel sheet, cobweb tangle). The **Webber** personality builds them, favouring corners but also placing webs in open spots; other spiders walk onto finished webs and pluck them to test the bounce; and any spider may adopt and finish an abandoned, half-built web it did not start. The **Webber** personality and **Webs** preset ship in the box, gated by the `weave_web` and `web_walk` skills.
+- Spiders weave silk webs thread by thread following a real orb-weaver build order (bridge, frame, radii, hub, temporary outward spiral, then sticky inward capture spiral), in four finished forms (corner orb, full orb, funnel sheet, cobweb tangle). The **Webber** personality builds them, favouring corners but also placing webs in open spots; other spiders walk onto finished webs and pluck them to test the bounce; and any spider may adopt and finish an abandoned, half-built web it did not start. The **Webber** personality ships in the box, gated by the `weave_web` and `web_walk` skills.
 - A Webber keeps at most seven webs on screen and builds less eagerly as more intact webs already exist, so it spins a handful and then settles rather than carpeting the desktop.
 - Dragging the mouse pointer across a finished web tears the strands it passes over, breaking the web in parts where you swipe rather than all at once; a web only tears while the pointer is moving over it. A Webber notices a torn web, travels to it, and re-knits the missing strands until it is whole again (RepairApproach and Repair states).
 - Spiders are not all able to do everything: a common set of abilities is shared by every personality, while specialist abilities (`weave_web` for the Webber, `shoot_web`/`wall_web` for the Trapper, `drift` for the Drifter) belong to their matching personality by default. A slot with no explicit `skills` uses its personality's defaults, and any specialist ability can still be added to or removed from a slot.
-- Spiders can shoot sticky silk at the real pointer: `shoot_web` pins the cursor in place and `wall_web` shoves it to the nearest wall, both broken by wiggling the mouse, with a struggle meter that drains when still and a hard maximum hold so the pointer is never locked. The **Trapper** personality stalks and webs the cursor, the **Trappers** preset ships in the box, a tray **Interaction** toggle (**Let spiders web-trap the mouse**, on by default) is the master switch, and pointer control is Windows-only and degrades safely if it fails.
+- Spiders can shoot sticky silk at the real pointer: `shoot_web` pins the cursor in place and `wall_web` shoves it to the nearest wall, both broken by wiggling the mouse, with a struggle meter that drains when still and a hard maximum hold so the pointer is never locked. The **Trapper** personality stalks and webs the cursor, a tray **Interaction** toggle (**Let spiders web-trap the mouse**, on by default) is the master switch, and pointer control is Windows-only and degrades safely if it fails.
 - The running overlay applies edits live: saving the preset (or relaunching) while it runs reloads new models, personalities, counts, skills, and settings in place, without stopping or restarting the overlay. The overlay watches its launched preset file and reloads it when it changes, skipping a half-written file safely.
 
 
@@ -555,6 +757,86 @@ DesktopBugCompanion.exe
 ```
 
 Leave `DESKTOP_BUG_FAST_PIXMAPS` off unless you are testing speed and can accept lower quality sprite rendering.
+
+### Measuring, instead of guessing
+
+Until recently nothing in the frame loop was timed, so every explanation for why
+a larger colony feels heavy was a hunch. It is now measured.
+
+Set `DESKTOP_BUG_PROFILE=1` to time each system per frame, and a small HUD
+appears in the top-left corner showing the frame cost, the costliest systems and
+the rate the overlay is running at. `DESKTOP_BUG_PROFILE_HUD=0` keeps the timing
+and hides the panel. Both are off by default.
+
+Leaving the instrumentation in the code costs about 0.07 ms per frame with ten
+spiders when profiling is off, which is smaller than the run-to-run variation of
+the measurement itself, so treat it as free rather than as zero. Switching it on
+costs about 0.4 ms per frame at that colony size.
+
+To measure without running the overlay at all:
+
+```bat
+python tools/benchmark.py
+```
+
+It runs the real manager and the real painter headless at 1, 5, 10 and 20
+spiders and prints where the time goes. `--check` compares against
+`tools/benchmark_baseline.json` and fails if a colony size got more than 15 %
+slower; `--update-baseline` records a new one. A baseline only applies to the
+machine it was recorded on, so it is compared against a hardware fingerprint and
+skipped rather than failed elsewhere.
+
+**What the measurement found.** Drawing the spiders is about four fifths of a
+frame and scales linearly with the colony. Ten spiders cost about 23 ms per
+frame against a 16.7 ms budget at 60 FPS, which is why ten was where it started
+to stutter. Simulating them is only about a fifth of that. Webs, flies, jobs,
+behaviour scheduling and desktop probing together account for under 0.05 ms,
+and the repaint region at ten spiders still covers only about 16 % of the
+screen, so this was never a pixel-count problem and never a behaviour-scheduling
+one.
+
+Profiling inside the drawing found the cost was not Qt but Python recomputing
+answers it already had. The gait tuning -- a thirty-key table of bounded values
+read straight out of the model -- was rebuilt about **seventy-two times per
+spider per frame**. The heading's forward and right vectors, four trigonometric
+calls, were recomputed about **460 times per spider per frame**. Every leg chain
+was solved **twice**: once for the leg, once for the sockets and knuckles drawn
+over it. For a planted leg those two are identical, which is most legs most of
+the time; for one mid-swing they are not, because the leg pass raises the foot
+before solving, so that one stays two real solves.
+
+Caching those, plus the palette colours and the leg reach limits, made a frame
+about **21 % cheaper** with no change at all to what is drawn:
+
+| spiders | before | after |
+| --- | --- | --- |
+| 1 | 2.23 ms | 1.75 ms |
+| 4 | 8.99 ms | 7.09 ms |
+| 10 | 22.11 ms | 17.56 ms |
+| 20 | 44.36 ms | 35.26 ms |
+
+Both columns come from one paired run on the same machine, with the old and new
+`creature.py` swapped in turn, because two measurements taken minutes apart vary
+by a few percent and a mixed table would flatter the result.
+
+Ten spiders now run at roughly 57 FPS rather than 45. That is close to the
+16.7 ms budget but not inside it, so a large colony on a slower machine will
+still drop frames; the remaining cost is the draw calls themselves and the leg
+solver, and reducing those means either batching the drawing or simplifying how
+a spider looks when several are on screen.
+
+"Faster" here means *only* faster: the identity is checked by rendering the same
+seeded run twice, once with every cache disabled, and comparing the images pixel
+by pixel.
+
+### Frame rate that follows the machine
+
+A desktop pet painting at 60 FPS behind a fullscreen game, or on a laptop
+running off its battery, is being a bad guest. The overlay now drops to 10 FPS
+while a fullscreen window has the foreground, and to 30 FPS on battery, and
+returns to the rate you chose when that stops being true. The tray **Performance**
+menu sets the ceiling it works from, so your choice is remembered rather than
+overwritten.
 
 ### Partial-repaint efficiency
 

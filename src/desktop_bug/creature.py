@@ -18,12 +18,42 @@ from .math_utils import (
     smoothstep,
 )
 from .mood import Mood, antenna_drive_from_mood, build_antenna_points
-from .skills import SkillSet
+from .phase_scheduler import BehaviourPhaseScheduler, phase_id_for_state
+from .progression import (
+    ABILITY_BY_ID,
+    ARMOR_BY_ID,
+    MAX_LEVEL,
+    ProgressionState,
+    equipped_items,
+    growth_multipliers,
+    normalize_team_id,
+    relation_between,
+    xp_to_next_level,
+)
+from .skills import SkillSet, default_skills_for_personality
+from .jobs import normalize_job_id
 
 
 def smootherstep(t: float) -> float:
     t = clamp(t, 0.0, 1.0)
     return t * t * t * (t * (t * 6.0 - 15.0) + 10.0)
+
+
+# States the job layer drives directly. They are not part of the personality
+# dispatch, so a spider left in one after its work intent clears would match no
+# branch and keep its last speed and pause flag forever.
+JOB_STATES = ("JobTravel", "JobBuild", "JobPatrol", "JobGuardAlert")
+
+# Personality states that outrank colony work: fleeing, a jump already
+# committed, eating, and silk that is partway through being made or thrown.
+# A job is a shift, not ownership of the spider.
+JOB_PREEMPTING_STATES = frozenset({
+    "Retreat", "Startled",
+    "Coil", "Jump", "Land", "Catch",
+    "Feed",
+    "WebAim", "WebShot",
+    "WeaveApproach", "Weave", "RepairApproach", "Repair",
+})
 
 
 VALID_GAIT_STYLES = ("classic", "lively", "skitter")
@@ -102,18 +132,67 @@ class Creature:
         size_scale: float = 1.0,
         skills: list[str] | None = None,
         gait_style: str = "classic",
+        color_overrides: dict | None = None,
+        progression_state: dict | None = None,
+        progression_id: str | None = None,
+        job_id: str = "none",
     ):
         self.model = model
+        # (model, config) for _spider_gait_config, which is otherwise the
+        # most expensive call in a frame. Keyed on the model object so a
+        # swapped model rebuilds rather than serving a stale gait.
+        self._gait_config_cache = None
+        # (heading, basis) and (camouflage signature, {key: rgb}). Both are pure
+        # caches of values recomputed hundreds of times per frame; see the
+        # methods that use them for why each key is the right one.
+        self._basis_cache = None
+        self._qcolor_cache = None
+        # Leg chain solves for the frame being drawn, cleared by `render`.
+        self._chain_points_cache: dict = {}
+        self._reach_cache: dict = {}
+        self._triplet_cache = None
         self.personality = personality
-        self.skills = SkillSet(skills if skills is not None else personality.get("skills"))
+        self.skills = SkillSet(
+            skills if skills is not None else default_skills_for_personality(personality)
+        )
+        # High-level behaviour periods are planned independently of the concrete
+        # FSM.  The scheduler uses a per-creature RNG so two identical spiders do
+        # not march through the same personality sequence.
+        self.phase_scheduler = BehaviourPhaseScheduler(personality, self.skills.ids())
         self.screen_w = max(200, int(screen_w))
         self.screen_h = max(200, int(screen_h))
         self.margin = 50.0
         self.index = index
+        self.progression_id = str(progression_id or f"runtime:{index}")
+
+        # Runtime progression is deliberately separate from the preset's model
+        # and personality.  Older callers can omit it and receive a fresh level
+        # one spider; a manager can restore it from a saved profile or slot.
+        self.progression = ProgressionState.from_dict(progression_state)
+        self.job_id = normalize_job_id(job_id)
+        # BaseWorld writes these small intents before update(); they let jobs
+        # drive locomotion without pretending that a profession is a personality.
+        self.job_mode = "idle"
+        self.job_target = None
+        self.job_alert_target = None
+        self.job_base_id = None
+        # Published back to the job layer: True while a personality state
+        # outranks this spider's work, so a base cannot make progress from a
+        # worker that is busy fleeing or eating.
+        self.job_busy = False
+        # Stances declared between teams by the loaded preset. The manager
+        # shares one mapping across the scene; empty means teams only imply
+        # friendship among their own members.
+        self.team_stances: dict = {}
+        # Who each team is, shared by the manager the same way. A spider wears a
+        # small ring in its team's colour so a scene with two teams looks like a
+        # scene with two teams.
+        self.team_profiles: dict = {}
 
         self.size_scale = clamp(float(size_scale), 0.45, 2.25)
         self.size_jitter = random.uniform(0.90, 1.12)
-        self.size = float(model.get("base_size", 25)) * self.size_jitter * self.size_scale
+        self._progression_base_size = float(model.get("base_size", 25)) * self.size_jitter
+        self.size = self._progression_base_size * self.size_scale
         self.x = random.uniform(self.margin, self.screen_w - self.margin)
         self.y = random.uniform(self.margin, self.screen_h - self.margin)
         self.heading = random.uniform(-math.pi, math.pi)
@@ -156,6 +235,8 @@ class Creature:
         self.inertia_vx = 0.0
         self.inertia_vy = 0.0
         self.inertia_timer = 0.0
+        # Beat held on the spot after a throw has skidded to a halt.
+        self.throw_recovery = 0.0
         self.startled_timer = 0.0
         # Pickup/release uses the pose to communicate a timid reaction. Keep
         # the leg palette unchanged during that transition; color should not
@@ -206,7 +287,27 @@ class Creature:
         self.prev_cursor_vx = 0.0
         self.prev_cursor_vy = 0.0
 
-        self.colors = model.get("colors", {})
+        # Model palettes are shared discovery data. Copy and sanitize them so a
+        # per-slot override cannot mutate the model definition or leak into
+        # another creature spawned from the same slot.
+        self.colors = {}
+        for key, raw in (model.get("colors", {}) or {}).items():
+            if isinstance(raw, (list, tuple)) and len(raw) >= 3:
+                try:
+                    self.colors[str(key)] = [int(clamp(float(raw[i]), 0, 255)) for i in range(3)]
+                except (TypeError, ValueError):
+                    continue
+        self.color_overrides = {}
+        if isinstance(color_overrides, dict):
+            for key, raw in color_overrides.items():
+                if not isinstance(raw, (list, tuple)) or len(raw) != 3:
+                    continue
+                try:
+                    rgb = [int(clamp(float(raw[i]), 0, 255)) for i in range(3)]
+                except (TypeError, ValueError):
+                    continue
+                self.color_overrides[str(key)] = rgb
+                self.colors[str(key)] = list(rgb)
         self.legs: List[LegState] = [LegState(definition=dict(item)) for item in model.get("legs", [])]
         self.gait_groups = sorted({int(leg.definition.get("gait_group", 0)) for leg in self.legs}) or [0]
         self.active_gait_index = random.randrange(len(self.gait_groups))
@@ -229,6 +330,10 @@ class Creature:
         self._spider_heading_filter = self.heading
         self._spider_locomotion_active = False
         self._spider_gait_frame_updated = False
+        # Turn speed is ramped independently from the target bearing.  A quick
+        # cursor change should still produce a quick pivot, but not a series of
+        # full-angle jumps whenever the support set changes.
+        self._turn_speed_smooth = 0.0
         # Feeler-probe pacing (lively style only): a gap timer between probes and
         # the current probe pulse envelope.
         self._feeler_clock = random.uniform(0.4, 1.4)
@@ -278,6 +383,10 @@ class Creature:
         self.jump_peak = 0.0
         self.jump_from = (self.x, self.y)
 
+        # True from the moment a tumble begins until something has tidied up
+        # after it, whether that was the roll finishing or anything cutting it
+        # short.
+        self._rolling = False
         # Playful tumble/roll. roll_spin is an extra whole-body draw rotation and
         # roll_tuck pulls the rendered feet toward the body so it curls into a ball.
         self.roll_spin = 0.0
@@ -372,6 +481,29 @@ class Creature:
         self._camouflage_idle_timer = 0.0
         self._camouflage_visible_timer = rand_range(personality.get("camouflage_initial_visible_time"), 3.5, 6.0)
 
+        # Gameplay stats are derived values.  The behaviour code can continue to
+        # assign ordinary movement speeds while ``_speed_mult`` folds progression
+        # and equipment bonuses into those assignments.
+        self.max_hp = 100.0
+        self.hp = self.max_hp
+        self.max_energy = 100.0
+        self.energy = self.max_energy
+        self.armor = 0.0
+        self.damage = 8.0
+        combat_cfg = model.get("combat", {})
+        if not isinstance(combat_cfg, dict):
+            combat_cfg = {}
+        def combat_number(key: str, default: float, minimum: float) -> float:
+            try:
+                return max(minimum, float(combat_cfg.get(key, default)))
+            except (TypeError, ValueError):
+                return default
+        self._combat_base_hp = combat_number("base_hp", 100.0, 1.0)
+        self._combat_base_energy = combat_number("base_energy", 100.0, 1.0)
+        self._combat_base_armor = combat_number("base_armor", 0.0, 0.0)
+        self._combat_base_damage = combat_number("base_damage", 8.0, 0.1)
+        self._apply_progression_stats(reset_resources=True)
+
         # Cached screen-space bounding box (x0, y0, x1, y1) for partial repaints.
         # Recomputed on demand; the previous frame's box is unioned so a moving
         # spider always erases its old footprint cleanly.
@@ -432,16 +564,40 @@ class Creature:
     # Geometry helpers
     # ------------------------------------------------------------------
     def _basis(self) -> Tuple[float, float, float, float]:
-        fx = math.cos(self.heading)
-        fy = math.sin(self.heading)
-        # Screen-space right vector. At heading 0, right points downward.
-        rx = -math.sin(self.heading)
-        ry = math.cos(self.heading)
-        return fx, fy, rx, ry
+        """Forward and right unit vectors for the current heading.
 
-    @staticmethod
-    def _side_sign(side: str) -> float:
-        return -1.0 if str(side).lower().startswith("l") else 1.0
+        Measured at about 460 calls per spider per frame, which is four
+        trigonometric functions each time for a heading that only changes once
+        per update. Cached on the heading value itself, so a changed heading
+        recomputes and there is no way to serve a stale basis.
+        """
+        heading = self.heading
+        cached = self._basis_cache
+        if cached is not None and cached[0] == heading:
+            return cached[1]
+        fx = math.cos(heading)
+        fy = math.sin(heading)
+        # Screen-space right vector. At heading 0, right points downward.
+        basis = (fx, fy, -fy, fx)
+        self._basis_cache = (heading, basis)
+        return basis
+
+    # Leg definitions carry a handful of distinct side strings, and this is
+    # asked about 270 times per spider per frame, so the string work is done
+    # once per distinct value rather than once per call.
+    _SIDE_SIGNS: dict = {}
+
+    @classmethod
+    def _side_sign(cls, side: str) -> float:
+        try:
+            return cls._SIDE_SIGNS[side]
+        except (KeyError, TypeError):
+            sign = -1.0 if str(side).lower().startswith("l") else 1.0
+            try:
+                cls._SIDE_SIGNS[side] = sign
+            except TypeError:
+                pass
+            return sign
 
     def _world_to_body_local(self, x: float, y: float) -> Tuple[float, float]:
         fx, fy, rx, ry = self._basis()
@@ -524,7 +680,15 @@ class Creature:
         version used this value inside foot target placement, which made the rear
         legs freeze because their valid rest lane was being clipped too tightly.
         Keep it generous for scheduling and a little tighter only for rendering.
+
+        Pure in the leg definition and the body size, and asked about fifty
+        times per spider per frame, so it is cached on exactly those. A spider
+        that grows a level changes its size and the cache misses.
         """
+        cache_key = (id(leg), visual, self.size)
+        cached = self._reach_cache.get(cache_key)
+        if cached is not None:
+            return cached
         d = leg.definition
         reach = max(self.size * 0.85, float(d.get("reach", 1.8)) * self.size)
         upper = max(self.size * 0.22, float(d.get("upper_len", 0.85)) * self.size)
@@ -540,7 +704,13 @@ class Creature:
         chain_limit = (upper + lower) * (1.08 if visual else 1.18)
         target_limit = reach * (1.04 if visual else 1.14)
         rest_allowance = rest_dist * (1.18 if visual else 1.30)
-        return max(min(chain_limit, target_limit), rest_allowance, self.size * 0.92)
+        reach_limit = max(min(chain_limit, target_limit), rest_allowance, self.size * 0.92)
+        if len(self._reach_cache) > 64:
+            # Bounded: a size that changes every frame would otherwise grow this
+            # without limit, and only the current size is ever asked about.
+            self._reach_cache.clear()
+        self._reach_cache[cache_key] = reach_limit
+        return reach_limit
 
     def _leg_reach_metrics(self, leg: LegState, x: float, y: float, visual: bool = False) -> Tuple[float, float, bool, bool]:
         ax, ay = self._leg_attach(leg)
@@ -687,7 +857,21 @@ class Creature:
         The existing lively/skitter scheduler is shared by many creatures.  A
         sprite model can opt in to a more grounded spider stride without
         changing the legacy gait of unrelated models.
+
+        Cached, because this is a pure function of the model's appearance block
+        and was the single most expensive thing in a frame: measured at 72 calls
+        per spider per frame, each rebuilding a thirty-key dictionary through
+        thirty `clamp(float(...))` calls. The cache is keyed on the identity of
+        the model dict, so swapping a creature's model still rebuilds it.
         """
+        cached = self._gait_config_cache
+        if cached is not None and cached[0] is self.model:
+            return cached[1]
+        config = self._build_spider_gait_config()
+        self._gait_config_cache = (self.model, config)
+        return config
+
+    def _build_spider_gait_config(self):
         raw = self._appearance("spider_gait", None)
         if not isinstance(raw, dict) or not bool(raw.get("enabled", False)):
             return None
@@ -736,6 +920,10 @@ class Creature:
                 "turn_cycle_gain": clamp(float(raw.get("turn_cycle_gain", 0.26)), 0.08, 0.80),
                 "turn_error_drive": clamp(float(raw.get("turn_error_drive", 1.25)), 0.40, 2.40),
                 "turn_speed_floor": clamp(float(raw.get("turn_speed_floor", 0.15)), 0.10, 0.60),
+                # Apply most of a requested pivot per solver step, but leave a
+                # small mechanical buffer for support handoffs. This prevents a
+                # stalled frame from being followed by a visible angular snap.
+                "turn_pose_fraction": clamp(float(raw.get("turn_pose_fraction", 0.78)), 0.55, 1.0),
                 # Mouse/target bearing is intentionally filtered separately
                 # from the mechanical body turn.  This removes high-frequency
                 # target reversals while preserving a quick response to a
@@ -848,19 +1036,21 @@ class Creature:
             return None
 
         records = []
+        turn_fraction = clamp(float(config.get("turn_pose_fraction", 0.78)), 0.55, 1.0)
+        effective_turn_delta = turn_delta * turn_fraction
         total_weight = 0.0
         q_f_sum = q_s_sum = p_x_sum = p_y_sum = 0.0
         for leg in supports:
             stroke_f = leg.stance_stroke_f - move_f * scale
             stroke_s = leg.stance_stroke_s - move_s * scale
-            stance_turn = leg.stance_turn - turn_delta * scale
+            stance_turn = leg.stance_turn - effective_turn_delta * scale
             base_f, base_s = self._spider_rotate_local(
                 leg.stance_base_f, leg.stance_base_s, stance_turn
             )
             q_f = base_f + stroke_f
             q_s = base_s + stroke_s
             radial_change = self._spider_turn_radial_adjustment(
-                leg, base_f, base_s, turn_delta * scale, config
+                leg, base_f, base_s, effective_turn_delta * scale, config
             )
             if radial_change:
                 base_radius = max(1e-5, math.hypot(base_f, base_s))
@@ -887,7 +1077,12 @@ class Creature:
             dot += weight * (qx * px + qy * py)
             cross += weight * (qx * py - qy * px)
         solved_heading = math.atan2(cross, dot) if abs(dot) + abs(cross) > 1e-7 else self.heading
-        max_heading_step = config["max_body_turn_rate"] * max(0.001, getattr(self, "_spider_solver_dt", 0.016))
+        solver_dt = max(0.001, getattr(self, "_spider_solver_dt", 0.016))
+        max_heading_step = config["max_body_turn_rate"] * solver_dt
+        if abs(effective_turn_delta) > 1e-7:
+            # Do not let the geometric fit reintroduce a larger angular jump
+            # than the eased turn request that produced this proposal.
+            max_heading_step = min(max_heading_step, abs(effective_turn_delta))
         heading_step = ((solved_heading - self.heading + math.pi) % math.tau) - math.pi
         heading_step = clamp(heading_step, -max_heading_step, max_heading_step)
         # The support fit can retain rotational residual after the requested
@@ -934,7 +1129,7 @@ class Creature:
             # lane; that rejection was what stalled rotation and triggered a
             # burst of corrective taps.
             side_floor = min_side
-            if abs(stance_turn) > 1e-4 or abs(turn_delta) > 1e-4:
+            if abs(stance_turn) > 1e-4 or abs(effective_turn_delta) > 1e-4:
                 side_floor = max(self.size * 0.05, min_side * 0.20)
             if side * local_s < side_floor:
                 return None
@@ -969,6 +1164,24 @@ class Creature:
         current += error * alpha
         self._spider_heading_filter = current
         return current
+
+    def _smooth_turn_step(self, target_error: float, dt: float, requested_rate: float) -> float:
+        """Return a quick but acceleration-limited angular step.
+
+        The old turn path could apply its full angular rate immediately. During
+        a fast pivot that made the body jump several degrees per frame, while a
+        support handoff could then hold it still for a few frames. Ramping the
+        *magnitude* of the turn keeps the support-driven causality intact while
+        making the start, pauses, and finish read as one deliberate motion.
+        """
+        requested_rate = clamp(abs(float(requested_rate)), 0.0, 12.0)
+        response = 10.0
+        alpha = 1.0 - math.exp(-max(0.0, float(dt)) * response)
+        self._turn_speed_smooth += (
+            requested_rate - self._turn_speed_smooth
+        ) * alpha
+        self._turn_speed_smooth = clamp(self._turn_speed_smooth, 0.0, 12.0)
+        return min(abs(float(target_error)), self._turn_speed_smooth * max(0.0, float(dt)))
 
     def _spider_locomotion_intent(self, dt: float) -> Tuple[float, float, float]:
         """Convert behavior state into a local stroke and turn request."""
@@ -1017,7 +1230,23 @@ class Creature:
             turn_mult *= float(self.personality.get("turn_rate_multiplier", 1.0))
         if spider_gait is not None:
             turn_mult *= spider_gait["turn_gain"]
-        requested_turn = clamp(angle_error, -self.turn_rate * turn_mult * dt, self.turn_rate * turn_mult * dt)
+            requested_rate = min(
+                abs(self.turn_rate * turn_mult),
+                float(spider_gait["max_body_turn_rate"]),
+            )
+        else:
+            requested_rate = abs(self.turn_rate * turn_mult)
+        if abs(angle_error) > 1e-7:
+            requested_turn = math.copysign(
+                self._smooth_turn_step(angle_error, dt, requested_rate),
+                angle_error,
+            )
+        else:
+            # Let the angular actuator settle at the requested heading. Keeping
+            # the old rate cached here would make the next abrupt target change
+            # skip the acceleration ramp and reintroduce a twitch.
+            self._smooth_turn_step(0.0, dt, 0.0)
+            requested_turn = 0.0
         return request_f, request_s, requested_turn
 
     def _update_spider_grounded_locomotion_step(self, dt: float) -> None:
@@ -1258,7 +1487,7 @@ class Creature:
         self.state_timer = rand_range(self.personality.get("alert_time"), 0.3, 0.9)
 
     def enter_approach(self, mx: float, my: float) -> None:
-        if not self.has_skill("approach"):
+        if not self._phase_allowed("approach") or not self.has_skill("approach"):
             self.enter_alert(mx, my)
             return
         self.target_x = mx
@@ -1269,13 +1498,13 @@ class Creature:
         if self._is_hunter_personality():
             self.speed = self._hunter_approach_speed(distance(self.x, self.y, mx, my), reaction)
         else:
-            self.speed = 52.0 * float(self.personality.get("speed_multiplier", 1.0))
+            self.speed = 52.0 * self._speed_mult()
         self.state_timer = rand_range(self.personality.get("approach_move_time"), 0.5, 1.3)
         self._prime_drift(0.35)
 
     def enter_chase(self, mx: float, my: float) -> None:
-        if not self.has_skill("chase"):
-            if self.has_skill("approach"):
+        if not self._phase_allowed("chase") or not self.has_skill("chase"):
+            if self._phase_allowed("approach") and self.has_skill("approach"):
                 self.enter_approach(mx, my)
             else:
                 self.enter_alert(mx, my)
@@ -1285,7 +1514,7 @@ class Creature:
         self.target_x = mx + random.uniform(-16.0, 16.0)
         self.target_y = my + random.uniform(-16.0, 16.0)
         base_speed = float(self.personality.get("hunt_chase_speed", 150.0)) if self._is_hunter_personality() else 112.0
-        self.speed = base_speed * float(self.personality.get("speed_multiplier", 1.0))
+        self.speed = base_speed * self._speed_mult()
         self.chase_timer = float(self.personality.get("chase_persistence", 2.5))
         if self._is_hunter_personality():
             self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.06, 0.14)
@@ -1294,7 +1523,7 @@ class Creature:
         self._prime_drift(0.85)
 
     def enter_retreat(self, mx: float, my: float) -> None:
-        if not self.has_skill("run_away"):
+        if not self._phase_allowed("run_away") or not self.has_skill("run_away"):
             self.enter_alert(mx, my)
             return
         angle_away = math.atan2(self.y - my, self.x - mx)
@@ -1304,7 +1533,7 @@ class Creature:
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
         self.state = "Retreat"
         self.motion_paused = False
-        self.speed = 148.0 * float(self.personality.get("speed_multiplier", 1.0))
+        self.speed = 148.0 * self._speed_mult()
         self.state_timer = rand_range(self.personality.get("retreat_time"), 0.6, 1.2)
         self._prime_drift(0.95)
 
@@ -1316,23 +1545,31 @@ class Creature:
         away = math.atan2(self.y - my, self.x - mx)
         throw_speed = math.hypot(self.inertia_vx, self.inertia_vy)
         if throw_speed > 60.0:
-            # Continue with the throw first, then self-correct once friction wins.
+            # A throw is carried by friction alone. Projecting a target further
+            # along the throw heading made the spider *walk* the rest of the way
+            # once the slide ended, for several seconds, which read as running
+            # away in the thrown direction rather than being thrown.
             heading = math.atan2(self.inertia_vy, self.inertia_vx)
-            distance_out = clamp(throw_speed * 0.28, 80.0, 300.0)
+            distance_out = 0.0
+            # A beat on the spot after the skid: plant, gather itself, then
+            # react. Without it the startled scurry begins the instant friction
+            # wins and the stop is never visible.
+            self.throw_recovery = random.uniform(0.34, 0.52)
         else:
             heading = away
             distance_out = random.uniform(80.0, 160.0)
+            self.throw_recovery = 0.0
         self.target_x = self.x + math.cos(heading) * distance_out
         self.target_y = self.y + math.sin(heading) * distance_out
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
         self.target_heading = heading
-        self.speed = 74.0 * float(self.personality.get("speed_multiplier", 1.0))
+        self.speed = 74.0 * self._speed_mult()
         self.state_timer = random.uniform(0.65, 1.15)
         throw_boost = clamp(math.hypot(self.inertia_vx, self.inertia_vy) / 580.0, 0.45, 1.45)
         self._prime_drift(throw_boost)
 
     def enter_wander(self) -> None:
-        if not self.has_skill("wander"):
+        if not self._phase_allowed("wander") or not self.has_skill("wander"):
             self.enter_idle()
             return
         self.state = "Wander"
@@ -1342,7 +1579,7 @@ class Creature:
         self.target_x = self.x + math.cos(angle) * dist
         self.target_y = self.y + math.sin(angle) * dist
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
-        self.speed = 38.0 * float(self.personality.get("speed_multiplier", 1.0))
+        self.speed = 38.0 * self._speed_mult()
         self.state_timer = random.uniform(1.4, 3.2)
         self._prime_drift(0.25)
 
@@ -1350,7 +1587,201 @@ class Creature:
     # Expressive behaviours: inspect, cuddle, jump/pounce, play
     # ------------------------------------------------------------------
     def _speed_mult(self) -> float:
-        return float(self.personality.get("speed_multiplier", 1.0))
+        return float(self.personality.get("speed_multiplier", 1.0)) * float(
+            getattr(self, "_progression_speed_multiplier", 1.0)
+        )
+
+    @property
+    def level(self) -> int:
+        return int(self.progression.level)
+
+    @property
+    def xp(self) -> int:
+        return int(self.progression.xp)
+
+    def _progression_effect(self, key: str) -> float:
+        value = 0.0
+        for ability_id in self.progression.unlocked_abilities:
+            node = ABILITY_BY_ID.get(ability_id)
+            if node is not None:
+                value += float(node.effects.get(key, 0.0))
+        for item in equipped_items(self.progression):
+            value += float(getattr(item, key, 0.0))
+        return value
+
+    def _apply_progression_stats(self, reset_resources: bool = False) -> None:
+        """Recompute level and equipment-derived stats without changing pose."""
+        size_mult, growth_speed = growth_multipliers(self.progression.level)
+        self._progression_size_multiplier = size_mult
+        self._progression_speed_multiplier = clamp(
+            growth_speed + self._progression_effect("speed"), 0.72, 2.40
+        )
+        level = self.progression.level
+        old_max_hp = float(getattr(self, "max_hp", 100.0))
+        old_max_energy = float(getattr(self, "max_energy", 100.0))
+        self.max_hp = max(1.0, self._combat_base_hp + (level - 1) * 5.0 + self._progression_effect("max_hp"))
+        self.max_energy = max(1.0, self._combat_base_energy + (level - 1) * 3.0 + self._progression_effect("max_energy"))
+        self.armor = max(0.0, self._combat_base_armor + (level - 1) * 0.18 + self._progression_effect("armor"))
+        self.damage = max(0.1, self._combat_base_damage + (level - 1) * 0.35 + self._progression_effect("damage"))
+        self.size = self._progression_base_size * self.size_scale * size_mult
+        if reset_resources:
+            self.hp = self.max_hp
+            self.energy = self.max_energy
+        else:
+            hp_ratio = float(getattr(self, "hp", old_max_hp)) / max(1.0, old_max_hp)
+            energy_ratio = float(getattr(self, "energy", old_max_energy)) / max(1.0, old_max_energy)
+            self.hp = clamp(hp_ratio * self.max_hp, 0.0, self.max_hp)
+            self.energy = clamp(energy_ratio * self.max_energy, 0.0, self.max_energy)
+
+    def gain_experience(self, amount: int | float, reason: str = "") -> list[str]:
+        """Award XP and return human-readable level-up events.
+
+        XP is stored as progress toward the next level, while ``total_xp`` keeps
+        the lifetime amount for future profile/stat screens.  The level cap is a
+        hard bound; excess XP is retained only up to the visible cap bar.
+        """
+        try:
+            amount = max(0, int(round(float(amount))))
+        except (TypeError, ValueError):
+            amount = 0
+        if amount <= 0:
+            return []
+        self.progression.total_xp += amount
+        if self.progression.level >= MAX_LEVEL:
+            self.progression.xp = xp_to_next_level(MAX_LEVEL)
+            return []
+        self.progression.xp += amount
+        events = []
+        while self.progression.level < MAX_LEVEL:
+            threshold = xp_to_next_level(self.progression.level)
+            if self.progression.xp < threshold:
+                break
+            self.progression.xp -= threshold
+            self.progression.level += 1
+            self.progression.skill_points += 1
+            self._apply_progression_stats(reset_resources=True)
+            events.append(f"reached level {self.progression.level}")
+        if self.progression.level >= MAX_LEVEL:
+            # One large award can carry a remainder past the last threshold.
+            # Leaving it unclamped overfills the inspector's XP bar.
+            self.progression.xp = xp_to_next_level(MAX_LEVEL)
+        return events
+
+    def unlock_progression_ability(self, ability_id: str) -> tuple[bool, str]:
+        ability_id = str(ability_id).strip().lower()
+        node = ABILITY_BY_ID.get(ability_id)
+        if node is None:
+            return False, "Unknown progression ability."
+        if ability_id in self.progression.unlocked_abilities:
+            return False, f"{node.name} is already unlocked."
+        if self.progression.level < node.level_required:
+            return False, f"{node.name} unlocks at level {node.level_required}."
+        if self.progression.skill_points < node.cost:
+            return False, "This spider has no skill points available."
+        missing = [req for req in node.prerequisites if req not in self.progression.unlocked_abilities]
+        if missing:
+            return False, "Unlock the prerequisite ability first."
+        self.progression.skill_points -= node.cost
+        self.progression.unlocked_abilities.append(ability_id)
+        self._apply_progression_stats()
+        return True, f"Unlocked {node.name}."
+
+    def equip_item(self, item_id: str) -> tuple[bool, str]:
+        item = ARMOR_BY_ID.get(str(item_id).strip().lower())
+        if item is None:
+            return False, "Unknown armor item."
+        if item.id not in self.progression.inventory:
+            return False, "That item is not in this spider's inventory."
+        if not (item.size_min <= self.size_scale <= item.size_max):
+            return False, "That armor does not fit this spider's size."
+        self.progression.equip(item.id)
+        self._apply_progression_stats()
+        return True, f"Equipped {item.name}."
+
+    def unequip_item(self, slot: str) -> tuple[bool, str]:
+        if not self.progression.unequip(slot):
+            return False, "Nothing is equipped in that anatomy slot."
+        self._apply_progression_stats()
+        return True, f"Unequipped {str(slot).replace('_', ' ')} armor."
+
+    def add_inventory_item(self, item_id: str) -> bool:
+        return self.progression.add_item(str(item_id).strip().lower())
+
+    def take_damage(self, amount: float, source=None) -> float:
+        try:
+            incoming = max(0.0, float(amount))
+        except (TypeError, ValueError):
+            return 0.0
+        dealt = max(0.1, incoming - self.armor) if incoming > 0.0 else 0.0
+        self.hp = clamp(self.hp - dealt, 0.0, self.max_hp)
+        return dealt
+
+    def heal(self, amount: float) -> float:
+        before = self.hp
+        try:
+            self.hp = clamp(self.hp + max(0.0, float(amount)), 0.0, self.max_hp)
+        except (TypeError, ValueError):
+            return 0.0
+        return self.hp - before
+
+    def spend_energy(self, amount: float) -> bool:
+        try:
+            cost = max(0.0, float(amount))
+        except (TypeError, ValueError):
+            return False
+        if cost > self.energy:
+            return False
+        self.energy -= cost
+        return True
+
+    def _regenerate_energy(self, dt: float) -> None:
+        if self.energy >= self.max_energy or self.dragging:
+            return
+        regen = 8.0 + self._progression_effect("energy_regen")
+        self.energy = clamp(self.energy + max(0.0, float(dt)) * regen, 0.0, self.max_energy)
+
+    def set_team(self, team_id: str) -> None:
+        self.progression.team_id = normalize_team_id(team_id)
+
+    def set_job(self, job_id: str) -> None:
+        """Change the profession without changing temperament or abilities."""
+        self.job_id = normalize_job_id(job_id)
+        self.job_mode = "idle"
+        self.job_target = None
+        self.job_alert_target = None
+        self.job_base_id = None
+
+    def job_label(self) -> str:
+        from .jobs import job_definition
+        return job_definition(self.job_id).display_name
+
+    def relation_to(self, other: "Creature") -> str:
+        if other is None:
+            return "neutral"
+        # ``team_stances`` comes from the loaded preset and is shared by every
+        # spider in the scene; a per-pair choice made in the inspector still
+        # wins over it.
+        return relation_between(
+            self.progression,
+            other.progression,
+            str(getattr(other, "progression_id", other.index)),
+            getattr(self, "team_stances", None),
+        )
+
+    def progression_snapshot(self) -> dict:
+        data = self.progression.to_dict()
+        data.update({
+            "job": self.job_id,
+            "level": self.level,
+            "xp_to_next": xp_to_next_level(self.level),
+            "max_hp": round(self.max_hp, 2),
+            "hp": round(self.hp, 2),
+            "max_energy": round(self.max_energy, 2),
+            "energy": round(self.energy, 2),
+            "armor": round(self.armor, 2),
+            "damage": round(self.damage, 2),
+        })
+        return data
 
     def _personality_flag(self, key: str, default: bool = False) -> bool:
         value = self.personality.get(key, default)
@@ -1414,9 +1845,76 @@ class Creature:
             self.web_target = None
             self.enter_idle()
 
+    def _update_job_state(self, dt: float, mx: float, my: float) -> bool:
+        """Apply a Builder/Guard work intent before ordinary personality FSM logic."""
+        if self.job_id not in ("builder", "guard"):
+            return False
+        mode = str(getattr(self, "job_mode", "idle") or "idle")
+        target = getattr(self, "job_target", None)
+        self.job_busy = self._job_outranked_by_personality(mode)
+        if self.job_busy or mode == "idle":
+            # Either temperament is mid-something more urgent, or this spider is
+            # off shift. Hand it back rather than overwriting the state it is in.
+            self._release_job_state()
+            return False
+        if mode == "build_travel" and target is not None:
+            self.state = "JobTravel"
+            self.motion_paused = False
+            self.target_x, self.target_y = float(target[0]), float(target[1])
+            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            self.speed = 52.0 * self._speed_mult()
+            return True
+        if mode == "build":
+            self.state = "JobBuild"
+            self.motion_paused = True
+            self.speed = 0.0
+            self.target_x, self.target_y = self.x, self.y
+            self.aim_intent = min(1.0, self.aim_intent + max(0.0, dt) * 0.9)
+            return True
+        if mode == "patrol" and target is not None:
+            self.state = "JobPatrol"
+            self.motion_paused = False
+            self.target_x, self.target_y = float(target[0]), float(target[1])
+            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            self.speed = 38.0 * self._speed_mult()
+            return True
+        if mode == "guard_alert" and target is not None:
+            self.state = "JobGuardAlert"
+            self.motion_paused = False
+            self.target_x, self.target_y = float(target[0]), float(target[1])
+            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            self.speed = 72.0 * self._speed_mult()
+            self.aim_intent = min(1.0, self.aim_intent + max(0.0, dt) * 2.0)
+            return True
+        self._release_job_state()
+        return False
+
+    def _job_outranked_by_personality(self, mode: str) -> bool:
+        """Return whether temperament currently beats this spider's job."""
+        if self.state in JOB_PREEMPTING_STATES:
+            return True
+        # A guard answering an intruder at its own base outranks an ordinary
+        # hunt, but nothing outranks fleeing or a jump already in the air.
+        if self._hunting_prey and mode != "guard_alert":
+            return True
+        return False
+
+    def _release_job_state(self) -> bool:
+        """Hand a spider back to the personality FSM when its job lets go.
+
+        ``JOB_STATES`` have no branch in ``_update_state``, so a spider left in
+        one would fall through the whole dispatch and hold its last speed and
+        ``motion_paused`` flag indefinitely.
+        """
+        if self.state not in JOB_STATES:
+            return False
+        self.aim_intent = 0.0
+        self.enter_idle()
+        return True
+
     def _is_hunter_personality(self) -> bool:
         pid = str(self.personality.get("id", "")).lower()
-        return (self._personality_flag("mouse_hunter") or pid == "hunter") and self.has_skill("chase")
+        return (self.job_id == "hunter" or self._personality_flag("mouse_hunter") or pid == "hunter") and self.has_skill("chase")
 
     def _is_jumper_personality(self) -> bool:
         pid = str(self.personality.get("id", "")).lower()
@@ -1424,7 +1922,7 @@ class Creature:
 
     def _is_observer_personality(self) -> bool:
         pid = str(self.personality.get("id", "")).lower()
-        return (self._personality_flag("horizontal_orbit_observer") or pid == "observer") and self.has_skill("observe")
+        return (self.job_id == "scout" or self._personality_flag("horizontal_orbit_observer") or pid == "observer") and self.has_skill("observe")
 
     def _is_nope_personality(self) -> bool:
         pid = str(self.personality.get("id", "")).lower()
@@ -1441,6 +1939,8 @@ class Creature:
     def _is_webber_personality(self) -> bool:
         pid = str(self.personality.get("id", "")).lower()
         return (
+            self.job_id == "webber"
+            or
             self._personality_flag("web_weaver")
             or self._personality_flag("webber")
             or pid in ("webber", "weaver")
@@ -1550,6 +2050,34 @@ class Creature:
             self.drift_slide_timer = max(0.0, float(getattr(self, "drift_slide_timer", 0.0)) - dt)
         return self.last_drift_amount
 
+    def _guard_drifter_travel_direction(self, move_x: float, move_y: float) -> Tuple[float, float]:
+        """Keep an intentional slide from turning into visible reverse walking.
+
+        DriftRun deliberately lets velocity lag the body during a low-grip arc,
+        but an old carried velocity can briefly point behind the creature after
+        the run changes corner or reverses its curve.  A spider may crab slightly
+        while sliding; it should not travel more than a bounded angle behind its
+        facing direction.  Clamp only that pathological case and leave ordinary
+        sideways drift untouched.
+        """
+        if self.state != "DriftRun" or not self._is_drifter_personality():
+            return move_x, move_y
+        travel_length = math.hypot(move_x, move_y)
+        if travel_length <= 1e-5:
+            return move_x, move_y
+        fx, fy, rx, ry = self._basis()
+        forward = (move_x * fx + move_y * fy) / travel_length
+        max_angle = math.radians(78.0)
+        if forward >= math.cos(max_angle):
+            return move_x, move_y
+        side = (move_x * rx + move_y * ry) / travel_length
+        side_sign = 1.0 if side >= 0.0 else -1.0
+        corrected_angle = side_sign * max_angle
+        return (
+            fx * math.cos(corrected_angle) + rx * math.sin(corrected_angle),
+            fy * math.cos(corrected_angle) + ry * math.sin(corrected_angle),
+        )
+
     def _cursor_speed(self) -> float:
         return math.hypot(self.prev_cursor_vx, self.prev_cursor_vy)
 
@@ -1650,10 +2178,10 @@ class Creature:
 
     def enter_nope_escape(self, mx: float, my: float, *, continuing: bool = False) -> None:
         """Rapid backwards zigzag jump chain used by the Nope personality."""
-        if not self.has_skill("run_away"):
+        if not self._phase_allowed("run_away") or not self.has_skill("run_away"):
             self.enter_alert(mx, my)
             return
-        if not self.has_skill("jump"):
+        if not self._phase_allowed("jump") or not self.has_skill("jump"):
             self.enter_retreat(mx, my)
             return
 
@@ -1694,7 +2222,7 @@ class Creature:
         self.focus_strength = clamp(strength, 0.0, 1.0)
 
     def enter_inspect(self, tx: float, ty: float, target: "Creature" | None = None) -> None:
-        if not self.has_skill("inspect"):
+        if not self._phase_allowed("inspect") or not self.has_skill("inspect"):
             self.enter_idle()
             return
         self.state = "Inspect"
@@ -1710,8 +2238,8 @@ class Creature:
         self.mood.bump(curiosity=0.22, arousal=0.06)
 
     def enter_observe(self, tx: float, ty: float, target: "Creature" | None = None) -> None:
-        if not self.has_skill("observe"):
-            if self.has_skill("inspect"):
+        if not self._phase_allowed("observe") or not self.has_skill("observe"):
+            if self._phase_allowed("inspect") and self.has_skill("inspect"):
                 self.enter_inspect(tx, ty, target)
             else:
                 self.enter_idle()
@@ -1737,7 +2265,7 @@ class Creature:
         self.mood.bump(curiosity=0.18, arousal=0.04)
 
     def enter_cuddle(self, tx: float, ty: float, target: "Creature" | None = None) -> None:
-        if not self.has_skill("cuddle"):
+        if not self._phase_allowed("cuddle") or not self.has_skill("cuddle"):
             self.enter_idle()
             return
         self.state = "Cuddle"
@@ -1762,12 +2290,16 @@ class Creature:
         abort_chance: float = 0.16,
     ) -> None:
         """Crouch and range a target before a pounce (jumping-spider style)."""
-        if not self.has_skill("prepare_jump_attack") or not self.has_skill("jump"):
-            if after == "play" and target is not None and self.has_skill("social_play"):
+        if (
+            not self._phase_allowed("prepare_jump_attack")
+            or not self.has_skill("prepare_jump_attack")
+            or not self.has_skill("jump")
+        ):
+            if after == "play" and target is not None and self._phase_allowed("social_play") and self.has_skill("social_play"):
                 self.enter_play(target)
-            elif self.has_skill("chase"):
+            elif self._phase_allowed("chase") and self.has_skill("chase"):
                 self.enter_chase(tx, ty)
-            elif self.has_skill("approach"):
+            elif self._phase_allowed("approach") and self.has_skill("approach"):
                 self.enter_approach(tx, ty)
             else:
                 self.enter_alert(tx, ty)
@@ -1788,12 +2320,12 @@ class Creature:
 
     def enter_coil(self, after: str = "idle", power: float = 1.0, toward: Tuple[float, float] | None = None) -> None:
         """Quick wind-up for a playful spring/hop."""
-        if not self.has_skill("jump"):
+        if not self._phase_allowed("jump") or not self.has_skill("jump"):
             if after == "wander":
                 self.enter_wander()
-            elif after == "approach" and toward is not None:
+            elif after == "approach" and toward is not None and self._phase_allowed("approach"):
                 self.enter_approach(toward[0], toward[1])
-            elif after == "chase" and toward is not None:
+            elif after == "chase" and toward is not None and self._phase_allowed("chase"):
                 self.enter_chase(toward[0], toward[1])
             else:
                 self.enter_idle()
@@ -1891,7 +2423,12 @@ class Creature:
         self.state = "Land"
         self.motion_paused = False
         self.speed = 0.0
-        self.squash = 0.66
+        # A tarantula's broad body should absorb a landing without becoming a
+        # paper-thin pancake when it is facing sideways.  The generic squash
+        # value was designed for small round creatures; on this elongated
+        # spider it made a post-pounce rotation look like a broken flattened
+        # body.  Keep a restrained compression while preserving the recovery.
+        self.squash = 0.88 if self._spider_gait_config() is not None else 0.66
         self.land_recover = 0.22
         if after == "nope":
             self.state_timer = rand_range(self.personality.get("nope_land_pause"), 0.02, 0.05)
@@ -1944,8 +2481,8 @@ class Creature:
         self.mood.bump(valence=0.45, arousal=0.3, affection=0.05, curiosity=0.05)
 
     def enter_play(self, target: "Creature", role: str | None = None) -> None:
-        if not self.has_skill("social_play"):
-            if self.has_skill("inspect"):
+        if not self._phase_allowed("social_play") or not self.has_skill("social_play"):
+            if self._phase_allowed("inspect") and self.has_skill("inspect"):
                 self.enter_inspect(target.x, target.y, target)
             else:
                 self.enter_idle()
@@ -1964,7 +2501,7 @@ class Creature:
         self.mood.bump(valence=0.16, arousal=0.2, curiosity=0.08)
 
     def enter_zoomies(self) -> None:
-        if not self.has_skill("zoomies"):
+        if not self._phase_allowed("zoomies") or not self.has_skill("zoomies"):
             self.enter_idle()
             return
         self.state = "Zoom"
@@ -2143,21 +2680,44 @@ class Creature:
         it drifts a short way in ``direction`` (random when not given). This is a
         pure happy flourish; it carries no target and resolves back to idle.
         """
-        if not self.has_skill("roll"):
+        if not self._phase_allowed("roll") or not self.has_skill("roll"):
             self.enter_idle()
             return
         self.state = "Roll"
         self.motion_paused = True
         self.speed = 0.0
+        # A roll is a self-contained flourish, not a continuation of the prior
+        # walk. Clear translational momentum so the first grounded frame after
+        # the roll cannot reuse the old travel direction.
+        self.current_speed = 0.0
+        self.vel_x = 0.0
+        self.vel_y = 0.0
+        self.inertia_vx = 0.0
+        self.inertia_vy = 0.0
+        self.inertia_timer = 0.0
         self.social_target = None
         self.roll_dir = random.choice((-1.0, 1.0))
-        turns = random.uniform(1.0, 2.0)
+        # Whole turns. The spin is a draw rotation that is dropped to zero the
+        # instant the roll finishes, while the legs re-plant against the
+        # unchanged logical heading -- so a fractional turn made the body jump
+        # by up to 173 degrees on the last frame and left the legs looking
+        # wrong. One or two turns still reads as a tumble; a turn and a half
+        # reads as a glitch.
+        turns = float(random.randint(1, 2))
         self.roll_total = math.tau * turns
         self.roll_duration = random.uniform(0.7, 1.15)
         self.roll_progress = 0.0
         self.roll_eased = 0.0
         self.roll_spin = 0.0
         self.roll_tuck = 0.0
+        # Set here and cleared by whatever ends the roll, so an interrupted
+        # tumble is still known to need tidying up. Reading the spin instead is
+        # not enough: some callers zero it and leave the feet where they were.
+        self._rolling = True
+        # A roll is a yaw-like flourish in the top-down view, not a landing.
+        # Clear any leftover jump compression so the next frame cannot render
+        # a flattened body, especially on the smaller sprite-rig spiders.
+        self.squash = 1.0
         self.roll_distance = self.size * random.uniform(1.6, 3.4)
         if direction is None:
             direction = random.uniform(-math.pi, math.pi)
@@ -2407,6 +2967,70 @@ class Creature:
             self._schedule_step(leg, ix, iy, delay=delay, force_fast=True)
             leg.step_cooldown = random.uniform(0.012, 0.040)
 
+    def _finish_roll(self) -> None:
+        """Undo everything a tumble was doing: the spin, the tuck, the feet."""
+        self._rolling = False
+        self.roll_spin = 0.0
+        self.roll_tuck = 0.0
+        self.roll_progress = 1.0
+        self.motion_paused = False
+        self.squash = 1.0
+        self._reset_roll_contacts()
+        self._spider_locomotion_active = False
+
+    def _reconcile_roll(self) -> None:
+        """Tidy up after a tumble that something cut short.
+
+        Only the roll running to completion used to clean up after itself, so
+        anything that interrupted one -- a startle, a grab, a job, the roll
+        skill being switched off -- left the body rotated by whatever the spin
+        had reached and the legs still tucked, permanently. Measured across
+        seven seeds that was about 410 degrees of leftover rotation, feet past
+        their own reach envelope and up to two legs on the wrong side of the
+        body.
+
+        This is the same reconciliation the weaving and web-walking states
+        already do at the top of every frame, for the same reason: a state can
+        be left in more ways than it can be finished.
+        """
+        if self._rolling and self.state != "Roll":
+            self._finish_roll()
+
+    def _reset_roll_contacts(self) -> None:
+        """Restore every foot to a safe stance after a visual tumble.
+
+        Roll rotates the rendered creature around its centre, but deliberately
+        does not rotate the logical body heading. Leaving the old world-space
+        contacts in place therefore makes the body finish in one orientation
+        while most feet still belong to the pre-roll orientation. That is the
+        source of the one-frame stretched legs and flattened-looking landings
+        seen on non-tarantula sprite rigs.
+
+        A roll is an explicit flourish, so a clean contact reset is preferable
+        to replaying the normal walking scheduler here. The next grounded frame
+        can then begin a new gait from eight bounded, stance contacts.
+        """
+        for leg in self.legs:
+            foot_x, foot_y = self._leg_ideal_foot(leg)
+            foot_x, foot_y = self._constrain_leg_point(leg, foot_x, foot_y)
+            leg.foot_x, leg.foot_y = foot_x, foot_y
+            leg.step_start_x, leg.step_start_y = foot_x, foot_y
+            leg.step_target_x, leg.step_target_y = foot_x, foot_y
+            leg.step_control_x, leg.step_control_y = foot_x, foot_y
+            leg.pending_target_x, leg.pending_target_y = foot_x, foot_y
+            leg.pending_delay = 0.0
+            leg.step_timer = 0.0
+            leg.stepping = False
+            leg.pending_step = False
+            leg.lift = 0.0
+            leg.joint_bends = []
+            leg.held_spring_x = 0.0
+            leg.held_spring_y = 0.0
+            leg.held_spring_vx = 0.0
+            leg.held_spring_vy = 0.0
+            self._spider_reanchor_stance(leg)
+        self._spider_heading_filter = self.heading
+
 
     def set_size_scale(self, size_scale: float) -> None:
         """Scale the creature and rehome its legs for clean live size changes."""
@@ -2414,7 +3038,7 @@ class Creature:
         if abs(new_scale - self.size_scale) < 1e-4:
             return
         self.size_scale = new_scale
-        self.size = float(self.model.get("base_size", 25)) * self.size_jitter * self.size_scale
+        self._apply_progression_stats()
         self.x, self.y = clamp_point(self.x, self.y, self.margin * 0.4, self.screen_w, self.screen_h)
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin * 0.4, self.screen_w, self.screen_h)
         self._initialize_legs()
@@ -2422,6 +3046,7 @@ class Creature:
 
     def start_drag(self, mx: float, my: float) -> None:
         self.dragging = True
+        self.phase_scheduler.cancel()
         self.state = "Dragged"
         self.motion_paused = True
         self.speed = 0.0
@@ -2547,6 +3172,144 @@ class Creature:
         self._panic_rehome_legs(clamp(speed / 850.0, 0.55, 1.0))
 
     # ------------------------------------------------------------------
+    # Behaviour phase scheduling
+    # ------------------------------------------------------------------
+    def _phase_focus_context(self, mx: float, my: float) -> str:
+        """Classify the object currently most relevant to this spider."""
+        prey = getattr(self, "_prey", None)
+        if self._hunting_prey and prey is not None and getattr(prey, "alive", False):
+            return "prey"
+        if (
+            self.state in ("WeaveApproach", "Weave", "WebApproach", "WebWalk", "WebAim", "WebShot", "RepairApproach", "Repair")
+            or self.web_target is not None
+            or self.weaving_web is not None
+            or self.repairing_web is not None
+        ):
+            return "web"
+        if self.social_target is not None and not getattr(self.social_target, "dragging", False):
+            return "creature"
+        reaction = float(self.personality.get("reaction_radius", 360.0))
+        social_range = max(self.size * 12.0, reaction * 0.85)
+        mate = self._find_social_target(social_range) if self.allow_social else None
+        cursor_distance = distance(self.x, self.y, mx, my)
+        if mate is not None and (cursor_distance > reaction * 0.85 or distance(self.x, self.y, mate.x, mate.y) < cursor_distance * 1.15):
+            return "creature"
+        if cursor_distance < reaction:
+            return "cursor"
+        return "none"
+
+    def _phase_target(self, focus: str, mx: float, my: float) -> Tuple[float, float, "Creature" | None]:
+        """Resolve a phase focus to coordinates and, when applicable, a mate."""
+        if focus == "prey":
+            prey = getattr(self, "_prey", None)
+            if prey is not None and getattr(prey, "alive", False) and not getattr(prey, "eaten", False):
+                return prey.x, prey.y, None
+        if focus == "creature":
+            mate = self.social_target
+            if mate is None or getattr(mate, "dragging", False) or getattr(mate, "airborne", False):
+                mate = self._find_social_target(max(self.size * 12.0, float(self.personality.get("reaction_radius", 360.0))))
+            if mate is not None:
+                return mate.x, mate.y, mate
+        return mx, my, None
+
+    def _phase_allowed(self, phase_id: str) -> bool:
+        scheduler = getattr(self, "phase_scheduler", None)
+        return scheduler is None or scheduler.is_allowed(phase_id)
+
+    def _dispatch_scheduled_phase(self, phase_id: str, focus: str, mx: float, my: float) -> bool:
+        """Translate one scheduled phase into the existing FSM entry helpers."""
+        target_phases = {
+            "approach",
+            "chase",
+            "observe",
+            "prepare_jump_attack",
+            "inspect",
+            "cuddle",
+            "social_play",
+            "run_away",
+        }
+        if phase_id in target_phases and focus == "none":
+            return False
+        tx, ty, target = self._phase_target(focus, mx, my)
+        if phase_id == "wander":
+            self.enter_wander()
+        elif phase_id == "jump":
+            self.enter_spring(after="idle", power=random.uniform(0.72, 1.15))
+        elif phase_id == "roll":
+            self.enter_roll()
+        elif phase_id == "zoomies":
+            self.enter_zoomies()
+        elif phase_id == "approach":
+            self.enter_approach(tx, ty)
+        elif phase_id == "chase":
+            self.enter_chase(tx, ty)
+        elif phase_id == "observe":
+            self.enter_observe(tx, ty, target)
+        elif phase_id == "prepare_jump_attack":
+            self.enter_aim(tx, ty, target=target, after="outcome")
+        elif phase_id == "inspect":
+            self.enter_inspect(tx, ty, target)
+        elif phase_id == "cuddle":
+            self.enter_cuddle(tx, ty, target)
+        elif phase_id == "social_play":
+            if target is None:
+                return False
+            self.enter_play(target)
+        elif phase_id == "run_away":
+            self.enter_retreat(mx, my)
+        else:
+            return False
+        return phase_id_for_state(self.state) == phase_id
+
+    def _activate_scheduled_phase(self, mx: float, my: float) -> bool:
+        """Draw and start a focus-aware phase when the FSM reaches a decision point."""
+        if self.airborne or self.dragging or self.state not in ("Idle", "Alert"):
+            return False
+        focus = self._phase_focus_context(mx, my)
+        # Failed context-specific actions (for example social play with no mate)
+        # consume their deck slot and let the next weighted phase try immediately.
+        for _ in range(len(self.phase_scheduler.phase_ids) + 1):
+            plan = self.phase_scheduler.choose(focus)
+            if plan is None:
+                return False
+            if self._dispatch_scheduled_phase(plan.phase_id, focus, mx, my):
+                self.state_timer = plan.duration
+                return True
+            self.phase_scheduler.finish()
+        return False
+
+    def _sync_scheduled_phase(self, focus: str | None = None) -> None:
+        """Adopt legacy FSM entries so their periods also use personality pacing."""
+        phase_id = phase_id_for_state(self.state)
+        if phase_id is None:
+            if self.phase_scheduler.current is not None:
+                self.phase_scheduler.cancel()
+            return
+        if self.phase_scheduler.current_phase_id == phase_id:
+            return
+        duration = self.phase_scheduler.adopt(phase_id, focus or "none")
+        if duration is not None:
+            self.state_timer = duration
+
+    def _finish_expired_scheduled_phase(self, mx: float, my: float) -> bool:
+        """End a high-level period cleanly when its scheduled time is exhausted."""
+        scheduler = self.phase_scheduler
+        if scheduler.current is None or scheduler.remaining > 0.0:
+            return False
+        # Jump preparation and playful rolls are allowed to complete their
+        # physical hand-off; the next grounded state will start or cancel the
+        # following period.  A roll has two clocks: the personality phase timer
+        # and the actual curl/spin animation. Ending the phase first leaves
+        # ``roll_tuck``/``roll_spin`` active while the state is already Idle.
+        if self.state in ("Coil", "Aim", "Jump", "Land", "Roll"):
+            return False
+        scheduler.finish()
+        if self.state in ("Wander", "Approach", "Chase", "Observe", "Inspect", "Cuddle", "Play", "Zoom", "Roll", "Retreat"):
+            self.enter_idle()
+            return True
+        return False
+
+    # ------------------------------------------------------------------
     # Update
     # ------------------------------------------------------------------
     def resize_screen(self, w: int, h: int) -> None:
@@ -2611,6 +3374,9 @@ class Creature:
         self._feed_cooldown = max(0.0, getattr(self, "_feed_cooldown", 0.0) - dt)
         self._pounce_cooldown = max(0.0, getattr(self, "_pounce_cooldown", 0.0) - dt)
         self._trap_shot_cooldown = max(0.0, getattr(self, "_trap_shot_cooldown", 0.0) - dt)
+        self._regenerate_energy(dt)
+        if not self.dragging:
+            self.phase_scheduler.tick(dt)
 
         # Reconcile web behaviour with the live state.  If anything pulled this
         # spider out of a weave/web-walk state -- a threat reflex, a grab, a
@@ -2622,6 +3388,7 @@ class Creature:
             self._abandon_repair()
         if self.web_target is not None and self.state not in ("WebApproach", "WebWalk"):
             self.web_target = None
+        self._reconcile_roll()
 
         # Hidden spiders are behind a real desktop window, so they are no longer
         # in the same visible interaction layer as the cursor or other spiders.
@@ -2729,16 +3496,24 @@ class Creature:
                 if self._spider_locomotion_active:
                     self._spider_locomotion_active = False
                 self._move_body(dt)
+        # Again after the state machine, and outside the airborne branch,
+        # because the roll may have been left during this very frame -- by the
+        # spider jumping out of it, among other things -- and the frame is
+        # about to be drawn.
+        self._reconcile_roll()
         if self.cage is not None and not self.dragging:
             self._apply_cage_bounds()
         self._update_legs(dt)
         self._update_mood(dt)
         self._update_posture(dt)
         self._update_antennae(dt)
+        self._sync_scheduled_phase(self._phase_focus_context(mx, my))
 
     def _update_state(self, dt: float, mx: float, my: float) -> None:
         self.state_timer -= dt
         self.decision_timer -= dt
+        if self._finish_expired_scheduled_phase(mx, my):
+            return
         dist_to_cursor = distance(self.x, self.y, mx, my)
         boldness = clamp(float(self.personality.get("boldness", 0.5)), 0.0, 1.0)
         reaction = float(self.personality.get("reaction_radius", 360))
@@ -2747,6 +3522,10 @@ class Creature:
         observer = self._is_observer_personality()
         cursor_still = hunter and self._cursor_is_still_for_observe()
         hunt_catch_distance = self.size * float(self.personality.get("hunt_catch_distance_mult", 2.25))
+        if self._update_job_state(dt, mx, my):
+            # Jobs own their work target, while temperament still drives the
+            # leg solver, posture, and animation style underneath it.
+            return
         if self._is_drifter_personality() and self.state != "DriftRun":
             self.drift_run_cooldown = max(0.0, float(getattr(self, "drift_run_cooldown", 0.0)) - dt)
 
@@ -2776,6 +3555,8 @@ class Creature:
                     return
             if self.state_timer <= 0.0 and self.decision_timer <= 0.0:
                 self.decision_timer = random.uniform(0.2, 0.5)
+                if self._activate_scheduled_phase(mx, my):
+                    return
                 if self._consider_special_actions(dist_to_cursor, mx, my, from_idle=True):
                     return
                 if dist_to_cursor < reaction:
@@ -2816,6 +3597,8 @@ class Creature:
                     self.enter_observe(ax, ay, target)
                     return
             if self.state_timer <= 0.0:
+                if self._activate_scheduled_phase(mx, my):
+                    return
                 if self._consider_special_actions(dist_to_cursor, mx, my, from_idle=False):
                     return
                 if self.has_skill("run_away") and dist_to_cursor < float(self.personality.get("threat_radius", 180)) * 0.55 and random.random() > boldness:
@@ -2874,7 +3657,7 @@ class Creature:
                 self.target_x = mx
                 self.target_y = my
             else:
-                self.speed = 52.0 * float(self.personality.get("speed_multiplier", 1.0))
+                self.speed = 52.0 * self._speed_mult()
                 if self._maybe_jumper_hop(dt, "approach", (mx, my)):
                     return
             if self.state_timer <= 0.0:
@@ -2882,7 +3665,7 @@ class Creature:
                     self.motion_paused = False
                     self.target_x = mx
                     self.target_y = my
-                    self.speed = 52.0 * float(self.personality.get("speed_multiplier", 1.0))
+                    self.speed = 52.0 * self._speed_mult()
                     self.state_timer = rand_range(self.personality.get("approach_move_time"), 0.5, 1.3)
                 else:
                     self.motion_paused = True
@@ -2950,7 +3733,7 @@ class Creature:
                 self.target_y = my + random.uniform(-18.0, 18.0)
                 self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
                 self.state_timer = random.uniform(0.10, 0.24)
-            self.speed = 112.0 * float(self.personality.get("speed_multiplier", 1.0))
+            self.speed = 112.0 * self._speed_mult()
             if self._maybe_jumper_hop(dt, "chase", (mx, my)):
                 return
             if self._hunting_prey:
@@ -2961,7 +3744,7 @@ class Creature:
                 self.enter_alert(mx, my) if dist_to_cursor < reaction else self.enter_idle()
 
         elif self.state == "Retreat":
-            self.speed = 148.0 * float(self.personality.get("speed_multiplier", 1.0))
+            self.speed = 148.0 * self._speed_mult()
             if self.state_timer <= 0.0 or distance(self.x, self.y, self.target_x, self.target_y) < 25.0:
                 if dist_to_cursor < reaction * 0.8:
                     self.enter_alert(mx, my)
@@ -2973,8 +3756,16 @@ class Creature:
             # the spider takes a short nervous scurry away from the pointer.
             if self.inertia_timer > 0.0:
                 self.speed = 0.0
+            elif getattr(self, "throw_recovery", 0.0) > 0.0:
+                # Skid finished: hold still for a beat so the stop is visible,
+                # then let the ordinary startled reaction take over.
+                self.throw_recovery = max(0.0, self.throw_recovery - dt)
+                self.speed = 0.0
+                self.motion_paused = True
+                self.target_x, self.target_y = self.x, self.y
             else:
-                self.speed = 74.0 * float(self.personality.get("speed_multiplier", 1.0))
+                self.motion_paused = False
+                self.speed = 74.0 * self._speed_mult()
                 if dist_to_cursor < reaction * 0.85 and self.decision_timer <= 0.0:
                     away = math.atan2(self.y - my, self.x - mx)
                     self.target_x = self.x + math.cos(away) * random.uniform(95.0, 180.0)
@@ -2982,14 +3773,14 @@ class Creature:
                     self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
                     self.target_heading = away
                     self.decision_timer = random.uniform(0.25, 0.45)
-            if self.state_timer <= 0.0 and self.inertia_timer <= 0.0:
+            if self.state_timer <= 0.0 and self.inertia_timer <= 0.0 and self.throw_recovery <= 0.0:
                 if self.has_skill("run_away") and dist_to_cursor < reaction * 0.65:
                     self.enter_retreat(mx, my)
                 else:
                     self.enter_idle()
 
         elif self.state == "Wander":
-            self.speed = 0.0 if self.motion_paused else 38.0 * float(self.personality.get("speed_multiplier", 1.0))
+            self.speed = 0.0 if self.motion_paused else 38.0 * self._speed_mult()
             if jumper and not self.motion_paused and self._maybe_jumper_hop(dt, "wander", (self.target_x, self.target_y)):
                 return
             if observer:
@@ -3116,6 +3907,7 @@ class Creature:
         m = self.mood
         reaction = float(self.personality.get("reaction_radius", 360))
         boldness = clamp(float(self.personality.get("boldness", 0.5)), 0.0, 1.0)
+        hunter = self._is_hunter_personality()
 
         # --- Drifter self-directed flourish ---
         if self._should_start_drift_run(from_idle=from_idle):
@@ -3173,7 +3965,7 @@ class Creature:
                 return True
 
         # --- Social play with another creature ---
-        if self.allow_social and self.social_cooldown <= 0.0:
+        if self.allow_social and not hunter and self.social_cooldown <= 0.0:
             social_range = max(reaction * 0.85, self.size * 12.0)
             mate = self._find_social_target(social_range)
             if mate is not None:
@@ -3226,7 +4018,10 @@ class Creature:
                 return True
 
         # --- Self-directed play when no obvious target (playful temperament) ---
-        if from_idle and m.valence > 0.4 and m.arousal > 0.55:
+        # Hunters reserve idle time for scanning and stalking.  In particular,
+        # do not let the generic happy-mood flourish chooser turn a hunter into
+        # a roller/zoomies spider between prey sightings.
+        if from_idle and not hunter and m.valence > 0.4 and m.arousal > 0.55:
             r = random.random()
             if r < 0.12:
                 self.enter_roll()
@@ -3245,6 +4040,12 @@ class Creature:
         # along the drift direction and carry the (tucked) feet with it.
         self.motion_paused = True
         self.speed = 0.0
+        # The grounded solver runs after the FSM update in the normal frame
+        # order. Keep walking momentum out of the roll and its completion frame,
+        # otherwise the spider can resume in the pre-roll direction.
+        self.current_speed = 0.0
+        self.vel_x = 0.0
+        self.vel_y = 0.0
         prev_eased = self.roll_eased
         self.roll_progress = min(1.0, self.roll_progress + dt / max(0.05, self.roll_duration))
         self.roll_eased = 1.0 - (1.0 - self.roll_progress) ** 2
@@ -3265,10 +4066,7 @@ class Creature:
         self.target_heading = self.heading
 
         if self.roll_progress >= 1.0:
-            self.roll_spin = 0.0
-            self.roll_tuck = 0.0
-            self.motion_paused = False
-            self._panic_rehome_legs(0.5)
+            self._finish_roll()
             self.enter_idle()
 
     # ------------------------------------------------------------------
@@ -3750,7 +4548,16 @@ class Creature:
         else:
             world = self.mouse_web_world
             if world is not None and self._can_shoot_web(kind):
-                launched = world.shoot(origin, (mx, my), kind=kind)
+                # Silk is thrown, not guided: aim once, leading the pointer by
+                # its current velocity. In-flight correction arrives with the
+                # Silk tracking ability rather than being free from level one.
+                launched = world.shoot(
+                    origin,
+                    (mx, my),
+                    kind=kind,
+                    homing=self._progression_effect("web_homing"),
+                    lead=(self.prev_cursor_vx, self.prev_cursor_vy),
+                )
         if launched:
             self.mood.bump(arousal=0.12, valence=0.12, curiosity=0.05)
             self.enter_web_shot()
@@ -4233,7 +5040,25 @@ class Creature:
         self.strafe_observe = strafe_observe
 
         if target_dist > 2.0 and not strafe_observe:
-            self.target_heading = move_heading
+            if len(self.legs) >= 8:
+                # Keep the older spider rigs from converting a zig-zagging
+                # target bearing directly into a body twitch. Gait-enabled
+                # models already use the same filter in their grounded path;
+                # this is the equivalent for the legacy body path.
+                gait_config = self._spider_gait_config()
+                if gait_config is not None:
+                    self.target_heading = self._spider_filtered_heading(
+                        move_heading, dt, gait_config
+                    )
+                else:
+                    filtered = float(getattr(self, "_spider_heading_filter", self.heading))
+                    bearing_error = ((move_heading - filtered + math.pi) % math.tau) - math.pi
+                    if abs(bearing_error) > 0.05:
+                        filtered += bearing_error * (1.0 - math.exp(-dt * 10.0))
+                    self._spider_heading_filter = filtered
+                    self.target_heading = filtered
+            else:
+                self.target_heading = move_heading
 
         if self.state == "DriftRun":
             # Drifters should not rotate like they have sticky feet.  In charge-up
@@ -4246,7 +5071,16 @@ class Creature:
             turn_mult = 1.35 if self.state in ("Chase", "Retreat", "Dragged", "Startled") else 1.0
             if self.state in ("Alert", "Approach", "Chase", "Observe"):
                 turn_mult *= float(self.personality.get("turn_rate_multiplier", 1.0))
-        max_turn = self.turn_rate * turn_mult * dt
+        max_turn_rate = abs(self.turn_rate * turn_mult)
+        if self._uses_lively_gait() or len(self.legs) >= 8:
+            # A spider can pivot quickly, but an unrestricted personality
+            # multiplier made the body jump 10+ degrees in one frame. Keep the
+            # response fast while giving the angular velocity a smooth ceiling.
+            max_turn_rate = min(max_turn_rate, 7.0)
+        angle_error = ((self.target_heading - self.heading + math.pi) % math.tau) - math.pi
+        max_turn = self._smooth_turn_step(
+            angle_error, dt, max_turn_rate if abs(angle_error) > 1e-7 else 0.0
+        )
         old_heading = self.heading
         self.heading = angle_lerp(self.heading, self.target_heading, max_turn)
         turn_delta = ((self.heading - old_heading + math.pi) % math.tau) - math.pi
@@ -4313,6 +5147,10 @@ class Creature:
                     mag = max(1e-5, math.hypot(move_x, move_y))
                     move_x /= mag
                     move_y /= mag
+            # A low-grip Drifter may slide sideways, but never let stale arc
+            # momentum make the sprite visibly moonwalk. Keep the correction
+            # limited to the pathological behind-the-body case.
+            move_x, move_y = self._guard_drifter_travel_direction(move_x, move_y)
             self.vel_x = move_x * self.current_speed
             self.vel_y = move_y * self.current_speed
             self.x += move_x * move
@@ -5044,6 +5882,10 @@ class Creature:
             # and its joints still until release_drag asks the ground controller
             # to rehome the feet.
             return
+        if self.state == "Roll":
+            # The roll owns the whole rendered pose. Do not advance a walking
+            # swing underneath the tuck transform.
+            return
         if self._uses_lively_gait():
             self._update_legs_lively(dt)
             return
@@ -5654,8 +6496,29 @@ class Creature:
     # Rendering
     # ------------------------------------------------------------------
     def _qcolor(self, key: str, alpha: int = 255):
+        """A painting colour for one palette slot, blended toward camouflage.
+
+        Asked about 100 times per spider per frame. The blended integer triple
+        is cached per palette key and thrown away whenever the camouflage state
+        changes, so a camouflaging spider still recomputes every frame and a
+        spider that is simply walking about does not. A fresh QColor is still
+        built each call rather than a shared one being handed out, because a
+        caller that mutated it would corrupt every later frame.
+        """
         from PyQt5.QtGui import QColor
 
+        signature = (self._camouflage_color, self._camouflage_strength)
+        cache = self._qcolor_cache
+        if cache is None or cache[0] != signature:
+            cache = (signature, {})
+            self._qcolor_cache = cache
+        triple = cache[1].get(key)
+        if triple is None:
+            triple = self._blend_palette_color(key)
+            cache[1][key] = triple
+        return QColor(triple[0], triple[1], triple[2], alpha)
+
+    def _blend_palette_color(self, key: str) -> tuple:
         raw = self.colors.get(key, [35, 30, 25])
         rgb = [float(raw[0]), float(raw[1]), float(raw[2])]
         camo = getattr(self, "_camouflage_color", None)
@@ -5664,14 +6527,42 @@ class Creature:
         if camo is not None and strength > 0.001 and color_blend > 0.001:
             blend = strength * color_blend * (0.72 if key == "eyes" else 0.96 if key == "highlight" else 1.0)
             rgb = [rgb[i] * (1.0 - blend) + float(camo[i]) * blend for i in range(3)]
-        return QColor(int(clamp(rgb[0], 0, 255)), int(clamp(rgb[1], 0, 255)), int(clamp(rgb[2], 0, 255)), alpha)
+        return (int(clamp(rgb[0], 0, 255)), int(clamp(rgb[1], 0, 255)), int(clamp(rgb[2], 0, 255)))
 
     def _appearance(self, key: str, default):
         return self.model.get("appearance", {}).get(key, default)
 
+    def _appearance_color(self, key: str, fallback_key: str = "highlight"):
+        """Resolve an appearance accent through an explicit slot palette first."""
+        if key in getattr(self, "color_overrides", {}):
+            return self.colors.get(key)
+        if fallback_key in getattr(self, "color_overrides", {}):
+            return self.colors.get(fallback_key)
+        return self._appearance(key, self.colors.get(fallback_key, [120, 80, 60]))
+
     def _qcolor_triplet(self, rgb, alpha: int = 255):
+        """Same as `_qcolor`, for a colour that is not in the palette.
+
+        Cached the same way and for the same reason: about fifty calls per
+        spider per frame, nearly all of them repeats of a handful of accents.
+        """
         from PyQt5.QtGui import QColor
 
+        key = (float(rgb[0]), float(rgb[1]), float(rgb[2]))
+        signature = (self._camouflage_color, self._camouflage_strength)
+        cache = self._triplet_cache
+        if cache is None or cache[0] != signature:
+            cache = (signature, {})
+            self._triplet_cache = cache
+        blended = cache[1].get(key)
+        if blended is None:
+            blended = self._blend_triplet(key)
+            if len(cache[1]) > 128:
+                cache[1].clear()
+            cache[1][key] = blended
+        return QColor(blended[0], blended[1], blended[2], alpha)
+
+    def _blend_triplet(self, rgb) -> tuple:
         out = [float(rgb[0]), float(rgb[1]), float(rgb[2])]
         camo = getattr(self, "_camouflage_color", None)
         strength = clamp(float(getattr(self, "_camouflage_strength", 0.0)), 0.0, 1.0)
@@ -5679,7 +6570,7 @@ class Creature:
         if camo is not None and strength > 0.001 and color_blend > 0.001:
             blend = strength * color_blend * 0.92
             out = [out[i] * (1.0 - blend) + float(camo[i]) * blend for i in range(3)]
-        return QColor(int(clamp(out[0], 0, 255)), int(clamp(out[1], 0, 255)), int(clamp(out[2], 0, 255)), alpha)
+        return (int(clamp(out[0], 0, 255)), int(clamp(out[1], 0, 255)), int(clamp(out[2], 0, 255)))
 
     def _load_sprite_assets(self):
         from PyQt5.QtGui import QPixmap
@@ -5853,6 +6744,12 @@ class Creature:
                                  fx: float, fy: float, chain_config: dict):
         """Solve a bounded four- or five-segment leg as one coordinated chain.
 
+        Memoised for the frame being drawn. A procedural spider solves every leg
+        twice per frame -- once for the leg itself and once for the sockets and
+        knuckles drawn over it -- from identical inputs. The key is those exact
+        inputs, so a cached answer is the answer the solve would have produced,
+        and a copy is handed out so a caller cannot corrupt the second use.
+
         The old renderer solved one large outward knee and then subdivided the
         remaining line.  That made the extra knuckle decorative: all joints
         inherited the same forced bow, and a long foot catch could stretch the
@@ -5861,6 +6758,11 @@ class Creature:
         chain solve. The root and foot stay fixed while every knuckle receives
         its own anatomical length limit.
         """
+        cache_key = (id(leg), ax, ay, fx, fy)
+        cached = self._chain_points_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
         a_f, a_s = self._world_to_body_local(ax, ay)
         f_f, f_s = self._world_to_body_local(fx, fy)
         direct = max(1e-4, math.hypot(f_f - a_f, f_s - a_s))
@@ -6023,10 +6925,11 @@ class Creature:
             extra = max(1e-4, path_len - direct)
             bend_scale = clamp((path_budget - direct) / extra, 0.0, 1.0)
             points, _ = build(bend_scale)
-        return points
+        self._chain_points_cache[cache_key] = points
+        return list(points)
 
     def _draw_sprite_segment(self, painter, pixmap, x1: float, y1: float, x2: float, y2: float, thickness: float, opacity: float = 1.0):
-        from PyQt5.QtCore import QPointF, QRectF
+        from PyQt5.QtCore import QRectF
 
         if pixmap is None or pixmap.isNull():
             return
@@ -6222,7 +7125,7 @@ class Creature:
                     end_x, end_y = chain_points[index + 1]
                     if chain_config["hairy"] and chain_config["hair_scale"] > 0.0:
                         hair_color = self._qcolor_triplet(
-                            self._appearance("fluff_color", self.colors.get("highlight", [120, 80, 60])),
+                            self._appearance_color("fluff_color", "highlight"),
                             int(72 + chain_config["hair_scale"] * 90),
                         )
                         painter.setPen(QPen(hair_color, width * (1.12 + chain_config["hair_scale"] * 0.55), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
@@ -6299,13 +7202,14 @@ class Creature:
             painter.rotate(math.degrees(self.body_wiggle))
         jz_body = clamp(self.jump_z / max(1.0, self.size), 0.0, 3.0)
         jump_scale = 1.0 + jz_body * 0.12
-        vfac = clamp(self.squash * (1.0 - self.crouch * 0.14), 0.55, 1.2)
+        visual_squash = 1.0 if self.state == "Roll" or abs(self.roll_spin) > 1e-4 else self.squash
+        vfac = clamp(visual_squash * (1.0 - self.crouch * 0.14), 0.55, 1.2)
         vroot = math.sqrt(vfac)
         painter.scale(jump_scale / vroot, jump_scale * vroot)
         body = self._qcolor("body", 255)
         highlight = self._qcolor("highlight", int(self._appearance("highlight_alpha", 145)))
         leg_color = self._qcolor("legs", 255)
-        fluff_color = self._qcolor_triplet(self._appearance("fluff_color", self.colors.get("highlight", [78, 66, 52])), int(38 + fluffiness * 70))
+        fluff_color = self._qcolor_triplet(self._appearance_color("fluff_color", "highlight"), int(38 + fluffiness * 70))
 
         abdomen_scale = self._appearance("abdomen_scale", [0.92, 0.84])
         ceph_scale = self._appearance("cephalothorax_scale", [0.70, 0.66])
@@ -6367,8 +7271,6 @@ class Creature:
             painter.setPen(QPen(head_outline, head_outline_width, Qt.SolidLine, Qt.RoundCap))
             painter.setBrush(QBrush(head_color))
             painter.drawEllipse(QRectF(head_offset_x - head_w * 0.5, -head_h * 0.5, head_w, head_h))
-        self._draw_leg_connections(painter, chain_config)
-
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(highlight))
         painter.drawEllipse(QRectF(abdomen_offset_x - abdomen_w * 0.18, -abdomen_h * 0.28 + abdo_wag, abdomen_w * 0.28, abdomen_h * 0.18))
@@ -6381,7 +7283,7 @@ class Creature:
             painter.setBrush(QBrush(head_highlight))
             painter.drawEllipse(QRectF(head_offset_x - head_w * 0.18, -head_h * 0.26, head_w * 0.28, head_h * 0.16))
 
-        stripe_color = self._appearance("stripe_color", None)
+        stripe_color = self._appearance_color("stripe_color", "leg_band") if self._appearance("stripe_color", None) is not None else None
         if stripe_color:
             painter.setBrush(QBrush(self._qcolor_triplet(stripe_color, int(self._appearance("stripe_alpha", 90)))))
             stripe_count = max(1, int(self._appearance("stripe_count", 2)))
@@ -6441,6 +7343,13 @@ class Creature:
         self._draw_eyes(painter, eyes, ceph_offset_x, ceph_w, ceph_h, startle, aiming)
         self._draw_antennae(painter, ceph_offset_x, ceph_w, ceph_h, startle)
         painter.restore()
+        # The body above is drawn in a body-local QPainter transform.  Leg
+        # connections are computed in world coordinates, so paint them only
+        # after leaving that transform.  Drawing them inside it double-applied
+        # heading/scale on rotated spiders and made the proximal legs collapse
+        # or detach from the carapace.
+        self._draw_leg_connections(painter, chain_config)
+        self._draw_equipment(painter)
 
     def _render_sprite_rig(self, painter) -> None:
         from PyQt5.QtCore import QPointF, QRectF, Qt
@@ -6568,7 +7477,8 @@ class Creature:
             painter.rotate(math.degrees(self.body_wiggle))
         jz_body = clamp(self.jump_z / max(1.0, self.size), 0.0, 3.0)
         jump_scale = 1.0 + jz_body * 0.12
-        vfac = clamp(self.squash * (1.0 - self.crouch * 0.14), 0.55, 1.2)
+        visual_squash = 1.0 if self.state == "Roll" or abs(self.roll_spin) > 1e-4 else self.squash
+        vfac = clamp(visual_squash * (1.0 - self.crouch * 0.14), 0.55, 1.2)
         vroot = math.sqrt(vfac)
         painter.scale(jump_scale / vroot, jump_scale * vroot)
 
@@ -6631,6 +7541,50 @@ class Creature:
         self._draw_eyes(painter, eyes, ceph_offset_x, ceph_w, ceph_h, startle, aiming)
         self._draw_antennae(painter, ceph_offset_x, ceph_w, ceph_h, startle)
         painter.restore()
+        painter.restore()
+        self._draw_equipment(painter)
+
+    def _draw_equipment(self, painter) -> None:
+        """Draw restrained anatomy-aware armor overlays for equipped items.
+
+        The catalog is useful even before every model has custom armor art. These
+        vector accents deliberately follow the spider's own body/leg geometry and
+        keep the equipment readable at desktop scale without replacing model art.
+        """
+        from PyQt5.QtCore import QPointF, QRectF, Qt
+        from PyQt5.QtGui import QPen
+
+        equipped = {item.slot: item for item in equipped_items(self.progression)}
+        if not equipped:
+            return
+        armor_color = self._qcolor("highlight", 175)
+        dark_color = self._qcolor("legs", 175)
+        painter.save()
+        painter.setPen(QPen(armor_color, max(1.0, self.size * 0.035), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setBrush(Qt.NoBrush)
+        if "abdomen" in equipped:
+            painter.drawEllipse(QRectF(self.x - self.size * 0.52, self.y - self.size * 0.38,
+                                       self.size * 0.78, self.size * 0.70))
+        if "carapace" in equipped:
+            cx, cy = self._body_local_to_world(self.size * 0.34, 0.0)
+            painter.drawEllipse(QRectF(cx - self.size * 0.34, cy - self.size * 0.27,
+                                       self.size * 0.68, self.size * 0.54))
+        if "head" in equipped:
+            hx, hy = self._body_local_to_world(self.size * 0.55, 0.0)
+            painter.drawEllipse(QRectF(hx - self.size * 0.16, hy - self.size * 0.14,
+                                       self.size * 0.32, self.size * 0.28))
+        if "legs" in equipped:
+            painter.setPen(QPen(armor_color, max(1.0, self.size * 0.055), Qt.SolidLine, Qt.RoundCap))
+            for leg in self.legs:
+                ax, ay, fx, fy = self._leg_draw_points(leg)
+                mx = ax + (fx - ax) * 0.34
+                my = ay + (fy - ay) * 0.34
+                painter.drawPoint(QPointF(mx, my))
+        if "pedipalps" in equipped:
+            painter.setPen(QPen(dark_color, max(1.0, self.size * 0.060), Qt.SolidLine, Qt.RoundCap))
+            for target in self.antenna_hand_targets:
+                if target != (0.0, 0.0):
+                    painter.drawPoint(QPointF(*target))
         painter.restore()
 
     # ------------------------------------------------------------------
@@ -6826,8 +7780,11 @@ class Creature:
             foot_y += (ay - foot_y) * tuck
         if self.roll_tuck > 1e-3:
             # Curl the legs in toward the body so the spinning spider reads as a
-            # tucked ball rather than a splayed star.
-            t = clamp(self.roll_tuck, 0.0, 1.0) * 0.62
+            # tucked ball rather than a splayed star. Keep a visible gap between
+            # the body and the feet: collapsing every chain into one point makes
+            # the smaller sprite-rig spiders look flattened during the tumble.
+            tuck_strength = clamp(float(self._appearance("roll_tuck_strength", 0.46)), 0.25, 0.62)
+            t = clamp(self.roll_tuck, 0.0, 1.0) * tuck_strength
             foot_x += (ax - foot_x) * t
             foot_y += (ay - foot_y) * t
         return ax, ay, foot_x, foot_y
@@ -6875,16 +7832,16 @@ class Creature:
             foot_x, foot_y = self._leg_draw_points(leg)[2:]
             foot_x, foot_y = self._safe_sprite_leg_foot(leg, foot_x, foot_y, chain_config)
             chain_points = self._sprite_leg_chain_points(leg, ax, ay, foot_x, foot_y, chain_config)
-            root_f, root_s = self._world_to_body_local(*chain_points[0])
-            first_f, first_s = self._world_to_body_local(*chain_points[1])
-            direction_f = first_f - root_f
-            direction_s = first_s - root_s
-            direction_len = math.hypot(direction_f, direction_s)
+            root_x, root_y = chain_points[0]
+            first_x, first_y = chain_points[1]
+            direction_x = first_x - root_x
+            direction_y = first_y - root_y
+            direction_len = math.hypot(direction_x, direction_y)
             if direction_len < 1e-4 and len(chain_points) > 2:
-                second_f, second_s = self._world_to_body_local(*chain_points[2])
-                direction_f = second_f - root_f
-                direction_s = second_s - root_s
-                direction_len = math.hypot(direction_f, direction_s)
+                second_x, second_y = chain_points[2]
+                direction_x = second_x - root_x
+                direction_y = second_y - root_y
+                direction_len = math.hypot(direction_x, direction_y)
             if direction_len < 1e-4:
                 continue
 
@@ -6892,36 +7849,36 @@ class Creature:
             # the socket.  The old bridge pointed inward toward the body and
             # read as a tube disappearing underneath the shell; this makes the
             # coxa visibly emerge from a lateral carapace socket instead.
-            direction_f /= direction_len
-            direction_s /= direction_len
+            direction_x /= direction_len
+            direction_y /= direction_len
             exposed_length = min(
                 coxa_length + trochanter_length,
                 max(self.size * 0.12, direction_len),
             )
-            end_f = root_f + direction_f * exposed_length
-            end_s = root_s + direction_s * exposed_length
+            end_x = root_x + direction_x * exposed_length
+            end_y = root_y + direction_y * exposed_length
             split = coxa_length / max(1e-4, coxa_length + trochanter_length)
-            joint_f = root_f + (end_f - root_f) * split
-            joint_s = root_s + (end_s - root_s) * split
+            joint_x = root_x + (end_x - root_x) * split
+            joint_y = root_y + (end_y - root_y) * split
 
             painter.setPen(QPen(socket_color, max(1.0, outline_width), Qt.SolidLine, Qt.RoundCap))
-            painter.drawLine(QPointF(root_f, root_s), QPointF(end_f, end_s))
+            painter.drawLine(QPointF(root_x, root_y), QPointF(end_x, end_y))
             painter.setPen(QPen(proximal_color, max(1.2, coxa_width), Qt.SolidLine, Qt.RoundCap))
-            painter.drawLine(QPointF(root_f, root_s), QPointF(joint_f, joint_s))
+            painter.drawLine(QPointF(root_x, root_y), QPointF(joint_x, joint_y))
             painter.setPen(QPen(core_color, max(1.0, trochanter_width), Qt.SolidLine, Qt.RoundCap))
-            painter.drawLine(QPointF(joint_f, joint_s), QPointF(end_f, end_s))
+            painter.drawLine(QPointF(joint_x, joint_y), QPointF(end_x, end_y))
 
             painter.setPen(Qt.NoPen)
             painter.setBrush(QBrush(socket_color))
-            painter.drawEllipse(QPointF(root_f, root_s), socket_radius, socket_radius * 0.76)
+            painter.drawEllipse(QPointF(root_x, root_y), socket_radius, socket_radius * 0.76)
             painter.setBrush(QBrush(proximal_color))
             painter.drawEllipse(
-                QPointF(root_f, root_s),
+                QPointF(root_x, root_y),
                 socket_radius * socket_core_scale,
                 socket_radius * socket_core_scale * 0.74,
             )
             painter.setBrush(QBrush(accent_color))
-            painter.drawEllipse(QPointF(joint_f, joint_s), joint_radius, joint_radius * 0.72)
+            painter.drawEllipse(QPointF(joint_x, joint_y), joint_radius, joint_radius * 0.72)
 
     def _draw_antennae(self, painter, ceph_offset_x: float, ceph_w: float, ceph_h: float, startle: float) -> None:
         """Two expressive feelers on the head front; shape carries the emotion."""
@@ -7086,7 +8043,7 @@ class Creature:
                     x2, y2 = screen[segment_index + 1]
                     if hairy and hair_scale > 0.0:
                         hair_color = self._qcolor_triplet(
-                            self._appearance("fluff_color", self.colors.get("highlight", [120, 80, 60])),
+                            self._appearance_color("fluff_color", "highlight"),
                             int(70 + hair_scale * 95),
                         )
                         painter.setPen(QPen(hair_color, width * (1.16 + hair_scale * 0.60), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
@@ -7270,7 +8227,24 @@ class Creature:
 
     @property
     def display_name(self) -> str:
-        return self.name
+        return self.name or str(self.model.get("display_name", "Spider"))
+
+    @property
+    def level_label_pinned(self) -> bool:
+        return bool(self.progression.pin_level)
+
+    def set_level_label_pinned(self, enabled: bool) -> None:
+        self.progression.pin_level = bool(enabled)
+
+    @property
+    def health_label_pinned(self) -> bool:
+        return bool(self.progression.pin_health)
+
+    def set_health_label_pinned(self, enabled: bool) -> None:
+        self.progression.pin_health = bool(enabled)
+
+    def health_fraction(self) -> float:
+        return clamp(float(self.hp) / max(1.0, float(self.max_hp)), 0.0, 1.0)
 
     def _label_font(self):
         from PyQt5.QtGui import QFont
@@ -7281,7 +8255,24 @@ class Creature:
         return font
 
     def label_visible(self, always_show: bool) -> bool:
-        return bool(self.name) and (self._hovered or always_show)
+        pinned = self.level_label_pinned or self.health_label_pinned
+        return bool(self.name or pinned) and (self._hovered or always_show or pinned)
+
+    def _label_border_color(self, QColor):
+        """The hover label is edged in the team colour, or plain white for none."""
+        team_id = str(getattr(self.progression, "team_id", "neutral") or "neutral")
+        if team_id.strip().lower() in ("", "neutral"):
+            return QColor(255, 255, 255, 60)
+        from .teams import team_color
+
+        red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
+        return QColor(red, green, blue, 200)
+
+    def _label_text(self) -> str:
+        text = self.display_name
+        if self.level_label_pinned:
+            text += f"  ·  Lv {self.level}"
+        return text
 
     # ------------------------------------------------------------------
     # Screen-space bounding box (for partial repaints)
@@ -7338,9 +8329,12 @@ class Creature:
             from PyQt5.QtGui import QFontMetrics
 
             fm = QFontMetrics(self._label_font())
-            text = self.display_name
-            half_w = fm.horizontalAdvance(text) * 0.5 + 12.0
+            text = self._label_text()
+            half_w = max(fm.horizontalAdvance(text) * 0.5 + 12.0,
+                         self.HEALTH_BAR_MIN_WIDTH * 0.5 + 2.0)
             label_h = fm.height() + 12.0
+            if self.health_label_pinned:
+                label_h += self._health_bar_height() + 3.0
             min_x = min(min_x, self.x - half_w)
             max_x = max(max_x, self.x + half_w)
             # Label floats above the highest drawn point.
@@ -7348,6 +8342,65 @@ class Creature:
 
         self._bbox = (min_x, min_y, max_x, max_y)
         return self._bbox
+
+    def _draw_team_marker(self, painter) -> None:
+        """A small ring in the team colour, on the ground under the spider.
+
+        Deliberately understated. A team is a fact about a spider, not the point
+        of looking at one, and a solid badge would fight with the art. A spider
+        on no team wears nothing at all.
+        """
+        team_id = str(getattr(self.progression, "team_id", "neutral") or "neutral")
+        if team_id.strip().lower() in ("", "neutral"):
+            return
+        from PyQt5.QtCore import QRectF, Qt
+        from PyQt5.QtGui import QColor, QPen
+
+        from .teams import team_color
+
+        red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
+        width = self.size * 1.35
+        height = self.size * 0.46
+        # Sits just below the body, where a shadow would be, so it reads as
+        # ground marking rather than as part of the creature.
+        top = self.y + self.size * 0.36 + self.jump_z * 0.25
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(red, green, blue, 190), max(1.6, self.size * 0.09)))
+        painter.drawEllipse(QRectF(self.x - width * 0.5, top - height * 0.5, width, height))
+
+    # A pinned bar has to stay readable on a small spider, so it has a floor
+    # rather than scaling all the way down with the body.
+    HEALTH_BAR_MIN_WIDTH = 34.0
+
+    def _health_bar_height(self) -> float:
+        return max(4.0, min(7.0, self.size * 0.20))
+
+    @staticmethod
+    def health_bar_color(fraction: float, QColor):
+        """Green, amber, red. Colour alone is the reading at spider size."""
+        fraction = clamp(float(fraction), 0.0, 1.0)
+        if fraction > 0.6:
+            return QColor(104, 194, 108, 235)
+        if fraction > 0.3:
+            return QColor(226, 176, 74, 235)
+        return QColor(214, 84, 76, 235)
+
+    def _draw_health_bar(self, painter, left: float, top: float, width: float,
+                         QRectF, Qt, QColor, QBrush, QPen) -> None:
+        width = max(width, self.HEALTH_BAR_MIN_WIDTH)
+        height = self._health_bar_height()
+        fraction = self.health_fraction()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(18, 18, 22, 215)))
+        painter.drawRoundedRect(QRectF(left, top, width, height), 2.0, 2.0)
+        if fraction > 0.0:
+            painter.setBrush(QBrush(self.health_bar_color(fraction, QColor)))
+            painter.drawRoundedRect(
+                QRectF(left + 1.0, top + 1.0, max(1.0, (width - 2.0) * fraction),
+                       height - 2.0), 1.5, 1.5)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(255, 255, 255, 70), 1.0))
+        painter.drawRoundedRect(QRectF(left, top, width, height), 2.0, 2.0)
 
     def _draw_name_label(self, painter, always_show_names: bool) -> None:
         if not self.label_visible(always_show_names):
@@ -7358,12 +8411,13 @@ class Creature:
         font = self._label_font()
         painter.setFont(font)
         fm = QFontMetrics(font)
-        text = self.display_name
+        text = self._label_text()
         tw = fm.horizontalAdvance(text)
         th = fm.height()
         pad_x = 8.0
         pad_y = 4.0
-        box_w = tw + pad_x * 2.0
+        box_w = max(tw + pad_x * 2.0,
+                    self.HEALTH_BAR_MIN_WIDTH if self.health_label_pinned else 0.0)
         box_h = th + pad_y * 2.0
 
         # Sit just above the spider's body/leg cluster.
@@ -7379,12 +8433,19 @@ class Creature:
         painter.setBrush(QBrush(QColor(18, 18, 22, 205)))
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor(255, 255, 255, 60), 1.0))
+        painter.setPen(QPen(self._label_border_color(QColor), 1.0))
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setPen(QPen(QColor(245, 247, 250, 255)))
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
+        if self.health_label_pinned:
+            self._draw_health_bar(painter, box_x, box_y + box_h + 3.0, box_w,
+                                  QRectF, Qt, QColor, QBrush, QPen)
 
     def render(self, painter, always_show_names: bool = False) -> None:
+        # One frame's worth of solved leg chains. Cleared here rather than
+        # grown forever, because the key includes foot positions that change
+        # every frame and would otherwise never be looked up again.
+        self._chain_points_cache.clear()
         render_mode = str(self.model.get("render_mode", "procedural")).lower()
         camouflage_strength = clamp(float(getattr(self, "_camouflage_strength", 0.0)), 0.0, 1.0)
         camouflage_opacity = clamp(1.0 - camouflage_strength * float(self.personality.get("camouflage_opacity_drop", 0.72)), 0.12, 1.0)
@@ -7396,6 +8457,10 @@ class Creature:
             except Exception:
                 painter.setOpacity(camouflage_opacity)
             camouflage_saved = True
+        # Before the body, so the legs walk over the ring rather than under it,
+        # and outside the tumble transform, because a marking on the ground does
+        # not spin with the spider.
+        self._draw_team_marker(painter)
         rolling = abs(self.roll_spin) > 1e-4
         if rolling:
             # Spin the whole creature (legs and body) about its centre for a

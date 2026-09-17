@@ -3,8 +3,10 @@ name: Windows CI
 on:
   push:
     branches: [main]
+  # Every pull request, not only those targeting main. Work is sequenced as a
+  # stack of small branches, and a pull request from one package branch onto
+  # another got no CI at all while this filtered on main.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -21,50 +23,29 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          # Matches the version developers use locally, so a failure here is
+          # reproducible on a workstation.
+          python-version: '3.13'
           cache: pip
 
       - name: Install dependencies
         shell: pwsh
         run: python -m pip install -r requirements.txt
 
-      - name: Validate source and data
+      # One runner, shared with the release workflow. It discovers the smoke
+      # tests rather than being handed a list that can drift out of date, and a
+      # forgotten list entry fails silently by simply not running anything.
+      - name: Run all checks
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $env:PYTHONPATH = Join-Path $PWD 'src'
-
-          python -m compileall -q src tools launcher.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          Get-ChildItem models -Recurse -Filter model.json -File | ForEach-Object {
-            python tools/validate_model.py $_.FullName
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-          Get-ChildItem presets -Filter *.json -File | ForEach-Object {
-            python tools/validate_preset.py $_.FullName
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+        run: python tools/run_all_checks.py
 
       - name: Build Windows executable smoke test
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m PyInstaller `
-            --noconfirm `
-            --clean `
-            --onefile `
-            --windowed `
-            --name DesktopBugCompanion `
-            --distpath ci-dist `
-            --workpath ci-build `
-            --paths src `
-            --add-data 'models;models' `
-            --add-data 'personalities;personalities' `
-            --add-data 'presets;presets' `
-            --hidden-import desktop_bug.engine `
-            launcher.py
+          python -m PyInstaller --noconfirm --clean `
+            --distpath ci-dist --workpath ci-build `
+            DesktopBugCompanion.spec
 
           if (-not (Test-Path -LiteralPath 'ci-dist/DesktopBugCompanion.exe')) {
             throw 'PyInstaller did not produce ci-dist/DesktopBugCompanion.exe'

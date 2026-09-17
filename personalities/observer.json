@@ -53,20 +53,5 @@
   "observe_social_preference": 0.68,
   "turn_rate_multiplier": 1.55,
   "acceleration_multiplier": 1.05,
-  "observe_strafe_alignment": 1.0,
-  "skills": [
-    "approach",
-    "wander",
-    "jump",
-    "roll",
-    "chase",
-    "observe",
-    "run_away",
-    "prepare_jump_attack",
-    "inspect",
-    "cuddle",
-    "social_play",
-    "zoomies",
-    "web_walk"
-  ]
+  "observe_strafe_alignment": 1.0
 }

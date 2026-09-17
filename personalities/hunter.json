@@ -50,20 +50,5 @@
   ],
   "hunt_catch_distance_mult": 2.25,
   "turn_rate_multiplier": 2.25,
-  "acceleration_multiplier": 1.8,
-  "skills": [
-    "approach",
-    "wander",
-    "jump",
-    "roll",
-    "chase",
-    "observe",
-    "run_away",
-    "prepare_jump_attack",
-    "inspect",
-    "cuddle",
-    "social_play",
-    "zoomies",
-    "web_walk"
-  ]
+  "acceleration_multiplier": 1.8
 }

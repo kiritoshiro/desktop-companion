@@ -64,20 +64,5 @@
   "camouflage_reveal_speed": 0.92,
   "camouflage_cursor_touch_padding": 0.12,
   "camouflage_social_touch_radius_mult": 1.15,
-  "camouflage_motion_visible_time": 1.15,
-  "skills": [
-    "approach",
-    "wander",
-    "jump",
-    "roll",
-    "chase",
-    "observe",
-    "run_away",
-    "prepare_jump_attack",
-    "inspect",
-    "cuddle",
-    "social_play",
-    "zoomies",
-    "web_walk"
-  ]
+  "camouflage_motion_visible_time": 1.15
 }

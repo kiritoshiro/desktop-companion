@@ -767,7 +767,6 @@ class Web:
             pen.setJoinStyle(Qt.RoundJoin)
             return pen
 
-        n = len(self.strands)
         for i, s in enumerate(self.strands):
             if not s.draw:
                 continue

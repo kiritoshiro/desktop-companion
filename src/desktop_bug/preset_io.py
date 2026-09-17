@@ -1,12 +1,33 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
-from .discovery import app_root
+from .discovery import is_shipped_preset, user_presets_dir
 from .skills import SKILL_BY_ID
+from .jobs import JOB_BY_ID
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_. -]+")
+
+
+def _validate_rgb_overrides(value, label: str) -> None:
+    """Validate an optional preset palette without tying it to one model."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    for key, rgb in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{label} keys must be non-empty strings")
+        if not isinstance(rgb, (list, tuple)) or len(rgb) != 3:
+            raise ValueError(f"{label}.{key} must be an RGB triplet")
+        for channel in rgb:
+            if isinstance(channel, bool):
+                raise ValueError(f"{label}.{key} channels must be numbers from 0 to 255")
+            try:
+                numeric = float(channel)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{label}.{key} channels must be numbers from 0 to 255") from exc
+            if not 0.0 <= numeric <= 255.0:
+                raise ValueError(f"{label}.{key} channels must be numbers from 0 to 255")
 
 
 def safe_preset_filename(name: str) -> str:
@@ -43,6 +64,41 @@ def validate_preset(data: dict) -> None:
             valid_moods = {"auto", "playful", "cuddly", "curious", "calm"}
             if not isinstance(settings["mood_mode"], str) or settings["mood_mode"].lower() not in valid_moods:
                 raise ValueError("Preset settings.mood_mode must be auto, playful, cuddly, curious, or calm")
+        if "teams" in settings and settings["teams"] is not None:
+            teams = settings["teams"]
+            if not isinstance(teams, dict):
+                raise ValueError("Preset settings.teams must be an object")
+            for team_id, entry in teams.items():
+                if not isinstance(team_id, str) or not team_id.strip():
+                    raise ValueError("Preset settings.teams keys must be team ids")
+                if isinstance(entry, str):
+                    continue  # a bare string is the team's name
+                if not isinstance(entry, dict):
+                    raise ValueError(f"Preset settings.teams.{team_id} must be an object or a name")
+                if "name" in entry and not isinstance(entry["name"], str):
+                    raise ValueError(f"Preset settings.teams.{team_id}.name must be text")
+                if "color" in entry and entry["color"] is not None:
+                    from .teams import parse_color
+                    if parse_color(entry["color"]) is None:
+                        raise ValueError(
+                            f"Preset settings.teams.{team_id}.color must be #rrggbb or [r, g, b]"
+                        )
+        if "team_relations" in settings and settings["team_relations"] is not None:
+            relations = settings["team_relations"]
+            if not isinstance(relations, dict):
+                raise ValueError("Preset settings.team_relations must be an object")
+            for left, row in relations.items():
+                if not isinstance(left, str) or not left.strip():
+                    raise ValueError("Preset settings.team_relations keys must be team names")
+                if not isinstance(row, dict):
+                    raise ValueError(f"Preset settings.team_relations.{left} must be an object")
+                for right, relation in row.items():
+                    if not isinstance(right, str) or not right.strip():
+                        raise ValueError(f"Preset settings.team_relations.{left} keys must be team names")
+                    if not isinstance(relation, str) or relation.strip().lower() not in ("friend", "neutral", "foe"):
+                        raise ValueError(
+                            f"Preset settings.team_relations.{left}.{right} must be friend, neutral, or foe"
+                        )
         if "flies" in settings and settings["flies"] is not None:
             flies = settings["flies"]
             if not isinstance(flies, dict):
@@ -77,6 +133,16 @@ def validate_preset(data: dict) -> None:
             raise ValueError(f"Slot {index + 1} model must be a non-empty string")
         if not isinstance(slot["personality"], str) or not slot["personality"].strip():
             raise ValueError(f"Slot {index + 1} personality must be a non-empty string")
+        if "slot_id" in slot and (not isinstance(slot["slot_id"], str) or not slot["slot_id"].strip()):
+            raise ValueError(f"Slot {index + 1} slot_id must be a non-empty string")
+        for team_key in ("team", "team_id"):
+            if team_key in slot and (not isinstance(slot[team_key], str) or not slot[team_key].strip()):
+                raise ValueError(f"Slot {index + 1} {team_key} must be a non-empty string")
+        if "job" in slot:
+            if not isinstance(slot["job"], str) or not slot["job"].strip():
+                raise ValueError(f"Slot {index + 1} job must be a non-empty string")
+            if slot["job"].strip().lower() not in JOB_BY_ID:
+                raise ValueError(f"Slot {index + 1} has unknown job: {slot['job']}")
         if "count_random" in slot and not isinstance(slot["count_random"], bool):
             raise ValueError(f"Slot {index + 1} count_random must be true or false")
         if "skills" in slot:
@@ -87,6 +153,19 @@ def validate_preset(data: dict) -> None:
                     raise ValueError(f"Slot {index + 1} skills must contain only strings")
                 if skill.strip().lower() not in SKILL_BY_ID:
                     raise ValueError(f"Slot {index + 1} has unknown skill: {skill}")
+        if "abilities" in slot:
+            if not isinstance(slot["abilities"], list):
+                raise ValueError(f"Slot {index + 1} abilities must be a list")
+            for ability in slot["abilities"]:
+                if not isinstance(ability, str):
+                    raise ValueError(f"Slot {index + 1} abilities must contain only strings")
+                skill = SKILL_BY_ID.get(ability.strip().lower())
+                if skill is None:
+                    raise ValueError(f"Slot {index + 1} has unknown ability: {ability}")
+                if skill.category != "Ability":
+                    raise ValueError(f"Slot {index + 1} entry is not an ability: {ability}")
+        if "colors" in slot:
+            _validate_rgb_overrides(slot["colors"], f"Slot {index + 1} colors")
         try:
             count = int(slot["count"])
         except Exception as exc:
@@ -104,13 +183,26 @@ def load_preset(path: Path) -> Dict:
 
 
 def save_preset(data: Dict, path: Path = None) -> Path:
+    """Write a preset the user owns, never one that shipped with the build.
+
+    The saved filename comes from the preset's *name*, so a preset called
+    ``Default`` used to be written to ``presets/Default.json`` -- the same file
+    as the shipped ``presets/default.json`` on a case-insensitive filesystem.
+    The first Save a user pressed silently replaced data that came with the
+    application. Saves now go to the user's own preset directory, which is read
+    before the shipped one, so their copy shadows it instead.
+    """
     validate_preset(data)
-    root = app_root()
-    presets_dir = root / "presets"
+    presets_dir = user_presets_dir()
     presets_dir.mkdir(parents=True, exist_ok=True)
     path = Path(path) if path else presets_dir / safe_preset_filename(data["name"])
     if not path.is_absolute():
-        path = root / path
+        path = presets_dir / path
+    if is_shipped_preset(path):
+        raise ValueError(
+            f"{path.name} ships with the application and is not writable. "
+            "Saved presets go to your own preset folder instead."
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2)

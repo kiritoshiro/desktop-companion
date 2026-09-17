@@ -31,9 +31,11 @@
   "hop_power": [0.85, 1.35],
   "hop_peak_multiplier": 1.7,
   "hop_duration_multiplier": 0.46,
-  "skills": [
+  "behaviours": [
     "wander",
     "jump",
     "run_away"
-  ]
+  ],
+  "abilities": [],
+  "include_common_abilities": false
 }

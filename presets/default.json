@@ -3,15 +3,71 @@
   "slots": [
     {
       "model": "tarantula",
-      "personality": "hunter",
-      "count": 4,
-      "count_random": true
+      "personality": "bold",
+      "count": 1,
+      "count_random": false,
+      "slot_id": "slot-0",
+      "team": "neutral",
+      "job": "scout",
+      "abilities": [
+        "web_walk"
+      ],
+      "colors": {
+        "highlight": [
+          185,
+          110,
+          112
+        ],
+        "leg_dark": [
+          2,
+          29,
+          9
+        ],
+        "leg_tip": [
+          0,
+          255,
+          255
+        ]
+      }
     },
     {
       "model": "plush_snow_hybrid_2",
-      "personality": "hunter",
+      "personality": "curious",
       "count": 1,
-      "count_random": false
+      "count_random": false,
+      "slot_id": "slot-1",
+      "team": "neutral",
+      "job": "webber",
+      "abilities": [
+        "web_walk"
+      ]
+    },
+    {
+      "model": "spider_fluffy_snow",
+      "personality": "balanced",
+      "count": 1,
+      "count_random": false,
+      "slot_id": "slot-3fe031e00ed1",
+      "team": "neutral",
+      "job": "hunter"
+    },
+    {
+      "model": "legendary_seraph_cloudweaver",
+      "personality": "balanced",
+      "count": 1,
+      "count_random": false,
+      "slot_id": "slot-f8390820264f",
+      "team": "neutral",
+      "job": "guard"
+    },
+    {
+      "model": "coppercurl_soft_tarantula",
+      "personality": "balanced",
+      "count": 1,
+      "count_random": false,
+      "slot_id": "slot-179e8d8c0663",
+      "team": "neutral",
+      "job": "builder"
     }
   ],
   "settings": {

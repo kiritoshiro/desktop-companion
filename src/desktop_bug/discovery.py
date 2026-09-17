@@ -1,7 +1,18 @@
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
+
+from .personality_profiles import (
+    ABILITY_BUNDLES,
+    BEHAVIOUR_PHASE_IDS,
+    MOVEMENT_PROFILES,
+    TEMPERAMENT_TRAIT_IDS,
+    annotate_personality,
+    canonical_personality_definitions,
+)
+from .skills import ABILITY_SKILL_IDS, BEHAVIOUR_SKILL_IDS, SKILL_BY_ID
 
 
 def app_root() -> Path:
@@ -54,6 +65,10 @@ def candidate_roots(root: Path = None) -> List[Path]:
     if root is not None:
         roots.append(Path(root))
 
+    # Anything the user saved comes first, so their own copy of a preset
+    # shadows the one that shipped rather than overwriting it.
+    roots.append(user_data_root())
+
     writable_root = app_root()
     roots.append(writable_root)
 
@@ -76,6 +91,109 @@ def candidate_roots(root: Path = None) -> List[Path]:
 def data_path(*parts: str) -> Path:
     """Return a writable path beside the project/executable."""
     return app_root().joinpath(*parts)
+
+
+def user_data_root() -> Path:
+    """Return the writable root for things the user creates.
+
+    Saving used to derive a filename from the preset's *name*, so a preset
+    called ``Default`` was written to ``presets/Default.json`` -- which on
+    Windows is the same file as the shipped ``presets/default.json``. A user's
+    first Save therefore overwrote data that ships with the build. User presets
+    now live beside the runtime state, which is writable, already excluded from
+    version control, and redirectable for tests.
+    """
+    return state_dir()
+
+
+def user_presets_dir() -> Path:
+    """Return the directory a user's own presets are written to."""
+    return user_data_root() / "presets"
+
+
+def shipped_presets_dirs() -> List[Path]:
+    """Return the preset directories that came with the build.
+
+    These are read-only as far as the application is concerned.
+    """
+    dirs: List[Path] = [app_root() / "presets"]
+    bundled = getattr(sys, "_MEIPASS", None)
+    if bundled:
+        dirs.append(Path(bundled) / "presets")
+    dirs.append(app_root() / "_internal" / "presets")
+    return _unique_paths(dirs)
+
+
+def is_shipped_preset(path) -> bool:
+    """Return whether a path names a preset that came with the build.
+
+    Compared case-insensitively, because the collision that caused this was
+    ``Default.json`` against ``default.json`` on a case-insensitive filesystem.
+    """
+    try:
+        candidate = Path(path).resolve()
+    except Exception:
+        candidate = Path(path)
+    for directory in shipped_presets_dirs():
+        try:
+            resolved = directory.resolve()
+        except Exception:
+            resolved = directory
+        if str(candidate.parent).casefold() == str(resolved).casefold():
+            return True
+    return False
+
+
+def resolve_preset_path(value) -> Path:
+    """Resolve a preset argument for *reading*, in source and frozen builds.
+
+    Reading and writing resolve differently and must not be confused. A read
+    searches every candidate root, including the directory a one-file build
+    extracts itself into, because that is where bundled presets live. A write
+    goes only to the writable root beside the project or executable, because
+    the extraction directory is temporary and is discarded when the app exits.
+
+    Resolving a relative path against the writable root alone is what made the
+    packaged executable crash on ``--preset presets/colony.json``: it looked
+    beside the ``.exe``, where a one-file build keeps no presets at all.
+
+    A path that cannot be found is returned unchanged rather than raised on, so
+    the caller reports the name the user actually typed.
+    """
+    path = Path(value)
+    if path.is_absolute():
+        return path
+
+    parts = path.parts
+    if not parts:
+        return find_data_file("presets", "default.json")
+
+    found = find_data_file(*parts)
+    if found.exists():
+        return found
+
+    # A bare name is almost certainly one of the presets rather than a file in
+    # the application root, so try that before giving up.
+    if len(parts) == 1:
+        bundled = find_data_file("presets", parts[0])
+        if bundled.exists():
+            return bundled
+
+    return found
+
+
+def state_dir() -> Path:
+    """Return the directory holding runtime state and session control files.
+
+    Defaults to ``state`` beside the project or executable.
+    ``DESKTOP_BUG_STATE_DIR`` overrides it, which the headless tests use so a
+    test run cannot rewrite a real player's saved spiders. Both the overlay and
+    the settings window resolve it here so they cannot disagree.
+    """
+    override = os.environ.get("DESKTOP_BUG_STATE_DIR", "").strip()
+    if override:
+        return Path(override)
+    return app_root() / "state"
 
 
 def data_dirs(folder_name: str, root: Path = None) -> List[Path]:
@@ -145,6 +263,73 @@ def validate_personality(data: dict, path: Path) -> Tuple[bool, str]:
     missing = [key for key in required if key not in data]
     if missing:
         return False, f"{path}: missing required personality field(s): {', '.join(missing)}"
+    for key in ("skills", "behaviours", "abilities", "ability_bundles"):
+        if key in data:
+            values = data[key]
+            if key == "skills" and values is None:
+                continue
+            if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+                return False, f"{path}: {key} must be a list of strings"
+            if key in ("skills", "behaviours", "abilities"):
+                allowed = SKILL_BY_ID
+                if key == "behaviours":
+                    allowed = {skill_id: SKILL_BY_ID[skill_id] for skill_id in BEHAVIOUR_SKILL_IDS}
+                elif key == "abilities":
+                    allowed = {skill_id: SKILL_BY_ID[skill_id] for skill_id in ABILITY_SKILL_IDS}
+                unknown = [value for value in values if value.strip().lower() not in allowed]
+                if unknown:
+                    return False, f"{path}: unknown {key} id(s): {', '.join(unknown)}"
+            elif key == "ability_bundles":
+                unknown = [value for value in values if value.strip().lower() not in ABILITY_BUNDLES]
+                if unknown:
+                    return False, f"{path}: unknown ability bundle(s): {', '.join(unknown)}"
+    if "include_common_abilities" in data and not isinstance(data["include_common_abilities"], bool):
+        return False, f"{path}: include_common_abilities must be true or false"
+    if "movement_profile" in data:
+        movement_profile = str(data["movement_profile"]).strip().lower()
+        if movement_profile not in MOVEMENT_PROFILES:
+            return False, f"{path}: unknown movement_profile: {data['movement_profile']}"
+    if "temperament" in data:
+        traits = data["temperament"]
+        if not isinstance(traits, dict):
+            return False, f"{path}: temperament must be an object of 0..10 values"
+        for trait_id in TEMPERAMENT_TRAIT_IDS:
+            if trait_id not in traits:
+                return False, f"{path}: temperament is missing {trait_id}"
+            value = traits[trait_id]
+            if isinstance(value, bool):
+                return False, f"{path}: temperament values must be numbers from 0 to 10"
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return False, f"{path}: temperament values must be numbers from 0 to 10"
+            if not 0.0 <= numeric <= 10.0:
+                return False, f"{path}: temperament value for {trait_id} must be between 0 and 10"
+    if "phase_scores" in data:
+        scores = data["phase_scores"]
+        if not isinstance(scores, dict):
+            return False, f"{path}: phase_scores must be an object of phase ids to 0..10 values"
+        for phase_id, value in scores.items():
+            if str(phase_id).strip().lower() not in BEHAVIOUR_PHASE_IDS:
+                return False, f"{path}: unknown behaviour phase: {phase_id}"
+            if isinstance(value, bool):
+                return False, f"{path}: phase_scores values must be numbers from 0 to 10"
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return False, f"{path}: phase_scores values must be numbers from 0 to 10"
+            if not 0.0 <= numeric <= 10.0:
+                return False, f"{path}: phase score for {phase_id} must be between 0 and 10"
+    if "phase_duration_multiplier" in data:
+        value = data["phase_duration_multiplier"]
+        if isinstance(value, bool):
+            return False, f"{path}: phase_duration_multiplier must be between 0.25 and 2.5"
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return False, f"{path}: phase_duration_multiplier must be between 0.25 and 2.5"
+        if not 0.25 <= numeric <= 2.5:
+            return False, f"{path}: phase_duration_multiplier must be between 0.25 and 2.5"
     return True, ""
 
 
@@ -183,6 +368,7 @@ def discover_personalities(root: Path = None) -> Tuple[Dict[str, dict], List[str
                 if not ok:
                     warnings.append(message)
                     continue
+                data = annotate_personality(data)
                 personality_id = data["id"]
                 if personality_id in personalities:
                     continue
@@ -190,6 +376,15 @@ def discover_personalities(root: Path = None) -> Tuple[Dict[str, dict], List[str
                 personalities[personality_id] = data
             except Exception as exc:
                 warnings.append(f"{path}: {exc}")
+    # The compact temperament catalog is code/data-driven rather than six more
+    # duplicate JSON files. Keep legacy files above so old ids remain valid,
+    # then add missing canonical choices for the new launch menu.
+    for personality_id, personality in canonical_personality_definitions().items():
+        if personality_id in personalities:
+            continue
+        data = annotate_personality(personality)
+        data["_path"] = "<built-in temperament catalog>"
+        personalities[personality_id] = data
     return personalities, warnings
 
 
@@ -201,9 +396,12 @@ def discover_presets(root: Path = None) -> List[Path]:
     seen_stems = set()
     for presets_dir in data_dirs("presets", root):
         for path in sorted(presets_dir.glob("*.json"), key=_newest_first):
-            # Avoid showing duplicate bundled presets when an editable copy exists.
-            if path.stem in seen_stems:
+            # Avoid showing duplicate bundled presets when an editable copy
+            # exists. Case-folded: a user's "Colony" and the shipped "colony"
+            # are one preset on Windows, and listing both is just confusing.
+            stem = path.stem.casefold()
+            if stem in seen_stems:
                 continue
-            seen_stems.add(path.stem)
+            seen_stems.add(stem)
             presets.append(path)
     return presets

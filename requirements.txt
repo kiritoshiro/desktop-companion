@@ -1,2 +1,5 @@
-PyQt5>=5.15
-pyinstaller>=6.0
+# Pinned exactly. A floating range meant a PyQt5 or PyInstaller release could
+# break the build with no change in this repository, and it let a developer's
+# environment differ from CI without either of them noticing.
+PyQt5==5.15.11
+pyinstaller==6.22.3

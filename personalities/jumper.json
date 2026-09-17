@@ -45,20 +45,5 @@
   ],
   "hop_peak_multiplier": 0.62,
   "hop_duration_multiplier": 0.72,
-  "acceleration_multiplier": 1.15,
-  "skills": [
-    "approach",
-    "wander",
-    "jump",
-    "roll",
-    "chase",
-    "observe",
-    "run_away",
-    "prepare_jump_attack",
-    "inspect",
-    "cuddle",
-    "social_play",
-    "zoomies",
-    "web_walk"
-  ]
+  "acceleration_multiplier": 1.15
 }

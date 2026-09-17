@@ -1,30 +1,52 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 import os
 import signal
 import sys
 from pathlib import Path
 
-from PyQt5.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt
+from PyQt5.QtCore import QElapsedTimer, QRect, QTimer, Qt
 from PyQt5.QtGui import QColor, QCursor, QGuiApplication, QIcon, QPainter, QPixmap, QRegion
 from PyQt5.QtWidgets import (
     QActionGroup,
     QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QMenu,
+    QPushButton,
+    QProgressBar,
+    QTabWidget,
+    QVBoxLayout,
     QSystemTrayIcon,
     QWidget,
 )
 
-from .discovery import app_root, find_data_file
+from . import __version__
+from .discovery import resolve_preset_path, state_dir
+from .logging_setup import configure_logging, get_logger, install_excepthook, log_path
+from .session_control import clear_stop_request, consume_stop_request
 from .manager import CreatureManager
 from .preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos
 from .desktop_environment import snapshot_desktop_surfaces
+from .frame_policy import FramePolicy
+from .profiling import hud_requested, profiler_from_env
 from .skills import SKILLS
+from .progression import ABILITY_TREE, ARMOR_CATALOG, normalize_team_id, xp_to_next_level
+from .teams import HOSTILITY_NOTE, team_label
+from .jobs import job_definition
+
+
+log = get_logger("engine")
 
 
 def _target_fps() -> float:
@@ -97,6 +119,304 @@ def virtual_screen_geometry() -> QRect:
     return rect
 
 
+class CreatureInspectorDialog(QDialog):
+    """Compact runtime inspector for one live spider."""
+
+    def __init__(self, window, creature):
+        super().__init__(window)
+        self.window = window
+        self.creature = creature
+        self.setWindowTitle(f"Inspect {creature.display_name}")
+        self.setMinimumWidth(440)
+        self.tabs = QTabWidget(self)
+        root = QVBoxLayout(self)
+        root.addWidget(self.tabs)
+
+        self.status_tab = QWidget()
+        status_layout = QVBoxLayout(self.status_tab)
+        self.status_labels = {}
+        form = QFormLayout()
+        for key, title in (("level", "Level"), ("job", "Job"), ("hp", "HP"), ("energy", "Energy"),
+                           ("armor", "Armor"), ("damage", "Damage"), ("team", "Team"),
+                           ("relations", "Relations")):
+            label = QLabel()
+            label.setWordWrap(True)
+            self.status_labels[key] = label
+            form.addRow(f"{title}:", label)
+        status_layout.addLayout(form)
+        self.xp_bar = QProgressBar()
+        self.xp_bar.setTextVisible(True)
+        status_layout.addWidget(QLabel("Experience"))
+        status_layout.addWidget(self.xp_bar)
+        self.pin_check = QCheckBox("Pin level and XP above the spider's name")
+        self.pin_check.toggled.connect(self._set_pin)
+        status_layout.addWidget(self.pin_check)
+        self.health_pin_check = QCheckBox("Pin the health bar above the spider")
+        self.health_pin_check.setToolTip(
+            "Keeps a small health bar on screen for this spider instead of only "
+            "showing it here. Nothing can damage a spider yet, so it stays full."
+        )
+        self.health_pin_check.toggled.connect(self._set_health_pin)
+        status_layout.addWidget(self.health_pin_check)
+        self.team_combo = QComboBox()
+        self.team_combo.setEditable(True)
+        # The teams this scene actually has, under the names their owner gave
+        # them, so a team picked before launch and a team picked here are
+        # recognisably the same group rather than two similar-looking ids.
+        self.team_combo.setToolTip(HOSTILITY_NOTE)
+        self._team_signature = None
+        self._refresh_team_choices()
+        # Commit on a chosen entry or a finished edit, never on every keystroke:
+        # ``currentTextChanged`` would assign (and persist) "h", "hu", "hun"…
+        # while the user is still typing "hunters".
+        self.team_combo.activated.connect(self._commit_team)
+        self.team_combo.lineEdit().editingFinished.connect(self._commit_team)
+        status_layout.addWidget(QLabel("Team assignment"))
+        status_layout.addWidget(self.team_combo)
+        team_note = QLabel(HOSTILITY_NOTE)
+        team_note.setWordWrap(True)
+        team_note.setStyleSheet("color: #6a7180;")
+        status_layout.addWidget(team_note)
+        status_layout.addWidget(QLabel("Relationship with other spiders"))
+        self.relations_layout = QVBoxLayout()
+        status_layout.addLayout(self.relations_layout)
+        # Keep interactive controls stable between live-stat refreshes. Reusing
+        # the combo boxes is important: deleting a combo while its popup is open
+        # makes the menu disappear on the next 400 ms refresh tick.
+        self._relation_signature = None
+        self._relation_controls = {}
+        self._abilities_signature = None
+        self._inventory_signature = None
+        self.tabs.addTab(self.status_tab, "Status")
+
+        self.abilities_tab = QWidget()
+        self.abilities_layout = QVBoxLayout(self.abilities_tab)
+        self.tabs.addTab(self.abilities_tab, "Skill tree")
+
+        self.inventory_tab = QWidget()
+        self.inventory_layout = QVBoxLayout(self.inventory_tab)
+        self.tabs.addTab(self.inventory_tab, "Inventory & armor")
+
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_timer.start(400)
+        self.refresh()
+
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            elif item.layout() is not None:
+                child = item.layout()
+                CreatureInspectorDialog._clear_layout(child)
+                child.deleteLater()
+
+    def _set_pin(self, enabled: bool) -> None:
+        self.window._announce(self.window.manager.set_creature_level_pin(self.creature, enabled))
+
+    def _set_health_pin(self, enabled: bool) -> None:
+        self.window._announce(
+            self.window.manager.set_creature_health_pin(self.creature, enabled))
+
+    def _team_profiles(self) -> dict:
+        return getattr(self.window.manager, "team_profiles", {}) or {}
+
+    def _refresh_team_choices(self) -> None:
+        """Offer every named team, plus whatever this spider is already on.
+
+        Rebuilt only when the set of teams changes, because replacing the items
+        of a combo while its popup is open closes the popup, and this dialog
+        refreshes itself every 400 ms.
+        """
+        profiles = self._team_profiles()
+        current = normalize_team_id(getattr(self.creature.progression, "team_id", "neutral"))
+        signature = (tuple(sorted((tid, p.name) for tid, p in profiles.items())), current)
+        if signature == getattr(self, "_team_signature", None):
+            return
+        self._team_signature = signature
+        self.team_combo.blockSignals(True)
+        self.team_combo.clear()
+        self.team_combo.addItem("Neutral / solo", "neutral")
+        for team_id in sorted(profiles):
+            self.team_combo.addItem(profiles[team_id].name, team_id)
+        if current != "neutral" and self.team_combo.findData(current) < 0:
+            self.team_combo.addItem(team_label(current, profiles), current)
+        index = self.team_combo.findData(current)
+        self.team_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.team_combo.blockSignals(False)
+
+    def _commit_team(self, *_args) -> None:
+        text = str(self.team_combo.currentText()).strip()
+        if not self.isVisible() or not text:
+            return
+        # A chosen entry carries its id. Typed text is a name, and a name the
+        # scene already uses means that team rather than a new one with the same
+        # label; anything else becomes a new team id derived from what was typed.
+        index = self.team_combo.findText(text)
+        if index >= 0 and self.team_combo.itemData(index) is not None:
+            team = normalize_team_id(self.team_combo.itemData(index))
+        else:
+            team = normalize_team_id(text.replace(" ", "_"))
+        if team == normalize_team_id(self.creature.progression.team_id):
+            return
+        self.window._announce(self.window.manager.set_creature_team(self.creature, team))
+        self._team_signature = None
+        self._refresh_team_choices()
+
+    def _set_relation(self, other, relation: str) -> None:
+        self.window._announce(self.window.manager.set_creature_relation(self.creature, other, relation))
+        self.refresh()
+
+    def _refresh_relations(self) -> None:
+        others = [
+            other for other in self.window.manager.creatures
+            if other is not self.creature
+        ]
+        signature = tuple(id(other) for other in others)
+        if signature != self._relation_signature:
+            self._clear_layout(self.relations_layout)
+            self._relation_controls = {}
+            for other in others:
+                row = QHBoxLayout()
+                label = QLabel(other.display_name)
+                row.addWidget(label, 1)
+                combo = QComboBox()
+                combo.addItems(["friend", "neutral", "foe"])
+                combo.currentTextChanged.connect(
+                    lambda relation, target=other: self._set_relation(target, relation)
+                )
+                row.addWidget(combo)
+                self.relations_layout.addLayout(row)
+                self._relation_controls[id(other)] = (other, label, combo)
+            self._relation_signature = signature
+
+        for other in others:
+            entry = self._relation_controls.get(id(other))
+            if entry is None:
+                continue
+            _stored_other, label, combo = entry
+            label.setText(other.display_name)
+            relation = self.creature.relation_to(other)
+            # Do not disturb an actively opened popup. The selected value will
+            # be synchronized on the next tick after the user closes it.
+            if combo.currentText() != relation and not combo.view().isVisible():
+                combo.blockSignals(True)
+                combo.setCurrentText(relation)
+                combo.blockSignals(False)
+
+    def _unlock(self, ability_id: str) -> None:
+        self.window._announce(self.window.manager.unlock_creature_ability(self.creature, ability_id))
+        self.refresh()
+
+    def _equip(self, item_id: str) -> None:
+        self.window._announce(self.window.manager.equip_creature_item(self.creature, item_id))
+        self.refresh()
+
+    def _add_item(self, item_id: str) -> None:
+        if self.creature.add_inventory_item(item_id):
+            self.window.manager.save_runtime_state()
+            self.window._announce("Added armor to this spider's inventory.")
+        self.refresh()
+
+    def _unequip(self, slot: str) -> None:
+        self.window._announce(self.window.manager.unequip_creature_item(self.creature, slot))
+        self.refresh()
+
+    def refresh(self) -> None:
+        if not self.creature or self.creature not in self.window.manager.creatures:
+            self.close()
+            return
+        snapshot = self.creature.progression_snapshot()
+        self.status_labels["level"].setText(f"{snapshot['level']} / 30  ·  {snapshot['skill_points']} point(s) available")
+        self.status_labels["job"].setText(job_definition(self.creature.job_id).display_name)
+        self.status_labels["hp"].setText(f"{snapshot['hp']:.0f} / {snapshot['max_hp']:.0f}")
+        self.status_labels["energy"].setText(f"{snapshot['energy']:.0f} / {snapshot['max_energy']:.0f}")
+        self.status_labels["armor"].setText(f"{snapshot['armor']:.1f}")
+        self.status_labels["damage"].setText(f"{snapshot['damage']:.1f}")
+        self.status_labels["team"].setText(
+            team_label(self.creature.progression.team_id, self._team_profiles()))
+        relations = []
+        for other in self.window.manager.creatures:
+            if other is self.creature:
+                continue
+            relations.append(f"{other.display_name}: {self.creature.relation_to(other)}")
+        self.status_labels["relations"].setText(", ".join(relations) if relations else "No other spiders")
+        self._refresh_relations()
+        xp_max = xp_to_next_level(self.creature.level)
+        self.xp_bar.setMaximum(max(1, xp_max))
+        self.xp_bar.setValue(min(xp_max, snapshot["xp"] if self.creature.level < 30 else xp_max))
+        self.xp_bar.setFormat("Level cap reached" if self.creature.level >= 30 else f"{snapshot['xp']} / {xp_max} XP")
+        self.pin_check.blockSignals(True)
+        self.pin_check.setChecked(self.creature.level_label_pinned)
+        self.pin_check.blockSignals(False)
+        self.health_pin_check.blockSignals(True)
+        self.health_pin_check.setChecked(self.creature.health_label_pinned)
+        self.health_pin_check.blockSignals(False)
+        self._refresh_team_choices()
+        self._refresh_abilities()
+        self._refresh_inventory()
+
+    def _refresh_abilities(self) -> None:
+        signature = (
+            self.creature.level,
+            self.creature.progression.skill_points,
+            tuple(self.creature.progression.unlocked_abilities),
+        )
+        if signature == self._abilities_signature:
+            return
+        self._clear_layout(self.abilities_layout)
+        for node in ABILITY_TREE:
+            row = QHBoxLayout()
+            label = QLabel(f"{node.name} — {node.description}")
+            label.setWordWrap(True)
+            label.setToolTip(node.description)
+            unlocked = node.id in self.creature.progression.unlocked_abilities
+            button = QPushButton("Unlocked" if unlocked else f"Unlock ({node.cost})")
+            button.setEnabled(not unlocked and self.creature.progression.can_unlock(node.id))
+            button.clicked.connect(lambda checked=False, aid=node.id: self._unlock(aid))
+            row.addWidget(label, 1)
+            row.addWidget(button)
+            self.abilities_layout.addLayout(row)
+        self.abilities_layout.addStretch(1)
+        self._abilities_signature = signature
+
+    def _refresh_inventory(self) -> None:
+        signature = (
+            tuple(self.creature.progression.inventory),
+            tuple(sorted(self.creature.progression.equipped.items())),
+        )
+        if signature == self._inventory_signature:
+            return
+        self._clear_layout(self.inventory_layout)
+        equipped = self.creature.progression.equipped
+        for item in ARMOR_CATALOG:
+            owned = item.id in self.creature.progression.inventory
+            equipped_here = equipped.get(item.slot) == item.id
+            row = QHBoxLayout()
+            label = QLabel(f"{item.name} [{item.slot}] — {item.description}")
+            label.setWordWrap(True)
+            action = QPushButton("Unequip" if equipped_here else ("Equip" if owned else "Add"))
+            if equipped_here:
+                action.clicked.connect(lambda checked=False, slot=item.slot: self._unequip(slot))
+            elif owned:
+                action.clicked.connect(lambda checked=False, iid=item.id: self._equip(iid))
+            else:
+                action.clicked.connect(lambda checked=False, iid=item.id: self._add_item(iid))
+            row.addWidget(label, 1)
+            row.addWidget(action)
+            self.inventory_layout.addLayout(row)
+        self.inventory_layout.addWidget(QLabel("Equipped: " + (", ".join(f"{slot}={item}" for slot, item in equipped.items()) or "nothing")))
+        self.inventory_layout.addStretch(1)
+        self._inventory_signature = signature
+
+    def closeEvent(self, event):  # noqa: N802 - Qt API name
+        self.refresh_timer.stop()
+        super().closeEvent(event)
+
+
 class OverlayWindow(QWidget):
     def __init__(self, preset_path: Path):
         super().__init__(None)
@@ -121,7 +441,7 @@ class OverlayWindow(QWidget):
         self.setGeometry(self.geometry_rect)
         self.manager = CreatureManager(preset_path, self.width(), self.height())
         for warning in self.manager.warnings:
-            print("Warning:", warning)
+            log.warning("%s", warning)
 
         # Live-reload bookkeeping: remember the preset this overlay was launched
         # from and its last-seen modification time, so edits saved by the
@@ -132,6 +452,13 @@ class OverlayWindow(QWidget):
             self._last_preset_mtime = self._preset_path.stat().st_mtime
         except OSError:
             self._last_preset_mtime = 0.0
+
+        # Session control: a stop request left by a crashed session would make
+        # this overlay quit as soon as it finished loading, so clear it first.
+        self._state_dir = state_dir()
+        self._log_path = log_path(self._state_dir)
+        self._stop_requested = False
+        clear_stop_request(self._state_dir)
 
         self.elapsed = QElapsedTimer()
         self.elapsed.start()
@@ -149,7 +476,17 @@ class OverlayWindow(QWidget):
         # cage repaints its whole old area and leaves no translucent ghost behind.
         self._cage_fp_prev = {}
 
+        # Measurement, off unless DESKTOP_BUG_PROFILE asks for it. Held on the
+        # window so the tray menu and the HUD can read the same numbers the
+        # manager is recording into.
+        self.profiler = profiler_from_env()
+        self.show_profile_hud = hud_requested()
+
         self.current_fps = TARGET_FPS
+        # A fullscreen window in front means nothing the overlay draws can be
+        # seen, and a laptop on battery should not be paying for a pet at 60 Hz.
+        # The policy owns the ceiling; the tray menu sets the target it works from.
+        self.frame_policy = FramePolicy(TARGET_FPS)
         self.timer = QTimer(self)
         self.timer.setTimerType(Qt.PreciseTimer)
         self.timer.timeout.connect(self.tick)
@@ -167,8 +504,17 @@ class OverlayWindow(QWidget):
         QTimer.singleShot(250, lambda: apply_click_through(self))
 
     def set_target_fps(self, fps: float) -> None:
-        """Change animation FPS at runtime from the tray menu."""
-        self.current_fps = max(10.0, min(60.0, float(fps)))
+        """Change animation FPS at runtime from the tray menu.
+
+        This sets the ceiling rather than the rate: if a fullscreen window is in
+        front or the machine is on battery, the policy still runs slower than
+        what was asked for, and restores this rate when that stops being true.
+        """
+        target = max(10.0, min(60.0, float(fps)))
+        self._apply_fps(self.frame_policy.set_target_fps(target))
+
+    def _apply_fps(self, fps: float) -> None:
+        self.current_fps = max(1.0, float(fps))
         self.timer.setInterval(_frame_interval_ms_for_fps(self.current_fps))
         # Reset timing so switching FPS does not produce one large simulation step.
         self.last_ms = self.elapsed.elapsed()
@@ -329,9 +675,16 @@ class OverlayWindow(QWidget):
         return super().nativeEvent(event_type, message)
 
     def tick(self) -> None:
+        self.profiler.begin_frame()
         current_ms = self.elapsed.elapsed()
         dt = max(0.001, min(0.05, (current_ms - self.last_ms) / 1000.0))
         self.last_ms = current_ms
+        # Ask, a couple of times a second, whether this machine still deserves
+        # the full frame rate. `poll` returns a number only when it changed.
+        decided = self.frame_policy.poll(current_ms, exclude_hwnd=self._own_hwnd())
+        if decided is not None:
+            log.info("frame rate now %.0f FPS (%s)", decided, self.frame_policy.reason)
+            self._apply_fps(decided)
         # Checking monitor geometry every frame is unnecessary work; it only
         # needs to react when displays are added/removed or resolution changes.
         if current_ms - self._last_screen_check_ms >= SCREEN_GEOMETRY_CHECK_MS:
@@ -345,9 +698,14 @@ class OverlayWindow(QWidget):
                 self._request_full_repaint()
         if current_ms - self._last_desktop_surface_check_ms >= DESKTOP_SURFACE_CHECK_MS:
             self._last_desktop_surface_check_ms = current_ms
-            self._refresh_desktop_surfaces()
+            # Timed separately because it still runs on the frame thread; DC-13
+            # is the package that moves it off, and this is the evidence for it.
+            with self.profiler.section("desktop-probe"):
+                self._refresh_desktop_surfaces()
         if current_ms - self._last_preset_check_ms >= PRESET_WATCH_MS:
             self._last_preset_check_ms = current_ms
+            if self._check_stop_request():
+                return
             self._check_preset_reload()
         global_pos = QCursor.pos()
         local = global_pos - self.geometry_rect.topLeft()
@@ -374,7 +732,18 @@ class OverlayWindow(QWidget):
             set_cursor_pos(int(round(origin.x() + desired[0])),
                            int(round(origin.y() + desired[1])))
         self._update_hover_and_cursor(mx, my)
-        self.request_repaint()
+        with self.profiler.section("repaint-region"):
+            self.request_repaint()
+        # Painting happens after this returns, when Qt delivers the paint event,
+        # so it records a sample of its own rather than joining this frame.
+        self.profiler.end_frame()
+
+    def _own_hwnd(self):
+        """This overlay's window handle, or None where there is not one."""
+        try:
+            return int(self.winId())
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Hover labels and cursor feedback
@@ -505,9 +874,17 @@ class OverlayWindow(QWidget):
         if fly_world is not None:
             for fp in fly_world.dirty_rects():
                 region += self._rect_from_xywh(fp)
+        if self.show_profile_hud:
+            # The HUD changes every frame, so its panel has to be exposed every
+            # frame or the old numbers stay on the backing store underneath.
+            region += self._hud_rect()
         return region
 
     def paintEvent(self, event):  # noqa: N802 - Qt API name
+        with self.profiler.section("paint"):
+            self._paint(event)
+
+    def _paint(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         # Clip to the exposed region so the manager can cull off-region spiders
@@ -531,7 +908,45 @@ class OverlayWindow(QWidget):
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
         self.manager.render(painter)
+        if self.show_profile_hud:
+            self._draw_profile_hud(painter)
         painter.end()
+
+    # The HUD is a debugging aid, not a feature: it only exists while
+    # DESKTOP_BUG_PROFILE is set, and it is what makes a claim about frame cost
+    # checkable while you watch the overlay rather than only in a benchmark.
+    HUD_ORIGIN = (24, 24)
+    HUD_LINE_HEIGHT = 15
+    HUD_WIDTH = 260
+    # Room for the header line plus every section the HUD will show.
+    HUD_MAX_LINES = 9
+
+    def _hud_rect(self) -> QRect:
+        left, top = self.HUD_ORIGIN
+        return QRect(left - 8, top - 8, self.HUD_WIDTH,
+                     self.HUD_LINE_HEIGHT * self.HUD_MAX_LINES + 14)
+
+    def _hud_header(self) -> str:
+        return (f"{len(self.manager.creatures)} spiders @ {self.current_fps:.0f} FPS"
+                f" ({self.frame_policy.reason})")
+
+    def _draw_profile_hud(self, painter) -> None:
+        lines = self.profiler.hud_lines()
+        if not lines:
+            return
+        lines = [self._hud_header()] + lines
+        left, top = self.HUD_ORIGIN
+        painter.save()
+        painter.setClipping(False)
+        painter.fillRect(self._hud_rect(), QColor(0, 0, 0, 170))
+        font = painter.font()
+        font.setFamily("Consolas")
+        font.setPointSizeF(8.5)
+        painter.setFont(font)
+        painter.setPen(QColor(210, 255, 210))
+        for i, line in enumerate(lines):
+            painter.drawText(left, top + 4 + self.HUD_LINE_HEIGHT * (i + 1), line)
+        painter.restore()
 
     # ------------------------------------------------------------------
     # Right-click: name spiders and manage cages
@@ -552,6 +967,14 @@ class OverlayWindow(QWidget):
         creature = self.manager.creature_at(mx, my)
 
         if creature is not None:
+            inspect = menu.addAction("Inspect progression, inventory, and stats…")
+            inspect.setToolTip("View level, XP, skill tree, armor, health, energy, and team relations.")
+            inspect.triggered.connect(lambda: self._show_inspector(creature))
+            pin = menu.addAction("Pin level above name")
+            pin.setCheckable(True)
+            pin.setChecked(creature.level_label_pinned)
+            pin.triggered.connect(lambda enabled, c=creature: self._announce(self.manager.set_creature_level_pin(c, enabled)))
+            menu.addSeparator()
             current = creature.name
             if current:
                 rename = menu.addAction(f"Rename \u201c{current}\u201d\u2026")
@@ -591,6 +1014,16 @@ class OverlayWindow(QWidget):
         menu.exec_(global_pos)
         apply_click_through(self)
 
+    def _show_inspector(self, creature) -> None:
+        dialog = CreatureInspectorDialog(self, creature)
+        # The dialog is parented to the overlay, so Python dropping the local
+        # reference does not destroy it. Without this, every inspector opened
+        # during a session stays alive as a hidden child widget.
+        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        dialog.exec_()
+        self._request_full_repaint()
+        apply_click_through(self)
+
     def _prompt_name(self, creature) -> None:
         text, ok = QInputDialog.getText(
             self,
@@ -615,8 +1048,56 @@ class OverlayWindow(QWidget):
         self._request_full_repaint()
         apply_click_through(self)
 
+    def _notify_crash(self, summary: str) -> None:
+        """Tell the user something broke, since a windowed build shows nothing.
+
+        Deliberately quiet about the detail: the tray balloon names the failure
+        and points at the log, which is the thing worth sending on.
+        """
+        tray = getattr(self, "_tray", None)
+        if tray is None:
+            return
+        where = getattr(self, "_log_path", None)
+        detail = f"{summary}\n\nDetails were written to the log." if where is None else f"{summary}\n\nSee {where}"
+        try:
+            tray.showMessage("Desktop Bug Companion hit a problem", detail, QSystemTrayIcon.Warning, 6000)
+        except Exception:
+            log.debug("Could not show the crash notification", exc_info=True)
+
     def _request_full_repaint(self) -> None:
         self._full_repaint_pending = True
+
+    def _check_stop_request(self) -> bool:
+        """Save and quit if the settings window asked the overlay to stop.
+
+        This is the path that used to be a bare ``TerminateProcess``, which
+        killed the overlay before anything could be written. Returns whether a
+        stop was handled, so the caller can skip the rest of the frame.
+        """
+        if self._stop_requested:
+            return True
+        if not consume_stop_request(self._state_dir):
+            return False
+        self._stop_requested = True
+        self.timer.stop()
+        # Save here rather than relying only on aboutToQuit, so the state is on
+        # disk even if the event loop never gets to shut down cleanly.
+        try:
+            self.manager.save_runtime_state()
+        except Exception:
+            log.exception("Could not save runtime state while stopping")
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+        return True
+
+    def closeEvent(self, event):  # noqa: N802 - Qt API name
+        # Closing the window is another exit that must not lose progress.
+        try:
+            self.manager.save_runtime_state()
+        except Exception:
+            log.exception("Could not save runtime state while closing")
+        super().closeEvent(event)
 
     def _check_preset_reload(self) -> None:
         """Reload the launched preset if its file changed, applying edits live."""
@@ -635,13 +1116,29 @@ class OverlayWindow(QWidget):
         self._last_preset_mtime = mtime
         try:
             message = self.manager.reload_from_preset_data(data)
-        except Exception as exc:
-            print("Live reload failed:", exc)
+        except Exception:
+            log.exception("Live reload of %s failed", self._preset_path)
             return
         for warning in self.manager.warnings:
-            print("Warning:", warning)
-        print(message)
+            log.warning("%s", warning)
+        log.info("%s", message)
         self._request_full_repaint()
+
+
+def _install_qt_message_handler() -> None:
+    """Send Qt's own warnings to the log instead of a console nobody sees."""
+    from PyQt5.QtCore import QtCriticalMsg, QtFatalMsg, QtWarningMsg, qInstallMessageHandler
+
+    qt_log = get_logger("qt")
+    levels = {QtWarningMsg: logging.WARNING, QtCriticalMsg: logging.ERROR, QtFatalMsg: logging.CRITICAL}
+
+    def handler(mode, context, message):
+        qt_log.log(levels.get(mode, logging.DEBUG), "%s", message)
+
+    try:
+        qInstallMessageHandler(handler)
+    except Exception:
+        qt_log.debug("Could not install the Qt message handler", exc_info=True)
 
 
 def _fallback_tray_icon() -> QIcon:
@@ -699,7 +1196,9 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     for label, fps in fps_options:
         action = performance_menu.addAction(label)
         action.setCheckable(True)
-        action.setChecked(abs(window.current_fps - fps) <= 2.0)
+        # Check the rate the user chose, not the one the policy may have
+        # throttled to, so a fullscreen game does not appear to move the tick.
+        action.setChecked(abs(window.frame_policy.target_fps - fps) <= 2.0)
         fps_group.addAction(action)
         action.triggered.connect(lambda checked=False, f=fps, text=label: (window.set_target_fps(f), announce(f"Performance set to {text}.")))
     add_note(performance_menu, "Tip: fewer/lower-size spiders matter more than FPS.")
@@ -887,26 +1386,41 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the transparent Desktop Bug Companion overlay")
-    parser.add_argument("--preset", default=str(find_data_file("presets", "default.json")), help="Path to preset JSON")
+    parser.add_argument("--preset", default="presets/default.json", help="Path to preset JSON")
+    parser.add_argument("--verbose", action="store_true", help="Log debug detail as well")
     args = parser.parse_args(argv)
+
+    # Before anything that can fail, so a startup problem is recorded rather
+    # than lost: a windowed build has no console to print it to.
+    written_to = configure_logging(state_dir(), logging.DEBUG if args.verbose else logging.INFO)
+    log.info("Desktop Bug Companion %s overlay starting (frozen=%s)", __version__, getattr(sys, "frozen", False))
+    if written_to is None:
+        log.warning("No log file could be opened under %s", state_dir())
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
-    preset = Path(args.preset)
-    if not preset.is_absolute():
-        preset = app_root() / preset
+    # Must search the bundled data too. A one-file build keeps its presets in
+    # the directory it extracts itself into, not beside the executable.
+    preset = resolve_preset_path(args.preset)
     window = OverlayWindow(preset)
     window.show()
     apply_click_through(window)
+    app.aboutToQuit.connect(window.manager.save_runtime_state)
     tray = create_tray(app, window)
     # Keep a reference alive.
     window._tray = tray
+
+    # The tray does not exist until now, so the notifier finds it lazily; a
+    # crash before this point still reaches the log.
+    install_excepthook(notify=window._notify_crash)
+    _install_qt_message_handler()
+    log.info("Overlay ready: preset=%s log=%s", preset, written_to)
 
     # Let Ctrl+C work in development consoles.
     try:
         signal.signal(signal.SIGINT, lambda *_: app.quit())
     except Exception:
-        pass
+        log.debug("Could not install a SIGINT handler", exc_info=True)
     return app.exec_()
 
 

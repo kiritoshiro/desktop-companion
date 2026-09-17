@@ -1,0 +1,30 @@
+{
+  "machine": "AMD64|AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD|32 cores|py3.13",
+  "note": "DC-35: after caching the gait tuning, heading basis, palette colours, leg reach and the per-frame leg chain solve",
+  "screen": [
+    2560,
+    1440
+  ],
+  "runs": {
+    "1": {
+      "mean_ms": 1.681,
+      "p95_ms": 2.15,
+      "repaint_fraction_mean": 0.0156
+    },
+    "5": {
+      "mean_ms": 8.37,
+      "p95_ms": 8.975,
+      "repaint_fraction_mean": 0.0872
+    },
+    "10": {
+      "mean_ms": 17.04,
+      "p95_ms": 17.748,
+      "repaint_fraction_mean": 0.1642
+    },
+    "20": {
+      "mean_ms": 34.254,
+      "p95_ms": 35.405,
+      "repaint_fraction_mean": 0.2134
+    }
+  }
+}
