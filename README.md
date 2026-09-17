@@ -222,7 +222,7 @@ The settings UI opens first. Choose model, personality, count, save/load a prese
 - **Job** is separate from temperament and describes colony work. Choose No job, Hunter, Builder, Guard, Scout, or Web tender. Builders establish and upgrade a visible shared team base; Guards patrol it and raise an alert when a declared foe enters its perimeter. Jobs do not silently change personality values.
 - **Abilities** opens a per-slot checklist of true capabilities. A fresh slot starts with the temperament's common abilities plus any job capability, and changing temperament/job updates those defaults unless you have edited the list yourself.
 - **Colors** opens a per-slot RGB palette editor. Pick body, leg, highlight, eye, band, shadow, and tip colors; reset any slot to the selected model's defaults. The override is saved in the preset and applies to every creature spawned from that slot.
-- **Team** assigns a launch-time team to the whole slot. Spiders sharing a non-neutral team are friends by default; specific friend/neutral/foe overrides remain available in the right-click inspector after launch.
+- **Team** assigns a launch-time team to the whole slot, chosen by the name you gave it. Spiders sharing a team are friends by default, and the **Teams** panel below the table is where teams are named, coloured, and given a stance towards each other. Specific friend/neutral/foe overrides remain available in the right-click inspector after launch. Marking teams as foes does not create combat: a Guard alerts and intercepts, and nothing takes damage.
 - **Size** offers Tiny, Small, Normal, Large, and Huge launch sizes.
 - **Draggable / interferable** toggles whether spiders can be grabbed. When unchecked, clicks pass through spider pixels too.
 
@@ -250,25 +250,67 @@ inventory contains spider-specific slots such as carapace, abdomen, legs,
 pedipalps, and head; equipment gives derived bonuses and adds restrained visual
 armor accents. The inspector also lets you assign a team and set a symmetric
 friend/neutral/foe relationship with another spider. Relations are descriptive
-until a future combat mode explicitly consumes them, so ordinary walking,
-feeding, social play, and dragging cannot cause damage. A Guard does read them:
-it raises an alert when a spider it considers a foe enters its base perimeter.
+until a future combat mode explicitly consumes them, so nothing a spider does
+can cause damage. A Guard does read them: it raises an alert when a spider it
+considers a foe enters its base perimeter, and moves to intercept it.
 
-Teams can be hostile to each other, not only friendly among themselves.
-Spiders on the same team are friends, two ordinary teams are unrelated, and
-**Rivals** is hostile to every other named team by default, so choosing it
-means something without editing relations pair by pair. A preset can declare
-any other stance in `settings.team_relations`, which is read in both
-directions:
+### There is no combat yet, and "foes" does not create one
+
+This is worth stating plainly, because the words invite the wrong expectation.
+Marking two teams as foes means **a Guard notices an intruder near its base,
+raises an alert and moves to intercept**. Nothing takes damage, no spider can be
+hurt, and no fight can start. Health, armour and damage exist as numbers on the
+inspector and are not consumed by anything. Combat is a later piece of work.
+
+### Naming your own teams
+
+A team has a name you choose and a colour. The settings window has a **Teams**
+panel: every team your slots use appears there with a colour swatch, an editable
+name and how many spiders are on it. "New team..." in a slot's team picker
+creates one from a name you type.
+
+The name is what you see everywhere -- the slot picker, the preset summary and
+the right-click inspector -- while the id underneath it is what presets and saved
+state refer to, so renaming a team never moves a spider off it. Ids are
+case-folded, so `Porch guard` and `porch guard` are the same team rather than two.
+
+The colour is visible on the desktop, which is the point: a base ring is drawn in
+its team's colour, each member wears a small ring of it on the ground, and a
+hovered spider's name label is edged in it. A preset with two teams now looks
+like a preset with two teams.
+
+```json
+"teams": {
+  "pack_a": { "name": "Home colony", "color": "#4fa3d1" },
+  "rivals": { "name": "Intruders",  "color": "#d1534f" }
+}
+```
+
+A team with no entry still works: it gets a name derived from its id and a colour
+derived from it too, so an older preset keeps running and still looks right.
+
+### What stands between two teams
+
+Spiders on the same team are friends and two ordinary teams simply ignore each
+other. **Rivals** is the exception: it is hostile to every other named team
+unless something says otherwise, so choosing it means something without editing
+relations pair by pair.
+
+The Teams panel shows every pair of teams and what stands between them, so this
+is a choice you make while setting up rather than a block of JSON you discover
+afterwards. It is stored in `settings.team_relations`, one direction per pair,
+and read in both:
 
 ```json
 "team_relations": { "pack_a": { "rivals": "foe" } }
 ```
 
+Choosing **Ignore each other** for a pair is recorded rather than dropped, so it
+can override the Rivals default rather than being restored on the next launch.
 A friend/neutral/foe choice made in the right-click inspector still outranks
-whatever the teams say. Before this existed a Guard had nothing to react to,
-because two different teams were merely unrelated, and the shipped **Colony**
-preset could not demonstrate the behaviour it advertises.
+whatever the teams say. Before any of this existed a Guard had nothing to react
+to, because two different teams were merely unrelated, and the shipped
+**Colony** preset could not demonstrate the behaviour it advertises.
 
 Runtime state is saved atomically in `state/creatures.json` beside the project or
 EXE. It stores level, XP, talents, inventory, equipment, names, team, relations,
@@ -468,6 +510,7 @@ DesktopBugCompanion/
       runtime_state.py
       session_control.py
       skills.py
+      teams.py
       webs.py
 
   models/

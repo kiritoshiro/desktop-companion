@@ -64,6 +64,25 @@ def validate_preset(data: dict) -> None:
             valid_moods = {"auto", "playful", "cuddly", "curious", "calm"}
             if not isinstance(settings["mood_mode"], str) or settings["mood_mode"].lower() not in valid_moods:
                 raise ValueError("Preset settings.mood_mode must be auto, playful, cuddly, curious, or calm")
+        if "teams" in settings and settings["teams"] is not None:
+            teams = settings["teams"]
+            if not isinstance(teams, dict):
+                raise ValueError("Preset settings.teams must be an object")
+            for team_id, entry in teams.items():
+                if not isinstance(team_id, str) or not team_id.strip():
+                    raise ValueError("Preset settings.teams keys must be team ids")
+                if isinstance(entry, str):
+                    continue  # a bare string is the team's name
+                if not isinstance(entry, dict):
+                    raise ValueError(f"Preset settings.teams.{team_id} must be an object or a name")
+                if "name" in entry and not isinstance(entry["name"], str):
+                    raise ValueError(f"Preset settings.teams.{team_id}.name must be text")
+                if "color" in entry and entry["color"] is not None:
+                    from .teams import parse_color
+                    if parse_color(entry["color"]) is None:
+                        raise ValueError(
+                            f"Preset settings.teams.{team_id}.color must be #rrggbb or [r, g, b]"
+                        )
         if "team_relations" in settings and settings["team_relations"] is not None:
             relations = settings["team_relations"]
             if not isinstance(relations, dict):

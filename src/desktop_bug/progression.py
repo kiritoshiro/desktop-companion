@@ -195,8 +195,15 @@ def equipped_items(state: ProgressionState) -> Iterable[ArmorItem]:
 
 
 def normalize_team_id(value) -> str:
-    """Return a canonical team id. Case-insensitive, like preset namespaces."""
-    return str(value or "neutral").strip().lower()[:32] or "neutral"
+    """Return a canonical team id. Case-insensitive, like preset namespaces.
+
+    Whitespace collapses to an underscore as well, so a team written as
+    ``Porch Guard`` in a hand-edited preset, one typed as ``porch guard`` in the
+    inspector, and the ``porch_guard`` the settings window generates from a name
+    are one team rather than three that merely look alike.
+    """
+    text = "_".join(str(value or "neutral").strip().lower().split())
+    return text[:32] or "neutral"
 
 
 def normalize_team_stances(raw) -> dict:

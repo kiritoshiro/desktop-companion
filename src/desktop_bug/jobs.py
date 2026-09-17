@@ -164,6 +164,9 @@ class BaseWorld:
         # the behaviour code; tests that need their own stream pass a Random.
         self._rng = rng or random
         self._duty: dict[str, DutyCycle] = {}
+        # Filled in by the manager: a base ring is drawn in its team's colour, so
+        # two teams on one desktop can be told apart without opening anything.
+        self.team_profiles: dict = {}
         for raw in saved or ():
             site = BaseSite.from_dict(raw)
             if site is not None:
@@ -384,13 +387,14 @@ class BaseWorld:
         from PyQt5.QtCore import QLineF, QRectF, Qt
         from PyQt5.QtGui import QColor, QPainter, QPen
 
+        from .teams import team_color
+
         for site in self.bases.values():
             if clip is not None and (site.x + site.radius < clip[0] or site.x - site.radius > clip[2] or site.y + site.radius < clip[1] or site.y - site.radius > clip[3]):
                 continue
             completion = site.completion
-            stable_team_hash = sum((idx + 1) * ord(char) for idx, char in enumerate(site.team_id))
-            hue = (stable_team_hash % 180) + 20
-            accent = QColor.fromHsv(hue, 130, 220, 190)
+            red, green, blue = team_color(site.team_id, self.team_profiles)
+            accent = QColor(red, green, blue, 190)
             faint = QColor(accent.red(), accent.green(), accent.blue(), 45)
             painter.save()
             painter.setRenderHint(QPainter.Antialiasing, True)

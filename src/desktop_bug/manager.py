@@ -26,6 +26,7 @@ from .skills import (
 from .desktop_environment import DesktopSurface
 from .math_utils import distance
 from .progression import RELATIONS, normalize_team_stances
+from .teams import normalize_teams, teams_payload
 from .jobs import BaseWorld, job_ability_ids, normalize_job_id
 from .personality_profiles import COMPACT_TEMPERAMENT_IDS
 from .profiling import get_profiler
@@ -71,6 +72,9 @@ class CreatureManager:
         self.gait_style = "classic"
         # Declared stances between teams, shared by every spider in the scene.
         self.team_stances: dict = {}
+        # Who each team is: the name its owner chose and its colour. Keyed
+        # by the same case-folded id the stances and the slots use.
+        self.team_profiles: dict = {}
         # Right-click naming and the hover/always-on name label.
         self.naming_enabled = True
         self.always_show_names = False
@@ -257,6 +261,7 @@ class CreatureManager:
         ):
             creature.set_team(team_id)
         creature.team_stances = self.team_stances
+        creature.team_profiles = self.team_profiles
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
@@ -369,6 +374,13 @@ class CreatureManager:
             self.social_play = bool(settings.get("social_play", self.social_play))
             self.gait_style = normalize_gait_style(settings.get("gait_style", self.gait_style))
             self.team_stances = normalize_team_stances(settings.get("team_relations"))
+            # Every team a slot refers to gets an identity, even in an older
+            # preset that has no `teams` block at all.
+            self.set_team_profiles(
+                settings.get("teams"),
+                [slot.get("team_id", slot.get("team")) for slot in preset.get("slots", [])
+                 if isinstance(slot, dict)],
+            )
             self.apply_fly_settings(settings)
 
         index = 0
@@ -700,6 +712,24 @@ class CreatureManager:
         declared = sum(len(row) for row in self.team_stances.values()) // 2
         return f"Team relations updated ({declared} declared)."
 
+    def set_team_profiles(self, raw, used_ids=()) -> str:
+        """Replace the team names and colours, and share them live.
+
+        Shared by reference, the way the stances are, so a team renamed while
+        the overlay is running is renamed everywhere at once.
+        """
+        self.team_profiles = normalize_teams(raw, used_ids)
+        for creature in self.creatures:
+            creature.team_profiles = self.team_profiles
+        base_world = getattr(self, "base_world", None)
+        if base_world is not None:
+            base_world.team_profiles = self.team_profiles
+        return f"Teams updated ({len(self.team_profiles)} named)."
+
+    def team_payload(self) -> dict:
+        """The `teams` block for saving, so a preset round-trips its names."""
+        return teams_payload(self.team_profiles)
+
     def set_allow_mouse_capture(self, enabled: bool) -> str:
         """Allow or forbid spiders shooting silk that traps/shoves the pointer."""
         self.allow_mouse_capture = bool(enabled)
@@ -946,6 +976,14 @@ class CreatureManager:
                 self.set_allow_mouse_capture(bool(settings.get("allow_mouse_capture")))
             if "team_relations" in settings:
                 self.set_team_stances(settings.get("team_relations"))
+            # A live edit can rename a team or recolour it, and it can also add
+            # a slot on a team the block has never mentioned, so the ids in use
+            # are passed in every time rather than only at launch.
+            self.set_team_profiles(
+                settings.get("teams", self.team_payload()),
+                [slot.get("team_id", slot.get("team")) for slot in data.get("slots", [])
+                 if isinstance(slot, dict)],
+            )
             self.apply_fly_settings(settings)
 
         traits: list[tuple] = []

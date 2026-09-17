@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QSpinBox,
@@ -42,7 +43,20 @@ from .session_control import clear_stop_request, stop_process
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
 from .jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
 from .personality_profiles import selectable_personality_ids
-from .progression import TEAM_OPTIONS
+from .progression import normalize_team_id, normalize_team_stances
+from .teams import (
+    HOSTILITY_NOTE,
+    STANCE_LABELS,
+    TeamProfile,
+    default_color,
+    describe_stance,
+    normalize_team_name,
+    normalize_teams,
+    minimal_stances,
+    stance_pairs,
+    team_label,
+    teams_payload,
+)
 from .skills import (
     SKILLS,
     compact_ability_summary,
@@ -186,6 +200,12 @@ class ConfigWindow(QMainWindow):
         # reloads, so edits apply live without stopping it.
         self.launched_preset_path = None
         self._loaded_settings: dict = {}
+        # The teams this preset knows about, and what stands between them. Held
+        # here rather than read back out of widgets, because the panel is rebuilt
+        # whenever the slots change teams and a rebuild must not lose an edit.
+        self._team_profiles: dict = {}
+        self._team_stances: dict = {}
+        self._teams_signature = None
         # The version belongs somewhere a user can read it off and quote in
         # a bug report; it existed in the source and was shown nowhere.
         self.setWindowTitle(f"Desktop Bug Companion {__version__}")
@@ -231,6 +251,9 @@ class ConfigWindow(QMainWindow):
             QGroupBox#presetGroup::title { background: #3b82c4; }
             QGroupBox#creaturesGroup { border-color: #cbbdf0; }
             QGroupBox#creaturesGroup::title { background: #6d4ed6; }
+            QGroupBox#teamsGroup { border-color: #f0c2d8; }
+            QGroupBox#teamsGroup::title { background: #b8477e; }
+            QLabel#teamsNote { color: #5d6470; }
             QGroupBox#behaviorGroup { border-color: #a9e0d6; }
             QGroupBox#behaviorGroup::title { background: #199e8c; }
             QGroupBox#fliesGroup { border-color: #f2d49b; }
@@ -388,6 +411,26 @@ class ConfigWindow(QMainWindow):
         slot_buttons.addStretch(1)
         creatures_layout.addLayout(slot_buttons)
         layout.addWidget(self.creatures_group, 1)
+
+        self.teams_group = QGroupBox("Teams")
+        self.teams_group.setObjectName("teamsGroup")
+        teams_outer = QVBoxLayout(self.teams_group)
+        teams_outer.setContentsMargins(8, 8, 8, 8)
+        teams_outer.setSpacing(6)
+        # The honest description of what a team does, in the one place a person
+        # picking teams will read it. It comes from the teams module so the
+        # window, the tooltips and the README cannot drift apart.
+        self.teams_note = QLabel(HOSTILITY_NOTE)
+        self.teams_note.setWordWrap(True)
+        self.teams_note.setObjectName("teamsNote")
+        teams_outer.addWidget(self.teams_note)
+        self.teams_panel = QWidget()
+        self.teams_layout = QGridLayout(self.teams_panel)
+        self.teams_layout.setContentsMargins(2, 2, 2, 0)
+        self.teams_layout.setHorizontalSpacing(8)
+        self.teams_layout.setVerticalSpacing(4)
+        teams_outer.addWidget(self.teams_panel)
+        layout.addWidget(self.teams_group)
 
         self.behavior_group = QGroupBox("Overlay behavior")
         self.behavior_group.setObjectName("behaviorGroup")
@@ -740,15 +783,12 @@ class ConfigWindow(QMainWindow):
         )
 
         team_box = NoScrollComboBox()
-        team_box.setMinimumWidth(92)
-        for label, value in TEAM_OPTIONS:
-            team_box.addItem(label, value)
-        team_value = str(team_id or "neutral").strip().lower()
-        team_index = team_box.findData(team_value)
-        team_box.setCurrentIndex(team_index if team_index >= 0 else 0)
+        team_box.setMinimumWidth(110)
+        self._populate_team_box(team_box, team_id)
         team_box.setToolTip(
-            "Spiders in the same non-neutral team are friends by default. "
-            "Use the inspector later for a specific friend/neutral/foe override."
+            "Which group this slot belongs to. Name your teams and set what "
+            "stands between them in the Teams panel below."
+            "\n\n" + HOSTILITY_NOTE
         )
 
         job_box = NoScrollComboBox()
@@ -789,7 +829,8 @@ class ConfigWindow(QMainWindow):
             lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_personality_changed(pb, jb, sb))
         count_spin.valueChanged.connect(self.update_summary)
         count_random_check.toggled.connect(self.update_summary)
-        team_box.currentIndexChanged.connect(self.update_summary)
+        team_box.currentIndexChanged.connect(
+            lambda _i=0, box=team_box: self._on_team_box_changed(box))
         job_box.currentIndexChanged.connect(self.update_summary)
         job_box.currentIndexChanged.connect(
             lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_job_changed(pb, jb, sb)
@@ -1132,6 +1173,12 @@ class ConfigWindow(QMainWindow):
             "mood_mode": str(self.mood_combo.currentData() or "auto"),
             "social_play": bool(self.social_play_check.isChecked()),
             "gait_style": str(self.movement_combo.currentData() or "classic"),
+            "teams": teams_payload(self._ensure_team_profiles()),
+            # Only what was actually declared. Recomputing this from the pairs on
+            # screen would drop a stance about a team no slot currently uses, and
+            # would write out the implicit "rivals is hostile" rule as though a
+            # person had chosen it.
+            "team_relations": minimal_stances(self._team_stances),
             "flies": {
                 "enabled": bool(self.flies_enabled_check.isChecked()),
                 "min_interval": round(float(self.fly_min_spin.value()), 2),
@@ -1161,6 +1208,11 @@ class ConfigWindow(QMainWindow):
         # Remember everything the preset carried, including settings this
         # window has no widget for, so saving does not silently drop them.
         self._loaded_settings = dict(settings)
+        # Teams first: the slot pickers are filled from this, and a preset that
+        # renamed its teams has to show those names rather than the ids.
+        self._team_profiles = normalize_teams(settings.get("teams"))
+        self._team_stances = normalize_team_stances(settings.get("team_relations"))
+        self._teams_signature = None
         size_scale = float(settings.get("size_scale", 1.0))
         closest_index = 0
         closest_distance = float("inf")
@@ -1214,6 +1266,243 @@ class ConfigWindow(QMainWindow):
                 self.table.cellWidget(row, 4),
             )
 
+    # ------------------------------------------------------------------
+    # Teams: names, colours, and what stands between them
+    # ------------------------------------------------------------------
+    NEW_TEAM_SENTINEL = "__new_team__"
+
+    def _team_ids_in_use(self) -> list:
+        """Every non-neutral team id a slot currently points at, in row order."""
+        ids = []
+        for row in range(self.table.rowCount()):
+            box = self.table.cellWidget(row, 6)
+            if box is None:
+                continue
+            team_id = normalize_team_id(box.currentData() or "neutral")
+            if team_id != "neutral" and team_id not in ids:
+                ids.append(team_id)
+        return ids
+
+    def _ensure_team_profiles(self) -> dict:
+        """Give every team in use an identity, keeping the ones already named."""
+        self._team_profiles = normalize_teams(
+            teams_payload(self._team_profiles), self._team_ids_in_use())
+        return self._team_profiles
+
+    def _populate_team_box(self, box, selected) -> None:
+        """Fill one slot's team picker from the teams this preset knows about."""
+        selected = normalize_team_id(selected or "neutral")
+        box.blockSignals(True)
+        box.clear()
+        box.addItem("Neutral / solo", "neutral")
+        for team_id in sorted(self._team_profiles):
+            profile = self._team_profiles[team_id]
+            box.addItem(self._team_icon(profile.color), profile.name, team_id)
+        if selected != "neutral" and box.findData(selected) < 0:
+            # A preset can name a team the block never described; it still has to
+            # be selectable, or loading the preset would silently move the slot.
+            profile = TeamProfile(selected, selected.replace("_", " ").title(),
+                                  default_color(selected))
+            self._team_profiles[selected] = profile
+            box.addItem(self._team_icon(profile.color), profile.name, selected)
+        box.insertSeparator(box.count())
+        box.addItem("New team...", self.NEW_TEAM_SENTINEL)
+        index = box.findData(selected)
+        box.setCurrentIndex(index if index >= 0 else 0)
+        box.blockSignals(False)
+
+    @staticmethod
+    def _team_icon(color) -> QIcon:
+        """A filled swatch, so a team is recognisable in the list at a glance."""
+        pixmap = QPixmap(14, 14)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(QColor(0, 0, 0, 90))
+        painter.setBrush(QColor(*color))
+        painter.drawEllipse(1, 1, 12, 12)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _repopulate_team_boxes(self) -> None:
+        for row in range(self.table.rowCount()):
+            box = self.table.cellWidget(row, 6)
+            if box is not None:
+                self._populate_team_box(box, box.currentData())
+
+    def _on_team_box_changed(self, box) -> None:
+        if str(box.currentData() or "") == self.NEW_TEAM_SENTINEL:
+            team_id = self._prompt_for_new_team()
+            # Falls back to the previous choice when the prompt is cancelled,
+            # so a stray click cannot leave a slot pointing at the menu entry.
+            self._populate_team_box(box, team_id or box.property("last_team") or "neutral")
+        box.setProperty("last_team", box.currentData())
+        self._ensure_team_profiles()
+        self._repopulate_team_boxes()
+        self.update_summary()
+
+    def _prompt_for_new_team(self):
+        """Ask for a name and turn it into a team, or return None if cancelled."""
+        name, accepted = QInputDialog.getText(
+            self, "New team", "Name this team (for example: Porch guard)")
+        if not accepted or not str(name).strip():
+            return None
+        team_id = self._unique_team_id(str(name))
+        self._team_profiles[team_id] = TeamProfile(
+            team_id, normalize_team_name(name, team_id), default_color(team_id))
+        return team_id
+
+    def _unique_team_id(self, name: str) -> str:
+        """Turn a name into a stable id that no other team is already using.
+
+        Case-folded like every other id in this project, because on Windows a
+        team called `Rivals` and one called `rivals` are the same folder, the
+        same saved key, and have already been the same bug four times.
+        """
+        slug = "".join(char if char.isalnum() else "_" for char in str(name).strip().lower())
+        slug = "_".join(part for part in slug.split("_") if part)[:32] or "team"
+        if slug == "neutral":
+            slug = "team"
+        candidate = slug
+        suffix = 2
+        while candidate in self._team_profiles:
+            candidate = f"{slug}_{suffix}"[:32]
+            suffix += 1
+        return candidate
+
+    def _refresh_teams_panel(self) -> None:
+        """Rebuild the Teams panel, but only when the set of teams changed.
+
+        Rebuilding on every edit would delete the line edit being typed into and
+        close an open stance menu, which is the same trap the runtime inspector
+        already had to avoid.
+        """
+        self._ensure_team_profiles()
+        signature = tuple(sorted(
+            (team_id, profile.name, profile.color)
+            for team_id, profile in self._team_profiles.items()
+        ))
+        if signature == self._teams_signature:
+            return
+        self._teams_signature = signature
+
+        while self.teams_layout.count():
+            item = self.teams_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+
+        if not self._team_profiles:
+            empty = QLabel("No teams yet. Give a creature slot a team above, and it "
+                           "appears here to be named and coloured.")
+            empty.setWordWrap(True)
+            self.teams_layout.addWidget(empty, 0, 0, 1, 4)
+            return
+
+        counts = {}
+        for row in range(self.table.rowCount()):
+            box = self.table.cellWidget(row, 6)
+            spin = self.table.cellWidget(row, 2)
+            if box is None:
+                continue
+            team_id = normalize_team_id(box.currentData() or "neutral")
+            if team_id != "neutral":
+                counts[team_id] = counts.get(team_id, 0) + (int(spin.value()) if spin else 1)
+
+        line = 0
+        for team_id in sorted(self._team_profiles):
+            profile = self._team_profiles[team_id]
+            swatch = QPushButton()
+            swatch.setFixedSize(QSize(26, 22))
+            swatch.setToolTip(f"Colour for {profile.name}")
+            swatch.setAccessibleName(f"Colour for {profile.name}")
+            swatch.setIcon(self._team_icon(profile.color))
+            swatch.clicked.connect(lambda _c=False, tid=team_id: self._pick_team_color(tid))
+            name_edit = QLineEdit(profile.name)
+            name_edit.setMaxLength(32)
+            name_edit.setToolTip("What this team is called, wherever it is named.")
+            name_edit.setAccessibleName(f"Name of team {profile.name}")
+            name_edit.editingFinished.connect(
+                lambda edit=name_edit, tid=team_id: self._rename_team(tid, edit.text()))
+            count = counts.get(team_id, 0)
+            members = QLabel(f"{count} spider(s)" if count else "no spiders yet")
+            self.teams_layout.addWidget(swatch, line, 0)
+            self.teams_layout.addWidget(name_edit, line, 1)
+            self.teams_layout.addWidget(members, line, 2)
+            self.teams_layout.addWidget(QLabel(f"id: {team_id}"), line, 3)
+            line += 1
+
+        pairs = stance_pairs(self._team_profiles, self._team_stances)
+        if not pairs:
+            hint = QLabel("Add a second team to choose what stands between them.")
+            hint.setWordWrap(True)
+            self.teams_layout.addWidget(hint, line, 0, 1, 4)
+            return
+        header = QLabel("Between teams")
+        header.setStyleSheet("font-weight: 600;")
+        self.teams_layout.addWidget(header, line, 0, 1, 4)
+        line += 1
+        for left, right, relation in pairs:
+            label = QLabel(f"{team_label(left, self._team_profiles)} and "
+                           f"{team_label(right, self._team_profiles)}")
+            combo = NoScrollComboBox()
+            for value in ("friend", "neutral", "foe"):
+                combo.addItem(STANCE_LABELS[value], value)
+            index = combo.findData(relation)
+            combo.setCurrentIndex(index if index >= 0 else 1)
+            combo.setToolTip(describe_stance(left, right, relation, self._team_profiles))
+            combo.setAccessibleName(
+                f"Relationship between {team_label(left, self._team_profiles)} and "
+                f"{team_label(right, self._team_profiles)}")
+            combo.currentIndexChanged.connect(
+                lambda _i=0, a=left, b=right, box=combo: self._set_stance(a, b, box))
+            self.teams_layout.addWidget(label, line, 0, 1, 2)
+            self.teams_layout.addWidget(combo, line, 2, 1, 2)
+            line += 1
+
+    def _pick_team_color(self, team_id: str) -> None:
+        profile = self._team_profiles.get(team_id)
+        if profile is None:
+            return
+        chosen = QColorDialog.getColor(QColor(*profile.color), self,
+                                       f"Colour for {profile.name}")
+        if not chosen.isValid():
+            return
+        self._team_profiles[team_id] = TeamProfile(
+            team_id, profile.name, (chosen.red(), chosen.green(), chosen.blue()))
+        self._teams_signature = None
+        self._refresh_teams_panel()
+        self._repopulate_team_boxes()
+        self.update_summary()
+
+    def _rename_team(self, team_id: str, text) -> None:
+        profile = self._team_profiles.get(team_id)
+        if profile is None:
+            return
+        name = normalize_team_name(text, team_id)
+        if name == profile.name:
+            return
+        self._team_profiles[team_id] = TeamProfile(team_id, name, profile.color)
+        self._teams_signature = None
+        self._refresh_teams_panel()
+        self._repopulate_team_boxes()
+        self.update_summary()
+
+    def _set_stance(self, left: str, right: str, combo) -> None:
+        """Declare one pair, leaving every other declaration alone.
+
+        Including a chosen "ignore each other": for a team that is hostile by
+        default, that is a real decision, and treating it as "nothing declared"
+        would quietly restore the hostility on the next launch.
+        """
+        relation = str(combo.currentData() or "neutral")
+        declared = {key: dict(row) for key, row in self._team_stances.items()}
+        declared.setdefault(left, {})[right] = relation
+        declared.setdefault(right, {})[left] = relation
+        self._team_stances = normalize_team_stances(declared)
+        combo.setToolTip(describe_stance(left, right, relation, self._team_profiles))
+        self.update_summary()
+
     def update_summary(self):
         rows = self.table.rowCount()
         fixed_count = 0
@@ -1264,12 +1553,15 @@ class ConfigWindow(QMainWindow):
                 creature_text += f" Custom colors: {custom_color_rows} slot(s)."
             if team_counts:
                 creature_text += " Teams: " + ", ".join(
-                    f"{team_id} ({count})" for team_id, count in sorted(team_counts.items())
+                    f"{team_label(team_id, self._team_profiles)} ({count})"
+                    for team_id, count in sorted(team_counts.items())
                 ) + "."
             if job_counts:
                 creature_text += " Jobs: " + ", ".join(
                     f"{job_id} ({count})" for job_id, count in sorted(job_counts.items())
                 ) + "."
+
+        self._refresh_teams_panel()
 
         size_text = self.size_combo.currentText() if hasattr(self, "size_combo") else "Normal (100%)"
         mood_text = self.mood_combo.currentText() if hasattr(self, "mood_combo") else "Auto"

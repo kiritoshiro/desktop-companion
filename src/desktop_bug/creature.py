@@ -171,6 +171,10 @@ class Creature:
         # shares one mapping across the scene; empty means teams only imply
         # friendship among their own members.
         self.team_stances: dict = {}
+        # Who each team is, shared by the manager the same way. A spider wears a
+        # small ring in its team's colour so a scene with two teams looks like a
+        # scene with two teams.
+        self.team_profiles: dict = {}
 
         self.size_scale = clamp(float(size_scale), 0.45, 2.25)
         self.size_jitter = random.uniform(0.90, 1.12)
@@ -8083,6 +8087,16 @@ class Creature:
             self._hovered or always_show or self.level_label_pinned
         )
 
+    def _label_border_color(self, QColor):
+        """The hover label is edged in the team colour, or plain white for none."""
+        team_id = str(getattr(self.progression, "team_id", "neutral") or "neutral")
+        if team_id.strip().lower() in ("", "neutral"):
+            return QColor(255, 255, 255, 60)
+        from .teams import team_color
+
+        red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
+        return QColor(red, green, blue, 200)
+
     def _label_text(self) -> str:
         text = self.display_name
         if self.level_label_pinned:
@@ -8155,6 +8169,31 @@ class Creature:
         self._bbox = (min_x, min_y, max_x, max_y)
         return self._bbox
 
+    def _draw_team_marker(self, painter) -> None:
+        """A small ring in the team colour, on the ground under the spider.
+
+        Deliberately understated. A team is a fact about a spider, not the point
+        of looking at one, and a solid badge would fight with the art. A spider
+        on no team wears nothing at all.
+        """
+        team_id = str(getattr(self.progression, "team_id", "neutral") or "neutral")
+        if team_id.strip().lower() in ("", "neutral"):
+            return
+        from PyQt5.QtCore import QRectF, Qt
+        from PyQt5.QtGui import QColor, QPen
+
+        from .teams import team_color
+
+        red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
+        width = self.size * 1.35
+        height = self.size * 0.46
+        # Sits just below the body, where a shadow would be, so it reads as
+        # ground marking rather than as part of the creature.
+        top = self.y + self.size * 0.36 + self.jump_z * 0.25
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(red, green, blue, 190), max(1.6, self.size * 0.09)))
+        painter.drawEllipse(QRectF(self.x - width * 0.5, top - height * 0.5, width, height))
+
     def _draw_name_label(self, painter, always_show_names: bool) -> None:
         if not self.label_visible(always_show_names):
             return
@@ -8185,7 +8224,7 @@ class Creature:
         painter.setBrush(QBrush(QColor(18, 18, 22, 205)))
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor(255, 255, 255, 60), 1.0))
+        painter.setPen(QPen(self._label_border_color(QColor), 1.0))
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setPen(QPen(QColor(245, 247, 250, 255)))
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
@@ -8202,6 +8241,10 @@ class Creature:
             except Exception:
                 painter.setOpacity(camouflage_opacity)
             camouflage_saved = True
+        # Before the body, so the legs walk over the ring rather than under it,
+        # and outside the tumble transform, because a marking on the ground does
+        # not spin with the spider.
+        self._draw_team_marker(painter)
         rolling = abs(self.roll_spin) > 1e-4
         if rolling:
             # Spin the whole creature (legs and body) about its centre for a

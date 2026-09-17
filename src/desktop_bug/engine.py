@@ -41,7 +41,8 @@ from .desktop_environment import snapshot_desktop_surfaces
 from .frame_policy import FramePolicy
 from .profiling import hud_requested, profiler_from_env
 from .skills import SKILLS
-from .progression import ABILITY_TREE, ARMOR_CATALOG, TEAM_OPTIONS, xp_to_next_level
+from .progression import ABILITY_TREE, ARMOR_CATALOG, normalize_team_id, xp_to_next_level
+from .teams import HOSTILITY_NOTE, team_label
 from .jobs import job_definition
 
 
@@ -152,9 +153,12 @@ class CreatureInspectorDialog(QDialog):
         status_layout.addWidget(self.pin_check)
         self.team_combo = QComboBox()
         self.team_combo.setEditable(True)
-        # Same ids the settings window offers, so a team picked before launch
-        # and a team picked here actually refer to the same group.
-        self.team_combo.addItems([value for _label, value in TEAM_OPTIONS])
+        # The teams this scene actually has, under the names their owner gave
+        # them, so a team picked before launch and a team picked here are
+        # recognisably the same group rather than two similar-looking ids.
+        self.team_combo.setToolTip(HOSTILITY_NOTE)
+        self._team_signature = None
+        self._refresh_team_choices()
         # Commit on a chosen entry or a finished edit, never on every keystroke:
         # ``currentTextChanged`` would assign (and persist) "h", "hu", "hun"…
         # while the user is still typing "hunters".
@@ -162,6 +166,10 @@ class CreatureInspectorDialog(QDialog):
         self.team_combo.lineEdit().editingFinished.connect(self._commit_team)
         status_layout.addWidget(QLabel("Team assignment"))
         status_layout.addWidget(self.team_combo)
+        team_note = QLabel(HOSTILITY_NOTE)
+        team_note.setWordWrap(True)
+        team_note.setStyleSheet("color: #6a7180;")
+        status_layout.addWidget(team_note)
         status_layout.addWidget(QLabel("Relationship with other spiders"))
         self.relations_layout = QVBoxLayout()
         status_layout.addLayout(self.relations_layout)
@@ -202,13 +210,50 @@ class CreatureInspectorDialog(QDialog):
     def _set_pin(self, enabled: bool) -> None:
         self.window._announce(self.window.manager.set_creature_level_pin(self.creature, enabled))
 
-    def _commit_team(self, *_args) -> None:
-        team = str(self.team_combo.currentText()).strip()
-        if not self.isVisible() or not team:
+    def _team_profiles(self) -> dict:
+        return getattr(self.window.manager, "team_profiles", {}) or {}
+
+    def _refresh_team_choices(self) -> None:
+        """Offer every named team, plus whatever this spider is already on.
+
+        Rebuilt only when the set of teams changes, because replacing the items
+        of a combo while its popup is open closes the popup, and this dialog
+        refreshes itself every 400 ms.
+        """
+        profiles = self._team_profiles()
+        current = normalize_team_id(getattr(self.creature.progression, "team_id", "neutral"))
+        signature = (tuple(sorted((tid, p.name) for tid, p in profiles.items())), current)
+        if signature == getattr(self, "_team_signature", None):
             return
-        if team == self.creature.progression.team_id:
+        self._team_signature = signature
+        self.team_combo.blockSignals(True)
+        self.team_combo.clear()
+        self.team_combo.addItem("Neutral / solo", "neutral")
+        for team_id in sorted(profiles):
+            self.team_combo.addItem(profiles[team_id].name, team_id)
+        if current != "neutral" and self.team_combo.findData(current) < 0:
+            self.team_combo.addItem(team_label(current, profiles), current)
+        index = self.team_combo.findData(current)
+        self.team_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.team_combo.blockSignals(False)
+
+    def _commit_team(self, *_args) -> None:
+        text = str(self.team_combo.currentText()).strip()
+        if not self.isVisible() or not text:
+            return
+        # A chosen entry carries its id. Typed text is a name, and a name the
+        # scene already uses means that team rather than a new one with the same
+        # label; anything else becomes a new team id derived from what was typed.
+        index = self.team_combo.findText(text)
+        if index >= 0 and self.team_combo.itemData(index) is not None:
+            team = normalize_team_id(self.team_combo.itemData(index))
+        else:
+            team = normalize_team_id(text.replace(" ", "_"))
+        if team == normalize_team_id(self.creature.progression.team_id):
             return
         self.window._announce(self.window.manager.set_creature_team(self.creature, team))
+        self._team_signature = None
+        self._refresh_team_choices()
 
     def _set_relation(self, other, relation: str) -> None:
         self.window._announce(self.window.manager.set_creature_relation(self.creature, other, relation))
@@ -280,7 +325,8 @@ class CreatureInspectorDialog(QDialog):
         self.status_labels["energy"].setText(f"{snapshot['energy']:.0f} / {snapshot['max_energy']:.0f}")
         self.status_labels["armor"].setText(f"{snapshot['armor']:.1f}")
         self.status_labels["damage"].setText(f"{snapshot['damage']:.1f}")
-        self.status_labels["team"].setText(self.creature.progression.team_id)
+        self.status_labels["team"].setText(
+            team_label(self.creature.progression.team_id, self._team_profiles()))
         relations = []
         for other in self.window.manager.creatures:
             if other is self.creature:
@@ -295,12 +341,7 @@ class CreatureInspectorDialog(QDialog):
         self.pin_check.blockSignals(True)
         self.pin_check.setChecked(self.creature.level_label_pinned)
         self.pin_check.blockSignals(False)
-        self.team_combo.blockSignals(True)
-        current = self.creature.progression.team_id
-        if self.team_combo.findText(current) < 0:
-            self.team_combo.addItem(current)
-        self.team_combo.setCurrentText(current)
-        self.team_combo.blockSignals(False)
+        self._refresh_team_choices()
         self._refresh_abilities()
         self._refresh_inventory()
 

@@ -43,6 +43,16 @@
       "max_flies": 6,
       "spawner": true
     },
+    "teams": {
+      "pack_a": {
+        "name": "Home colony",
+        "color": "#4fa3d1"
+      },
+      "rivals": {
+        "name": "Intruders",
+        "color": "#d1534f"
+      }
+    },
     "team_relations": {
       "pack_a": {
         "rivals": "foe"
