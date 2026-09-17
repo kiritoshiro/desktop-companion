@@ -113,6 +113,7 @@ class ProgressionState:
     team_id: str = "neutral"
     relation_overrides: dict[str, str] = field(default_factory=dict)
     pin_level: bool = False
+    pin_health: bool = False
 
     @classmethod
     def from_dict(cls, value: dict | None) -> "ProgressionState":
@@ -147,6 +148,7 @@ class ProgressionState:
             state.relation_overrides = {str(key): str(rel).lower() for key, rel in raw_relations.items()
                                         if str(rel).lower() in RELATIONS}
         state.pin_level = bool(value.get("pin_level", False))
+        state.pin_health = bool(value.get("pin_health", False))
         return state
 
     def to_dict(self) -> dict:
@@ -161,6 +163,7 @@ class ProgressionState:
             "team_id": self.team_id,
             "relation_overrides": dict(self.relation_overrides),
             "pin_level": bool(self.pin_level),
+            "pin_health": bool(self.pin_health),
         }
 
     def add_item(self, item_id: str) -> bool:

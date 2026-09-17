@@ -151,6 +151,13 @@ class CreatureInspectorDialog(QDialog):
         self.pin_check = QCheckBox("Pin level and XP above the spider's name")
         self.pin_check.toggled.connect(self._set_pin)
         status_layout.addWidget(self.pin_check)
+        self.health_pin_check = QCheckBox("Pin the health bar above the spider")
+        self.health_pin_check.setToolTip(
+            "Keeps a small health bar on screen for this spider instead of only "
+            "showing it here. Nothing can damage a spider yet, so it stays full."
+        )
+        self.health_pin_check.toggled.connect(self._set_health_pin)
+        status_layout.addWidget(self.health_pin_check)
         self.team_combo = QComboBox()
         self.team_combo.setEditable(True)
         # The teams this scene actually has, under the names their owner gave
@@ -209,6 +216,10 @@ class CreatureInspectorDialog(QDialog):
 
     def _set_pin(self, enabled: bool) -> None:
         self.window._announce(self.window.manager.set_creature_level_pin(self.creature, enabled))
+
+    def _set_health_pin(self, enabled: bool) -> None:
+        self.window._announce(
+            self.window.manager.set_creature_health_pin(self.creature, enabled))
 
     def _team_profiles(self) -> dict:
         return getattr(self.window.manager, "team_profiles", {}) or {}
@@ -341,6 +352,9 @@ class CreatureInspectorDialog(QDialog):
         self.pin_check.blockSignals(True)
         self.pin_check.setChecked(self.creature.level_label_pinned)
         self.pin_check.blockSignals(False)
+        self.health_pin_check.blockSignals(True)
+        self.health_pin_check.setChecked(self.creature.health_label_pinned)
+        self.health_pin_check.blockSignals(False)
         self._refresh_team_choices()
         self._refresh_abilities()
         self._refresh_inventory()

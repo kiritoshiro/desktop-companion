@@ -2053,6 +2053,13 @@ class CreatureManager:
         self.save_runtime_state()
         return f"Level display {'pinned above' if enabled else 'removed from'} this spider's name."
 
+    def set_creature_health_pin(self, creature: Creature, enabled: bool) -> str:
+        if creature is None:
+            return "No spider there to update."
+        creature.set_health_label_pinned(enabled)
+        self.save_runtime_state()
+        return f"Health bar {'pinned above' if enabled else 'removed from'} this spider."
+
     def set_creature_team(self, creature: Creature, team_id: str) -> str:
         if creature is None:
             return "No spider there to update."

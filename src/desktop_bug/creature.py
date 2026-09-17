@@ -383,6 +383,10 @@ class Creature:
         self.jump_peak = 0.0
         self.jump_from = (self.x, self.y)
 
+        # True from the moment a tumble begins until something has tidied up
+        # after it, whether that was the roll finishing or anything cutting it
+        # short.
+        self._rolling = False
         # Playful tumble/roll. roll_spin is an extra whole-body draw rotation and
         # roll_tuck pulls the rendered feet toward the body so it curls into a ball.
         self.roll_spin = 0.0
@@ -2693,13 +2697,23 @@ class Creature:
         self.inertia_timer = 0.0
         self.social_target = None
         self.roll_dir = random.choice((-1.0, 1.0))
-        turns = random.uniform(1.0, 2.0)
+        # Whole turns. The spin is a draw rotation that is dropped to zero the
+        # instant the roll finishes, while the legs re-plant against the
+        # unchanged logical heading -- so a fractional turn made the body jump
+        # by up to 173 degrees on the last frame and left the legs looking
+        # wrong. One or two turns still reads as a tumble; a turn and a half
+        # reads as a glitch.
+        turns = float(random.randint(1, 2))
         self.roll_total = math.tau * turns
         self.roll_duration = random.uniform(0.7, 1.15)
         self.roll_progress = 0.0
         self.roll_eased = 0.0
         self.roll_spin = 0.0
         self.roll_tuck = 0.0
+        # Set here and cleared by whatever ends the roll, so an interrupted
+        # tumble is still known to need tidying up. Reading the spin instead is
+        # not enough: some callers zero it and leave the feet where they were.
+        self._rolling = True
         # A roll is a yaw-like flourish in the top-down view, not a landing.
         # Clear any leftover jump compression so the next frame cannot render
         # a flattened body, especially on the smaller sprite-rig spiders.
@@ -2952,6 +2966,35 @@ class Creature:
             iy += side * random.uniform(0.02, 0.15) * self.size * intensity
             self._schedule_step(leg, ix, iy, delay=delay, force_fast=True)
             leg.step_cooldown = random.uniform(0.012, 0.040)
+
+    def _finish_roll(self) -> None:
+        """Undo everything a tumble was doing: the spin, the tuck, the feet."""
+        self._rolling = False
+        self.roll_spin = 0.0
+        self.roll_tuck = 0.0
+        self.roll_progress = 1.0
+        self.motion_paused = False
+        self.squash = 1.0
+        self._reset_roll_contacts()
+        self._spider_locomotion_active = False
+
+    def _reconcile_roll(self) -> None:
+        """Tidy up after a tumble that something cut short.
+
+        Only the roll running to completion used to clean up after itself, so
+        anything that interrupted one -- a startle, a grab, a job, the roll
+        skill being switched off -- left the body rotated by whatever the spin
+        had reached and the legs still tucked, permanently. Measured across
+        seven seeds that was about 410 degrees of leftover rotation, feet past
+        their own reach envelope and up to two legs on the wrong side of the
+        body.
+
+        This is the same reconciliation the weaving and web-walking states
+        already do at the top of every frame, for the same reason: a state can
+        be left in more ways than it can be finished.
+        """
+        if self._rolling and self.state != "Roll":
+            self._finish_roll()
 
     def _reset_roll_contacts(self) -> None:
         """Restore every foot to a safe stance after a visual tumble.
@@ -3345,6 +3388,7 @@ class Creature:
             self._abandon_repair()
         if self.web_target is not None and self.state not in ("WebApproach", "WebWalk"):
             self.web_target = None
+        self._reconcile_roll()
 
         # Hidden spiders are behind a real desktop window, so they are no longer
         # in the same visible interaction layer as the cursor or other spiders.
@@ -3452,6 +3496,11 @@ class Creature:
                 if self._spider_locomotion_active:
                     self._spider_locomotion_active = False
                 self._move_body(dt)
+        # Again after the state machine, and outside the airborne branch,
+        # because the roll may have been left during this very frame -- by the
+        # spider jumping out of it, among other things -- and the frame is
+        # about to be drawn.
+        self._reconcile_roll()
         if self.cage is not None and not self.dragging:
             self._apply_cage_bounds()
         self._update_legs(dt)
@@ -4017,12 +4066,7 @@ class Creature:
         self.target_heading = self.heading
 
         if self.roll_progress >= 1.0:
-            self.roll_spin = 0.0
-            self.roll_tuck = 0.0
-            self.motion_paused = False
-            self.squash = 1.0
-            self._reset_roll_contacts()
-            self._spider_locomotion_active = False
+            self._finish_roll()
             self.enter_idle()
 
     # ------------------------------------------------------------------
@@ -8192,6 +8236,16 @@ class Creature:
     def set_level_label_pinned(self, enabled: bool) -> None:
         self.progression.pin_level = bool(enabled)
 
+    @property
+    def health_label_pinned(self) -> bool:
+        return bool(self.progression.pin_health)
+
+    def set_health_label_pinned(self, enabled: bool) -> None:
+        self.progression.pin_health = bool(enabled)
+
+    def health_fraction(self) -> float:
+        return clamp(float(self.hp) / max(1.0, float(self.max_hp)), 0.0, 1.0)
+
     def _label_font(self):
         from PyQt5.QtGui import QFont
 
@@ -8201,9 +8255,8 @@ class Creature:
         return font
 
     def label_visible(self, always_show: bool) -> bool:
-        return bool(self.name or self.level_label_pinned) and (
-            self._hovered or always_show or self.level_label_pinned
-        )
+        pinned = self.level_label_pinned or self.health_label_pinned
+        return bool(self.name or pinned) and (self._hovered or always_show or pinned)
 
     def _label_border_color(self, QColor):
         """The hover label is edged in the team colour, or plain white for none."""
@@ -8277,8 +8330,11 @@ class Creature:
 
             fm = QFontMetrics(self._label_font())
             text = self._label_text()
-            half_w = fm.horizontalAdvance(text) * 0.5 + 12.0
+            half_w = max(fm.horizontalAdvance(text) * 0.5 + 12.0,
+                         self.HEALTH_BAR_MIN_WIDTH * 0.5 + 2.0)
             label_h = fm.height() + 12.0
+            if self.health_label_pinned:
+                label_h += self._health_bar_height() + 3.0
             min_x = min(min_x, self.x - half_w)
             max_x = max(max_x, self.x + half_w)
             # Label floats above the highest drawn point.
@@ -8312,6 +8368,40 @@ class Creature:
         painter.setPen(QPen(QColor(red, green, blue, 190), max(1.6, self.size * 0.09)))
         painter.drawEllipse(QRectF(self.x - width * 0.5, top - height * 0.5, width, height))
 
+    # A pinned bar has to stay readable on a small spider, so it has a floor
+    # rather than scaling all the way down with the body.
+    HEALTH_BAR_MIN_WIDTH = 34.0
+
+    def _health_bar_height(self) -> float:
+        return max(4.0, min(7.0, self.size * 0.20))
+
+    @staticmethod
+    def health_bar_color(fraction: float, QColor):
+        """Green, amber, red. Colour alone is the reading at spider size."""
+        fraction = clamp(float(fraction), 0.0, 1.0)
+        if fraction > 0.6:
+            return QColor(104, 194, 108, 235)
+        if fraction > 0.3:
+            return QColor(226, 176, 74, 235)
+        return QColor(214, 84, 76, 235)
+
+    def _draw_health_bar(self, painter, left: float, top: float, width: float,
+                         QRectF, Qt, QColor, QBrush, QPen) -> None:
+        width = max(width, self.HEALTH_BAR_MIN_WIDTH)
+        height = self._health_bar_height()
+        fraction = self.health_fraction()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(18, 18, 22, 215)))
+        painter.drawRoundedRect(QRectF(left, top, width, height), 2.0, 2.0)
+        if fraction > 0.0:
+            painter.setBrush(QBrush(self.health_bar_color(fraction, QColor)))
+            painter.drawRoundedRect(
+                QRectF(left + 1.0, top + 1.0, max(1.0, (width - 2.0) * fraction),
+                       height - 2.0), 1.5, 1.5)
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(255, 255, 255, 70), 1.0))
+        painter.drawRoundedRect(QRectF(left, top, width, height), 2.0, 2.0)
+
     def _draw_name_label(self, painter, always_show_names: bool) -> None:
         if not self.label_visible(always_show_names):
             return
@@ -8326,7 +8416,8 @@ class Creature:
         th = fm.height()
         pad_x = 8.0
         pad_y = 4.0
-        box_w = tw + pad_x * 2.0
+        box_w = max(tw + pad_x * 2.0,
+                    self.HEALTH_BAR_MIN_WIDTH if self.health_label_pinned else 0.0)
         box_h = th + pad_y * 2.0
 
         # Sit just above the spider's body/leg cluster.
@@ -8346,6 +8437,9 @@ class Creature:
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setPen(QPen(QColor(245, 247, 250, 255)))
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
+        if self.health_label_pinned:
+            self._draw_health_bar(painter, box_x, box_y + box_h + 3.0, box_w,
+                                  QRectF, Qt, QColor, QBrush, QPen)
 
     def render(self, painter, always_show_names: bool = False) -> None:
         # One frame's worth of solved leg chains. Cleared here rather than

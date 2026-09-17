@@ -69,6 +69,8 @@ When a spider comes to a stop it now leaves its feet exactly where they landed i
 
 A happy, excited spider will sometimes tuck its legs in and roll, spinning through a turn or two as it tumbles a short way across the desk before popping back up and carrying on. It is a pure flourish with no target, most common in playful, high-energy spiders, so setting a spider to the **Playful** mood (or using the Playful personality) is the easiest way to see it. A spider close to the cursor may also do a quick tumble away from the pointer when it is in a good mood.
 
+A tumble always turns a whole number of turns, and always tidies up after itself. Both of those used to be untrue and both showed up as broken-looking legs. The spin is a drawing rotation that is dropped the instant the roll ends, while the legs re-plant against a body heading the roll never changed -- so a turn and a half left the body jumping by up to 173 degrees on the final frame. And only a roll that ran to completion put the legs back, so anything that cut one short -- a startle, a grab, a job, the Roll ability being switched off, the spider jumping out of it -- left the body rotated and the legs tucked, permanently.
+
 ### Weaving webs
 
 Spiders can spin silk webs, and they build them the way a real spider does, one thread at a time. Web-spinning is the **Webber** personality's specialty rather than something every spider does, so by default the webs you see are made by Webbers. You can still grant the **Weave web** ability to any spider through its skill list if you want a non-Webber to build too. A web does not appear all at once. The spider walks its silk into place strand by strand, and the pale threads grow under it as it goes until the finished shape is complete.
@@ -245,6 +247,12 @@ armor, and damage. A small data-driven talent tree offers unlockable passive
 bonuses using level-up points, while the older personality/launch skills remain
 separate behavior permissions.
 
+You can pin a small **health bar** above a spider from the same inspector, so
+it stays on screen instead of only appearing while the panel is open. It is
+green, amber or red by how much health is left, and it is remembered between
+launches. Nothing can damage a spider yet, so today it stays full; it is there
+for when that changes, and for watching a spider you have been editing.
+
 Right-click a spider and choose **Inspect progression, inventory, and stats**
 to see its level, XP bar, resources, combat values, talent tree, and armor. The
 inventory contains spider-specific slots such as carapace, abdomen, legs,
@@ -315,7 +323,7 @@ to, because two different teams were merely unrelated, and the shipped
 
 Runtime state is saved atomically in `state/creatures.json` beside the project or
 EXE. It stores level, XP, talents, inventory, equipment, names, team, relations,
-the optional pinned level label, and Builder/Guard base progress. Transient
+the optional pinned level and health labels, and Builder/Guard base progress. Transient
 animation and movement state is intentionally not persisted. Launch presets keep
 model, temperament, job, team, abilities, colors, and global settings; they do
 not contain live HP/energy, animation state, or base build progress. Old presets

@@ -29,6 +29,31 @@ from desktop_bug.manager import CreatureManager  # noqa: E402
 from desktop_bug.progression import normalize_team_stances, team_stance  # noqa: E402
 
 
+_APP = None
+
+
+def qt_app():
+    """Create the one Qt application these checks share, and keep it alive.
+
+    Two traps, both of which this test walked into. `QGuiApplication.instance()
+    or QGuiApplication(argv)` builds one and drops the only reference on the
+    same line, and Qt then dies with an access violation as soon as anything
+    asks for font metrics. And Qt allows exactly one application object, so a
+    `QGuiApplication` created by the rendering checks made the settings-window
+    check abort when it tried to create a `QApplication` -- it is a
+    `QGuiApplication`, so building that kind from the start serves both.
+    """
+    global _APP
+    from PyQt5.QtWidgets import QApplication
+
+    existing = QApplication.instance()
+    if existing is not None:
+        return existing
+    if _APP is None:
+        _APP = QApplication(sys.argv[:1])
+    return _APP
+
+
 def color_distance(left, right) -> float:
     return math.dist(tuple(left)[:3], tuple(right)[:3])
 
@@ -121,11 +146,11 @@ def check_shipped_colony_shows_two_teams() -> None:
 
 def check_team_color_reaches_the_screen() -> None:
     """Render a spider and look at the pixels, rather than trusting the call."""
-    from PyQt5.QtGui import QColor, QGuiApplication, QImage, QPainter
+    from PyQt5.QtGui import QColor, QImage, QPainter
 
     from desktop_bug.creature import Creature
 
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+    qt_app()
     model = json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8"))
     personality = json.loads((ROOT / "personalities" / "mellow.json").read_text(encoding="utf-8"))
 
@@ -171,11 +196,11 @@ def check_team_color_reaches_the_screen() -> None:
 
 
 def check_base_ring_uses_the_team_color() -> None:
-    from PyQt5.QtGui import QColor, QGuiApplication, QImage, QPainter
+    from PyQt5.QtGui import QColor, QImage, QPainter
 
     from desktop_bug.jobs import MAX_BUILD_PROGRESS, BaseSite, BaseWorld
 
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+    qt_app()
     world = BaseWorld(600, 600)
     world.team_profiles = teams.normalize_teams({"porch_guard": {"color": "#ff00ff"}})
     site = BaseSite(id="team:porch_guard", owner_id="test", team_id="porch_guard",
@@ -220,11 +245,9 @@ def check_stances_round_trip_minimally() -> None:
 
 
 def check_settings_window_round_trips_names_and_colours() -> None:
-    from PyQt5.QtWidgets import QApplication
-
     from desktop_bug.config_ui import ConfigWindow
 
-    app = QApplication.instance() or QApplication(sys.argv[:1])
+    app = qt_app()
     assert app is not None
     window = ConfigWindow()
     try:
