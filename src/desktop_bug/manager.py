@@ -24,7 +24,7 @@ from .skills import (
 )
 from .desktop_environment import DesktopSurface
 from .math_utils import distance
-from .progression import RELATIONS
+from .progression import RELATIONS, normalize_team_stances
 from .jobs import BaseWorld, job_ability_ids, normalize_job_id
 from .personality_profiles import COMPACT_TEMPERAMENT_IDS
 from .runtime_state import (
@@ -65,6 +65,8 @@ class CreatureManager:
         self.mood_mode = "auto"
         self.social_play = False
         self.gait_style = "classic"
+        # Declared stances between teams, shared by every spider in the scene.
+        self.team_stances: dict = {}
         # Right-click naming and the hover/always-on name label.
         self.naming_enabled = True
         self.always_show_names = False
@@ -245,6 +247,7 @@ class CreatureManager:
             isinstance(saved_progression, dict) and "team_id" in saved_progression
         ):
             creature.set_team(team_id)
+        creature.team_stances = self.team_stances
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
@@ -356,6 +359,7 @@ class CreatureManager:
             self.mood_mode = str(settings.get("mood_mode", self.mood_mode) or "auto").lower()
             self.social_play = bool(settings.get("social_play", self.social_play))
             self.gait_style = normalize_gait_style(settings.get("gait_style", self.gait_style))
+            self.team_stances = normalize_team_stances(settings.get("team_relations"))
             self.apply_fly_settings(settings)
 
         index = 0
@@ -679,6 +683,14 @@ class CreatureManager:
         state = "on" if self.social_play else "off"
         return f"Social play turned {state}."
 
+    def set_team_stances(self, raw) -> str:
+        """Replace the declared stances between teams and share them live."""
+        self.team_stances = normalize_team_stances(raw)
+        for creature in self.creatures:
+            creature.team_stances = self.team_stances
+        declared = sum(len(row) for row in self.team_stances.values()) // 2
+        return f"Team relations updated ({declared} declared)."
+
     def set_allow_mouse_capture(self, enabled: bool) -> str:
         """Allow or forbid spiders shooting silk that traps/shoves the pointer."""
         self.allow_mouse_capture = bool(enabled)
@@ -923,6 +935,8 @@ class CreatureManager:
                 self.set_gait_style(str(settings.get("gait_style") or "classic"))
             if "allow_mouse_capture" in settings:
                 self.set_allow_mouse_capture(bool(settings.get("allow_mouse_capture")))
+            if "team_relations" in settings:
+                self.set_team_stances(settings.get("team_relations"))
             self.apply_fly_settings(settings)
 
         traits: list[tuple] = []

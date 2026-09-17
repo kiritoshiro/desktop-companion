@@ -64,6 +64,22 @@ def validate_preset(data: dict) -> None:
             valid_moods = {"auto", "playful", "cuddly", "curious", "calm"}
             if not isinstance(settings["mood_mode"], str) or settings["mood_mode"].lower() not in valid_moods:
                 raise ValueError("Preset settings.mood_mode must be auto, playful, cuddly, curious, or calm")
+        if "team_relations" in settings and settings["team_relations"] is not None:
+            relations = settings["team_relations"]
+            if not isinstance(relations, dict):
+                raise ValueError("Preset settings.team_relations must be an object")
+            for left, row in relations.items():
+                if not isinstance(left, str) or not left.strip():
+                    raise ValueError("Preset settings.team_relations keys must be team names")
+                if not isinstance(row, dict):
+                    raise ValueError(f"Preset settings.team_relations.{left} must be an object")
+                for right, relation in row.items():
+                    if not isinstance(right, str) or not right.strip():
+                        raise ValueError(f"Preset settings.team_relations.{left} keys must be team names")
+                    if not isinstance(relation, str) or relation.strip().lower() not in ("friend", "neutral", "foe"):
+                        raise ValueError(
+                            f"Preset settings.team_relations.{left}.{right} must be friend, neutral, or foe"
+                        )
         if "flies" in settings and settings["flies"] is not None:
             flies = settings["flies"]
             if not isinstance(flies, dict):

@@ -181,6 +181,7 @@ class ConfigWindow(QMainWindow):
         # the overlay runs rewrites this file, which the overlay watches and
         # reloads, so edits apply live without stopping it.
         self.launched_preset_path = None
+        self._loaded_settings: dict = {}
         self.setWindowTitle("Desktop Bug Companion")
         self.resize(960, 860)
         self.setMinimumSize(840, 560)
@@ -1115,7 +1116,11 @@ class ConfigWindow(QMainWindow):
         return slots
 
     def current_settings_data(self):
-        return {
+        # Start from whatever the preset already had. Settings without a
+        # widget here -- team relations, the mouse-capture switch -- would
+        # otherwise be lost every time the user pressed Save.
+        settings = dict(getattr(self, "_loaded_settings", {}))
+        settings.update({
             "size_scale": float(self.size_combo.currentData() or 1.0),
             "interferable": bool(self.interferable_check.isChecked()),
             "mood_mode": str(self.mood_combo.currentData() or "auto"),
@@ -1128,7 +1133,8 @@ class ConfigWindow(QMainWindow):
                 "max_flies": int(self.fly_count_spin.value()),
                 "spawner": bool(self.fly_spawner_check.isChecked()),
             },
-        }
+        })
+        return settings
 
     def current_preset_data(self):
         data = {
@@ -1146,6 +1152,9 @@ class ConfigWindow(QMainWindow):
 
     def apply_settings_to_ui(self, settings: dict | None) -> None:
         settings = settings if isinstance(settings, dict) else {}
+        # Remember everything the preset carried, including settings this
+        # window has no widget for, so saving does not silently drop them.
+        self._loaded_settings = dict(settings)
         size_scale = float(settings.get("size_scale", 1.0))
         closest_index = 0
         closest_distance = float("inf")

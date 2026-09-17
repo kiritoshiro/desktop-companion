@@ -25,6 +25,12 @@ TEAM_OPTIONS = (
     ("Rivals", "rivals"),
 )
 
+# Picking "Rivals" in the settings window should mean something on its own, so
+# it is hostile to every other named team unless a preset's team_relations says
+# otherwise. Every other pairing stays unrelated until it is declared, which
+# keeps the default scene peaceful.
+DEFAULT_HOSTILE_TEAMS = ("rivals",)
+
 
 @dataclass(frozen=True)
 class AbilityNode:
@@ -132,8 +138,9 @@ class ProgressionState:
         if isinstance(raw_equipped, dict):
             state.equipped = {str(slot): str(item) for slot, item in raw_equipped.items()
                               if str(item) in ARMOR_BY_ID and str(item) in state.inventory}
-        team = value.get("team_id", "neutral")
-        state.team_id = str(team).strip()[:32] or "neutral"
+        # Case-folded for the same reason preset namespaces are: two
+        # spellings of one team must not become two teams.
+        state.team_id = normalize_team_id(value.get("team_id", "neutral"))
         raw_relations = value.get("relation_overrides", {})
         if isinstance(raw_relations, dict):
             state.relation_overrides = {str(key): str(rel).lower() for key, rel in raw_relations.items()
@@ -186,11 +193,73 @@ def equipped_items(state: ProgressionState) -> Iterable[ArmorItem]:
             yield item
 
 
-def relation_between(left: ProgressionState, right: ProgressionState, right_key: str | None = None) -> str:
-    """Resolve a pair relation: explicit override, shared team, then neutral."""
+def normalize_team_id(value) -> str:
+    """Return a canonical team id. Case-insensitive, like preset namespaces."""
+    return str(value or "neutral").strip().lower()[:32] or "neutral"
+
+
+def normalize_team_stances(raw) -> dict:
+    """Clean a preset's ``team_relations`` block into ``{team: {team: rel}}``.
+
+    Each declaration is stored in both directions. A stance between two teams
+    is mutual, and a half-declared one would let a Guard and its intruder
+    disagree about whether anything hostile is happening.
+    """
+    stances: dict = {}
+    if not isinstance(raw, dict):
+        return stances
+    for left, row in raw.items():
+        if not isinstance(row, dict):
+            continue
+        left_id = normalize_team_id(left)
+        for right, relation in row.items():
+            rel = str(relation or "").strip().lower()
+            if rel not in RELATIONS:
+                continue
+            right_id = normalize_team_id(right)
+            stances.setdefault(left_id, {})[right_id] = rel
+            stances.setdefault(right_id, {})[left_id] = rel
+    return stances
+
+
+def team_stance(left_team, right_team, stances: dict | None = None) -> str | None:
+    """Return the relation declared between two teams, or None if unrelated.
+
+    Team identity used to imply only friendship, so two different teams were
+    merely unrelated. A Guard reacts only to a declared foe, which left the
+    shipped Colony preset unable to demonstrate the behaviour it advertises.
+    """
+    left_id = normalize_team_id(left_team)
+    right_id = normalize_team_id(right_team)
+    if left_id == "neutral" or right_id == "neutral":
+        # A solo spider belongs to no team and takes no side.
+        return None
+    if stances:
+        row = stances.get(left_id)
+        if row and right_id in row:
+            return row[right_id]
+    if left_id == right_id:
+        return "friend"
+    if left_id in DEFAULT_HOSTILE_TEAMS or right_id in DEFAULT_HOSTILE_TEAMS:
+        return "foe"
+    return None
+
+
+def relation_between(
+    left: ProgressionState,
+    right: ProgressionState,
+    right_key: str | None = None,
+    stances: dict | None = None,
+) -> str:
+    """Resolve a pair relation.
+
+    Order: an explicit per-pair choice made in the runtime inspector, then the
+    stance declared between the two teams, then no relation at all.
+    """
     if right_key and right_key in left.relation_overrides:
         return left.relation_overrides[right_key]
-    if left.team_id != "neutral" and left.team_id == right.team_id:
-        return "friend"
+    stance = team_stance(left.team_id, right.team_id, stances)
+    if stance:
+        return stance
     return "neutral"
 

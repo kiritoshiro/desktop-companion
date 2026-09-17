@@ -60,8 +60,18 @@ def main() -> None:
     spider.set_team("pack")
     other.set_team("pack")
     assert spider.relation_to(other) == "friend"
-    other.set_team("rivals")
+    # Two ordinary teams stay unrelated until a preset declares a stance,
+    # which keeps an ordinary scene peaceful.
+    other.set_team("pack_b")
     assert spider.relation_to(other) == "neutral"
+    # "rivals" is hostile by default, so picking it in the settings window
+    # means something without editing relations pair by pair.
+    other.set_team("rivals")
+    assert spider.relation_to(other) == "foe"
+    # An explicit pair choice in the inspector still outranks the team stance,
+    # in both directions.
+    spider.progression.relation_overrides[other.progression_id] = "friend"
+    assert spider.relation_to(other) == "friend"
     spider.progression.relation_overrides[other.progression_id] = "foe"
     assert spider.relation_to(other) == "foe"
 

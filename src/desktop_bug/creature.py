@@ -26,6 +26,7 @@ from .progression import (
     ProgressionState,
     equipped_items,
     growth_multipliers,
+    normalize_team_id,
     relation_between,
     xp_to_next_level,
 )
@@ -166,6 +167,10 @@ class Creature:
         # outranks this spider's work, so a base cannot make progress from a
         # worker that is busy fleeing or eating.
         self.job_busy = False
+        # Stances declared between teams by the loaded preset. The manager
+        # shares one mapping across the scene; empty means teams only imply
+        # friendship among their own members.
+        self.team_stances: dict = {}
 
         self.size_scale = clamp(float(size_scale), 0.45, 2.25)
         self.size_jitter = random.uniform(0.90, 1.12)
@@ -1653,7 +1658,7 @@ class Creature:
         self.energy = clamp(self.energy + max(0.0, float(dt)) * regen, 0.0, self.max_energy)
 
     def set_team(self, team_id: str) -> None:
-        self.progression.team_id = str(team_id or "neutral").strip()[:32] or "neutral"
+        self.progression.team_id = normalize_team_id(team_id)
 
     def set_job(self, job_id: str) -> None:
         """Change the profession without changing temperament or abilities."""
@@ -1670,7 +1675,15 @@ class Creature:
     def relation_to(self, other: "Creature") -> str:
         if other is None:
             return "neutral"
-        return relation_between(self.progression, other.progression, str(getattr(other, "progression_id", other.index)))
+        # ``team_stances`` comes from the loaded preset and is shared by every
+        # spider in the scene; a per-pair choice made in the inspector still
+        # wins over it.
+        return relation_between(
+            self.progression,
+            other.progression,
+            str(getattr(other, "progression_id", other.index)),
+            getattr(self, "team_stances", None),
+        )
 
     def progression_snapshot(self) -> dict:
         data = self.progression.to_dict()

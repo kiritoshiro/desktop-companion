@@ -265,7 +265,24 @@ pedipalps, and head; equipment gives derived bonuses and adds restrained visual
 armor accents. The inspector also lets you assign a team and set a symmetric
 friend/neutral/foe relationship with another spider. Relations are descriptive
 until a future combat mode explicitly consumes them, so ordinary walking,
-feeding, social play, and dragging cannot cause damage.
+feeding, social play, and dragging cannot cause damage. A Guard does read them:
+it raises an alert when a spider it considers a foe enters its base perimeter.
+
+Teams can be hostile to each other, not only friendly among themselves.
+Spiders on the same team are friends, two ordinary teams are unrelated, and
+**Rivals** is hostile to every other named team by default, so choosing it
+means something without editing relations pair by pair. A preset can declare
+any other stance in `settings.team_relations`, which is read in both
+directions:
+
+```json
+"team_relations": { "pack_a": { "rivals": "foe" } }
+```
+
+A friend/neutral/foe choice made in the right-click inspector still outranks
+whatever the teams say. Before this existed a Guard had nothing to react to,
+because two different teams were merely unrelated, and the shipped **Colony**
+preset could not demonstrate the behaviour it advertises.
 
 Runtime state is saved atomically in `state/creatures.json` beside the project or
 EXE. It stores level, XP, talents, inventory, equipment, names, team, relations,
