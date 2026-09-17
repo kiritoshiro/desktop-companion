@@ -35,7 +35,9 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
 from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, state_dir
+from .logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
 from .jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
@@ -51,6 +53,8 @@ from .skills import (
     COMMON_SKILL_IDS,
 )
 
+
+log = get_logger("config_ui")
 
 RANDOM_MODEL_ID = "__random_model__"
 RANDOM_PERSONALITY_ID = "__random_personality__"
@@ -182,7 +186,9 @@ class ConfigWindow(QMainWindow):
         # reloads, so edits apply live without stopping it.
         self.launched_preset_path = None
         self._loaded_settings: dict = {}
-        self.setWindowTitle("Desktop Bug Companion")
+        # The version belongs somewhere a user can read it off and quote in
+        # a bug report; it existed in the source and was shown nowhere.
+        self.setWindowTitle(f"Desktop Bug Companion {__version__}")
         self.resize(960, 860)
         self.setMinimumSize(840, 560)
         self._build_ui()
@@ -1496,6 +1502,11 @@ def main(argv=None) -> int:
             engine_args.extend(["--preset", args.preset])
         engine_args.extend(remaining)
         return engine_main(engine_args)
+
+    written_to = configure_logging(state_dir())
+    log.info("Desktop Bug Companion %s settings window starting (frozen=%s)", __version__, getattr(sys, "frozen", False))
+    if written_to is None:
+        log.warning("No log file could be opened under %s", state_dir())
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = ConfigWindow()

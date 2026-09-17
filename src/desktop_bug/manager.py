@@ -13,6 +13,7 @@ from .webs import WebWorld
 from .mouse_webs import MouseWebWorld
 from .flies import FlyWorld
 from .discovery import app_root, discover_models, discover_personalities, state_dir
+from .logging_setup import get_logger
 from .preset_io import load_preset
 from .skills import (
     DEFAULT_SKILL_IDS,
@@ -36,6 +37,8 @@ from .runtime_state import (
     stamp_seen,
 )
 
+
+log = get_logger("manager")
 
 RANDOM_MODEL_ID = "__random_model__"
 RANDOM_PERSONALITY_ID = "__random_personality__"
@@ -194,6 +197,11 @@ class CreatureManager:
         except OSError:
             # A read-only portable folder should not prevent the overlay from
             # running; progression still remains live for the current session.
+            log.warning(
+                "Could not write runtime state to %s; progress will not survive this session",
+                self._progression_state_path,
+                exc_info=True,
+            )
             return
 
     def mark_runtime_state_dirty(self) -> None:

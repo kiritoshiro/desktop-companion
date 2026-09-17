@@ -305,6 +305,32 @@ Set `DESKTOP_BUG_STATE_DIR` to keep runtime state somewhere other than beside
 the project or EXE. The headless tests set it so that running them cannot
 rewrite real saved spiders.
 
+## Logs and reporting a problem
+
+The executable is built windowed, so it has no console: anything printed would
+go nowhere, and a failure used to leave you with a frozen or vanished spider
+and nothing to send. Both the overlay and the settings window now write to a
+rotating log next to the runtime state:
+
+```text
+state\logs\desktop-bug.log
+```
+
+It records the version, whether the build is packaged, the preset that was
+resolved and where, warnings about unreadable models or presets, Qt's own
+warnings, and the full traceback of anything that goes wrong. Three older files
+are kept and each is capped at 512 KB, so the whole set stays small enough to
+attach to a bug report.
+
+An unhandled error no longer takes the app down in silence. It is written to
+the log and announced once through a tray message naming the log, and the
+overlay keeps running: an oddly behaved spider is recoverable, a disappeared
+application is not. A fault that repeats every frame is counted rather than
+written out sixty times a second, and you are told about it once.
+
+Run the overlay with `--verbose` for debug-level detail. The version is also in
+the settings window title, so it can be quoted without hunting for it.
+
 ## Temperament, jobs, and colony bases
 
 The scheduler still chooses temporary action phases (wander, observe, inspect,

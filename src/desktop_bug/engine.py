@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import math
 import os
 import signal
@@ -29,7 +30,9 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
 from .discovery import resolve_preset_path, state_dir
+from .logging_setup import configure_logging, get_logger, install_excepthook, log_path
 from .session_control import clear_stop_request, consume_stop_request
 from .manager import CreatureManager
 from .preset_io import load_preset
@@ -38,6 +41,9 @@ from .desktop_environment import snapshot_desktop_surfaces
 from .skills import SKILLS
 from .progression import ABILITY_TREE, ARMOR_CATALOG, TEAM_OPTIONS, xp_to_next_level
 from .jobs import job_definition
+
+
+log = get_logger("engine")
 
 
 def _target_fps() -> float:
@@ -378,7 +384,7 @@ class OverlayWindow(QWidget):
         self.setGeometry(self.geometry_rect)
         self.manager = CreatureManager(preset_path, self.width(), self.height())
         for warning in self.manager.warnings:
-            print("Warning:", warning)
+            log.warning("%s", warning)
 
         # Live-reload bookkeeping: remember the preset this overlay was launched
         # from and its last-seen modification time, so edits saved by the
@@ -393,6 +399,7 @@ class OverlayWindow(QWidget):
         # Session control: a stop request left by a crashed session would make
         # this overlay quit as soon as it finished loading, so clear it first.
         self._state_dir = state_dir()
+        self._log_path = log_path(self._state_dir)
         self._stop_requested = False
         clear_stop_request(self._state_dir)
 
@@ -898,6 +905,22 @@ class OverlayWindow(QWidget):
         self._request_full_repaint()
         apply_click_through(self)
 
+    def _notify_crash(self, summary: str) -> None:
+        """Tell the user something broke, since a windowed build shows nothing.
+
+        Deliberately quiet about the detail: the tray balloon names the failure
+        and points at the log, which is the thing worth sending on.
+        """
+        tray = getattr(self, "_tray", None)
+        if tray is None:
+            return
+        where = getattr(self, "_log_path", None)
+        detail = f"{summary}\n\nDetails were written to the log." if where is None else f"{summary}\n\nSee {where}"
+        try:
+            tray.showMessage("Desktop Bug Companion hit a problem", detail, QSystemTrayIcon.Warning, 6000)
+        except Exception:
+            log.debug("Could not show the crash notification", exc_info=True)
+
     def _request_full_repaint(self) -> None:
         self._full_repaint_pending = True
 
@@ -918,8 +941,8 @@ class OverlayWindow(QWidget):
         # disk even if the event loop never gets to shut down cleanly.
         try:
             self.manager.save_runtime_state()
-        except Exception as exc:
-            print("Could not save runtime state on stop:", exc)
+        except Exception:
+            log.exception("Could not save runtime state while stopping")
         app = QApplication.instance()
         if app is not None:
             app.quit()
@@ -929,8 +952,8 @@ class OverlayWindow(QWidget):
         # Closing the window is another exit that must not lose progress.
         try:
             self.manager.save_runtime_state()
-        except Exception as exc:
-            print("Could not save runtime state on close:", exc)
+        except Exception:
+            log.exception("Could not save runtime state while closing")
         super().closeEvent(event)
 
     def _check_preset_reload(self) -> None:
@@ -950,13 +973,29 @@ class OverlayWindow(QWidget):
         self._last_preset_mtime = mtime
         try:
             message = self.manager.reload_from_preset_data(data)
-        except Exception as exc:
-            print("Live reload failed:", exc)
+        except Exception:
+            log.exception("Live reload of %s failed", self._preset_path)
             return
         for warning in self.manager.warnings:
-            print("Warning:", warning)
-        print(message)
+            log.warning("%s", warning)
+        log.info("%s", message)
         self._request_full_repaint()
+
+
+def _install_qt_message_handler() -> None:
+    """Send Qt's own warnings to the log instead of a console nobody sees."""
+    from PyQt5.QtCore import QtCriticalMsg, QtFatalMsg, QtWarningMsg, qInstallMessageHandler
+
+    qt_log = get_logger("qt")
+    levels = {QtWarningMsg: logging.WARNING, QtCriticalMsg: logging.ERROR, QtFatalMsg: logging.CRITICAL}
+
+    def handler(mode, context, message):
+        qt_log.log(levels.get(mode, logging.DEBUG), "%s", message)
+
+    try:
+        qInstallMessageHandler(handler)
+    except Exception:
+        qt_log.debug("Could not install the Qt message handler", exc_info=True)
 
 
 def _fallback_tray_icon() -> QIcon:
@@ -1203,7 +1242,15 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the transparent Desktop Bug Companion overlay")
     parser.add_argument("--preset", default="presets/default.json", help="Path to preset JSON")
+    parser.add_argument("--verbose", action="store_true", help="Log debug detail as well")
     args = parser.parse_args(argv)
+
+    # Before anything that can fail, so a startup problem is recorded rather
+    # than lost: a windowed build has no console to print it to.
+    written_to = configure_logging(state_dir(), logging.DEBUG if args.verbose else logging.INFO)
+    log.info("Desktop Bug Companion %s overlay starting (frozen=%s)", __version__, getattr(sys, "frozen", False))
+    if written_to is None:
+        log.warning("No log file could be opened under %s", state_dir())
 
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
@@ -1218,11 +1265,17 @@ def main(argv=None) -> int:
     # Keep a reference alive.
     window._tray = tray
 
+    # The tray does not exist until now, so the notifier finds it lazily; a
+    # crash before this point still reaches the log.
+    install_excepthook(notify=window._notify_crash)
+    _install_qt_message_handler()
+    log.info("Overlay ready: preset=%s log=%s", preset, written_to)
+
     # Let Ctrl+C work in development consoles.
     try:
         signal.signal(signal.SIGINT, lambda *_: app.quit())
     except Exception:
-        pass
+        log.debug("Could not install a SIGINT handler", exc_info=True)
     return app.exec_()
 
 

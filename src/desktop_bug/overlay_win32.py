@@ -7,6 +7,10 @@ spider pixels can still be draggable.
 """
 import sys
 
+from .logging_setup import get_logger
+
+log = get_logger("overlay")
+
 
 def is_windows() -> bool:
     return sys.platform.startswith("win")
@@ -69,8 +73,8 @@ def apply_click_through(widget) -> bool:
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
         )
         return True
-    except Exception as exc:  # pragma: no cover - platform-specific safety
-        print(f"Warning: failed to apply Windows overlay styles: {exc}")
+    except Exception:  # pragma: no cover - platform-specific safety
+        log.warning("Failed to apply Windows overlay styles", exc_info=True)
         return False
 
 
@@ -89,4 +93,5 @@ def set_cursor_pos(x: int, y: int) -> bool:
 
         return bool(ctypes.windll.user32.SetCursorPos(int(x), int(y)))
     except Exception:
+        log.debug("SetCursorPos failed", exc_info=True)
         return False
