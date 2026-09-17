@@ -232,11 +232,56 @@ The settings UI opens first. Choose model, personality, count, save/load a prese
 - **Random personality** sets each personality dropdown to **Random personality (pick at launch)**.
 - **Random count (1-10)** checks the per-slot **Random 1-10** box, so that slot chooses a new count at launch.
 - **Random all** enables random model, random personality, and random count together.
-- **Skills** opens a per-slot checklist of launch abilities. A fresh slot starts with its personality's default abilities -- the common set every spider shares plus that personality's specialty -- and changing a slot's personality updates the defaults unless you have edited the list yourself. Specialist abilities (weave web for a Webber, web trap and wall pin for a Trapper, drift/slide for a Drifter) are off for other personalities by default but can be ticked on for any slot.
+- **Temperament** is the spider's stable personality. The menu now shows six broad choices: Balanced, Playful, Curious, Bold, Cautious, and Social. Their scheduler values are derived from six transparent 0-10 traits -- energy, curiosity, boldness, sociability, patience, and caution -- where 0 means almost never and 10 means strongly/often. Old specialist personality IDs remain readable in saved presets as legacy entries, but no longer crowd new choices.
+- **Job** is separate from temperament and describes colony work. Choose No job, Hunter, Builder, Guard, Scout, or Web tender. Builders establish and upgrade a visible shared team base; Guards patrol it and raise an alert when a declared foe enters its perimeter. Jobs do not silently change personality values.
+- **Abilities** opens a per-slot checklist of true capabilities. A fresh slot starts with the temperament's common abilities plus any job capability, and changing temperament/job updates those defaults unless you have edited the list yourself.
+- **Colors** opens a per-slot RGB palette editor. Pick body, leg, highlight, eye, band, shadow, and tip colors; reset any slot to the selected model's defaults. The override is saved in the preset and applies to every creature spawned from that slot.
+- **Team** assigns a launch-time team to the whole slot. Spiders sharing a non-neutral team are friends by default; specific friend/neutral/foe overrides remain available in the right-click inspector after launch.
 - **Size** offers Tiny, Small, Normal, Large, and Huge launch sizes.
 - **Draggable / interferable** toggles whether spiders can be grabbed. When unchecked, clicks pass through spider pixels too.
 
 Changes apply live. While the overlay is running you can pick different models, personalities, counts, skills, or settings and press **Save**: the running overlay reloads the new lineup in place without being stopped or restarted. **Save and launch overlay** does the same when an overlay is already up, so neither button asks you to stop first. Use **Stop overlay** to close it.
+
+## Progression, armor, and teams
+
+Each live spider has a separate runtime progression profile. Eating a fly awards
+XP exactly once at the catch point; XP advances the spider through a hard cap of
+30. Higher levels give bounded size and speed growth and improve health, energy,
+armor, and damage. A small data-driven talent tree offers unlockable passive
+bonuses using level-up points, while the older personality/launch skills remain
+separate behavior permissions.
+
+Right-click a spider and choose **Inspect progression, inventory, and stats**
+to see its level, XP bar, resources, combat values, talent tree, and armor. The
+inventory contains spider-specific slots such as carapace, abdomen, legs,
+pedipalps, and head; equipment gives derived bonuses and adds restrained visual
+armor accents. The inspector also lets you assign a team and set a symmetric
+friend/neutral/foe relationship with another spider. Relations are descriptive
+until a future combat mode explicitly consumes them, so ordinary walking,
+feeding, social play, and dragging cannot cause damage.
+
+Runtime state is saved atomically in `state/creatures.json` beside the project or
+EXE. It stores level, XP, talents, inventory, equipment, names, team, relations,
+the optional pinned level label, and Builder/Guard base progress. Transient
+animation and movement state is intentionally not persisted. Launch presets keep
+model, temperament, job, team, abilities, colors, and global settings; they do
+not contain live HP/energy, animation state, or base build progress. Old presets
+continue to work unchanged.
+
+## Temperament, jobs, and colony bases
+
+The scheduler still chooses temporary action phases (wander, observe, inspect,
+play, and so on), but it reads them from temperament values rather than from a
+long list of professions disguised as personalities. A job is a separate role:
+Builder work advances a shared team `BaseSite` through five upgrade levels,
+while Guard work patrols that site's perimeter and reacts only to explicit
+`foe` relations. The base layer is intentionally non-combat for now; its
+integrity, resources, alert, ownership, and rendering hooks are ready for later
+doors, repairs, crafting, and combat systems.
+
+The shipped **Colony** preset is a quick demonstration: one Builder creates a
+team base, one Guard patrols it, a Scout ranges around it, and a rival Hunter
+provides a separate team/job example.
 
 While the overlay is running, you can also right-click the system-tray icon for live controls:
 
@@ -382,6 +427,8 @@ Each model needs at least:
 
 Every leg entry must include `name`, `side`, `gait_group`, `attach_angle`, `rest_angle`, `reach`, `upper_len`, and `lower_len`. Optional fields such as `attach_forward`, `attach_side`, `rest_forward`, and `rest_side` improve the procedural rig.
 
+The repository includes five additional recolorable procedural variations: `Mini Marble Tarantula` (small), `Velvet Cloud Tarantula` and `Sunset Fuzzball` (fluffy), `Giant Copper Tarantula` (large and fluffy), and `Blue Jewel Tarantula` (sleek and colorful). They use the articulated five-segment leg chain and painted lateral leg connections. Procedural models respond fully to the Colors editor; sprite-rig art keeps its bitmap appearance while still using palette values for generated joints and expressive details.
+
 Validate a model:
 
 ```bat
@@ -398,7 +445,7 @@ personalities\aggressive.json
 
 Restart the settings UI. The personality dropdown auto-discovers `personalities/*.json`. No engine-code edits are required.
 
-Required personality fields include `id`, `display_name`, `speed_multiplier`, `reaction_radius`, `boldness`, and `wander_frequency`. Additional fields tune threat detection, retreat, chase, idle timing, and approach pauses. An optional `mood` field (`playful`, `cuddly`, `curious`, `calm`, `skittish`, `hunter`, `bold`, `grumpy`, `zoomy`, `mellow`, `clingy`, `bashful`, `nope`, `drifter`, or `auto`) sets the spider's resting emotional baseline, which drives its antennae, eyes, body language, and how readily it plays.
+Required personality fields include `id`, `display_name`, `speed_multiplier`, `reaction_radius`, `boldness`, and `wander_frequency`. New temperament definitions should also provide a `temperament` object with `energy`, `curiosity`, `boldness`, `sociability`, `patience`, and `caution`, each from 0 to 10. Additional scalar fields tune threat detection, retreat, chase, idle timing, and approach pauses. Specialist labels from older files remain supported as legacy compatibility data; use a separate slot `job` for work such as `builder` or `guard`.
 
 ## Presets
 
@@ -411,8 +458,14 @@ Presets live in `presets/` and are editable JSON files:
     {
       "model": "spider",
       "personality": "hunter",
+      "job": "hunter",
       "count": 2,
       "count_random": false,
+      "colors": {
+        "body": [80, 40, 30],
+        "legs": [120, 65, 35],
+        "highlight": [220, 140, 60]
+      },
       "skills": [
         "approach",
         "wander",
@@ -443,7 +496,7 @@ Each slot may include an optional `skills` list. Omitting `skills` means the slo
 
 The `settings` block also accepts an optional `mood_mode` (the same values as the tray Mood menu) and `social_play` flag, so a preset can launch straight into a chosen mood with playing on or off. Both default to `auto` and `true` when omitted, so older presets keep working unchanged.
 
-The settings UI can add/remove slots, pick model/personality/count/skills, save a preset, load a preset, and launch the engine using the selected preset.
+The settings UI can add/remove slots, pick model/temperament/job/count/abilities/colors/team, save a preset, load a preset, and launch the engine using the selected preset.
 
 Validate a preset:
 
