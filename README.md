@@ -242,6 +242,13 @@ The settings UI opens first. Choose model, personality, count, save/load a prese
 
 Changes apply live. While the overlay is running you can pick different models, personalities, counts, skills, or settings and press **Save**: the running overlay reloads the new lineup in place without being stopped or restarted. **Save and launch overlay** does the same when an overlay is already up, so neither button asks you to stop first. Use **Stop overlay** to close it.
 
+**Stop overlay** now asks the overlay to save its spiders and quit, rather than
+killing it outright. It previously terminated the process, so any XP, names or
+base progress earned since the last automatic save was discarded. The settings
+window waits up to five seconds and reports whether the overlay saved; if the
+overlay is wedged and does not answer, it is still closed, and the status line
+says so rather than implying everything was saved.
+
 ## Progression, armor, and teams
 
 Each live spider has a separate runtime progression profile. Eating a fly awards

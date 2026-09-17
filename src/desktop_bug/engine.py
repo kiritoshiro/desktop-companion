@@ -29,7 +29,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .discovery import app_root, find_data_file
+from .discovery import app_root, find_data_file, state_dir
+from .session_control import clear_stop_request, consume_stop_request
 from .manager import CreatureManager
 from .preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos
@@ -389,6 +390,12 @@ class OverlayWindow(QWidget):
         except OSError:
             self._last_preset_mtime = 0.0
 
+        # Session control: a stop request left by a crashed session would make
+        # this overlay quit as soon as it finished loading, so clear it first.
+        self._state_dir = state_dir()
+        self._stop_requested = False
+        clear_stop_request(self._state_dir)
+
         self.elapsed = QElapsedTimer()
         self.elapsed.start()
         self.last_ms = self.elapsed.elapsed()
@@ -604,6 +611,8 @@ class OverlayWindow(QWidget):
             self._refresh_desktop_surfaces()
         if current_ms - self._last_preset_check_ms >= PRESET_WATCH_MS:
             self._last_preset_check_ms = current_ms
+            if self._check_stop_request():
+                return
             self._check_preset_reload()
         global_pos = QCursor.pos()
         local = global_pos - self.geometry_rect.topLeft()
@@ -891,6 +900,38 @@ class OverlayWindow(QWidget):
 
     def _request_full_repaint(self) -> None:
         self._full_repaint_pending = True
+
+    def _check_stop_request(self) -> bool:
+        """Save and quit if the settings window asked the overlay to stop.
+
+        This is the path that used to be a bare ``TerminateProcess``, which
+        killed the overlay before anything could be written. Returns whether a
+        stop was handled, so the caller can skip the rest of the frame.
+        """
+        if self._stop_requested:
+            return True
+        if not consume_stop_request(self._state_dir):
+            return False
+        self._stop_requested = True
+        self.timer.stop()
+        # Save here rather than relying only on aboutToQuit, so the state is on
+        # disk even if the event loop never gets to shut down cleanly.
+        try:
+            self.manager.save_runtime_state()
+        except Exception as exc:
+            print("Could not save runtime state on stop:", exc)
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+        return True
+
+    def closeEvent(self, event):  # noqa: N802 - Qt API name
+        # Closing the window is another exit that must not lose progress.
+        try:
+            self.manager.save_runtime_state()
+        except Exception as exc:
+            print("Could not save runtime state on close:", exc)
+        super().closeEvent(event)
 
     def _check_preset_reload(self) -> None:
         """Reload the launched preset if its file changed, applying edits live."""

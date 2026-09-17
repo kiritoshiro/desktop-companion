@@ -5,6 +5,7 @@ import os
 import random
 import subprocess
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -34,7 +35,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file
+from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, state_dir
+from .session_control import clear_stop_request, stop_process
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
 from .jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
 from .personality_profiles import selectable_personality_ids
@@ -1398,19 +1400,43 @@ class ConfigWindow(QMainWindow):
             env["PYTHONPATH"] = src_path + (os.pathsep + existing if existing else "")
             cwd = str(self.root)
         try:
+            # A request left behind by a previous session would stop the new
+            # overlay the moment it finished loading.
+            clear_stop_request(state_dir())
             self.overlay_process = subprocess.Popen(cmd, cwd=cwd, env=env)
             self.launched_preset_path = str(preset_path)
             self.status.setText("Overlay launched. Edit and press Save to apply changes live, or Stop overlay to close it.")
         except Exception as exc:
             QMessageBox.critical(self, "Could not launch overlay", str(exc))
 
+    def _wait_tick(self, seconds: float) -> None:
+        """Sleep without freezing the settings window while the overlay saves."""
+        app = QApplication.instance()
+        if app is not None:
+            app.processEvents()
+        time.sleep(seconds)
+
     def stop_overlay(self):
-        if self.overlay_process and self.overlay_process.poll() is None:
-            self.overlay_process.terminate()
+        if not (self.overlay_process and self.overlay_process.poll() is None):
             self.launched_preset_path = None
-            self.status.setText("Stopping overlay...")
+            clear_stop_request(state_dir())
+            self.status.setText("No overlay process is running from this window.")
+            return
+
+        self.status.setText("Stopping overlay...")
+        self._wait_tick(0.0)
+        # Ask the overlay to save and quit before killing it. Terminating it
+        # outright discarded any XP, names and base progress that the debounced
+        # flush had not yet written.
+        outcome = stop_process(self.overlay_process, state_dir(), sleep=self._wait_tick)
+        self.launched_preset_path = None
+        if outcome == "graceful":
+            self.status.setText("Overlay stopped and saved its spiders.")
+        elif outcome == "terminated":
+            self.status.setText(
+                "Overlay did not respond and was closed; recent progress may not have been saved."
+            )
         else:
-            self.launched_preset_path = None
             self.status.setText("No overlay process is running from this window.")
 
     def update_process_status(self):

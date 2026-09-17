@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import json
-import os
 import random
 import sys
 from pathlib import Path
@@ -13,7 +12,7 @@ from .cage import Cage
 from .webs import WebWorld
 from .mouse_webs import MouseWebWorld
 from .flies import FlyWorld
-from .discovery import app_root, discover_models, discover_personalities
+from .discovery import app_root, discover_models, discover_personalities, state_dir
 from .preset_io import load_preset
 from .skills import (
     DEFAULT_SKILL_IDS,
@@ -119,11 +118,9 @@ class CreatureManager:
         self._mouse_y = -100000.0
         self._mouse_down = False
         self._progression_namespace = "default"
-        # DESKTOP_BUG_STATE_DIR redirects runtime state away from the project
-        # or executable folder. Headless tests set it so a test run cannot
-        # rewrite a real player's saved spiders.
-        state_dir = os.environ.get("DESKTOP_BUG_STATE_DIR", "").strip()
-        self._progression_state_path = (Path(state_dir) if state_dir else self.root / "state") / "creatures.json"
+        # Resolved in one place so the overlay and the settings window cannot
+        # disagree about where runtime state and session control files live.
+        self._progression_state_path = state_dir() / "creatures.json"
         # Feeding happens inside the frame loop, so persisting there would put a
         # full JSON rewrite on the render thread every time a fly is eaten.
         # Frequent changes mark the state dirty and a debounced flush in

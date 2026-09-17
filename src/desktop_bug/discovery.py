@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -86,6 +87,20 @@ def candidate_roots(root: Path = None) -> List[Path]:
 def data_path(*parts: str) -> Path:
     """Return a writable path beside the project/executable."""
     return app_root().joinpath(*parts)
+
+
+def state_dir() -> Path:
+    """Return the directory holding runtime state and session control files.
+
+    Defaults to ``state`` beside the project or executable.
+    ``DESKTOP_BUG_STATE_DIR`` overrides it, which the headless tests use so a
+    test run cannot rewrite a real player's saved spiders. Both the overlay and
+    the settings window resolve it here so they cannot disagree.
+    """
+    override = os.environ.get("DESKTOP_BUG_STATE_DIR", "").strip()
+    if override:
+        return Path(override)
+    return app_root() / "state"
 
 
 def data_dirs(folder_name: str, root: Path = None) -> List[Path]:
