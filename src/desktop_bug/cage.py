@@ -209,7 +209,7 @@ class Cage:
     # ------------------------------------------------------------------
     def draw(self, painter, member_count: int = 0, active: bool = False) -> None:
         """Render a soft terrarium-style fence with corner grips."""
-        from PyQt5.QtCore import QPointF, QRectF, Qt
+        from PyQt5.QtCore import QRectF, Qt
         from PyQt5.QtGui import QColor, QPen, QBrush
 
         rect = QRectF(self.x, self.y, self.w, self.h)

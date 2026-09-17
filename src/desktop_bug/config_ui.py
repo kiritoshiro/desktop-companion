@@ -5,6 +5,7 @@ import os
 import random
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 from PyQt5.QtCore import QSize, QTimer, Qt
@@ -13,6 +14,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QColorDialog,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -34,7 +36,18 @@ from PyQt5.QtWidgets import (
 
 from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
-from .skills import DEFAULT_SKILL_IDS, SKILLS, compact_skill_summary, normalize_skill_ids, default_skills_for_personality, COMMON_SKILL_IDS
+from .jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
+from .personality_profiles import selectable_personality_ids
+from .progression import TEAM_OPTIONS
+from .skills import (
+    SKILLS,
+    compact_ability_summary,
+    normalize_ability_ids,
+    normalize_skill_ids,
+    skills_with_default_abilities,
+    skills_with_selected_abilities,
+    COMMON_SKILL_IDS,
+)
 
 
 RANDOM_MODEL_ID = "__random_model__"
@@ -60,6 +73,32 @@ MOVEMENT_OPTIONS = [
     ("Lively - lifts legs + feels objects", "lively"),
     ("Skitter - rapid bursts + tiny stops", "skitter"),
 ]
+
+COLOR_KEYS = (
+    ("body", "Body"),
+    ("legs", "Legs"),
+    ("highlight", "Highlights"),
+    ("eyes", "Eyes"),
+    ("leg_band", "Leg bands"),
+    ("leg_dark", "Leg shadows"),
+    ("leg_tip", "Leg tips"),
+)
+
+
+def _normalize_color_overrides(value):
+    """Return safe RGB lists for the optional per-slot palette."""
+    if not isinstance(value, dict):
+        return {}
+    normalized = {}
+    for key, rgb in value.items():
+        if not isinstance(key, str) or not key.strip() or not isinstance(rgb, (list, tuple)) or len(rgb) != 3:
+            continue
+        try:
+            channels = [max(0, min(255, int(float(channel)))) for channel in rgb]
+        except (TypeError, ValueError):
+            continue
+        normalized[key.strip()] = channels
+    return normalized
 
 
 class NoScrollComboBox(QComboBox):
@@ -105,8 +144,8 @@ class NoScrollDoubleSpinBox(QDoubleSpinBox):
 
 class SlotTable(QTableWidget):
     def __init__(self, parent=None):
-        super().__init__(0, 6, parent)
-        self.setHorizontalHeaderLabels(["Creature model", "Personality", "How many", "Pick 1-10", "Skills", ""])
+        super().__init__(0, 9, parent)
+        self.setHorizontalHeaderLabels(["Creature model", "Temperament", "How many", "Pick 1-10", "Abilities", "Colors", "Team", "Job", ""])
         self.horizontalHeader().setStretchLastSection(False)
         self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
@@ -114,6 +153,9 @@ class SlotTable(QTableWidget):
         self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
         self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
         self.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        self.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(self.SelectRows)
@@ -307,7 +349,7 @@ class ConfigWindow(QMainWindow):
         self.creatures_group = QGroupBox("Creatures")
         self.creatures_group.setObjectName("creaturesGroup")
         self.creatures_group.setToolTip(
-            "Each row is one creature group. Use Skills to choose which abilities those spiders get at launch."
+            "Each row is one creature group. Temperament is stable personality, Job is a separate profession, and Abilities are true capabilities."
         )
         creatures_layout = QVBoxLayout(self.creatures_group)
         creatures_layout.setContentsMargins(8, 8, 8, 8)
@@ -505,7 +547,11 @@ class ConfigWindow(QMainWindow):
         self.fly_max_spin.setToolTip("Longest gap between fly spawns. Each spawn waits a random time in this range.")
         self.fly_count_spin.setToolTip("How many live flies may share the screen at once.")
         self.launch_group.setToolTip("Save the current preset and start or stop the overlay.")
-        self.table.setToolTip("Each row is one creature group. Use Skills to choose abilities for that slot.")
+        self.table.setToolTip(
+            "Each row is one creature group. Temperament is stable personality, "
+            "Job is a separate profession, Abilities are capabilities, and Team "
+            "groups spiders before launch."
+        )
         self.preset_name.setToolTip("This becomes the saved preset file name.")
         self.preset_combo.setToolTip("Choose an existing preset from the presets folder.")
         self.refresh_btn.setToolTip("Reload models, personalities, and presets from disk.")
@@ -543,6 +589,11 @@ class ConfigWindow(QMainWindow):
                     slot.get("count", 1),
                     bool(slot.get("count_random", False)),
                     slot.get("skills"),
+                    slot.get("abilities"),
+                    slot.get("colors"),
+                    slot.get("slot_id"),
+                    slot.get("team_id", slot.get("team", "neutral")),
+                    slot.get("job", "none"),
                 )
         else:
             self.add_slot()
@@ -568,12 +619,13 @@ class ConfigWindow(QMainWindow):
                 label = path.stem
             self.preset_combo.addItem(str(label), str(path))
 
-    def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None):
+    def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None, abilities=None, colors=None, slot_id=None, team_id="neutral", job_id="none"):
         row = self.table.rowCount()
         self.table.insertRow(row)
         self.table.setRowHeight(row, max(64, MODEL_ICON_SIZE + 12))
 
         model_box = NoScrollComboBox()
+        model_box.setProperty("slot_id", str(slot_id or f"slot-{uuid.uuid4().hex[:12]}"))
         model_box.setIconSize(QSize(MODEL_ICON_SIZE, MODEL_ICON_SIZE))
         model_box.setMinimumWidth(285)
         model_box.addItem(self._random_model_icon(), "Random model at launch", RANDOM_MODEL_ID)
@@ -600,14 +652,33 @@ class ConfigWindow(QMainWindow):
 
         personality_box = NoScrollComboBox()
         personality_box.addItem("Random personality at launch", RANDOM_PERSONALITY_ID)
-        for personality in sorted(self.personalities.values(), key=lambda p: p.get("display_name", p.get("id", ""))):
-            personality_box.addItem(personality.get("display_name", personality["id"]), personality["id"])
+        personality_ids = selectable_personality_ids(self.personalities, personality_id)
+        for personality_id_value in personality_ids:
+            personality = self.personalities.get(personality_id_value)
+            if personality is None:
+                continue
+            label = personality.get("display_name", personality["id"])
+            if not personality.get("_canonical", False):
+                label = f"Legacy: {label}"
+            personality_box.addItem(label, personality["id"])
+            trait_text = personality.get("temperament") or personality.get("traits")
+            if isinstance(trait_text, dict):
+                values = ", ".join(
+                    f"{key} {float(trait_text.get(key, 5)):.0f}/10"
+                    for key in ("energy", "curiosity", "boldness", "sociability", "patience", "caution")
+                    if key in trait_text
+                )
+                personality_box.setItemData(
+                    personality_box.count() - 1,
+                    f"{personality.get('description', '')}\n{values}".strip(),
+                    Qt.ToolTipRole,
+                )
         if personality_id:
             idx = personality_box.findData(personality_id)
             if idx >= 0:
                 personality_box.setCurrentIndex(idx)
         else:
-            idx = personality_box.findData("hunter")
+            idx = personality_box.findData("balanced")
             if idx >= 0:
                 personality_box.setCurrentIndex(idx)
 
@@ -627,15 +698,67 @@ class ConfigWindow(QMainWindow):
         # are not all handed every ability.  Only an explicit skills list from a
         # saved preset, or a manual edit, counts as "custom" and sticks when the
         # personality changes.
-        if skills is None:
+        if abilities is not None:
+            skills_btn.setProperty(
+                "skill_ids",
+                skills_with_selected_abilities(
+                    self.personalities.get(personality_box.currentData()),
+                    abilities,
+                ),
+            )
+            skills_btn.setProperty("ability_ids", normalize_ability_ids(abilities))
+            skills_btn.setProperty("skills_custom", True)
+        elif skills is None:
             effective_pid = personality_box.currentData()
             skills_btn.setProperty("skill_ids", self._default_skills_for(effective_pid))
             skills_btn.setProperty("skills_custom", False)
         else:
             skills_btn.setProperty("skill_ids", normalize_skill_ids(skills))
+            # Legacy presets stored behaviours and abilities together.  Keep
+            # loading them compatible, but migrate their editable portion to
+            # the dedicated abilities field when the preset is saved.
+            skills_btn.setProperty("ability_ids", normalize_ability_ids(skills))
             skills_btn.setProperty("skills_custom", True)
         self._refresh_skills_button(skills_btn)
         skills_btn.clicked.connect(lambda _checked=False, button=skills_btn: self.edit_skills_for_button(button))
+
+        colors_btn = QPushButton("Colors")
+        colors_btn.setMinimumWidth(78)
+        colors_btn.setProperty("color_overrides", _normalize_color_overrides(colors))
+        self._refresh_colors_button(colors_btn)
+        colors_btn.clicked.connect(
+            lambda _checked=False, button=colors_btn, mb=model_box: self.edit_colors_for_button(button, mb)
+        )
+
+        team_box = NoScrollComboBox()
+        team_box.setMinimumWidth(92)
+        for label, value in TEAM_OPTIONS:
+            team_box.addItem(label, value)
+        team_value = str(team_id or "neutral").strip().lower()
+        team_index = team_box.findData(team_value)
+        team_box.setCurrentIndex(team_index if team_index >= 0 else 0)
+        team_box.setToolTip(
+            "Spiders in the same non-neutral team are friends by default. "
+            "Use the inspector later for a specific friend/neutral/foe override."
+        )
+
+        job_box = NoScrollComboBox()
+        job_box.setMinimumWidth(104)
+        for label, value in JOB_OPTIONS:
+            job_box.addItem(label, value)
+        job_value = normalize_job_id(job_id)
+        job_index = job_box.findData(job_value)
+        job_box.setCurrentIndex(job_index if job_index >= 0 else 0)
+        if not bool(skills_btn.property("skills_custom")):
+            skills_btn.setProperty(
+                "skill_ids",
+                self._default_skills_for(personality_box.currentData(), job_box.currentData()),
+            )
+            self._refresh_skills_button(skills_btn)
+        job_box.setToolTip(
+            "A job is separate from temperament. Builders create a shared base; "
+            "Guards patrol and protect it from declared foes."
+        )
 
         remove_btn = QPushButton("Remove")
         remove_btn.clicked.connect(lambda: self.remove_slot_by_button(remove_btn))
@@ -645,15 +768,23 @@ class ConfigWindow(QMainWindow):
         self.table.setCellWidget(row, 2, count_spin)
         self.table.setCellWidget(row, 3, count_random_check)
         self.table.setCellWidget(row, 4, skills_btn)
-        self.table.setCellWidget(row, 5, remove_btn)
-        for col in range(6):
+        self.table.setCellWidget(row, 5, colors_btn)
+        self.table.setCellWidget(row, 6, team_box)
+        self.table.setCellWidget(row, 7, job_box)
+        self.table.setCellWidget(row, 8, remove_btn)
+        for col in range(9):
             self.table.setItem(row, col, QTableWidgetItem(""))
 
         model_box.currentIndexChanged.connect(self.update_summary)
         personality_box.currentIndexChanged.connect(
-            lambda _i=0, pb=personality_box, sb=skills_btn: self._on_personality_changed(pb, sb))
+            lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_personality_changed(pb, jb, sb))
         count_spin.valueChanged.connect(self.update_summary)
         count_random_check.toggled.connect(self.update_summary)
+        team_box.currentIndexChanged.connect(self.update_summary)
+        job_box.currentIndexChanged.connect(self.update_summary)
+        job_box.currentIndexChanged.connect(
+            lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_job_changed(pb, jb, sb)
+        )
         self.update_summary()
 
     def _random_model_icon(self) -> QIcon:
@@ -749,7 +880,7 @@ class ConfigWindow(QMainWindow):
         painter.drawEllipse(64, 43, 5, 5)
         painter.drawEllipse(64, 51, 5, 5)
 
-    def _default_skills_for(self, personality_id):
+    def _default_skills_for(self, personality_id, job_id="none"):
         """Default abilities for a personality combo value.
 
         A real personality resolves to its common-plus-specialty default; a
@@ -758,32 +889,138 @@ class ConfigWindow(QMainWindow):
         """
         personality = self.personalities.get(personality_id) if personality_id else None
         if personality is None:
-            return list(COMMON_SKILL_IDS)
-        return default_skills_for_personality(personality)
+            return normalize_skill_ids(list(COMMON_SKILL_IDS) + list(job_ability_ids(job_id)))
+        return skills_with_default_abilities(personality, job_ability_ids(job_id))
 
-    def _on_personality_changed(self, personality_box, skills_btn) -> None:
+    def _on_personality_changed(self, personality_box, job_box, skills_btn) -> None:
         # Follow the new personality's default abilities unless the user has
         # deliberately customised this slot's skills.
         if not bool(skills_btn.property("skills_custom")):
-            skills_btn.setProperty("skill_ids", self._default_skills_for(personality_box.currentData()))
+            skills_btn.setProperty("skill_ids", self._default_skills_for(personality_box.currentData(), job_box.currentData()))
+            self._refresh_skills_button(skills_btn)
+        self.update_summary()
+
+    def _on_job_changed(self, personality_box, job_box, skills_btn) -> None:
+        if not bool(skills_btn.property("skills_custom")):
+            skills_btn.setProperty(
+                "skill_ids",
+                self._default_skills_for(personality_box.currentData(), job_box.currentData()),
+            )
             self._refresh_skills_button(skills_btn)
         self.update_summary()
 
     def _refresh_skills_button(self, button: QPushButton) -> None:
         ids = normalize_skill_ids(button.property("skill_ids"))
         button.setProperty("skill_ids", ids)
-        button.setText(compact_skill_summary(ids))
+        button.setText(compact_ability_summary(ids))
         button.setToolTip("Choose which abilities this creature slot can use at launch.")
+
+    def _refresh_colors_button(self, button: QPushButton) -> None:
+        overrides = _normalize_color_overrides(button.property("color_overrides"))
+        button.setProperty("color_overrides", overrides)
+        if not overrides:
+            button.setText("Colors")
+            button.setStyleSheet("")
+            button.setToolTip("Use the model's default palette. Click to choose custom colors for this slot.")
+            return
+        body = overrides.get("body", [80, 70, 70])
+        luminance = (body[0] * 0.299) + (body[1] * 0.587) + (body[2] * 0.114)
+        text_color = "#17202a" if luminance > 155 else "#ffffff"
+        button.setText(f"Colors ({len(overrides)})")
+        button.setStyleSheet(
+            f"QPushButton {{ background: rgb({body[0]}, {body[1]}, {body[2]}); color: {text_color}; }}"
+        )
+        button.setToolTip("Custom palette: " + ", ".join(sorted(overrides)) + ". Click to edit.")
+
+    def _model_color_defaults(self, model_box: QComboBox) -> dict:
+        model_id = model_box.currentData() if model_box is not None else None
+        if model_id == RANDOM_MODEL_ID:
+            models = self.models.values()
+        else:
+            model = self.models.get(model_id) if model_id else None
+            models = [model] if model else []
+        defaults = {}
+        for model in models:
+            for key, value in (model.get("colors", {}) or {}).items():
+                normalized = _normalize_color_overrides({key: value})
+                if key not in defaults and key in normalized:
+                    defaults[key] = normalized[key]
+        return defaults
+
+    def edit_colors_for_button(self, button: QPushButton, model_box: QComboBox) -> None:
+        """Edit a slot palette without changing the model's shared defaults."""
+        defaults = self._model_color_defaults(model_box)
+        current = _normalize_color_overrides(button.property("color_overrides"))
+        keys = list(COLOR_KEYS)
+        known = {key for key, _label in keys}
+        for key in defaults:
+            if key not in known:
+                keys.append((key, key.replace("_", " ").title()))
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Customize spider colors")
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Choose colors for this creature slot. Unchanged fields use the selected model's defaults."))
+        swatches = {}
+
+        def display_color(key: str):
+            return current.get(key) or defaults.get(key) or [80, 70, 70]
+
+        def refresh_swatch(key: str, swatch: QPushButton):
+            rgb = display_color(key)
+            luminance = rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114
+            text_color = "#17202a" if luminance > 155 else "#ffffff"
+            swatch.setText("Custom" if key in current else "Model default")
+            swatch.setStyleSheet(
+                f"QPushButton {{ background: rgb({rgb[0]}, {rgb[1]}, {rgb[2]}); color: {text_color}; }}"
+            )
+
+        for key, label in keys:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(f"{label}:"))
+            swatch = QPushButton()
+            swatch.setMinimumWidth(125)
+            swatches[key] = swatch
+            refresh_swatch(key, swatch)
+
+            def choose_color(_checked=False, color_key=key, color_button=swatch):
+                rgb = display_color(color_key)
+                chosen = QColorDialog.getColor(QColor(*rgb), self, f"Choose {color_key} color")
+                if chosen.isValid():
+                    current[color_key] = [chosen.red(), chosen.green(), chosen.blue()]
+                    refresh_swatch(color_key, color_button)
+
+            swatch.clicked.connect(choose_color)
+            row.addWidget(swatch)
+            layout.addLayout(row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        reset_btn = buttons.addButton("Reset to model defaults", QDialogButtonBox.ResetRole)
+        reset_btn.clicked.connect(lambda: [current.pop(key, None) for key, _label in keys])
+        reset_btn.clicked.connect(lambda: [refresh_swatch(key, swatches[key]) for key, _label in keys])
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            button.setProperty("color_overrides", _normalize_color_overrides(current))
+            self._refresh_colors_button(button)
+            self.update_summary()
 
     def edit_skills_for_button(self, button: QPushButton) -> None:
         current = set(normalize_skill_ids(button.property("skill_ids")))
         dialog = QDialog(self)
-        dialog.setWindowTitle("Choose spider skills")
+        dialog.setWindowTitle("Choose spider abilities")
         layout = QVBoxLayout(dialog)
         dialog.setToolTip("Select the abilities that spiders in this slot may use. Leaving this unchanged keeps the personality's default abilities.")
 
         checks = []
+        heading = QLabel("Abilities")
+        heading.setStyleSheet("font-weight: 600; margin-top: 6px;")
+        layout.addWidget(heading)
         for skill in SKILLS:
+            if skill.category != "Ability":
+                continue
             cb = QCheckBox(skill.display_name)
             cb.setChecked(skill.id in current)
             cb.setToolTip(skill.description)
@@ -801,7 +1038,13 @@ class ConfigWindow(QMainWindow):
 
         if dialog.exec_() == QDialog.Accepted:
             selected = [skill_id for skill_id, cb in checks if cb.isChecked()]
-            button.setProperty("skill_ids", selected)
+            button.setProperty("ability_ids", selected)
+            # Keep the legacy in-memory property complete for callers that
+            # still inspect it, while behaviours remain personality-controlled.
+            behaviour_ids = [skill_id for skill_id in current if skill_id not in {
+                skill.id for skill in SKILLS if skill.category == "Ability"
+            }]
+            button.setProperty("skill_ids", behaviour_ids + selected)
             button.setProperty("skills_custom", True)
             self._refresh_skills_button(button)
             self.update_summary()
@@ -823,7 +1066,7 @@ class ConfigWindow(QMainWindow):
 
     def remove_slot_by_button(self, button):
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, 5) is button:
+            if self.table.cellWidget(row, 8) is button:
                 self.table.removeRow(row)
                 break
         self.update_summary()
@@ -836,6 +1079,9 @@ class ConfigWindow(QMainWindow):
             count_spin = self.table.cellWidget(row, 2)
             count_random_check = self.table.cellWidget(row, 3)
             skills_btn = self.table.cellWidget(row, 4)
+            colors_btn = self.table.cellWidget(row, 5)
+            team_box = self.table.cellWidget(row, 6)
+            job_box = self.table.cellWidget(row, 7)
             if not model_box or not personality_box or model_box.currentData() is None or personality_box.currentData() is None:
                 continue
             count_random = bool(count_random_check.isChecked()) if count_random_check else False
@@ -845,11 +1091,22 @@ class ConfigWindow(QMainWindow):
                 "count": int(count_spin.value()),
                 "count_random": count_random,
             }
+            slot["slot_id"] = str(model_box.property("slot_id") or f"slot-{uuid.uuid4().hex[:12]}")
+            slot["team"] = str(team_box.currentData() or "neutral") if team_box is not None else "neutral"
+            slot["job"] = normalize_job_id(job_box.currentData()) if job_box is not None else "none"
             # Only write an explicit skills list when the user customised it.
             # Otherwise the slot stays personality-driven: the spider uses its
             # personality's default abilities, resolved when the overlay loads.
             if skills_btn is not None and bool(skills_btn.property("skills_custom")):
-                slot["skills"] = normalize_skill_ids(skills_btn.property("skill_ids"))
+                slot["abilities"] = normalize_ability_ids(
+                    skills_btn.property("ability_ids")
+                    if skills_btn.property("ability_ids") is not None
+                    else skills_btn.property("skill_ids")
+                )
+            if colors_btn is not None:
+                colors = _normalize_color_overrides(colors_btn.property("color_overrides"))
+                if colors:
+                    slot["colors"] = colors
             slots.append(slot)
         if not slots and not silent:
             QMessageBox.warning(self, "No creature slots", "Add at least one creature slot before saving or launching.")
@@ -959,6 +1216,24 @@ class ConfigWindow(QMainWindow):
             if skills_btn and bool(skills_btn.property("skills_custom")):
                 custom_skill_rows += 1
 
+        custom_color_rows = 0
+        team_counts = {}
+        job_counts = {}
+        for row in range(self.table.rowCount()):
+            colors_btn = self.table.cellWidget(row, 5)
+            if colors_btn is not None and _normalize_color_overrides(colors_btn.property("color_overrides")):
+                custom_color_rows += 1
+            team_box = self.table.cellWidget(row, 6)
+            if team_box is not None:
+                team_id = str(team_box.currentData() or "neutral")
+                if team_id != "neutral":
+                    team_counts[team_id] = team_counts.get(team_id, 0) + 1
+            job_box = self.table.cellWidget(row, 7)
+            if job_box is not None:
+                job_id = str(job_box.currentData() or "none")
+                if job_id != "none":
+                    job_counts[job_id] = job_counts.get(job_id, 0) + 1
+
         if rows == 0:
             creature_text = "No creature slots yet. Add at least one slot to launch."
         else:
@@ -967,7 +1242,17 @@ class ConfigWindow(QMainWindow):
             if random_models or random_personalities:
                 creature_text += f" Random choices: {random_models} model slot(s), {random_personalities} personality slot(s)."
             if custom_skill_rows:
-                creature_text += f" Custom skills: {custom_skill_rows} slot(s)."
+                creature_text += f" Custom abilities: {custom_skill_rows} slot(s)."
+            if custom_color_rows:
+                creature_text += f" Custom colors: {custom_color_rows} slot(s)."
+            if team_counts:
+                creature_text += " Teams: " + ", ".join(
+                    f"{team_id} ({count})" for team_id, count in sorted(team_counts.items())
+                ) + "."
+            if job_counts:
+                creature_text += " Jobs: " + ", ".join(
+                    f"{job_id} ({count})" for job_id, count in sorted(job_counts.items())
+                ) + "."
 
         size_text = self.size_combo.currentText() if hasattr(self, "size_combo") else "Normal (100%)"
         mood_text = self.mood_combo.currentText() if hasattr(self, "mood_combo") else "Auto"
@@ -1065,13 +1350,18 @@ class ConfigWindow(QMainWindow):
             data = load_preset(path)
             self.preset_name.setText(data.get("name", path.stem))
             self.table.setRowCount(0)
-            for slot in data.get("slots", []):
+            for slot_index, slot in enumerate(data.get("slots", [])):
                 self.add_slot(
                     slot.get("model"),
                     slot.get("personality"),
                     int(slot.get("count", 1)),
                     bool(slot.get("count_random", False)),
                     slot.get("skills"),
+                    slot.get("abilities"),
+                    slot.get("colors"),
+                    slot.get("slot_id") or f"slot-{slot_index}",
+                    slot.get("team_id", slot.get("team", "neutral")),
+                    slot.get("job", "none"),
                 )
             self.apply_settings_to_ui(data.get("settings"))
             self.status.setText(f"Loaded preset: {path}")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 import random
 import sys
 from pathlib import Path
@@ -13,13 +14,28 @@ from .mouse_webs import MouseWebWorld
 from .flies import FlyWorld
 from .discovery import app_root, discover_models, discover_personalities
 from .preset_io import load_preset
-from .skills import DEFAULT_SKILL_IDS, normalize_skill_ids, unknown_skill_ids, SKILL_BY_ID, default_skills_for_personality
+from .skills import (
+    DEFAULT_SKILL_IDS,
+    normalize_skill_ids,
+    unknown_skill_ids,
+    SKILL_BY_ID,
+    skills_with_default_abilities,
+    skills_with_selected_abilities,
+)
 from .desktop_environment import DesktopSurface
-from .math_utils import angle_to, distance
+from .math_utils import distance
+from .progression import RELATIONS
+from .jobs import BaseWorld, job_ability_ids, normalize_job_id
+from .personality_profiles import COMPACT_TEMPERAMENT_IDS
 
 
 RANDOM_MODEL_ID = "__random_model__"
 RANDOM_PERSONALITY_ID = "__random_personality__"
+FEED_XP_REWARD = 110
+# How long a background progression change may sit unsaved. Short enough that a
+# crash loses at most a few seconds of XP, long enough that a hungry colony does
+# not rewrite the state file every frame.
+RUNTIME_STATE_FLUSH_SECONDS = 5.0
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -50,6 +66,11 @@ class CreatureManager:
         # Shared web world: all spiders read and write the same set of webs, so
         # one can build a web and another can walk it or finish it when left.
         self.web_world = WebWorld(screen_w, screen_h)
+        # Colony structures are shared by team jobs and persisted separately
+        # from the launch preset.  Presets choose jobs; runtime state remembers
+        # the progress of the bases they built.
+        self._base_runtime_state = []
+        self.base_world = BaseWorld(screen_w, screen_h)
         # Shared cursor-silk world: holds the single active web glob / trap that
         # a spider shoots at the real pointer. Only the engine can actually move
         # the OS pointer, so this just computes the desired position each frame.
@@ -88,7 +109,76 @@ class CreatureManager:
         self._mouse_x = -100000.0
         self._mouse_y = -100000.0
         self._mouse_down = False
+        self._progression_namespace = "default"
+        self._progression_state_path = self.root / "state" / "creatures.json"
+        # Feeding happens inside the frame loop, so persisting there would put a
+        # full JSON rewrite on the render thread every time a fly is eaten.
+        # Frequent changes mark the state dirty and a debounced flush in
+        # ``update`` writes it; explicit user actions still save immediately.
+        self._runtime_state_dirty = False
+        self._runtime_state_flush_accum = 0.0
+        self._progression_states = self._load_progression_states()
+        self.base_world = BaseWorld(screen_w, screen_h, self._base_runtime_state)
         self.load_preset(preset_path)
+
+    def _runtime_progression_id(self, index: int) -> str:
+        """Return a preset-scoped id for a spider that has no saved slot.
+
+        Bare ``runtime:<index>`` keys are shared by every preset, so a level 12
+        hunter in one preset would hand its progression to whatever spider
+        happened to land on the same index in another. Scoping the key to the
+        loaded preset keeps saved profiles separate.
+        """
+        return f"{self._progression_namespace}|runtime:{int(index)}"
+
+    def _load_progression_states(self) -> dict:
+        """Load optional per-creature runtime state, tolerating bad old files."""
+        try:
+            with self._progression_state_path.open("r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            states = data.get("creatures", {}) if isinstance(data, dict) else {}
+            self._base_runtime_state = data.get("bases", []) if isinstance(data, dict) and isinstance(data.get("bases", []), list) else []
+            return states if isinstance(states, dict) else {}
+        except (OSError, ValueError, TypeError):
+            return {}
+
+    def save_runtime_state(self) -> None:
+        """Persist meaningful creature state atomically beside the project/exe."""
+        states = dict(self._progression_states)
+        for creature in self.creatures:
+            states[str(getattr(creature, "progression_id", self._runtime_progression_id(creature.index)))] = {
+                "name": creature.name,
+                "model": creature.model.get("id"),
+                "personality": creature.personality.get("id"),
+                "progression": creature.progression.to_dict(),
+            }
+        payload = {"schema_version": 1, "creatures": states}
+        payload["bases"] = self.base_world.to_dict() if getattr(self, "base_world", None) is not None else []
+        try:
+            self._progression_state_path.parent.mkdir(parents=True, exist_ok=True)
+            temp_path = self._progression_state_path.with_suffix(".tmp")
+            with temp_path.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.write("\n")
+            temp_path.replace(self._progression_state_path)
+            self._progression_states = states
+            self._runtime_state_dirty = False
+            self._runtime_state_flush_accum = 0.0
+        except OSError:
+            # A read-only portable folder should not prevent the overlay from
+            # running; progression still remains live for the current session.
+            return
+
+    def mark_runtime_state_dirty(self) -> None:
+        """Request a save without writing to disk inside the frame loop."""
+        self._runtime_state_dirty = True
+
+    def _flush_runtime_state(self, dt: float) -> None:
+        if not self._runtime_state_dirty:
+            return
+        self._runtime_state_flush_accum += max(0.0, float(dt))
+        if self._runtime_state_flush_accum >= RUNTIME_STATE_FLUSH_SECONDS:
+            self.save_runtime_state()
 
     def _create_creature(
         self,
@@ -97,8 +187,39 @@ class CreatureManager:
         index: int,
         pos: Tuple[float, float] | None = None,
         skills: list[str] | None = None,
+        color_overrides: dict | None = None,
+        progression_state: dict | None = None,
+        progression_id: str | None = None,
+        team_id: str | None = None,
+        job_id: str | None = None,
     ) -> Creature:
-        creature = Creature(model, personality, self.screen_w, self.screen_h, index=index, size_scale=self.size_scale, skills=skills, gait_style=self.gait_style)
+        state_key = str(progression_id or self._runtime_progression_id(index))
+        stored = self._progression_states.get(state_key, {})
+        if progression_state is None and isinstance(stored, dict):
+            progression_state = stored.get("progression", stored)
+        creature = Creature(
+            model,
+            personality,
+            self.screen_w,
+            self.screen_h,
+            index=index,
+            size_scale=self.size_scale,
+            skills=skills,
+            gait_style=self.gait_style,
+            color_overrides=color_overrides,
+            progression_state=progression_state,
+            progression_id=state_key,
+            job_id=normalize_job_id(job_id),
+        )
+        if isinstance(stored, dict) and isinstance(stored.get("name"), str):
+            creature.set_name(stored["name"])
+        saved_progression = stored.get("progression") if isinstance(stored, dict) else None
+        # A launch preset supplies the initial team, while an inspector-chosen
+        # team in the runtime sidecar remains authoritative on later launches.
+        if team_id is not None and not (
+            isinstance(saved_progression, dict) and "team_id" in saved_progression
+        ):
+            creature.set_team(team_id)
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
@@ -183,6 +304,7 @@ class CreatureManager:
                     creature._camouflage_visible_timer = 5.0
 
     def load_preset(self, preset_path: Path) -> None:
+        self._progression_namespace = Path(preset_path).stem or "default"
         self.creatures.clear()
         if getattr(self, "web_world", None) is not None:
             self.web_world.clear()
@@ -210,7 +332,8 @@ class CreatureManager:
             self.apply_fly_settings(settings)
 
         index = 0
-        for slot in preset.get("slots", []):
+        for slot_index, slot in enumerate(preset.get("slots", [])):
+            slot_id = str(slot.get("slot_id") or f"slot-{slot_index}").strip() or f"slot-{slot_index}"
             model_id = slot.get("model")
             if model_id == RANDOM_MODEL_ID:
                 model_id = self._random_model_id()
@@ -227,24 +350,40 @@ class CreatureManager:
                 self.warnings.append(f"Preset slot references missing personality: {personality_id}")
                 continue
 
+            job_id = normalize_job_id(slot.get("job", "none"))
+            raw_abilities = slot.get("abilities")
+            job_abilities = job_ability_ids(job_id)
             raw_skills = slot.get("skills")
-            if raw_skills is None:
+            if raw_abilities is not None:
+                # New presets customize only true capabilities. The
+                # personality still owns all behaviour phases.
+                skills = skills_with_selected_abilities(personality, list(raw_abilities) + list(job_abilities))
+            elif raw_skills is None:
                 # No explicit skills on the slot: fall back to the personality's
                 # own default abilities (common set plus its specialty) rather
                 # than handing every spider every skill.
-                skills = default_skills_for_personality(personality)
+                skills = skills_with_default_abilities(personality, job_abilities)
             else:
                 bad_skills = unknown_skill_ids(raw_skills)
                 if bad_skills:
                     self.warnings.append(f"Preset slot for {model_id} ignored unknown skill(s): {', '.join(bad_skills)}")
-                skills = normalize_skill_ids(raw_skills)
+                skills = normalize_skill_ids(list(raw_skills) + list(job_abilities))
 
             if bool(slot.get("count_random", False)):
                 count = random.randint(1, 10)
             else:
                 count = max(1, min(50, int(slot.get("count", 1))))
-            for _ in range(count):
-                creature = self._create_creature(model, personality, index, skills=skills)
+            for member_index in range(count):
+                creature = self._create_creature(
+                    model,
+                    personality,
+                    index,
+                    skills=skills,
+                    color_overrides=slot.get("colors"),
+                    progression_id=f"{self._progression_namespace}|{slot_id}:{member_index}",
+                    team_id=slot.get("team_id", slot.get("team", "neutral")),
+                    job_id=job_id,
+                )
                 # Avoid all creatures spawning directly on top of each other.
                 creature.x += random.uniform(-80.0, 80.0)
                 creature.y += random.uniform(-80.0, 80.0)
@@ -255,7 +394,10 @@ class CreatureManager:
             # Fallback for a bad/empty preset: spawn one default spider so the user sees something.
             model = next(iter(self.models.values()))
             personality = self.personalities.get(model.get("default_personality")) or next(iter(self.personalities.values()))
-            self.creatures.append(self._create_creature(model, personality, 0, skills=list(DEFAULT_SKILL_IDS)))
+            self.creatures.append(self._create_creature(
+                model, personality, 0, skills=list(DEFAULT_SKILL_IDS),
+                progression_id=f"{self._progression_namespace}|fallback:0",
+            ))
         self._refresh_neighbor_links()
         self._refresh_render_order()
 
@@ -272,6 +414,8 @@ class CreatureManager:
             self.mouse_web_world.set_screen(screen_w, screen_h)
         if getattr(self, "fly_world", None) is not None:
             self.fly_world.set_screen(screen_w, screen_h)
+        if getattr(self, "base_world", None) is not None:
+            self.base_world.set_screen(screen_w, screen_h)
 
     def set_desktop_surfaces(self, surfaces: List[DesktopSurface]) -> None:
         """Replace the live snapshot of real desktop windows/folders/icons."""
@@ -521,6 +665,15 @@ class CreatureManager:
     # ------------------------------------------------------------------
     # Flies
     # ------------------------------------------------------------------
+    def award_feed_xp(self, creature: Creature, amount: int = FEED_XP_REWARD,
+                      source: str = "feed") -> list[str]:
+        """Shared hook for future food sources (flies, treats, web catches)."""
+        if creature is None or creature not in self.creatures:
+            return []
+        events = creature.gain_experience(amount, reason=source)
+        self.mark_runtime_state_dirty()
+        return events
+
     def apply_fly_settings(self, settings: dict | None) -> None:
         """Read the optional ``flies`` block of a preset's settings."""
         if not isinstance(settings, dict):
@@ -634,7 +787,8 @@ class CreatureManager:
         return random.choice(list(self.models.keys())) if self.models else None
 
     def _random_personality_id(self) -> str | None:
-        return random.choice(list(self.personalities.keys())) if self.personalities else None
+        pool = [pid for pid in COMPACT_TEMPERAMENT_IDS if pid in self.personalities]
+        return random.choice(pool) if pool else (random.choice(list(self.personalities.keys())) if self.personalities else None)
 
     def _valid_personality_for_model(self, model: dict, preferred_id: str | None = None) -> dict | None:
         if preferred_id and preferred_id in self.personalities:
@@ -645,6 +799,11 @@ class CreatureManager:
     def _replace_with_traits(self, traits: List[tuple], keep_positions: bool = True) -> None:
         old_positions = [(c.x, c.y) for c in self.creatures]
         old_names = [c.name for c in self.creatures]
+        old_progression = [c.progression.to_dict() for c in self.creatures]
+        old_progression_ids = [
+            getattr(c, "progression_id", self._runtime_progression_id(i))
+            for i, c in enumerate(self.creatures)
+        ]
         self.creatures.clear()
         if getattr(self, "web_world", None) is not None:
             self.web_world.clear()
@@ -664,7 +823,27 @@ class CreatureManager:
             if not personality:
                 continue
             pos = old_positions[index] if keep_positions and index < len(old_positions) else None
-            creature = self._create_creature(model, personality, index, pos=pos, skills=skills)
+            color_overrides = trait[3] if len(trait) > 3 else None
+            progression_id = (
+                old_progression_ids[index]
+                if keep_positions and index < len(old_progression_ids)
+                else self._runtime_progression_id(index)
+            )
+            progression_state = old_progression[index] if keep_positions and index < len(old_progression) else None
+            team_id = trait[4] if len(trait) > 4 else None
+            job_id = normalize_job_id(trait[5] if len(trait) > 5 else "none")
+            creature = self._create_creature(
+                model,
+                personality,
+                index,
+                pos=pos,
+                skills=skills,
+                color_overrides=color_overrides,
+                progression_state=progression_state,
+                progression_id=progression_id,
+                team_id=team_id,
+                job_id=job_id,
+            )
             # Names follow the slot index when positions are preserved so a
             # casual "randomize models" does not silently wipe pet names.
             if keep_positions and index < len(old_names):
@@ -675,7 +854,10 @@ class CreatureManager:
             model = self.models.get(model_id) if model_id else None
             personality = self._valid_personality_for_model(model) if model else None
             if model and personality:
-                self.creatures.append(self._create_creature(model, personality, 0, skills=list(DEFAULT_SKILL_IDS)))
+                self.creatures.append(self._create_creature(
+                    model, personality, 0, skills=list(DEFAULT_SKILL_IDS),
+                    progression_id=f"{self._progression_namespace}|fallback:0",
+                ))
         # Re-home cage membership from geometry. Enclosed spiders stay enclosed.
         if keep_positions and self.cages:
             for creature in self.creatures:
@@ -730,14 +912,20 @@ class CreatureManager:
             personality = self.personalities.get(personality_id) or self._valid_personality_for_model(model)
             if not personality:
                 continue
+            job_id = normalize_job_id(slot.get("job", "none"))
+            job_abilities = job_ability_ids(job_id)
+            raw_abilities = slot.get("abilities")
             raw_skills = slot.get("skills")
-            skills = default_skills_for_personality(personality) if raw_skills is None else normalize_skill_ids(raw_skills)
+            if raw_abilities is not None:
+                skills = skills_with_selected_abilities(personality, list(raw_abilities) + list(job_abilities))
+            else:
+                skills = skills_with_default_abilities(personality, job_abilities) if raw_skills is None else normalize_skill_ids(list(raw_skills) + list(job_abilities))
             if bool(slot.get("count_random", False)):
                 count = random.randint(1, 10)
             else:
                 count = max(1, min(50, int(slot.get("count", 1))))
             for _ in range(count):
-                traits.append((model["id"], personality["id"], skills))
+                traits.append((model["id"], personality["id"], skills, slot.get("colors"), slot.get("team_id", slot.get("team", "neutral")), job_id))
 
         if traits:
             self._replace_with_traits(traits, keep_positions=False)
@@ -754,7 +942,7 @@ class CreatureManager:
                 continue
             personality = self._valid_personality_for_model(model, creature.personality.get("id"))
             if personality:
-                traits.append((model["id"], personality["id"], creature.skill_ids()))
+                traits.append((model["id"], personality["id"], creature.skill_ids(), dict(getattr(creature, "color_overrides", {})), creature.progression.team_id, getattr(creature, "job_id", "none")))
         self._replace_with_traits(traits, keep_positions=True)
         return f"Randomized model for {len(self.creatures)} spider(s)."
 
@@ -765,7 +953,7 @@ class CreatureManager:
         for creature in self.creatures:
             personality_id = self._random_personality_id()
             if personality_id:
-                traits.append((creature.model["id"], personality_id, creature.skill_ids()))
+                traits.append((creature.model["id"], personality_id, creature.skill_ids(), dict(getattr(creature, "color_overrides", {})), creature.progression.team_id, getattr(creature, "job_id", "none")))
         self._replace_with_traits(traits, keep_positions=True)
         return f"Randomized personality for {len(self.creatures)} spider(s)."
 
@@ -773,12 +961,15 @@ class CreatureManager:
         if not self.models or not self.personalities:
             return "No models/personalities available."
         count = random.randint(int(low), int(high))
-        existing_traits = [(c.model["id"], c.personality["id"], c.skill_ids()) for c in self.creatures]
+        existing_traits = [
+            (c.model["id"], c.personality["id"], c.skill_ids(), dict(getattr(c, "color_overrides", {})), c.progression.team_id, getattr(c, "job_id", "none"))
+            for c in self.creatures
+        ]
         if not existing_traits:
             model_id = self._random_model_id()
             model = self.models.get(model_id) if model_id else None
             personality = self._valid_personality_for_model(model) if model else None
-            existing_traits = [(model["id"], personality["id"], list(DEFAULT_SKILL_IDS))] if model and personality else []
+            existing_traits = [(model["id"], personality["id"], list(DEFAULT_SKILL_IDS), None, "neutral", "none")] if model and personality else []
         traits = [existing_traits[i % len(existing_traits)] for i in range(count)] if existing_traits else []
         self._replace_with_traits(traits, keep_positions=True)
         return f"Randomized count: {len(self.creatures)} spider(s)."
@@ -792,7 +983,7 @@ class CreatureManager:
             model_id = self._random_model_id()
             personality_id = self._random_personality_id()
             if model_id and personality_id:
-                traits.append((model_id, personality_id, list(DEFAULT_SKILL_IDS)))
+                traits.append((model_id, personality_id, list(DEFAULT_SKILL_IDS), None, "neutral", "none"))
         self._replace_with_traits(traits, keep_positions=False)
         return f"Randomized everything: {len(self.creatures)} spider(s)."
 
@@ -1025,6 +1216,10 @@ class CreatureManager:
                 # Leave a little pile of fading remains where the fly was eaten.
                 self.fly_world.add_remains((fly.x, fly.y), scale=fly.size / 9.0)
                 fly.begin_eaten()
+                # This is the single authoritative feeding hook.  It runs only
+                # after the fly transitions to ``eaten`` so repeated collision
+                # checks cannot award duplicate XP.
+                self.award_feed_xp(best, FEED_XP_REWARD, "fly")
                 # Free every hunter that was locked onto this fly.
                 for hunter in list(fly.hunters):
                     hunter._prey = None
@@ -1116,6 +1311,15 @@ class CreatureManager:
 
         # Decide which fly (if any) each spider is hunting this frame.
         self._update_prey_targets(dt)
+        # Jobs publish their per-frame work intent before the Creature FSM runs:
+        # builders travel/build, guards patrol/raise alerts, and personality
+        # remains free to describe *how* that work looks.
+        self.base_world.update(dt, self.creatures)
+        # Base construction advances continuously, so it uses the same debounced
+        # save as feeding instead of only being persisted on quit.
+        if any(getattr(creature, "job_mode", "idle") == "build" for creature in self.creatures):
+            self.mark_runtime_state_dirty()
+        self._flush_runtime_state(dt)
 
         for creature in self.creatures:
             has_prey = getattr(creature, "_prey", None) is not None
@@ -1185,6 +1389,7 @@ class CreatureManager:
             clip = None
         # Webs sit above the cages but beneath the spiders, so a spider always
         # appears to stand on top of the silk it is weaving or walking.
+        self.base_world.render(painter, clip)
         self.web_world.render(painter, clip)
         # Cursor-silk (the flying glob, the trap splat, the wall shove) draws in
         # the same layer, beneath the spiders.
@@ -1558,7 +1763,7 @@ class CreatureManager:
         creature.target_heading = math.atan2(creature.target_y - creature.y, creature.target_x - creature.x)
         creature.state = "Wander"
         creature.motion_paused = False
-        creature.speed = 38.0 * float(creature.personality.get("speed_multiplier", 1.0)) * self._personality_float(creature, "desktop_hide_speed_multiplier", 1.0)
+        creature.speed = 38.0 * creature._speed_mult() * self._personality_float(creature, "desktop_hide_speed_multiplier", 1.0)
         creature.state_timer = self._personality_range(creature, "desktop_hide_approach_time", 2.4, 4.8)
 
     def _desktop_occlusion_alpha(self, creature: Creature) -> float:
@@ -1605,7 +1810,7 @@ class CreatureManager:
         creature.heading = creature.target_heading
         creature.state = "Wander"
         creature.motion_paused = False
-        creature.speed = 54.0 * float(creature.personality.get("speed_multiplier", 1.0)) * self._personality_float(creature, "desktop_hide_speed_multiplier", 1.0)
+        creature.speed = 54.0 * creature._speed_mult() * self._personality_float(creature, "desktop_hide_speed_multiplier", 1.0)
         creature.current_speed = min(creature.current_speed, creature.speed)
         creature.state_timer = self._personality_range(creature, "folder_portal_exit_time", 1.5, 2.8)
         creature.inertia_timer = 0.0
@@ -1691,7 +1896,7 @@ class CreatureManager:
                     creature.target_heading = math.atan2(creature.target_y - creature.y, creature.target_x - creature.x)
                     creature.state = "Wander"
                     creature.motion_paused = False
-                    creature.speed = 48.0 * float(creature.personality.get("speed_multiplier", 1.0))
+                    creature.speed = 48.0 * creature._speed_mult()
                     creature.state_timer = random.uniform(1.0, 2.0)
                     creature._desktop_hidden_timer = 0.0
         else:
@@ -1725,6 +1930,60 @@ class CreatureManager:
         if creature is None:
             return "No spider there to name."
         creature.set_name(name)
+        self.save_runtime_state()
         if creature.name:
             return f"Named this spider \u201c{creature.name}\u201d."
         return "Cleared this spider's name."
+
+    def set_creature_level_pin(self, creature: Creature, enabled: bool) -> str:
+        if creature is None:
+            return "No spider there to update."
+        creature.set_level_label_pinned(enabled)
+        self.save_runtime_state()
+        return f"Level display {'pinned above' if enabled else 'removed from'} this spider's name."
+
+    def set_creature_team(self, creature: Creature, team_id: str) -> str:
+        if creature is None:
+            return "No spider there to update."
+        creature.set_team(team_id)
+        self.save_runtime_state()
+        return f"Assigned this spider to team {creature.progression.team_id!r}."
+
+    def set_creature_relation(self, creature: Creature, other: Creature, relation: str) -> str:
+        if creature is None or other is None or creature is other:
+            return "No pair of spiders selected."
+        relation = str(relation).strip().lower()
+        if relation not in RELATIONS:
+            return "Relation must be friend, neutral, or foe."
+        left_id = str(getattr(other, "progression_id", other.index))
+        right_id = str(getattr(creature, "progression_id", creature.index))
+        # Store pair choices in both directions so UI and future combat checks
+        # cannot disagree about who is a friend or foe.
+        creature.progression.relation_overrides[left_id] = relation
+        other.progression.relation_overrides[right_id] = relation
+        self.save_runtime_state()
+        return f"Set {creature.display_name} and {other.display_name} to {relation}."
+
+    def equip_creature_item(self, creature: Creature, item_id: str) -> str:
+        if creature is None:
+            return "No spider there to equip."
+        ok, message = creature.equip_item(item_id)
+        if ok:
+            self.save_runtime_state()
+        return message
+
+    def unequip_creature_item(self, creature: Creature, slot: str) -> str:
+        if creature is None:
+            return "No spider there to unequip."
+        ok, message = creature.unequip_item(slot)
+        if ok:
+            self.save_runtime_state()
+        return message
+
+    def unlock_creature_ability(self, creature: Creature, ability_id: str) -> str:
+        if creature is None:
+            return "No spider there to unlock."
+        ok, message = creature.unlock_progression_ability(ability_id)
+        if ok:
+            self.save_runtime_state()
+        return message

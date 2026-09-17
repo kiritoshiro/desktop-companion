@@ -11,6 +11,8 @@ abilities a creature is allowed to enter.
 from dataclasses import dataclass
 from typing import Iterable, Tuple
 
+from .personality_profiles import ability_ids_for
+
 
 @dataclass(frozen=True)
 class CreatureSkill:
@@ -144,7 +146,7 @@ class DriftSkill(CreatureSkill):
             "drift",
             "Drift / slide",
             "Allows momentum-based drift sliding: builds speed first, breaks traction, leans/counter-steers through wide circle or corner skids, and keeps sliding after throws.",
-            "Movement",
+            "Ability",
         )
 
 
@@ -165,7 +167,7 @@ class WeaveWebSkill(CreatureSkill):
             "Weave web",
             "Allows building silk webs thread by thread in screen corners, and "
             "finishing an abandoned unfinished web even if another spider began it.",
-            "Crafting",
+            "Ability",
         )
 
 
@@ -175,7 +177,7 @@ class WebWalkSkill(CreatureSkill):
             "web_walk",
             "Walk on webs",
             "Allows walking onto a finished web and plucking it to test its bounce.",
-            "Interaction",
+            "Ability",
         )
 
 
@@ -187,7 +189,7 @@ class ShootWebSkill(CreatureSkill):
             "Allows aiming and firing a glob of sticky silk that pins its target "
             "in place, whether the mouse pointer or a fly. Wiggle a trapped "
             "pointer to break it free.",
-            "Interaction",
+            "Ability",
         )
 
 
@@ -199,7 +201,7 @@ class WallWebSkill(CreatureSkill):
             "Allows firing a web that shoves its target to the nearest wall and "
             "pins it there, whether the mouse pointer or a fly. Wiggle a trapped "
             "pointer to peel it off.",
-            "Interaction",
+            "Ability",
         )
 
 
@@ -226,12 +228,13 @@ SKILL_CLASSES = (
 SKILLS: Tuple[CreatureSkill, ...] = tuple(cls() for cls in SKILL_CLASSES)
 SKILL_BY_ID = {skill.id: skill for skill in SKILLS}
 DEFAULT_SKILL_IDS: Tuple[str, ...] = tuple(skill.id for skill in SKILLS)
+ABILITY_SKILL_IDS: Tuple[str, ...] = tuple(skill.id for skill in SKILLS if skill.category == "Ability")
+BEHAVIOUR_SKILL_IDS: Tuple[str, ...] = tuple(skill.id for skill in SKILLS if skill.category != "Ability")
 
-# Abilities every spider has unless a preset/slot says otherwise.  The
-# specialised abilities below are *not* universal: a spider only gets them from a
-# matching personality (or by being enabled explicitly), so spiders behave
-# according to their personality instead of all being able to do everything.
-COMMON_SKILL_IDS: Tuple[str, ...] = (
+# These are the ordinary state-machine behaviours shared by a normal spider.
+# True capabilities live in COMMON_ABILITY_IDS and the compact personality
+# bundles below, keeping movement style separate from what a spider can do.
+COMMON_BEHAVIOUR_IDS: Tuple[str, ...] = (
     "approach",
     "wander",
     "jump",
@@ -244,42 +247,17 @@ COMMON_SKILL_IDS: Tuple[str, ...] = (
     "cuddle",
     "social_play",
     "zoomies",
-    "web_walk",
 )
-
-# Specialist abilities and the personalities that own them by default.
-SPECIALIST_SKILLS_BY_PERSONALITY = {
-    "webber": ("weave_web",),
-    "weaver": ("weave_web",),
-    "trapper": ("shoot_web", "wall_web"),
-    "webslinger": ("shoot_web", "wall_web"),
-    "drifter": ("drift",),
-}
-
-# Personality flags that also grant a specialist skill, so a custom personality
-# can opt in through a flag rather than its id.
-SPECIALIST_SKILLS_BY_FLAG = {
-    "web_weaver": ("weave_web",),
-    "webber": ("weave_web",),
-    "web_shooter": ("shoot_web", "wall_web"),
-    "drifter": ("drift",),
-    "drift_movement": ("drift",),
-}
-
-
-def _flag_on(value) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in ("1", "true", "yes", "on")
-    return bool(value)
+COMMON_ABILITY_IDS: Tuple[str, ...] = ("web_walk",)
+COMMON_SKILL_IDS: Tuple[str, ...] = COMMON_BEHAVIOUR_IDS + COMMON_ABILITY_IDS
 
 
 def default_skills_for_personality(personality) -> list:
-    """Default abilities for a personality.
+    """Compose behaviours and abilities for a compact personality definition.
 
-    Honours an explicit ``skills`` list on the personality; otherwise gives the
-    common set plus any specialist skill implied by the personality's id or
-    flags.  This is the source of the per-personality defaults shown in the
-    settings UI and used when a preset slot omits ``skills``.
+    Legacy explicit ``skills`` arrays still take precedence. New profiles can
+    select ``behaviours``, ``abilities``, and named ``ability_bundles`` without
+    repeating the common catalog in every personality JSON file.
     """
 
     if personality is None:
@@ -287,20 +265,23 @@ def default_skills_for_personality(personality) -> list:
     if isinstance(personality, dict):
         if personality.get("skills") is not None:
             return normalize_skill_ids(personality.get("skills"))
-        wanted = list(COMMON_SKILL_IDS)
-        pid = str(personality.get("id", "")).strip().lower()
-        for extra in SPECIALIST_SKILLS_BY_PERSONALITY.get(pid, ()):
+        raw_behaviours = personality.get("behaviours")
+        if isinstance(raw_behaviours, (list, tuple)):
+            wanted = [str(item).strip().lower() for item in raw_behaviours]
+        else:
+            wanted = list(COMMON_BEHAVIOUR_IDS)
+        if bool(personality.get("include_common_abilities", True)):
+            wanted.extend(COMMON_ABILITY_IDS)
+        for extra in ability_ids_for(personality):
             if extra not in wanted:
                 wanted.append(extra)
-        for flag, extras in SPECIALIST_SKILLS_BY_FLAG.items():
-            if _flag_on(personality.get(flag, False)):
-                for extra in extras:
-                    if extra not in wanted:
-                        wanted.append(extra)
         return normalize_skill_ids(wanted)
     # A bare personality id string.
     pid = str(personality).strip().lower()
-    wanted = list(COMMON_SKILL_IDS) + list(SPECIALIST_SKILLS_BY_PERSONALITY.get(pid, ()))
+    wanted = list(COMMON_BEHAVIOUR_IDS) + list(COMMON_ABILITY_IDS)
+    for extra in ability_ids_for(pid):
+        if extra not in wanted:
+            wanted.append(extra)
     return normalize_skill_ids(wanted)
 
 # Used when showing a compact button/summary.  These are deliberately short so a
@@ -340,6 +321,54 @@ def normalize_skill_ids(value: Iterable[str] | None) -> list[str]:
     return [skill_id for skill_id in DEFAULT_SKILL_IDS if skill_id in wanted]
 
 
+def normalize_ability_ids(value: Iterable[str] | None) -> list[str]:
+    """Return only true capability ids, in the stable registry order.
+
+    Behaviour phases are personality-controlled and deliberately cannot be
+    toggled from the settings picker.  This helper keeps the persisted
+    ``abilities`` field separate while legacy ``skills`` arrays remain valid.
+    """
+    if value is None:
+        return list(ABILITY_SKILL_IDS)
+    wanted = {str(item).strip().lower() for item in value if str(item).strip()}
+    return [ability_id for ability_id in ABILITY_SKILL_IDS if ability_id in wanted]
+
+
+def default_ability_ids(personality) -> list[str]:
+    """Return only the capabilities a personality grants on its own.
+
+    A preset slot that never customised its abilities must keep these, or a
+    webber stops weaving, a trapper stops shooting silk, a drifter stops
+    drifting, and nobody can walk a web.  ``normalize_ability_ids`` deliberately
+    treats an empty selection as "no abilities", so callers that mean "the
+    personality decides" must start from this list instead of an empty one.
+    """
+    return [
+        skill_id
+        for skill_id in default_skills_for_personality(personality)
+        if skill_id in ABILITY_SKILL_IDS
+    ]
+
+
+def skills_with_selected_abilities(personality, abilities: Iterable[str] | None) -> list[str]:
+    """Compose personality behaviours with an explicit capability selection."""
+    base = default_skills_for_personality(personality)
+    behaviours = [skill_id for skill_id in base if skill_id not in ABILITY_SKILL_IDS]
+    return behaviours + normalize_ability_ids(abilities)
+
+
+def skills_with_default_abilities(personality, extra_abilities: Iterable[str] | None = None) -> list[str]:
+    """Compose personality behaviours with its own abilities plus ``extra``.
+
+    This is the "slot made no ability choice" path: job-required abilities are
+    added on top of whatever the personality already grants.
+    """
+    wanted = default_ability_ids(personality) + [
+        str(item).strip().lower() for item in (extra_abilities or ())
+    ]
+    return skills_with_selected_abilities(personality, wanted)
+
+
 def unknown_skill_ids(value: Iterable[str] | None) -> list[str]:
     if value is None:
         return []
@@ -356,6 +385,19 @@ def compact_skill_summary(skill_ids: Iterable[str] | None) -> str:
     if len(labels) <= 3:
         return ", ".join(labels)
     return f"{len(labels)} skills: " + ", ".join(labels[:3]) + "…"
+
+
+def compact_ability_summary(skill_ids: Iterable[str] | None) -> str:
+    """Compactly label only the capabilities shown by the settings UI."""
+    ids = normalize_ability_ids(skill_ids)
+    if set(ids) == set(ABILITY_SKILL_IDS):
+        return "All abilities"
+    if not ids:
+        return "No optional abilities"
+    labels = [SHORT_LABELS.get(skill_id, skill_id) for skill_id in ids]
+    if len(labels) <= 3:
+        return ", ".join(labels)
+    return f"{len(labels)} abilities: " + ", ".join(labels[:3]) + "…"
 
 
 class SkillSet:

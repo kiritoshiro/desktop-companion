@@ -1,12 +1,33 @@
 import json
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 
 from .discovery import app_root
 from .skills import SKILL_BY_ID
+from .jobs import JOB_BY_ID
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_. -]+")
+
+
+def _validate_rgb_overrides(value, label: str) -> None:
+    """Validate an optional preset palette without tying it to one model."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    for key, rgb in value.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(f"{label} keys must be non-empty strings")
+        if not isinstance(rgb, (list, tuple)) or len(rgb) != 3:
+            raise ValueError(f"{label}.{key} must be an RGB triplet")
+        for channel in rgb:
+            if isinstance(channel, bool):
+                raise ValueError(f"{label}.{key} channels must be numbers from 0 to 255")
+            try:
+                numeric = float(channel)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{label}.{key} channels must be numbers from 0 to 255") from exc
+            if not 0.0 <= numeric <= 255.0:
+                raise ValueError(f"{label}.{key} channels must be numbers from 0 to 255")
 
 
 def safe_preset_filename(name: str) -> str:
@@ -77,6 +98,16 @@ def validate_preset(data: dict) -> None:
             raise ValueError(f"Slot {index + 1} model must be a non-empty string")
         if not isinstance(slot["personality"], str) or not slot["personality"].strip():
             raise ValueError(f"Slot {index + 1} personality must be a non-empty string")
+        if "slot_id" in slot and (not isinstance(slot["slot_id"], str) or not slot["slot_id"].strip()):
+            raise ValueError(f"Slot {index + 1} slot_id must be a non-empty string")
+        for team_key in ("team", "team_id"):
+            if team_key in slot and (not isinstance(slot[team_key], str) or not slot[team_key].strip()):
+                raise ValueError(f"Slot {index + 1} {team_key} must be a non-empty string")
+        if "job" in slot:
+            if not isinstance(slot["job"], str) or not slot["job"].strip():
+                raise ValueError(f"Slot {index + 1} job must be a non-empty string")
+            if slot["job"].strip().lower() not in JOB_BY_ID:
+                raise ValueError(f"Slot {index + 1} has unknown job: {slot['job']}")
         if "count_random" in slot and not isinstance(slot["count_random"], bool):
             raise ValueError(f"Slot {index + 1} count_random must be true or false")
         if "skills" in slot:
@@ -87,6 +118,19 @@ def validate_preset(data: dict) -> None:
                     raise ValueError(f"Slot {index + 1} skills must contain only strings")
                 if skill.strip().lower() not in SKILL_BY_ID:
                     raise ValueError(f"Slot {index + 1} has unknown skill: {skill}")
+        if "abilities" in slot:
+            if not isinstance(slot["abilities"], list):
+                raise ValueError(f"Slot {index + 1} abilities must be a list")
+            for ability in slot["abilities"]:
+                if not isinstance(ability, str):
+                    raise ValueError(f"Slot {index + 1} abilities must contain only strings")
+                skill = SKILL_BY_ID.get(ability.strip().lower())
+                if skill is None:
+                    raise ValueError(f"Slot {index + 1} has unknown ability: {ability}")
+                if skill.category != "Ability":
+                    raise ValueError(f"Slot {index + 1} entry is not an ability: {ability}")
+        if "colors" in slot:
+            _validate_rgb_overrides(slot["colors"], f"Slot {index + 1} colors")
         try:
             count = int(slot["count"])
         except Exception as exc:

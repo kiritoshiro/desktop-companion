@@ -7,14 +7,24 @@ import signal
 import sys
 from pathlib import Path
 
-from PyQt5.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt
+from PyQt5.QtCore import QElapsedTimer, QRect, QTimer, Qt
 from PyQt5.QtGui import QColor, QCursor, QGuiApplication, QIcon, QPainter, QPixmap, QRegion
 from PyQt5.QtWidgets import (
     QActionGroup,
     QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QFormLayout,
+    QHBoxLayout,
     QInputDialog,
+    QLabel,
     QLineEdit,
     QMenu,
+    QPushButton,
+    QProgressBar,
+    QTabWidget,
+    QVBoxLayout,
     QSystemTrayIcon,
     QWidget,
 )
@@ -25,6 +35,8 @@ from .preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos
 from .desktop_environment import snapshot_desktop_surfaces
 from .skills import SKILLS
+from .progression import ABILITY_TREE, ARMOR_CATALOG, TEAM_OPTIONS, xp_to_next_level
+from .jobs import job_definition
 
 
 def _target_fps() -> float:
@@ -95,6 +107,250 @@ def virtual_screen_geometry() -> QRect:
     for screen in screens[1:]:
         rect = rect.united(screen.geometry())
     return rect
+
+
+class CreatureInspectorDialog(QDialog):
+    """Compact runtime inspector for one live spider."""
+
+    def __init__(self, window, creature):
+        super().__init__(window)
+        self.window = window
+        self.creature = creature
+        self.setWindowTitle(f"Inspect {creature.display_name}")
+        self.setMinimumWidth(440)
+        self.tabs = QTabWidget(self)
+        root = QVBoxLayout(self)
+        root.addWidget(self.tabs)
+
+        self.status_tab = QWidget()
+        status_layout = QVBoxLayout(self.status_tab)
+        self.status_labels = {}
+        form = QFormLayout()
+        for key, title in (("level", "Level"), ("job", "Job"), ("hp", "HP"), ("energy", "Energy"),
+                           ("armor", "Armor"), ("damage", "Damage"), ("team", "Team"),
+                           ("relations", "Relations")):
+            label = QLabel()
+            label.setWordWrap(True)
+            self.status_labels[key] = label
+            form.addRow(f"{title}:", label)
+        status_layout.addLayout(form)
+        self.xp_bar = QProgressBar()
+        self.xp_bar.setTextVisible(True)
+        status_layout.addWidget(QLabel("Experience"))
+        status_layout.addWidget(self.xp_bar)
+        self.pin_check = QCheckBox("Pin level and XP above the spider's name")
+        self.pin_check.toggled.connect(self._set_pin)
+        status_layout.addWidget(self.pin_check)
+        self.team_combo = QComboBox()
+        self.team_combo.setEditable(True)
+        # Same ids the settings window offers, so a team picked before launch
+        # and a team picked here actually refer to the same group.
+        self.team_combo.addItems([value for _label, value in TEAM_OPTIONS])
+        # Commit on a chosen entry or a finished edit, never on every keystroke:
+        # ``currentTextChanged`` would assign (and persist) "h", "hu", "hun"…
+        # while the user is still typing "hunters".
+        self.team_combo.activated.connect(self._commit_team)
+        self.team_combo.lineEdit().editingFinished.connect(self._commit_team)
+        status_layout.addWidget(QLabel("Team assignment"))
+        status_layout.addWidget(self.team_combo)
+        status_layout.addWidget(QLabel("Relationship with other spiders"))
+        self.relations_layout = QVBoxLayout()
+        status_layout.addLayout(self.relations_layout)
+        # Keep interactive controls stable between live-stat refreshes. Reusing
+        # the combo boxes is important: deleting a combo while its popup is open
+        # makes the menu disappear on the next 400 ms refresh tick.
+        self._relation_signature = None
+        self._relation_controls = {}
+        self._abilities_signature = None
+        self._inventory_signature = None
+        self.tabs.addTab(self.status_tab, "Status")
+
+        self.abilities_tab = QWidget()
+        self.abilities_layout = QVBoxLayout(self.abilities_tab)
+        self.tabs.addTab(self.abilities_tab, "Skill tree")
+
+        self.inventory_tab = QWidget()
+        self.inventory_layout = QVBoxLayout(self.inventory_tab)
+        self.tabs.addTab(self.inventory_tab, "Inventory & armor")
+
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.refresh)
+        self.refresh_timer.start(400)
+        self.refresh()
+
+    @staticmethod
+    def _clear_layout(layout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
+            elif item.layout() is not None:
+                child = item.layout()
+                CreatureInspectorDialog._clear_layout(child)
+                child.deleteLater()
+
+    def _set_pin(self, enabled: bool) -> None:
+        self.window._announce(self.window.manager.set_creature_level_pin(self.creature, enabled))
+
+    def _commit_team(self, *_args) -> None:
+        team = str(self.team_combo.currentText()).strip()
+        if not self.isVisible() or not team:
+            return
+        if team == self.creature.progression.team_id:
+            return
+        self.window._announce(self.window.manager.set_creature_team(self.creature, team))
+
+    def _set_relation(self, other, relation: str) -> None:
+        self.window._announce(self.window.manager.set_creature_relation(self.creature, other, relation))
+        self.refresh()
+
+    def _refresh_relations(self) -> None:
+        others = [
+            other for other in self.window.manager.creatures
+            if other is not self.creature
+        ]
+        signature = tuple(id(other) for other in others)
+        if signature != self._relation_signature:
+            self._clear_layout(self.relations_layout)
+            self._relation_controls = {}
+            for other in others:
+                row = QHBoxLayout()
+                label = QLabel(other.display_name)
+                row.addWidget(label, 1)
+                combo = QComboBox()
+                combo.addItems(["friend", "neutral", "foe"])
+                combo.currentTextChanged.connect(
+                    lambda relation, target=other: self._set_relation(target, relation)
+                )
+                row.addWidget(combo)
+                self.relations_layout.addLayout(row)
+                self._relation_controls[id(other)] = (other, label, combo)
+            self._relation_signature = signature
+
+        for other in others:
+            entry = self._relation_controls.get(id(other))
+            if entry is None:
+                continue
+            _stored_other, label, combo = entry
+            label.setText(other.display_name)
+            relation = self.creature.relation_to(other)
+            # Do not disturb an actively opened popup. The selected value will
+            # be synchronized on the next tick after the user closes it.
+            if combo.currentText() != relation and not combo.view().isVisible():
+                combo.blockSignals(True)
+                combo.setCurrentText(relation)
+                combo.blockSignals(False)
+
+    def _unlock(self, ability_id: str) -> None:
+        self.window._announce(self.window.manager.unlock_creature_ability(self.creature, ability_id))
+        self.refresh()
+
+    def _equip(self, item_id: str) -> None:
+        self.window._announce(self.window.manager.equip_creature_item(self.creature, item_id))
+        self.refresh()
+
+    def _add_item(self, item_id: str) -> None:
+        if self.creature.add_inventory_item(item_id):
+            self.window.manager.save_runtime_state()
+            self.window._announce("Added armor to this spider's inventory.")
+        self.refresh()
+
+    def _unequip(self, slot: str) -> None:
+        self.window._announce(self.window.manager.unequip_creature_item(self.creature, slot))
+        self.refresh()
+
+    def refresh(self) -> None:
+        if not self.creature or self.creature not in self.window.manager.creatures:
+            self.close()
+            return
+        snapshot = self.creature.progression_snapshot()
+        self.status_labels["level"].setText(f"{snapshot['level']} / 30  ·  {snapshot['skill_points']} point(s) available")
+        self.status_labels["job"].setText(job_definition(self.creature.job_id).display_name)
+        self.status_labels["hp"].setText(f"{snapshot['hp']:.0f} / {snapshot['max_hp']:.0f}")
+        self.status_labels["energy"].setText(f"{snapshot['energy']:.0f} / {snapshot['max_energy']:.0f}")
+        self.status_labels["armor"].setText(f"{snapshot['armor']:.1f}")
+        self.status_labels["damage"].setText(f"{snapshot['damage']:.1f}")
+        self.status_labels["team"].setText(self.creature.progression.team_id)
+        relations = []
+        for other in self.window.manager.creatures:
+            if other is self.creature:
+                continue
+            relations.append(f"{other.display_name}: {self.creature.relation_to(other)}")
+        self.status_labels["relations"].setText(", ".join(relations) if relations else "No other spiders")
+        self._refresh_relations()
+        xp_max = xp_to_next_level(self.creature.level)
+        self.xp_bar.setMaximum(max(1, xp_max))
+        self.xp_bar.setValue(min(xp_max, snapshot["xp"] if self.creature.level < 30 else xp_max))
+        self.xp_bar.setFormat("Level cap reached" if self.creature.level >= 30 else f"{snapshot['xp']} / {xp_max} XP")
+        self.pin_check.blockSignals(True)
+        self.pin_check.setChecked(self.creature.level_label_pinned)
+        self.pin_check.blockSignals(False)
+        self.team_combo.blockSignals(True)
+        current = self.creature.progression.team_id
+        if self.team_combo.findText(current) < 0:
+            self.team_combo.addItem(current)
+        self.team_combo.setCurrentText(current)
+        self.team_combo.blockSignals(False)
+        self._refresh_abilities()
+        self._refresh_inventory()
+
+    def _refresh_abilities(self) -> None:
+        signature = (
+            self.creature.level,
+            self.creature.progression.skill_points,
+            tuple(self.creature.progression.unlocked_abilities),
+        )
+        if signature == self._abilities_signature:
+            return
+        self._clear_layout(self.abilities_layout)
+        for node in ABILITY_TREE:
+            row = QHBoxLayout()
+            label = QLabel(f"{node.name} — {node.description}")
+            label.setWordWrap(True)
+            label.setToolTip(node.description)
+            unlocked = node.id in self.creature.progression.unlocked_abilities
+            button = QPushButton("Unlocked" if unlocked else f"Unlock ({node.cost})")
+            button.setEnabled(not unlocked and self.creature.progression.can_unlock(node.id))
+            button.clicked.connect(lambda checked=False, aid=node.id: self._unlock(aid))
+            row.addWidget(label, 1)
+            row.addWidget(button)
+            self.abilities_layout.addLayout(row)
+        self.abilities_layout.addStretch(1)
+        self._abilities_signature = signature
+
+    def _refresh_inventory(self) -> None:
+        signature = (
+            tuple(self.creature.progression.inventory),
+            tuple(sorted(self.creature.progression.equipped.items())),
+        )
+        if signature == self._inventory_signature:
+            return
+        self._clear_layout(self.inventory_layout)
+        equipped = self.creature.progression.equipped
+        for item in ARMOR_CATALOG:
+            owned = item.id in self.creature.progression.inventory
+            equipped_here = equipped.get(item.slot) == item.id
+            row = QHBoxLayout()
+            label = QLabel(f"{item.name} [{item.slot}] — {item.description}")
+            label.setWordWrap(True)
+            action = QPushButton("Unequip" if equipped_here else ("Equip" if owned else "Add"))
+            if equipped_here:
+                action.clicked.connect(lambda checked=False, slot=item.slot: self._unequip(slot))
+            elif owned:
+                action.clicked.connect(lambda checked=False, iid=item.id: self._equip(iid))
+            else:
+                action.clicked.connect(lambda checked=False, iid=item.id: self._add_item(iid))
+            row.addWidget(label, 1)
+            row.addWidget(action)
+            self.inventory_layout.addLayout(row)
+        self.inventory_layout.addWidget(QLabel("Equipped: " + (", ".join(f"{slot}={item}" for slot, item in equipped.items()) or "nothing")))
+        self.inventory_layout.addStretch(1)
+        self._inventory_signature = signature
+
+    def closeEvent(self, event):  # noqa: N802 - Qt API name
+        self.refresh_timer.stop()
+        super().closeEvent(event)
 
 
 class OverlayWindow(QWidget):
@@ -552,6 +808,14 @@ class OverlayWindow(QWidget):
         creature = self.manager.creature_at(mx, my)
 
         if creature is not None:
+            inspect = menu.addAction("Inspect progression, inventory, and stats…")
+            inspect.setToolTip("View level, XP, skill tree, armor, health, energy, and team relations.")
+            inspect.triggered.connect(lambda: self._show_inspector(creature))
+            pin = menu.addAction("Pin level above name")
+            pin.setCheckable(True)
+            pin.setChecked(creature.level_label_pinned)
+            pin.triggered.connect(lambda enabled, c=creature: self._announce(self.manager.set_creature_level_pin(c, enabled)))
+            menu.addSeparator()
             current = creature.name
             if current:
                 rename = menu.addAction(f"Rename \u201c{current}\u201d\u2026")
@@ -589,6 +853,16 @@ class OverlayWindow(QWidget):
         # after the menu closes so new labels/cages appear immediately.
         menu.aboutToHide.connect(self._request_full_repaint)
         menu.exec_(global_pos)
+        apply_click_through(self)
+
+    def _show_inspector(self, creature) -> None:
+        dialog = CreatureInspectorDialog(self, creature)
+        # The dialog is parented to the overlay, so Python dropping the local
+        # reference does not destroy it. Without this, every inspector opened
+        # during a session stays alive as a hidden child widget.
+        dialog.setAttribute(Qt.WA_DeleteOnClose, True)
+        dialog.exec_()
+        self._request_full_repaint()
         apply_click_through(self)
 
     def _prompt_name(self, creature) -> None:
@@ -898,6 +1172,7 @@ def main(argv=None) -> int:
     window = OverlayWindow(preset)
     window.show()
     apply_click_through(window)
+    app.aboutToQuit.connect(window.manager.save_runtime_state)
     tray = create_tray(app, window)
     # Keep a reference alive.
     window._tray = tray
