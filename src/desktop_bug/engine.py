@@ -31,7 +31,7 @@ from PyQt5.QtWidgets import (
 )
 
 from . import __version__
-from .discovery import resolve_preset_path, state_dir
+from .discovery import migrate_legacy_state_dir, resolve_preset_path, state_dir
 from .logging_setup import configure_logging, get_logger, install_excepthook, log_path
 from .session_control import clear_stop_request, consume_stop_request
 from .manager import CreatureManager
@@ -1048,6 +1048,27 @@ class OverlayWindow(QWidget):
         self._request_full_repaint()
         apply_click_through(self)
 
+    def _notify_unwritable_state_dir(self, path) -> None:
+        """Tell the user progress will not be saved this session (D3).
+
+        `state_dir_is_writable` and the log open both failing mean the same
+        thing: nothing dirtied this run reaches disk. Better said once, in a
+        balloon a windowed build otherwise has no way to show, than left as a
+        log line saved to a place that was just shown not to be writable.
+        """
+        tray = getattr(self, "_tray", None)
+        if tray is None:
+            return
+        try:
+            tray.showMessage(
+                "Desktop Bug Companion",
+                f"Could not write to {path}. Progress will not be saved this session.",
+                QSystemTrayIcon.Warning,
+                6000,
+            )
+        except Exception:
+            log.debug("Could not show the unwritable-state-dir notification", exc_info=True)
+
     def _notify_crash(self, summary: str) -> None:
         """Tell the user something broke, since a windowed build shows nothing.
 
@@ -1394,6 +1415,10 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Before configure_logging, so a first run after DC-15 logs to the new
+    # location rather than the one it just copied out of.
+    migrate_legacy_state_dir()
+
     # Before anything that can fail, so a startup problem is recorded rather
     # than lost: a windowed build has no console to print it to.
     written_to = configure_logging(state_dir(), logging.DEBUG if args.verbose else logging.INFO)
@@ -1413,6 +1438,11 @@ def main(argv=None) -> int:
     tray = create_tray(app, window)
     # Keep a reference alive.
     window._tray = tray
+    if written_to is None:
+        # A log that could not be opened means state_dir() is not writable
+        # either (D3): the same directory holds both. A windowed build has no
+        # console, so without this the only trace is a log line nobody sees.
+        window._notify_unwritable_state_dir(state_dir())
 
     # The tray does not exist until now, so the notifier finds it lazily; a
     # crash before this point still reaches the log.
