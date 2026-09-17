@@ -42,10 +42,11 @@ def vec_from_angle(angle: float) -> Tuple[float, float]:
     return math.cos(angle), math.sin(angle)
 
 
-def rand_range(pair, default_low: float, default_high: float) -> float:
+def rand_range(pair, default_low: float, default_high: float, rng=None) -> float:
+    source = rng if rng is not None else random
     if isinstance(pair, (list, tuple)) and len(pair) >= 2:
-        return random.uniform(float(pair[0]), float(pair[1]))
-    return random.uniform(default_low, default_high)
+        return source.uniform(float(pair[0]), float(pair[1]))
+    return source.uniform(default_low, default_high)
 
 
 def clamp_point(x: float, y: float, margin: float, width: float, height: float) -> Tuple[float, float]:

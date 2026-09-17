@@ -56,8 +56,16 @@ def _clamp(value: float, low: float, high: float) -> float:
 
 
 class CreatureManager:
-    def __init__(self, preset_path: Path, screen_w: int, screen_h: int):
+    def __init__(self, preset_path: Path, screen_w: int, screen_h: int, seed: int | None = None):
         self.root = app_root()
+        # A caller that wants a replayable run passes a seed, used both for
+        # this manager's own random choices (spawn positions, random-model
+        # slots) and handed to each spawned Creature so its stream is tied to
+        # the same run. No seed keeps `random` itself, so anything that seeds
+        # the module-level generator directly (existing tests, mainly) is
+        # unaffected.
+        self.seed = seed
+        self._rng = random if seed is None else random.Random(seed)
         self.screen_w = screen_w
         self.screen_h = screen_h
         self.creatures: List[Creature] = []
@@ -141,7 +149,7 @@ class CreatureManager:
         # retired eventually. Set by the load below.
         self._state_launch = 1
         self._progression_states = self._load_progression_states()
-        self.base_world = BaseWorld(screen_w, screen_h, self._base_runtime_state)
+        self.base_world = BaseWorld(screen_w, screen_h, self._base_runtime_state, rng=self._rng)
         self.load_preset(preset_path)
 
     def _runtime_progression_id(self, index: int) -> str:
@@ -250,6 +258,7 @@ class CreatureManager:
             progression_state=progression_state,
             progression_id=state_key,
             job_id=normalize_job_id(job_id),
+            seed=self.seed,
         )
         if isinstance(stored, dict) and isinstance(stored.get("name"), str):
             creature.set_name(stored["name"])
@@ -422,7 +431,7 @@ class CreatureManager:
                 skills = normalize_skill_ids(list(raw_skills) + list(job_abilities))
 
             if bool(slot.get("count_random", False)):
-                count = random.randint(1, 10)
+                count = self._rng.randint(1, 10)
             else:
                 count = max(1, min(50, int(slot.get("count", 1))))
             for member_index in range(count):
@@ -437,8 +446,8 @@ class CreatureManager:
                     job_id=job_id,
                 )
                 # Avoid all creatures spawning directly on top of each other.
-                creature.x += random.uniform(-80.0, 80.0)
-                creature.y += random.uniform(-80.0, 80.0)
+                creature.x += self._rng.uniform(-80.0, 80.0)
+                creature.y += self._rng.uniform(-80.0, 80.0)
                 creature.resize_screen(self.screen_w, self.screen_h)
                 self.creatures.append(creature)
                 index += 1
@@ -491,12 +500,12 @@ class CreatureManager:
                 b = float(raw[1])
                 if b < a:
                     a, b = b, a
-                return random.uniform(a, b)
+                return self._rng.uniform(a, b)
             if raw is not None:
                 return float(raw)
         except Exception:
             pass
-        return random.uniform(float(low), float(high))
+        return self._rng.uniform(float(low), float(high))
 
     def wants_mouse(self, mx: float, my: float) -> bool:
         """True when the overlay should capture the mouse at this point.
@@ -862,17 +871,17 @@ class CreatureManager:
         return "Nest reset to one in its default spot."
 
     def _random_model_id(self) -> str | None:
-        return random.choice(list(self.models.keys())) if self.models else None
+        return self._rng.choice(list(self.models.keys())) if self.models else None
 
     def _random_personality_id(self) -> str | None:
         pool = [pid for pid in COMPACT_TEMPERAMENT_IDS if pid in self.personalities]
-        return random.choice(pool) if pool else (random.choice(list(self.personalities.keys())) if self.personalities else None)
+        return self._rng.choice(pool) if pool else (self._rng.choice(list(self.personalities.keys())) if self.personalities else None)
 
     def _valid_personality_for_model(self, model: dict, preferred_id: str | None = None) -> dict | None:
         if preferred_id and preferred_id in self.personalities:
             return self.personalities[preferred_id]
         default_id = model.get("default_personality")
-        return self.personalities.get(default_id) or (random.choice(list(self.personalities.values())) if self.personalities else None)
+        return self.personalities.get(default_id) or (self._rng.choice(list(self.personalities.values())) if self.personalities else None)
 
     def _replace_with_traits(self, traits: List[tuple], keep_positions: bool = True) -> None:
         old_positions = [(c.x, c.y) for c in self.creatures]
@@ -1009,7 +1018,7 @@ class CreatureManager:
             else:
                 skills = skills_with_default_abilities(personality, job_abilities) if raw_skills is None else normalize_skill_ids(list(raw_skills) + list(job_abilities))
             if bool(slot.get("count_random", False)):
-                count = random.randint(1, 10)
+                count = self._rng.randint(1, 10)
             else:
                 count = max(1, min(50, int(slot.get("count", 1))))
             for _ in range(count):
@@ -1048,7 +1057,7 @@ class CreatureManager:
     def randomize_count(self, low: int = 1, high: int = 10) -> str:
         if not self.models or not self.personalities:
             return "No models/personalities available."
-        count = random.randint(int(low), int(high))
+        count = self._rng.randint(int(low), int(high))
         existing_traits = [
             (c.model["id"], c.personality["id"], c.skill_ids(), dict(getattr(c, "color_overrides", {})), c.progression.team_id, getattr(c, "job_id", "none"))
             for c in self.creatures
@@ -1065,7 +1074,7 @@ class CreatureManager:
     def randomize_everything(self) -> str:
         if not self.models or not self.personalities:
             return "No models/personalities available."
-        count = random.randint(1, 10)
+        count = self._rng.randint(1, 10)
         traits: list[tuple] = []
         for _ in range(count):
             model_id = self._random_model_id()
@@ -1165,7 +1174,7 @@ class CreatureManager:
             # Re-pick periodically (or immediately when we have no target).
             if prey is not None and creature._prey_recheck > 0.0:
                 continue
-            creature._prey_recheck = random.uniform(0.2, 0.4)
+            creature._prey_recheck = self._rng.uniform(0.2, 0.4)
 
             best = None
             best_score = -1e18
@@ -1257,8 +1266,8 @@ class CreatureManager:
         if (not prey.trapped and d <= strike and creature.has_skill("jump")
                 and creature.has_skill("prepare_jump_attack")
                 and getattr(creature, "_pounce_cooldown", 0.0) <= 0.0
-                and random.random() < (0.5 if creature._is_hunter_personality() else 0.4)):
-            creature._pounce_cooldown = random.uniform(0.8, 1.5)
+                and self._rng.random() < (0.5 if creature._is_hunter_personality() else 0.4)):
+            creature._pounce_cooldown = self._rng.uniform(0.8, 1.5)
             creature.enter_aim(fx, fy, target=None, after="outcome",
                                ranging=(0.4, 0.85), abort_chance=0.06)
             return
@@ -1314,7 +1323,7 @@ class CreatureManager:
                     hunter._hunting_prey = False
                 fly.hunters.clear()
                 best.enter_feed(fly.x, fly.y)
-                best._feed_cooldown = random.uniform(0.6, 1.2)
+                best._feed_cooldown = self._rng.uniform(0.6, 1.2)
 
     def update(
         self,
@@ -1776,8 +1785,8 @@ class CreatureManager:
         if surface.w <= margin * 2.0 or surface.h <= margin * 2.0:
             return surface.x + surface.w * 0.5, surface.y + surface.h * 0.5
         return (
-            random.uniform(surface.x + margin, surface.x + surface.w - margin),
-            random.uniform(surface.y + margin, surface.y + surface.h - margin),
+            self._rng.uniform(surface.x + margin, surface.x + surface.w - margin),
+            self._rng.uniform(surface.y + margin, surface.y + surface.h - margin),
         )
 
     def _nearest_exit_target(self, creature: Creature, surface: DesktopSurface) -> Tuple[float, float]:
@@ -1823,7 +1832,7 @@ class CreatureManager:
         # Hideouts should be a rare, conscious action rather than constant random
         # window clipping.  Explorer-type personalities override this and
         # deliberately look for cover/folder portals much more often.
-        if random.random() > _clamp(self._personality_float(creature, "desktop_hide_chance", 0.055), 0.0, 1.0):
+        if self._rng.random() > _clamp(self._personality_float(creature, "desktop_hide_chance", 0.055), 0.0, 1.0):
             return
 
         max_area_for_intentional_hide = self.screen_w * self.screen_h * self._personality_float(creature, "desktop_hide_max_area_ratio", 0.56)
@@ -1860,7 +1869,7 @@ class CreatureManager:
         if not candidates:
             return
         total = sum(weight for _, weight in candidates)
-        pick = random.random() * total
+        pick = self._rng.random() * total
         surface = candidates[-1][0]
         for cand, weight in candidates:
             pick -= weight
@@ -1886,26 +1895,26 @@ class CreatureManager:
         folders = [surface for surface in self._folder_surfaces() if surface != source]
         if not folders:
             return False
-        dest = random.choice(folders)
-        side = random.choice(("left", "right", "top", "bottom"))
+        dest = self._rng.choice(folders)
+        side = self._rng.choice(("left", "right", "top", "bottom"))
         margin = max(24.0, creature.size * 1.1)
         exit_push = max(70.0, creature.size * 3.2)
         if side in ("left", "right"):
-            y = random.uniform(dest.y + margin, dest.y + max(margin, dest.h - margin)) if dest.h > margin * 2.0 else dest.y + dest.h * 0.5
+            y = self._rng.uniform(dest.y + margin, dest.y + max(margin, dest.h - margin)) if dest.h > margin * 2.0 else dest.y + dest.h * 0.5
             if side == "left":
                 inside = (dest.x + margin, y)
-                outside = (dest.x - exit_push, y + random.uniform(-35.0, 35.0))
+                outside = (dest.x - exit_push, y + self._rng.uniform(-35.0, 35.0))
             else:
                 inside = (dest.x + dest.w - margin, y)
-                outside = (dest.x + dest.w + exit_push, y + random.uniform(-35.0, 35.0))
+                outside = (dest.x + dest.w + exit_push, y + self._rng.uniform(-35.0, 35.0))
         else:
-            x = random.uniform(dest.x + margin, dest.x + max(margin, dest.w - margin)) if dest.w > margin * 2.0 else dest.x + dest.w * 0.5
+            x = self._rng.uniform(dest.x + margin, dest.x + max(margin, dest.w - margin)) if dest.w > margin * 2.0 else dest.x + dest.w * 0.5
             if side == "top":
                 inside = (x, dest.y + margin)
-                outside = (x + random.uniform(-45.0, 45.0), dest.y - exit_push)
+                outside = (x + self._rng.uniform(-45.0, 45.0), dest.y - exit_push)
             else:
                 inside = (x, dest.y + dest.h - margin)
-                outside = (x + random.uniform(-45.0, 45.0), dest.y + dest.h + exit_push)
+                outside = (x + self._rng.uniform(-45.0, 45.0), dest.y + dest.h + exit_push)
         inside_x = _clamp(inside[0], creature.margin * 0.4, self.screen_w - creature.margin * 0.4)
         inside_y = _clamp(inside[1], creature.margin * 0.4, self.screen_h - creature.margin * 0.4)
         outside_x = _clamp(outside[0], creature.margin, self.screen_w - creature.margin)
@@ -2008,7 +2017,7 @@ class CreatureManager:
                     creature.state = "Wander"
                     creature.motion_paused = False
                     creature.speed = 48.0 * creature._speed_mult()
-                    creature.state_timer = random.uniform(1.0, 2.0)
+                    creature.state_timer = self._rng.uniform(1.0, 2.0)
                     creature._desktop_hidden_timer = 0.0
         else:
             creature._desktop_hidden_timer = 0.0
