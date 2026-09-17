@@ -10,7 +10,7 @@ import uuid
 from pathlib import Path
 
 from PyQt5.QtCore import QSize, QTimer, Qt
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -166,6 +166,9 @@ class SlotTable(QTableWidget):
     def __init__(self, parent=None):
         super().__init__(0, 9, parent)
         self.setHorizontalHeaderLabels(["Creature model", "Temperament", "How many", "Pick 1-10", "Abilities", "Colors", "Team", "Job", ""])
+        # The last two columns hold icon-only controls; the header text would be
+        # wider than the button underneath it.
+        self.horizontalHeaderItem(8).setToolTip("Remove a creature slot")
         self.horizontalHeader().setStretchLastSection(False)
         self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
@@ -251,6 +254,7 @@ class ConfigWindow(QMainWindow):
             QGroupBox#presetGroup::title { background: #3b82c4; }
             QGroupBox#creaturesGroup { border-color: #cbbdf0; }
             QGroupBox#creaturesGroup::title { background: #6d4ed6; }
+            QPushButton#removeSlotButton { padding: 0px; }
             QGroupBox#teamsGroup { border-color: #f0c2d8; }
             QGroupBox#teamsGroup::title { background: #b8477e; }
             QLabel#teamsNote { color: #5d6470; }
@@ -774,10 +778,12 @@ class ConfigWindow(QMainWindow):
         self._refresh_skills_button(skills_btn)
         skills_btn.clicked.connect(lambda _checked=False, button=skills_btn: self.edit_skills_for_button(button))
 
-        colors_btn = QPushButton("Colors")
-        colors_btn.setMinimumWidth(78)
+        colors_btn = QPushButton()
+        colors_btn.setFixedSize(QSize(46, 26))
         colors_btn.setProperty("color_overrides", _normalize_color_overrides(colors))
-        self._refresh_colors_button(colors_btn)
+        # The swatch shows *this slot's* colours, which means the model's own
+        # palette when nothing has been overridden, so the model box is passed in.
+        self._refresh_colors_button(colors_btn, model_box)
         colors_btn.clicked.connect(
             lambda _checked=False, button=colors_btn, mb=model_box: self.edit_colors_for_button(button, mb)
         )
@@ -809,7 +815,16 @@ class ConfigWindow(QMainWindow):
             "Guards patrol and protect it from declared foes."
         )
 
-        remove_btn = QPushButton("Remove")
+        remove_btn = QPushButton()
+        remove_btn.setFixedSize(QSize(26, 26))
+        remove_btn.setIcon(self._remove_icon())
+        remove_btn.setIconSize(QSize(12, 12))
+        # An icon with no words still has to be reachable by someone who cannot
+        # see it, and understandable by someone who can but does not recognise
+        # it, so both the accessible name and the tooltip stay.
+        remove_btn.setAccessibleName("Remove this creature slot")
+        remove_btn.setToolTip("Remove this creature slot")
+        remove_btn.setObjectName("removeSlotButton")
         remove_btn.clicked.connect(lambda: self.remove_slot_by_button(remove_btn))
 
         self.table.setCellWidget(row, 0, model_box)
@@ -825,6 +840,8 @@ class ConfigWindow(QMainWindow):
             self.table.setItem(row, col, QTableWidgetItem(""))
 
         model_box.currentIndexChanged.connect(self.update_summary)
+        model_box.currentIndexChanged.connect(
+            lambda _i=0, button=colors_btn, mb=model_box: self._refresh_colors_button(button, mb))
         personality_box.currentIndexChanged.connect(
             lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_personality_changed(pb, jb, sb))
         count_spin.valueChanged.connect(self.update_summary)
@@ -836,6 +853,22 @@ class ConfigWindow(QMainWindow):
             lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_job_changed(pb, jb, sb)
         )
         self.update_summary()
+
+    def _remove_icon(self) -> QIcon:
+        """A small cross, drawn rather than shipped as a file."""
+        cached = getattr(self, "_remove_icon_cache", None)
+        if cached is not None:
+            return cached
+        pixmap = QPixmap(24, 24)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(QPen(QColor(196, 72, 72), 3.0, Qt.SolidLine, Qt.RoundCap))
+        painter.drawLine(7, 7, 17, 17)
+        painter.drawLine(17, 7, 7, 17)
+        painter.end()
+        self._remove_icon_cache = QIcon(pixmap)
+        return self._remove_icon_cache
 
     def _random_model_icon(self) -> QIcon:
         """Small dice-like icon for the random model option."""
@@ -965,22 +998,69 @@ class ConfigWindow(QMainWindow):
         button.setText(compact_ability_summary(ids))
         button.setToolTip("Choose which abilities this creature slot can use at launch.")
 
-    def _refresh_colors_button(self, button: QPushButton) -> None:
+    # The order colours are shown in, widest part of the creature first, so the
+    # swatch reads like the creature rather than like an arbitrary set.
+    SWATCH_KEY_ORDER = ("body", "abdomen", "legs", "head", "eyes", "accent")
+
+    def _palette_for_button(self, button: QPushButton, model_box: QComboBox | None) -> list:
+        """The colours this slot will actually produce, overrides first."""
+        overrides = _normalize_color_overrides(button.property("color_overrides"))
+        palette = dict(self._model_color_defaults(model_box) if model_box is not None else {})
+        palette.update(overrides)
+        ordered = [palette[key] for key in self.SWATCH_KEY_ORDER if key in palette]
+        rest = [palette[key] for key in sorted(palette) if key not in self.SWATCH_KEY_ORDER]
+        return (ordered + rest)[:4]
+
+    def _swatch_icon(self, colors: list, custom: bool) -> QIcon:
+        """A filled swatch of the slot's colours, or a hint when there are none."""
+        size = 34
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        if not colors:
+            # Nothing to show: an outline, so the control still looks like a
+            # control rather than an empty gap in the row.
+            painter.setBrush(QColor(255, 255, 255, 20))
+            painter.setPen(QPen(QColor(140, 146, 158), 1.4, Qt.DashLine))
+            painter.drawRoundedRect(2, 2, size - 4, size - 4, 6, 6)
+            painter.end()
+            return QIcon(pixmap)
+        painter.setPen(Qt.NoPen)
+        band = (size - 4) / len(colors)
+        for index, color in enumerate(colors):
+            painter.setBrush(QColor(*color[:3]))
+            top = 2 + band * index
+            painter.drawRect(2, int(round(top)), size - 4, int(round(band)) + 1)
+        painter.setBrush(Qt.NoBrush)
+        # A custom palette is outlined brightly so a row that was changed by hand
+        # is obvious at a glance; the count moved out of the label into this.
+        painter.setPen(QPen(QColor(255, 255, 255, 230) if custom else QColor(0, 0, 0, 70),
+                            2.0 if custom else 1.0))
+        painter.drawRoundedRect(2, 2, size - 4, size - 4, 6, 6)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _refresh_colors_button(self, button: QPushButton, model_box: QComboBox | None = None) -> None:
         overrides = _normalize_color_overrides(button.property("color_overrides"))
         button.setProperty("color_overrides", overrides)
-        if not overrides:
-            button.setText("Colors")
-            button.setStyleSheet("")
-            button.setToolTip("Use the model's default palette. Click to choose custom colors for this slot.")
-            return
-        body = overrides.get("body", [80, 70, 70])
-        luminance = (body[0] * 0.299) + (body[1] * 0.587) + (body[2] * 0.114)
-        text_color = "#17202a" if luminance > 155 else "#ffffff"
-        button.setText(f"Colors ({len(overrides)})")
-        button.setStyleSheet(
-            f"QPushButton {{ background: rgb({body[0]}, {body[1]}, {body[2]}); color: {text_color}; }}"
-        )
-        button.setToolTip("Custom palette: " + ", ".join(sorted(overrides)) + ". Click to edit.")
+        colors = self._palette_for_button(button, model_box)
+        button.setText("")
+        button.setStyleSheet("")
+        button.setIcon(self._swatch_icon(colors, bool(overrides)))
+        button.setIconSize(QSize(34, 34))
+        button.setProperty("swatch_colors", colors)
+        if overrides:
+            description = "Custom palette: " + ", ".join(sorted(overrides)) + ". Click to edit."
+        elif colors:
+            description = "The model's own palette. Click to choose custom colors for this slot."
+        else:
+            description = "Use the model's default palette. Click to choose custom colors for this slot."
+        button.setToolTip(description)
+        button.setAccessibleName(
+            f"Colors for this slot: {len(overrides)} custom" if overrides
+            else "Colors for this slot: model default")
+        button.setAccessibleDescription(description)
 
     def _model_color_defaults(self, model_box: QComboBox) -> dict:
         model_id = model_box.currentData() if model_box is not None else None
@@ -1054,7 +1134,7 @@ class ConfigWindow(QMainWindow):
 
         if dialog.exec_() == QDialog.Accepted:
             button.setProperty("color_overrides", _normalize_color_overrides(current))
-            self._refresh_colors_button(button)
+            self._refresh_colors_button(button, model_box)
             self.update_summary()
 
     def edit_skills_for_button(self, button: QPushButton) -> None:
