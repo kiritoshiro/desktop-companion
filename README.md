@@ -268,6 +268,19 @@ model, temperament, job, team, abilities, colors, and global settings; they do
 not contain live HP/energy, animation state, or base build progress. Old presets
 continue to work unchanged.
 
+Each saved spider is keyed by the preset it belongs to. That key is now
+case-insensitive, because Windows treats `Default.json` and `default.json` as
+one file, and previously the two spellings built up two separate profiles for
+the same spider. The file is upgraded in place the first time a newer build
+reads it: keys differing only in case are merged, keeping the higher level, and
+keys from the scheme that predated preset scoping are discarded because they
+cannot be attributed to any preset. An entry for a spider that has not appeared
+for 50 launches is retired, so the file no longer grows forever.
+
+Set `DESKTOP_BUG_STATE_DIR` to keep runtime state somewhere other than beside
+the project or EXE. The headless tests set it so that running them cannot
+rewrite real saved spiders.
+
 ## Temperament, jobs, and colony bases
 
 The scheduler still chooses temporary action phases (wander, observe, inspect,

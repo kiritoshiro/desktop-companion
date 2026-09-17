@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import json
+import os
 import random
 import sys
 from pathlib import Path
@@ -27,6 +28,14 @@ from .math_utils import distance
 from .progression import RELATIONS
 from .jobs import BaseWorld, job_ability_ids, normalize_job_id
 from .personality_profiles import COMPACT_TEMPERAMENT_IDS
+from .runtime_state import (
+    build_payload,
+    evict,
+    load_payload,
+    next_launch,
+    normalize_namespace,
+    stamp_seen,
+)
 
 
 RANDOM_MODEL_ID = "__random_model__"
@@ -110,13 +119,20 @@ class CreatureManager:
         self._mouse_y = -100000.0
         self._mouse_down = False
         self._progression_namespace = "default"
-        self._progression_state_path = self.root / "state" / "creatures.json"
+        # DESKTOP_BUG_STATE_DIR redirects runtime state away from the project
+        # or executable folder. Headless tests set it so a test run cannot
+        # rewrite a real player's saved spiders.
+        state_dir = os.environ.get("DESKTOP_BUG_STATE_DIR", "").strip()
+        self._progression_state_path = (Path(state_dir) if state_dir else self.root / "state") / "creatures.json"
         # Feeding happens inside the frame loop, so persisting there would put a
         # full JSON rewrite on the render thread every time a fly is eaten.
         # Frequent changes mark the state dirty and a debounced flush in
         # ``update`` writes it; explicit user actions still save immediately.
         self._runtime_state_dirty = False
         self._runtime_state_flush_accum = 0.0
+        # Counts launches so an entry for a spider that no longer exists can be
+        # retired eventually. Set by the load below.
+        self._state_launch = 1
         self._progression_states = self._load_progression_states()
         self.base_world = BaseWorld(screen_w, screen_h, self._base_runtime_state)
         self.load_preset(preset_path)
@@ -132,28 +148,40 @@ class CreatureManager:
         return f"{self._progression_namespace}|runtime:{int(index)}"
 
     def _load_progression_states(self) -> dict:
-        """Load optional per-creature runtime state, tolerating bad old files."""
+        """Load per-creature runtime state, migrating old files and bad ones.
+
+        Migration folds keys that differ only by the case of their preset
+        namespace, drops keys from the scheme that predated preset scoping, and
+        advances the launch counter that drives eviction.
+        """
+        data = None
         try:
             with self._progression_state_path.open("r", encoding="utf-8") as handle:
                 data = json.load(handle)
-            states = data.get("creatures", {}) if isinstance(data, dict) else {}
-            self._base_runtime_state = data.get("bases", []) if isinstance(data, dict) and isinstance(data.get("bases", []), list) else []
-            return states if isinstance(states, dict) else {}
         except (OSError, ValueError, TypeError):
-            return {}
+            data = None
+        self._state_launch = next_launch(data)
+        states, bases = load_payload(data, self._state_launch)
+        self._base_runtime_state = bases
+        return states
 
     def save_runtime_state(self) -> None:
         """Persist meaningful creature state atomically beside the project/exe."""
         states = dict(self._progression_states)
+        launch = int(getattr(self, "_state_launch", 1))
         for creature in self.creatures:
-            states[str(getattr(creature, "progression_id", self._runtime_progression_id(creature.index)))] = {
+            key = str(getattr(creature, "progression_id", self._runtime_progression_id(creature.index)))
+            states[key] = stamp_seen({
                 "name": creature.name,
                 "model": creature.model.get("id"),
                 "personality": creature.personality.get("id"),
                 "progression": creature.progression.to_dict(),
-            }
-        payload = {"schema_version": 1, "creatures": states}
-        payload["bases"] = self.base_world.to_dict() if getattr(self, "base_world", None) is not None else []
+            }, launch)
+        # Retire entries for spiders that have not appeared for a long time, so
+        # the file does not grow without bound across presets and slot edits.
+        states = evict(states, launch)
+        bases = self.base_world.to_dict() if getattr(self, "base_world", None) is not None else []
+        payload = build_payload(states, bases, launch)
         try:
             self._progression_state_path.parent.mkdir(parents=True, exist_ok=True)
             temp_path = self._progression_state_path.with_suffix(".tmp")
@@ -304,7 +332,9 @@ class CreatureManager:
                     creature._camouflage_visible_timer = 5.0
 
     def load_preset(self, preset_path: Path) -> None:
-        self._progression_namespace = Path(preset_path).stem or "default"
+        # Case-folded: Windows paths are case-insensitive, so Default.json and
+        # default.json are one preset and must share one saved profile.
+        self._progression_namespace = normalize_namespace(Path(preset_path).stem)
         self.creatures.clear()
         if getattr(self, "web_world", None) is not None:
             self.web_world.clear()
