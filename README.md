@@ -321,8 +321,11 @@ whatever the teams say. Before any of this existed a Guard had nothing to react
 to, because two different teams were merely unrelated, and the shipped
 **Colony** preset could not demonstrate the behaviour it advertises.
 
-Runtime state is saved atomically in `state/creatures.json` beside the project or
-EXE. It stores level, XP, talents, inventory, equipment, names, team, relations,
+Runtime state is saved atomically in `creatures.json` under a per-user state
+folder: `%LOCALAPPDATA%\DesktopBugCompanion\state` by default, so progress
+survives an install to a location you cannot write to, such as Program Files.
+Drop a `portable.txt` file beside the project or EXE to keep state there
+instead, as every version before this one always did. It stores level, XP, talents, inventory, equipment, names, team, relations,
 the optional pinned level and health labels, and Builder/Guard base progress. Transient
 animation and movement state is intentionally not persisted. Launch presets keep
 model, temperament, job, team, abilities, colors, and global settings; they do
@@ -338,8 +341,9 @@ keys from the scheme that predated preset scoping are discarded because they
 cannot be attributed to any preset. An entry for a spider that has not appeared
 for 50 launches is retired, so the file no longer grows forever.
 
-Set `DESKTOP_BUG_STATE_DIR` to keep runtime state somewhere other than beside
-the project or EXE. The headless tests set it so that running them cannot
+Set `DESKTOP_BUG_STATE_DIR` to override the state location entirely, taking
+priority over both the per-user default and a `portable.txt` marker. The
+headless tests set it so that running them cannot
 rewrite real saved spiders.
 
 ## Where your own presets go

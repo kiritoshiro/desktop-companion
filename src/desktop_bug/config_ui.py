@@ -37,7 +37,7 @@ from PyQt5.QtWidgets import (
 )
 
 from . import __version__
-from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, state_dir, user_presets_dir
+from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, migrate_legacy_state_dir, state_dir, user_presets_dir
 from .logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
@@ -1878,6 +1878,7 @@ def main(argv=None) -> int:
         engine_args.extend(remaining)
         return engine_main(engine_args)
 
+    migrate_legacy_state_dir()
     written_to = configure_logging(state_dir())
     log.info("Desktop Bug Companion %s settings window starting (frozen=%s)", __version__, getattr(sys, "frozen", False))
     if written_to is None:

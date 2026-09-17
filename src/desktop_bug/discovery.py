@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -182,18 +183,99 @@ def resolve_preset_path(value) -> Path:
     return found
 
 
+def is_portable_install() -> bool:
+    """True when a ``portable.txt`` marker sits beside the project/executable.
+
+    Dropping this file is how a user asks to keep everything, state included,
+    in one folder they can move or delete as a unit -- the alternative to the
+    per-user default below, not a detection heuristic.
+    """
+    return (app_root() / "portable.txt").exists()
+
+
+def default_state_root() -> Path:
+    """Return the per-user root state lives under when not portable.
+
+    ``state`` beside the project or executable (the previous, only, default)
+    fails silently in a read-only install location such as Program Files (D3):
+    the write raises, is swallowed, and progress is lost with no message.
+    ``%LOCALAPPDATA%`` is writable by the user who is running the program
+    without needing elevation, regardless of where the program itself lives.
+    """
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    base = Path(local_app_data) if local_app_data else Path.home() / "AppData" / "Local"
+    return base / "DesktopBugCompanion"
+
+
 def state_dir() -> Path:
     """Return the directory holding runtime state and session control files.
 
-    Defaults to ``state`` beside the project or executable.
-    ``DESKTOP_BUG_STATE_DIR`` overrides it, which the headless tests use so a
-    test run cannot rewrite a real player's saved spiders. Both the overlay and
-    the settings window resolve it here so they cannot disagree.
+    ``DESKTOP_BUG_STATE_DIR`` overrides everything else, which the headless
+    tests use so a test run cannot rewrite a real player's saved spiders. A
+    ``portable.txt`` marker keeps state beside the project or executable, as
+    every version before DC-15 always did. Otherwise state lives under
+    ``%LOCALAPPDATA%\\DesktopBugCompanion`` (D3), which survives an install to
+    a location the user cannot write to. Both the overlay and the settings
+    window resolve it here so they cannot disagree.
     """
     override = os.environ.get("DESKTOP_BUG_STATE_DIR", "").strip()
     if override:
         return Path(override)
-    return app_root() / "state"
+    if is_portable_install():
+        return app_root() / "state"
+    return default_state_root() / "state"
+
+
+def migrate_legacy_state_dir() -> None:
+    """Copy an existing beside-the-executable state folder to its new home.
+
+    Runs once, at startup, before anything opens a file under `state_dir()`.
+    Copies rather than moves, so a crash partway through leaves the old
+    folder intact and this simply runs again next launch. Never touches a
+    portable install or a test's overridden directory, since neither one's
+    state has moved.
+    """
+    if os.environ.get("DESKTOP_BUG_STATE_DIR", "").strip():
+        return
+    if is_portable_install():
+        return
+    new_dir = state_dir()
+    legacy_dir = app_root() / "state"
+    if legacy_dir == new_dir or not legacy_dir.is_dir():
+        return
+    if (new_dir / "creatures.json").exists():
+        return
+    from .logging_setup import get_logger
+
+    log = get_logger("discovery")
+    try:
+        new_dir.mkdir(parents=True, exist_ok=True)
+        for item in legacy_dir.iterdir():
+            if item.is_file():
+                shutil.copy2(item, new_dir / item.name)
+        log.info("Migrated legacy state from %s to %s", legacy_dir, new_dir)
+    except OSError:
+        log.warning(
+            "Could not migrate legacy state from %s to %s", legacy_dir, new_dir, exc_info=True
+        )
+
+
+def state_dir_is_writable() -> bool:
+    """Probe whether `state_dir()` can actually be created and written to.
+
+    `save_runtime_state` already catches a write failure and logs it (D3), but
+    a windowed build has no console, so a silent log line is silent in
+    practice. This lets a caller with tray access warn instead.
+    """
+    directory = state_dir()
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        probe = directory / ".write_test"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink()
+        return True
+    except OSError:
+        return False
 
 
 def data_dirs(folder_name: str, root: Path = None) -> List[Path]:
