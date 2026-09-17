@@ -143,8 +143,6 @@ def main() -> int:
     assert probe._feeler_pulse == 0.0
     assert probe.catch_blend == 0.0
     probe._update_antennae(1.0 / 60.0)
-    rest_forward = float(antennae["hand_rest_forward"]) * probe.size
-    rest_lateral = float(antennae["hand_rest_lateral"]) * probe.size
     # Idle hands may already be inside a broad grooming stroke on the first
     # frame. They must stay inside the configured envelope and remain mirrored,
     # but they no longer need to be pinned to one exact rest coordinate.

@@ -47,6 +47,20 @@ jobs:
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
 
+          python tools/model_variations_smoke.py
+          python tools/color_override_smoke.py
+          python tools/progression_smoke.py
+          python tools/personality_catalog_smoke.py
+          python tools/phase_scheduler_smoke.py
+          python tools/jobs_smoke.py
+          python tools/job_blend_smoke.py
+          python tools/drifter_smoke.py
+          python tools/inspector_ui_smoke.py
+          python tools/preset_abilities_smoke.py
+          python tools/spider_movement_smoke.py
+          python tools/tarantula_smoke.py
+          python tools/chosen_one_smoke.py
+
       - name: Build Windows executable smoke test
         shell: pwsh
         run: |

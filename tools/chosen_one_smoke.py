@@ -9,7 +9,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug.creature import Creature
 from spider_movement_smoke import build_creature, run_causality_checks, run_walk
 
 
