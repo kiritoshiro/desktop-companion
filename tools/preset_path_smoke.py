@@ -131,10 +131,13 @@ def check_engine_uses_it() -> None:
     assert "resolve_preset_path(args.preset)" in engine_src, "engine no longer resolves via discovery"
     assert "app_root() / preset" not in engine_src, "engine resolves a preset against the writable root again"
 
-    # Saving is the opposite case and must keep using the writable root: the
-    # extraction directory is temporary and discarded when the app exits.
+    # Saving is the opposite case and must target a writable directory, never
+    # the extraction directory, which is temporary and discarded on exit. Since
+    # DC-36 that destination is the user's own preset folder rather than the
+    # application root, because writing beside the app overwrote shipped data.
     preset_io_src = (ROOT / "src" / "desktop_bug" / "preset_io.py").read_text(encoding="utf-8")
-    assert "root = app_root()" in preset_io_src, "saving no longer targets the writable root"
+    assert "user_presets_dir()" in preset_io_src, "saving no longer targets a writable user folder"
+    assert "is_shipped_preset(path)" in preset_io_src, "saving no longer refuses shipped presets"
 
 
 def main() -> int:

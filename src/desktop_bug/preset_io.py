@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Dict
 
-from .discovery import app_root
+from .discovery import is_shipped_preset, user_presets_dir
 from .skills import SKILL_BY_ID
 from .jobs import JOB_BY_ID
 
@@ -164,13 +164,26 @@ def load_preset(path: Path) -> Dict:
 
 
 def save_preset(data: Dict, path: Path = None) -> Path:
+    """Write a preset the user owns, never one that shipped with the build.
+
+    The saved filename comes from the preset's *name*, so a preset called
+    ``Default`` used to be written to ``presets/Default.json`` -- the same file
+    as the shipped ``presets/default.json`` on a case-insensitive filesystem.
+    The first Save a user pressed silently replaced data that came with the
+    application. Saves now go to the user's own preset directory, which is read
+    before the shipped one, so their copy shadows it instead.
+    """
     validate_preset(data)
-    root = app_root()
-    presets_dir = root / "presets"
+    presets_dir = user_presets_dir()
     presets_dir.mkdir(parents=True, exist_ok=True)
     path = Path(path) if path else presets_dir / safe_preset_filename(data["name"])
     if not path.is_absolute():
-        path = root / path
+        path = presets_dir / path
+    if is_shipped_preset(path):
+        raise ValueError(
+            f"{path.name} ships with the application and is not writable. "
+            "Saved presets go to your own preset folder instead."
+        )
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2)

@@ -36,7 +36,7 @@ from PyQt5.QtWidgets import (
 )
 
 from . import __version__
-from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, state_dir
+from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, state_dir, user_presets_dir
 from .logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
@@ -1351,9 +1351,9 @@ class ConfigWindow(QMainWindow):
                 self.preset_combo.setCurrentIndex(idx)
             applied = self._apply_live_if_running()
             if applied:
-                self.status.setText(f"Saved preset: {path}\nApplied changes to the running overlay.")
+                self.status.setText(f"Saved your preset to {path}\nApplied changes to the running overlay.")
             else:
-                self.status.setText(f"Saved preset: {path}")
+                self.status.setText(f"Saved your preset to {path}")
         except Exception as exc:
             QMessageBox.critical(self, "Could not save preset", str(exc))
 
@@ -1386,8 +1386,11 @@ class ConfigWindow(QMainWindow):
             QMessageBox.critical(self, "Could not load preset", str(exc))
 
     def ensure_saved_for_launch(self) -> Path:
+        # Goes to the user's own preset folder: saving used to write over a
+        # preset that shipped with the application, because the filename came
+        # from the preset's name and "Default" collides with "default".
         data = self.current_preset_data()
-        path = self.root / "presets" / safe_preset_filename(data["name"])
+        path = user_presets_dir() / safe_preset_filename(data["name"])
         return save_preset(data, path)
 
     def launch_engine(self):

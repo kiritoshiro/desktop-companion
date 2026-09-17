@@ -291,6 +291,24 @@ Set `DESKTOP_BUG_STATE_DIR` to keep runtime state somewhere other than beside
 the project or EXE. The headless tests set it so that running them cannot
 rewrite real saved spiders.
 
+## Where your own presets go
+
+Presets you save are written to your own folder beside the runtime state:
+
+```text
+state\presets```
+
+They are read before the ones that ship with the application, so saving a
+preset called `Default` gives you your own `Default` without touching the
+`default.json` that came with the build. The shipped copy stays where it is,
+and the preset list shows one entry per name, yours.
+
+This used to go wrong. The saved filename comes from the preset's *name*, so
+`Default` was written to `presets/Default.json` -- the same file as the shipped
+`presets/default.json` on Windows, where case does not distinguish two names.
+The first **Save** anyone pressed quietly replaced a preset that shipped with
+the application. Writing into the shipped folder is now refused outright.
+
 ## Logs and reporting a problem
 
 The executable is built windowed, so it has no console: anything printed would
@@ -390,8 +408,7 @@ moved on its own. There is no folder to keep beside it.
 
 To override bundled data, put an edited copy in a `models`, `personalities` or
 `presets` folder next to the executable; those are searched before the bundled
-copies. The app also creates a `presets` folder there the first time you save a
-preset, because saved presets have to be writable and the bundle is not.
+copies.
 
 ## GitHub Actions builds and releases
 

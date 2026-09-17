@@ -65,6 +65,10 @@ def candidate_roots(root: Path = None) -> List[Path]:
     if root is not None:
         roots.append(Path(root))
 
+    # Anything the user saved comes first, so their own copy of a preset
+    # shadows the one that shipped rather than overwriting it.
+    roots.append(user_data_root())
+
     writable_root = app_root()
     roots.append(writable_root)
 
@@ -87,6 +91,57 @@ def candidate_roots(root: Path = None) -> List[Path]:
 def data_path(*parts: str) -> Path:
     """Return a writable path beside the project/executable."""
     return app_root().joinpath(*parts)
+
+
+def user_data_root() -> Path:
+    """Return the writable root for things the user creates.
+
+    Saving used to derive a filename from the preset's *name*, so a preset
+    called ``Default`` was written to ``presets/Default.json`` -- which on
+    Windows is the same file as the shipped ``presets/default.json``. A user's
+    first Save therefore overwrote data that ships with the build. User presets
+    now live beside the runtime state, which is writable, already excluded from
+    version control, and redirectable for tests.
+    """
+    return state_dir()
+
+
+def user_presets_dir() -> Path:
+    """Return the directory a user's own presets are written to."""
+    return user_data_root() / "presets"
+
+
+def shipped_presets_dirs() -> List[Path]:
+    """Return the preset directories that came with the build.
+
+    These are read-only as far as the application is concerned.
+    """
+    dirs: List[Path] = [app_root() / "presets"]
+    bundled = getattr(sys, "_MEIPASS", None)
+    if bundled:
+        dirs.append(Path(bundled) / "presets")
+    dirs.append(app_root() / "_internal" / "presets")
+    return _unique_paths(dirs)
+
+
+def is_shipped_preset(path) -> bool:
+    """Return whether a path names a preset that came with the build.
+
+    Compared case-insensitively, because the collision that caused this was
+    ``Default.json`` against ``default.json`` on a case-insensitive filesystem.
+    """
+    try:
+        candidate = Path(path).resolve()
+    except Exception:
+        candidate = Path(path)
+    for directory in shipped_presets_dirs():
+        try:
+            resolved = directory.resolve()
+        except Exception:
+            resolved = directory
+        if str(candidate.parent).casefold() == str(resolved).casefold():
+            return True
+    return False
 
 
 def resolve_preset_path(value) -> Path:
@@ -341,9 +396,12 @@ def discover_presets(root: Path = None) -> List[Path]:
     seen_stems = set()
     for presets_dir in data_dirs("presets", root):
         for path in sorted(presets_dir.glob("*.json"), key=_newest_first):
-            # Avoid showing duplicate bundled presets when an editable copy exists.
-            if path.stem in seen_stems:
+            # Avoid showing duplicate bundled presets when an editable copy
+            # exists. Case-folded: a user's "Colony" and the shipped "colony"
+            # are one preset on Windows, and listing both is just confusing.
+            stem = path.stem.casefold()
+            if stem in seen_stems:
                 continue
-            seen_stems.add(path.stem)
+            seen_stems.add(stem)
             presets.append(path)
     return presets
