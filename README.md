@@ -1,19 +1,5 @@
 # Desktop Bug Companion
 
-## Single-file EXE build
-
-This copy is configured for PyInstaller `--onefile`. Run `build_exe.bat`, then use:
-
-```text
-dist\DesktopBugCompanion.exe
-```
-
-Models, personalities, and default presets are bundled inside the EXE. The app can still create a `presets` folder next to the EXE when you save or launch a custom preset, because saved presets must be writable at runtime.
-
----
-
-# Desktop Bug Companion
-
 A Windows desktop overlay app that spawns small cursor-reactive creatures on top of your real desktop. The first included creature is a procedural spider with planted-foot IK, alternating gait groups, stop-look-go stalking, cursor chase, and realistic retreat when the cursor darts toward it.
 
 The overlay is not a game canvas. It uses a frameless, always-on-top, per-pixel transparent Qt window and Windows hit-testing so empty space stays click-through while spider pixels can be grabbed. The only intentional visible pixels are the spider and its soft shadow/highlight pixels. Left-drag a spider to pick it up; releasing it preserves throw inertia and makes it scrabble away startled.
@@ -69,7 +55,7 @@ A curious spider will walk up to its point of interest, lower its body, and insp
 
 ### Choosing a mood at runtime
 
-The mood baseline is set by personality, but you can override it for every spider from the tray **Mood** menu (Auto, Playful, Cuddly, Curious, Calm). **Auto** restores each spider's personality-defined baseline. Two personalities ship specifically for this: **Playful** (energetic, social, quick to play) and **Cuddly** (gentle, affectionate, slow and close). **Hunter** now has a special mouse-hunting mode: it notices the cursor from farther away, bursts closer in short stop-start runs, freezes to observe when the cursor is still, and whips around after catching it. The hunter now moves noticeably faster on its approach and chase, and when it freezes to watch a still cursor it holds completely still rather than shuffling its feet. **Jumper** is a new small-hop personality that bounces constantly while roaming, approaching, or chasing. Two presets show the features off: **Playground** mixes playful and cuddly spiders for social play, and **Jumpers** fills the screen with hunting jumping spiders so the pounce is easy to trigger.
+The mood baseline is set by personality, but you can override it for every spider from the tray **Mood** menu (Auto, Playful, Cuddly, Curious, Calm). **Auto** restores each spider's personality-defined baseline. Two personalities ship specifically for this: **Playful** (energetic, social, quick to play) and **Cuddly** (gentle, affectionate, slow and close). **Hunter** now has a special mouse-hunting mode: it notices the cursor from farther away, bursts closer in short stop-start runs, freezes to observe when the cursor is still, and whips around after catching it. The hunter now moves noticeably faster on its approach and chase, and when it freezes to watch a still cursor it holds completely still rather than shuffling its feet. **Jumper** is a new small-hop personality that bounces constantly while roaming, approaching, or chasing. To see either, add a few slots in the settings window with the Playful or Social temperament and turn social play on; a screen full of Jumper spiders is the quickest way to trigger the pounce.
 
 ### Movement styles
 
@@ -97,7 +83,7 @@ You can break a web yourself by dragging the mouse pointer across it. Moving the
 
 A web in progress is not owned forever. If the spider building it gets distracted, flees the cursor, or is picked up and dragged, it leaves the unfinished web behind, and any spider that comes across an abandoned, half-built web may adopt it and finish it off, even though it did not start it. Webbers are especially keen to do this and will cross the screen to complete someone else's work. A web that was barely begun is simply dropped rather than left as a stray stub.
 
-Two abilities cover all of this. **Weave web** -- building webs, repairing torn ones, and finishing abandoned ones -- is the Webber's specialty and is on for Webbers by default. **Walk on webs** -- walking onto a finished web and plucking it -- is a common ability that every spider has. You can add or remove either one per spider from the right-click menu or in the settings window like any other ability. The **Webs** preset sets up a scene with a Webber on a moss orb-weaver model alongside a few ordinary spiders, which is the quickest way to watch webs go up, get walked on, get torn, and get repaired or finished by whoever is nearby.
+Two abilities cover all of this. **Weave web** -- building webs, repairing torn ones, and finishing abandoned ones -- is the Webber's specialty and is on for Webbers by default. **Walk on webs** -- walking onto a finished web and plucking it -- is a common ability that every spider has. You can add or remove either one per spider from the right-click menu or in the settings window like any other ability. The quickest way to watch webs go up, get walked on, get torn, and get repaired is a slot on the `moss_velvet_orbweaver` model carrying the **Weave web** ability, alongside a few ordinary spiders.
 
 ### Shooting webs at the cursor
 
@@ -112,7 +98,7 @@ Before either shot the spider crouches, faces its target, and converges its feel
 
 The dedicated **Trapper** personality hunts the pointer with this silk. It stalks the cursor in the patient stop-start way the Hunter does, then webs it instead of pouncing, favouring an in-place trap and occasionally shoving the pointer to a wall. A still cursor is treated as an easy mark. Any other spider can be given the skills too; without the Trapper temperament they fire only rarely, so an ordinary spider catching your pointer is an occasional surprise rather than a constant one.
 
-Because these shots are the only behaviour that moves your real pointer, there is a single master switch. The tray **Interaction** menu has **Let spiders web-trap the mouse**, on by default; turning it off frees the pointer immediately, cancels any glob in flight, and stops spiders ever moving your cursor again. The two skills are also toggleable per spider from the right-click menu like any other ability, and a hard maximum hold time means a trap can never lock your pointer indefinitely even if you never move it. On non-Windows platforms the silk still animates but never moves the pointer, matching the rest of the overlay's Windows-only cursor behaviour. The **Trappers** preset spawns a pair of Trapper jumping spiders alongside a Hunter that has the in-place trap, which is the quickest way to watch the pointer get caught.
+Because these shots are the only behaviour that moves your real pointer, there is a single master switch. The tray **Interaction** menu has **Let spiders web-trap the mouse**, on by default; turning it off frees the pointer immediately, cancels any glob in flight, and stops spiders ever moving your cursor again. The two skills are also toggleable per spider from the right-click menu like any other ability, and a hard maximum hold time means a trap can never lock your pointer indefinitely even if you never move it. On non-Windows platforms the silk still animates but never moves the pointer, matching the rest of the overlay's Windows-only cursor behaviour. To watch the pointer get caught, give a couple of jumping-spider slots the **Shoot trapping web** and **Web-shove to wall** abilities in the settings window.
 
 ## Flies
 
@@ -183,7 +169,7 @@ Eight new personalities expand the behavior range, each with its own resting emo
 - **Nope** — panics when the mouse approaches, then rapidly backward-jumps in a zigzag chain before running away.
 - **Drifter** — builds momentum, breaks traction, leans into wide sideways slides, sometimes drifts circles/corners on its own, and keeps sliding when grabbed or thrown.
 
-The **Fluffy Friends** preset spawns one of each new spider with a fitting personality so the whole pack is easy to try at once.
+Add one slot per model in the settings window to try the whole pack at once.
 
 ## Plush Tarantulas (hybrid 2D)
 
@@ -196,7 +182,7 @@ A second pack uses the **sprite_rig** renderer (the same "hybrid 2D" system as t
 - **Snowpuff** — cream-white and downy with big eyes and blush. Defaults to Cuddly.
 - **Berry Knee** — near-black body with warm berry-orange foot "socks," red-knee inspired. Defaults to Grumpy.
 
-The **Plush Tarantulas** preset spawns one of each. Because they are sprite_rig models, their look lives in `models/<id>/assets/*.png` and is fully editable or replaceable; the `colors` block still drives the procedural bits (leg joints, feet, pedipalps, antennae, eyes, and blush), so keep it in step with the art. Thickness, eye size, blush, and body proportions are tuned per model through the `appearance` block (`leg_segment_thickness`, `leg_tip_thickness`, `foot_bulb`, `eye_scale`, `eye_count`, `cute_blush`, `abdomen_scale`, `cephalothorax_scale`).
+Because they are sprite_rig models, their look lives in `models/<id>/assets/*.png` and is fully editable or replaceable; the `colors` block still drives the procedural bits (leg joints, feet, pedipalps, antennae, eyes, and blush), so keep it in step with the art. Thickness, eye size, blush, and body proportions are tuned per model through the `appearance` block (`leg_segment_thickness`, `leg_tip_thickness`, `foot_bulb`, `eye_scale`, `eye_count`, `cute_blush`, `abdomen_scale`, `cephalothorax_scale`).
 
 ## Requirements
 
@@ -389,21 +375,19 @@ Double-click:
 build_exe.bat
 ```
 
-The build uses PyInstaller one-folder mode and writes:
+The build uses PyInstaller one-file mode and writes a single executable:
 
 ```text
-dist\DesktopBugCompanion\DesktopBugCompanion.exe
+dist\DesktopBugCompanion.exe
 ```
 
-The build script bundles the data folders into the PyInstaller build and also copies editable data folders beside the executable:
+Models, personalities and presets are bundled inside it, so the `.exe` can be
+moved on its own. There is no folder to keep beside it.
 
-```text
-dist\DesktopBugCompanion\models\
-dist\DesktopBugCompanion\personalities\
-dist\DesktopBugCompanion\presets\
-```
-
-Run the executable from `dist\DesktopBugCompanion\DesktopBugCompanion.exe`. If you move the app, move the whole `DesktopBugCompanion` folder, not just the `.exe`, so the editable data folders stay beside it.
+To override bundled data, put an edited copy in a `models`, `personalities` or
+`presets` folder next to the executable; those are searched before the bundled
+copies. The app also creates a `presets` folder there the first time you save a
+preset, because saved presets have to be writable and the bundle is not.
 
 ## GitHub Actions builds and releases
 
@@ -429,49 +413,53 @@ DesktopBugCompanion/
   requirements.txt
   run_dev.bat
   build_exe.bat
+  launcher.py
 
   src/
     desktop_bug/
       __init__.py
-      engine.py
-      manager.py
-      creature.py
-      webs.py
-      mouse_webs.py
-      flies.py
+      cage.py
       config_ui.py
+      creature.py
+      desktop_environment.py
       discovery.py
-      preset_io.py
-      overlay_win32.py
+      engine.py
+      flies.py
+      jobs.py
+      logging_setup.py
+      manager.py
       math_utils.py
+      mood.py
+      mouse_webs.py
+      overlay_win32.py
+      personality_profiles.py
+      phase_scheduler.py
+      preset_io.py
+      progression.py
+      runtime_state.py
+      session_control.py
+      skills.py
+      webs.py
 
   models/
-    spider/
+    <model id>/
       model.json
-      assets/
-        README.md
+      assets/            # optional PNGs, for sprite_rig models
 
   personalities/
-    hunter.json
-    shy.json
-    curious.json
-    sleepy.json
-    skittish.json
-    playful.json
-    cuddly.json
-    webber.json
-    trapper.json
+    <personality id>.json    # legacy specialist temperaments
 
   presets/
+    chosen-one.json
+    colony.json
     default.json
-    playground.json
-    jumpers.json
-    webs.json
-    trappers.json
+    snowpuff-2.json
+    tarantula.json
 
   tools/
     validate_model.py
     validate_preset.py
+    <name>_smoke.py          # 18 headless checks, all run by CI
 ```
 
 ## Add a new creature model
@@ -620,11 +608,11 @@ If you see a black fullscreen rectangle:
 - Bold spiders crouch, range, and pounce at a target, then resolve into cuddle, run-away, or catch on landing.
 - With more than one spider and social play on, spiders seek each other out to chase and tumble.
 - Tray Mood menu overrides the emotional baseline; Social play toggle enables or disables spider-to-spider play.
-- Playful and Cuddly personalities and the Playground and Jumpers presets ship in the box.
+- Playful and Cuddly personalities ship in the box.
 - Approach and Retreat set their targets immediately.
 - Fast cursor movement toward the spider triggers real retreat.
 - Observer movement backs away along the real opposite vector from the watched cursor/spider instead of choosing only left/right orbit sides.
-- Added the **Nope** personality and **Nope Spiders** preset for rapid backward zigzag escape jumps when the mouse approaches.
+- Added the **Nope** personality for rapid backward zigzag escape jumps when the mouse approaches.
 - Config UI edits preset slots and launches the overlay.
 - Models/personalities/presets are auto-discovered and editable after build.
 - Right-clicking a spider names or renames it; hovering a named spider shows an upright label; tray and right-click menus can always-show every name. The same right-click menu can toggle skills for that individual live spider.
@@ -634,11 +622,11 @@ If you see a black fullscreen rectangle:
 - The hunter approaches and chases the cursor noticeably faster than other spiders.
 - Moving or resizing a cage repaints its whole footprint so no translucent ghost is left at the old position.
 - Playful, excited spiders sometimes tuck in and roll, spinning through a turn or two before resuming.
-- Spiders weave silk webs thread by thread following a real orb-weaver build order (bridge, frame, radii, hub, temporary outward spiral, then sticky inward capture spiral), in four finished forms (corner orb, full orb, funnel sheet, cobweb tangle). The **Webber** personality builds them, favouring corners but also placing webs in open spots; other spiders walk onto finished webs and pluck them to test the bounce; and any spider may adopt and finish an abandoned, half-built web it did not start. The **Webber** personality and **Webs** preset ship in the box, gated by the `weave_web` and `web_walk` skills.
+- Spiders weave silk webs thread by thread following a real orb-weaver build order (bridge, frame, radii, hub, temporary outward spiral, then sticky inward capture spiral), in four finished forms (corner orb, full orb, funnel sheet, cobweb tangle). The **Webber** personality builds them, favouring corners but also placing webs in open spots; other spiders walk onto finished webs and pluck them to test the bounce; and any spider may adopt and finish an abandoned, half-built web it did not start. The **Webber** personality ships in the box, gated by the `weave_web` and `web_walk` skills.
 - A Webber keeps at most seven webs on screen and builds less eagerly as more intact webs already exist, so it spins a handful and then settles rather than carpeting the desktop.
 - Dragging the mouse pointer across a finished web tears the strands it passes over, breaking the web in parts where you swipe rather than all at once; a web only tears while the pointer is moving over it. A Webber notices a torn web, travels to it, and re-knits the missing strands until it is whole again (RepairApproach and Repair states).
 - Spiders are not all able to do everything: a common set of abilities is shared by every personality, while specialist abilities (`weave_web` for the Webber, `shoot_web`/`wall_web` for the Trapper, `drift` for the Drifter) belong to their matching personality by default. A slot with no explicit `skills` uses its personality's defaults, and any specialist ability can still be added to or removed from a slot.
-- Spiders can shoot sticky silk at the real pointer: `shoot_web` pins the cursor in place and `wall_web` shoves it to the nearest wall, both broken by wiggling the mouse, with a struggle meter that drains when still and a hard maximum hold so the pointer is never locked. The **Trapper** personality stalks and webs the cursor, the **Trappers** preset ships in the box, a tray **Interaction** toggle (**Let spiders web-trap the mouse**, on by default) is the master switch, and pointer control is Windows-only and degrades safely if it fails.
+- Spiders can shoot sticky silk at the real pointer: `shoot_web` pins the cursor in place and `wall_web` shoves it to the nearest wall, both broken by wiggling the mouse, with a struggle meter that drains when still and a hard maximum hold so the pointer is never locked. The **Trapper** personality stalks and webs the cursor, a tray **Interaction** toggle (**Let spiders web-trap the mouse**, on by default) is the master switch, and pointer control is Windows-only and degrades safely if it fails.
 - The running overlay applies edits live: saving the preset (or relaunching) while it runs reloads new models, personalities, counts, skills, and settings in place, without stopping or restarting the overlay. The overlay watches its launched preset file and reloads it when it changes, skipping a half-written file safely.
 
 

@@ -31,7 +31,7 @@
       }
     },
     {
-      "model": "plush_snow_hybrid_2",
+      "model": "blue_jewel",
       "personality": "curious",
       "count": 1,
       "count_random": false,
@@ -43,7 +43,7 @@
       ]
     },
     {
-      "model": "spider_fluffy_snow",
+      "model": "sunset_fuzzball",
       "personality": "balanced",
       "count": 1,
       "count_random": false,
@@ -52,7 +52,7 @@
       "job": "hunter"
     },
     {
-      "model": "legendary_seraph_cloudweaver",
+      "model": "giant_copper",
       "personality": "balanced",
       "count": 1,
       "count_random": false,
@@ -61,7 +61,7 @@
       "job": "guard"
     },
     {
-      "model": "coppercurl_soft_tarantula",
+      "model": "velvet_cloud",
       "personality": "balanced",
       "count": 1,
       "count_random": false,
