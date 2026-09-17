@@ -521,7 +521,9 @@ DesktopBugCompanion/
       __init__.py
       cage.py
       config_ui.py
-      creature.py
+      creature/              # Creature, split into a package by concern (DC-11):
+                              # behaviour.py, constants.py, core.py, expression.py,
+                              # kinematics.py, render_procedural.py, render_sprite.py
       desktop_environment.py
       discovery.py
       engine.py
