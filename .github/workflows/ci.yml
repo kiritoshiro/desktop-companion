@@ -3,8 +3,10 @@ name: Windows CI
 on:
   push:
     branches: [main]
+  # Every pull request, not only those targeting main. Work is sequenced as a
+  # stack of small branches, and a pull request from one package branch onto
+  # another got no CI at all while this filtered on main.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
