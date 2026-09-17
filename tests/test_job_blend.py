@@ -8,22 +8,27 @@ of spiders rather than a set of workers.
 
 import collections
 import json
-import os
 import random
-import sys
-import tempfile
-from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # Keep a test run from rewriting a real player's saved spiders.
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt5.QtWidgets import QApplication
 
 from desktop_bug.creature import JOB_PREEMPTING_STATES, JOB_STATES, Creature
 from desktop_bug.manager import CreatureManager
+from support import ROOT
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _qt(qapp):
+    """Every check in this module needs the one Qt application object.
+
+    Each of these files used to build its own, and several dropped the only
+    reference to it on the same line. In one process per test that was merely
+    wasteful; in one process for the whole suite it is an access violation,
+    because the next module inherits a pointer to an application that has
+    already been collected. `conftest.qapp` owns it now.
+    """
 
 
 def build_guard():
@@ -32,7 +37,7 @@ def build_guard():
     return Creature(model, personality, 1200, 800, index=0, job_id="guard")
 
 
-def check_preemption() -> None:
+def test_preemption() -> None:
     dt = 1.0 / 60.0
     guard = build_guard()
     guard.job_mode = "patrol"
@@ -70,7 +75,7 @@ def check_preemption() -> None:
         assert guard.state == state, state
 
 
-def check_release() -> None:
+def test_release() -> None:
     """A job state has no branch in the personality dispatch.
 
     A spider left in one after its work intent clears matched nothing, kept its
@@ -91,10 +96,9 @@ def check_release() -> None:
         assert guard.motion_paused is False, state
 
 
-def check_colony_behaviour() -> int:
+def test_colony_behaviour() -> int:
     """A working colony must still behave like spiders over a long run."""
     random.seed(5)
-    QApplication.instance() or QApplication([])
     manager = CreatureManager(ROOT / "presets" / "colony.json", 1600, 900)
     manager.base_world.clear()
     watched = {creature.job_id: creature for creature in manager.creatures}
@@ -130,14 +134,3 @@ def check_colony_behaviour() -> int:
         f"guard_on_job={guard_job * 100 // sum(seen['guard'].values())}% "
         f"base_progress={site.build_progress:.0f} states={len(seen['builder'])}"
     )
-    return 0
-
-
-def main() -> int:
-    check_preemption()
-    check_release()
-    return check_colony_behaviour()
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

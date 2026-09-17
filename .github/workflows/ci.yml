@@ -35,7 +35,7 @@ jobs:
       # One runner, shared with the release workflow. It discovers the smoke
       # tests rather than being handed a list that can drift out of date, and a
       # forgotten list entry fails silently by simply not running anything.
-      - name: Run all checks
+      - name: Run all checks (compile, data, pytest, ruff)
         shell: pwsh
         run: python tools/run_all_checks.py
 

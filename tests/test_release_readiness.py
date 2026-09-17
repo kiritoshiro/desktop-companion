@@ -7,17 +7,11 @@ CI workflow would have rejected. Both are the sort of drift nobody notices
 until a release is already out.
 """
 
-import os
 import re
-import sys
-import tempfile
-from pathlib import Path
 
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug import __version__  # noqa: E402
+from desktop_bug import __version__
+from support import ROOT
 
 SPEC = ROOT / "DesktopBugCompanion.spec"
 BATCH = ROOT / "build_exe.bat"
@@ -25,9 +19,11 @@ CI = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE = ROOT / ".github" / "workflows" / "release-windows.yml"
 REQUIREMENTS = ROOT / "requirements.txt"
 RUNNER = ROOT / "tools" / "run_all_checks.py"
+PYPROJECT = ROOT / "pyproject.toml"
+TESTS = ROOT / "tests"
 
 
-def check_one_build_definition() -> None:
+def test_one_build_definition() -> None:
     """Everything that builds must go through the spec, not its own flag list."""
     assert SPEC.is_file(), "the spec file is gone; something else now defines the build"
     spec = SPEC.read_text(encoding="utf-8")
@@ -46,26 +42,48 @@ def check_one_build_definition() -> None:
         assert "--add-data" not in text, f"{path.name} spells the bundled data out again"
 
 
-def check_release_runs_the_tests() -> None:
+def test_release_runs_the_tests() -> None:
     """A release must run what CI runs."""
     assert RUNNER.is_file(), "the shared checks runner is missing"
     for path in (CI, RELEASE):
         text = path.read_text(encoding="utf-8")
         assert "tools/run_all_checks.py" in text, f"{path.name} does not run the shared checks"
-        # The old per-test lists are what drifted; they must not come back.
-        listed = re.findall(r"python tools/([a-z0-9_]+_smoke\.py)", text)
-        assert not listed, f"{path.name} lists individual smoke tests again: {listed}"
+        # The old per-test lists are what drifted; they must not come back,
+        # in either the old smoke-script spelling or the pytest one.
+        listed = re.findall(r"python (?:-m pytest )?tools/([a-z0-9_]+_smoke\.py)", text)
+        listed += re.findall(r"pytest\s+tests/(test_[a-z0-9_]+\.py)", text)
+        assert not listed, f"{path.name} lists individual tests again: {listed}"
 
 
-def check_runner_discovers_tests() -> None:
-    """The runner must find tests by looking, not by being told."""
-    text = RUNNER.read_text(encoding="utf-8")
-    assert '"*_smoke.py"' in text, "the checks runner no longer discovers smoke tests"
-    found = sorted(p.name for p in (ROOT / "tools").glob("*_smoke.py"))
-    assert len(found) >= 15, f"only {len(found)} smoke tests found, which suggests a broken layout"
+def test_runner_delegates_discovery_to_pytest() -> None:
+    """The runner must find tests by looking, not by being told.
+
+    Discovery moved from a glob in this script to pytest in DC-08. What must
+    not come back is a list: a forgotten entry in one fails silently by simply
+    running nothing, which is how a release once shipped with no tests at all.
+    """
+    runner = RUNNER.read_text(encoding="utf-8")
+    assert '"-m", "pytest"' in runner, "the checks runner no longer runs pytest"
+    assert '"ruff", "check"' in runner, "the checks runner no longer lints"
+
+    config = PYPROJECT.read_text(encoding="utf-8")
+    assert "[tool.pytest.ini_options]" in config, "pytest is not configured in pyproject.toml"
+    assert 'testpaths = ["tests"]' in config, "pytest is not pointed at tests/"
+    assert "[tool.ruff]" in config, "ruff is not configured in pyproject.toml"
+
+    found = sorted(p.name for p in TESTS.glob("test_*.py"))
+    assert len(found) >= 15, f"only {len(found)} test modules found, which suggests a broken layout"
+    assert (TESTS / "conftest.py").is_file(), "the shared test setup is missing"
 
 
-def check_requirements_are_pinned() -> None:
+def test_the_tools_ci_needs_are_pinned() -> None:
+    """CI installs one requirements file; what it runs has to be in it."""
+    text = REQUIREMENTS.read_text(encoding="utf-8")
+    for tool in ("pytest", "ruff"):
+        assert f"{tool}==" in text, f"{tool} is not pinned, so CI cannot run it"
+
+
+def test_requirements_are_pinned() -> None:
     lines = [
         line.strip()
         for line in REQUIREMENTS.read_text(encoding="utf-8").splitlines()
@@ -77,7 +95,7 @@ def check_requirements_are_pinned() -> None:
         assert ">=" not in line and "<" not in line, f"requirement carries a range: {line}"
 
 
-def check_python_versions_agree() -> None:
+def test_python_versions_agree() -> None:
     versions = set()
     for path in (CI, RELEASE):
         found = re.findall(r"python-version:\s*'([^']+)'", path.read_text(encoding="utf-8"))
@@ -86,7 +104,7 @@ def check_python_versions_agree() -> None:
     assert len(versions) == 1, f"the workflows disagree about Python: {sorted(versions)}"
 
 
-def check_release_guards_the_tag() -> None:
+def test_release_guards_the_tag() -> None:
     text = RELEASE.read_text(encoding="utf-8")
     # Assert on the machinery, not on the word appearing somewhere: an earlier
     # version of this check passed while the comparison had been gutted,
@@ -98,18 +116,3 @@ def check_release_guards_the_tag() -> None:
     assert "REF_NAME" in text, "the release workflow does not look at the tag it is building"
     assert '-ne $expected' in text, "the release workflow does not compare the tag with the version"
     assert re.fullmatch(r"\d+\.\d+\.\d+", __version__), f"__version__ is not a semantic version: {__version__}"
-
-
-def main() -> int:
-    check_one_build_definition()
-    check_release_runs_the_tests()
-    check_runner_discovers_tests()
-    check_requirements_are_pinned()
-    check_python_versions_agree()
-    check_release_guards_the_tag()
-    print(f"release readiness smoke: OK (version {__version__})")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

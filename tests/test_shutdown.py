@@ -5,27 +5,33 @@ the overlay outright, so Qt's ``aboutToQuit`` save hook never ran.
 """
 
 import json
-import os
-import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt5.QtWidgets import QApplication  # noqa: E402
 
-from desktop_bug.discovery import state_dir  # noqa: E402
-from desktop_bug.engine import OverlayWindow  # noqa: E402
-from desktop_bug.session_control import (  # noqa: E402
+from desktop_bug.discovery import state_dir
+from desktop_bug.engine import OverlayWindow
+from desktop_bug.session_control import (
     clear_stop_request,
     consume_stop_request,
     request_stop,
     stop_process,
     stop_request_path,
 )
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _qt(qapp):
+    """Every check in this module needs the one Qt application object.
+
+    Each of these files used to build its own, and several dropped the only
+    reference to it on the same line. In one process per test that was merely
+    wasteful; in one process for the whole suite it is an access violation,
+    because the next module inherits a pointer to an application that has
+    already been collected. `conftest.qapp` owns it now.
+    """
 
 
 class FakeProcess:
@@ -46,7 +52,7 @@ class FakeProcess:
         self.terminated = True
 
 
-def check_request_file() -> None:
+def test_request_file() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         assert consume_stop_request(tmp) is False, "no request should read as none"
         assert request_stop(tmp) is True
@@ -63,7 +69,7 @@ def check_request_file() -> None:
         clear_stop_request(tmp)
 
 
-def check_stop_process() -> None:
+def test_stop_process() -> None:
     slept = []
 
     def fake_sleep(seconds):
@@ -97,9 +103,7 @@ def check_stop_process() -> None:
         assert already.terminated is False
 
 
-def check_overlay_saves_on_stop() -> None:
-    app = QApplication.instance() or QApplication(sys.argv[:1])
-    assert app is not None
+def test_overlay_saves_on_stop() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -153,9 +157,7 @@ def check_overlay_saves_on_stop() -> None:
             window.deleteLater()
 
 
-def check_startup_clears_stale_request() -> None:
-    app = QApplication.instance() or QApplication(sys.argv[:1])
-    assert app is not None
+def test_startup_clears_stale_request() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -186,16 +188,3 @@ def check_startup_clears_stale_request() -> None:
             window.style_timer.stop()
             window.close()
             window.deleteLater()
-
-
-def main() -> int:
-    check_request_file()
-    check_stop_process()
-    check_overlay_saves_on_stop()
-    check_startup_clears_stale_request()
-    print("shutdown smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

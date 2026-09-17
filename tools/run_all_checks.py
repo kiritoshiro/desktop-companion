@@ -5,9 +5,11 @@ workflow validated data and ran no tests at all: a release could ship code that
 CI would have rejected. Adding a test also meant remembering to add a line to a
 workflow, and a forgotten line fails silently by simply not running anything.
 
-Both workflows and a developer now call this script, and it discovers the smoke
-tests rather than being told about them. A new `tools/<name>_smoke.py` is picked
-up everywhere the moment it exists.
+Both workflows and a developer now call this script. Since DC-08 the tests
+themselves are pytest modules under `tests/`, so discovery is pytest's job: a
+new `tests/test_<name>.py` is picked up everywhere the moment it exists, and
+the runner adds what pytest does not do -- compiling every source file,
+validating the shipped data, and linting.
 """
 
 from __future__ import annotations
@@ -90,18 +92,23 @@ def main(argv=None) -> int:
     print(f"{'PASS' if ok else 'FAIL'}  validate {len(presets)} presets  ({time.monotonic() - started:.1f}s)")
     results.append(("validate presets", ok, 0.0))
 
-    smokes = sorted((ROOT / "tools").glob("*_smoke.py"))
-    if not smokes:
-        print("FAIL  no smoke tests were discovered, which is never correct")
+    modules = sorted((ROOT / "tests").glob("test_*.py"))
+    if not modules:
+        print("FAIL  no test modules were discovered, which is never correct")
         return 1
-    for path in smokes:
-        results.append(run(path.stem, python + [f"tools/{path.name}"], env, quiet))
+    results.append(run("pytest", python + ["-m", "pytest"] + ([] if quiet else ["-v"]),
+                       env, quiet))
+
+    # Lint is part of "one command runs everything": a finding that only shows
+    # up when somebody remembers to run ruff by hand is a finding nobody sees.
+    results.append(run("ruff", python + ["-m", "ruff", "check", "src", "tests", "tools"],
+                       env, quiet))
 
     failed = [label for label, ok, _ in results if not ok]
     total = sum(elapsed for _, _, elapsed in results)
     print()
     print(f"{len(results) - len(failed)}/{len(results)} checks passed in {total:.0f}s "
-          f"({len(smokes)} smoke tests, {len(models)} models, {len(presets)} presets)")
+          f"({len(modules)} test modules, {len(models)} models, {len(presets)} presets)")
     if failed:
         print("failed: " + ", ".join(failed))
         return 1

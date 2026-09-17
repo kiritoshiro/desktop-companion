@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Flies: tiny autonomous prey that the spiders hunt.
 
 A :class:`Fly` is a very small, self-contained creature compared with a
@@ -14,6 +12,8 @@ interaction (which spider hunts which fly, the killing bite); this module only
 owns the flies themselves: their motion, their fear of spiders, their capture
 on silk, and their drawing.
 """
+
+from __future__ import annotations
 
 import math
 import random

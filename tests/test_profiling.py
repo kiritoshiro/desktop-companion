@@ -17,22 +17,26 @@ import os
 import random
 import subprocess
 import sys
-import tempfile
 from contextlib import redirect_stdout
-from pathlib import Path
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "tools"))
-
-from desktop_bug import frame_policy  # noqa: E402
-from desktop_bug import profiling  # noqa: E402
-from desktop_bug.manager import CreatureManager  # noqa: E402
+from support import ROOT
+import pytest
+from desktop_bug import frame_policy, profiling
+from desktop_bug.manager import CreatureManager
 
 
-def check_profiler_accumulates_and_windows() -> None:
+@pytest.fixture(autouse=True, scope="module")
+def _qt(qapp):
+    """Every check in this module needs the one Qt application object.
+
+    Each of these files used to build its own, and several dropped the only
+    reference to it on the same line. In one process per test that was merely
+    wasteful; in one process for the whole suite it is an access violation,
+    because the next module inherits a pointer to an application that has
+    already been collected. `conftest.qapp` owns it now.
+    """
+
+
+def test_profiler_accumulates_and_windows() -> None:
     clock = [0.0]
     profiler = profiling.FrameProfiler(window=3, clock=lambda: clock[0])
 
@@ -65,7 +69,7 @@ def check_profiler_accumulates_and_windows() -> None:
     assert profiling.percentile([], 0.95) == 0.0
 
 
-def check_painting_is_recorded_after_the_frame() -> None:
+def test_painting_is_recorded_after_the_frame() -> None:
     """Qt delivers the paint event after `tick` returns, so it is not in a frame.
 
     Accumulating it into the open frame dict was the first attempt, and it lost
@@ -88,7 +92,7 @@ def check_painting_is_recorded_after_the_frame() -> None:
     assert abs(profiler.stats("frame")[0] - 1.0) < 1e-6, profiler.stats("frame")
 
 
-def check_null_profiler_is_inert() -> None:
+def test_null_profiler_is_inert() -> None:
     profiling.stop_profiling()
     profiler = profiling.get_profiler()
     assert profiler.enabled is False
@@ -103,7 +107,7 @@ def check_null_profiler_is_inert() -> None:
     assert profiler.section("a") is profiler.section("b")
 
 
-def check_env_switches() -> None:
+def test_env_switches() -> None:
     assert profiling.profiling_requested({}) is False
     assert profiling.profiling_requested({"DESKTOP_BUG_PROFILE": "0"}) is False
     assert profiling.profiling_requested({"DESKTOP_BUG_PROFILE": "off"}) is False
@@ -115,7 +119,7 @@ def check_env_switches() -> None:
     assert profiling.hud_requested({"DESKTOP_BUG_PROFILE_HUD": "1"}) is False
 
 
-def check_hud_lines_lead_with_the_worst() -> None:
+def test_hud_lines_lead_with_the_worst() -> None:
     clock = [0.0]
     profiler = profiling.FrameProfiler(window=4, clock=lambda: clock[0])
     profiler.begin_frame()
@@ -129,7 +133,7 @@ def check_hud_lines_lead_with_the_worst() -> None:
     assert any(line.startswith("~fps") for line in lines), lines
 
 
-def check_manager_records_its_systems() -> None:
+def test_manager_records_its_systems() -> None:
     """The instrumentation must be in the manager, not only in the profiler."""
     random.seed(4)
     manager = CreatureManager(ROOT / "presets" / "colony.json", 1600, 900)
@@ -159,7 +163,7 @@ def check_manager_records_its_systems() -> None:
     assert profiler.frames == before, "the manager recorded frames after profiling stopped"
 
 
-def check_frame_rate_policy() -> None:
+def test_frame_rate_policy() -> None:
     decide = frame_policy.decide_fps
     assert decide(60.0) == 60.0
     assert decide(60.0, on_battery=True) == frame_policy.BATTERY_FPS
@@ -171,7 +175,7 @@ def check_frame_rate_policy() -> None:
     assert decide(20.0) == 20.0
 
 
-def check_policy_restores_the_rate() -> None:
+def test_policy_restores_the_rate() -> None:
     state = {"fullscreen": False, "battery": False}
     policy = frame_policy.FramePolicy(
         60.0, poll_ms=100,
@@ -199,7 +203,7 @@ def check_policy_restores_the_rate() -> None:
     assert policy.set_target_fps(20.0) == 20.0
 
 
-def check_probes_are_safe_when_they_cannot_tell() -> None:
+def test_probes_are_safe_when_they_cannot_tell() -> None:
     """Both probes answer "no" rather than raising, on any platform."""
     assert frame_policy.foreground_window_is_fullscreen(exclude_hwnd=None) in (True, False)
     assert frame_policy.on_battery() in (True, False)
@@ -208,7 +212,7 @@ def check_probes_are_safe_when_they_cannot_tell() -> None:
     assert "workerw" in frame_policy.DESKTOP_CLASSES
 
 
-def check_overlay_times_its_frames_and_draws_the_hud() -> None:
+def test_overlay_times_its_frames_and_draws_the_hud() -> None:
     """The engine half: real ticks record, and the HUD really appears.
 
     Drawing the HUD is only half of it. The panel changes every frame, so its
@@ -221,7 +225,7 @@ def check_overlay_times_its_frames_and_draws_the_hud() -> None:
     os.environ["DESKTOP_BUG_PROFILE"] = "1"
     os.environ["DESKTOP_BUG_PROFILE_HUD"] = "1"
     try:
-        app = QApplication.instance() or QApplication(sys.argv[:1])
+        app = QApplication.instance()
         from desktop_bug.engine import OverlayWindow
 
         random.seed(7)
@@ -301,8 +305,11 @@ def check_overlay_times_its_frames_and_draws_the_hud() -> None:
         profiling.stop_profiling()
 
 
-def check_benchmark_pads_match_the_engine() -> None:
+def test_benchmark_pads_match_the_engine() -> None:
     """The benchmark copies two engine constants; they must not drift apart."""
+    # `tools/` is not on the path: it holds scripts, not an importable package,
+    # and putting it there at module level made every import below it an E402.
+    sys.path.insert(0, str(ROOT / "tools"))
     import benchmark
 
     from desktop_bug import engine
@@ -310,7 +317,7 @@ def check_benchmark_pads_match_the_engine() -> None:
     assert benchmark.REPAINT_PAD_SIZE_MULT == engine.CREATURE_REPAINT_EXTRA_PAD_SIZE_MULT
 
 
-def check_benchmark_runs_and_reports() -> None:
+def test_benchmark_runs_and_reports() -> None:
     """End to end, small: it must produce real numbers, not an empty table."""
     result = subprocess.run(
         [sys.executable, "tools/benchmark.py", "--counts", "2", "--frames", "12",
@@ -327,7 +334,7 @@ def check_benchmark_runs_and_reports() -> None:
     assert float(match.group(1)) > 0.0, result.stdout
 
 
-def check_regression_detection() -> None:
+def test_regression_detection() -> None:
     """The threshold has to bite, and only on the machine it was recorded for."""
     import benchmark
 
@@ -358,7 +365,7 @@ def check_regression_detection() -> None:
     assert "different hardware" in out.getvalue()
 
 
-def check_committed_baseline_is_usable() -> None:
+def test_committed_baseline_is_usable() -> None:
     import benchmark
 
     assert benchmark.BASELINE_PATH.exists(), "DC-12 is meant to commit a baseline"
@@ -371,26 +378,3 @@ def check_committed_baseline_is_usable() -> None:
     for count in ("1", "5", "10", "20"):
         assert count in runs, f"the baseline is missing the {count}-spider run"
         assert float(runs[count]["mean_ms"]) > 0.0, runs[count]
-
-
-def main() -> int:
-    check_profiler_accumulates_and_windows()
-    check_painting_is_recorded_after_the_frame()
-    check_null_profiler_is_inert()
-    check_env_switches()
-    check_hud_lines_lead_with_the_worst()
-    check_manager_records_its_systems()
-    check_frame_rate_policy()
-    check_policy_restores_the_rate()
-    check_probes_are_safe_when_they_cannot_tell()
-    check_overlay_times_its_frames_and_draws_the_hud()
-    check_benchmark_pads_match_the_engine()
-    check_benchmark_runs_and_reports()
-    check_regression_detection()
-    check_committed_baseline_is_usable()
-    print("profiling smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

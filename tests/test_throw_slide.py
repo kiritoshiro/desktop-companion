@@ -9,18 +9,11 @@ direction it was thrown rather than as a spider being thrown.
 
 import json
 import math
-import os
 import random
-import sys
-import tempfile
-from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug.creature import Creature  # noqa: E402
+from desktop_bug.creature import Creature
+from support import ROOT
 
 DT = 1.0 / 60.0
 SCREEN = (2400, 1400)
@@ -54,7 +47,7 @@ def simulate(seconds: float, spider: Creature) -> list[tuple[float, float, float
     return samples
 
 
-def check_slide_decelerates() -> None:
+def test_slide_decelerates() -> None:
     random.seed(11)
     model, personality = load()
     spider = Creature(model, personality, *SCREEN, index=0, progression_id="throw:0")
@@ -118,7 +111,7 @@ def distance_after_slide(seed: int, seconds: float = 6.0, speed: float = 900.0,
 SEEDS = (7, 11, 23, 42, 99)
 
 
-def check_does_not_run_on() -> float:
+def test_does_not_run_on() -> float:
     """A loose sanity bound only. The real gate is check_no_projected_target.
 
     This measures two things at once and cannot separate them: the run-on that
@@ -138,10 +131,9 @@ def check_does_not_run_on() -> float:
         f"(per seed: {[f'{v:.0f}' for v in travelled]}); that is far enough to "
         "suggest it is walking somewhere rather than sliding to a stop"
     )
-    return worst
 
 
-def check_no_projected_target() -> None:
+def test_no_projected_target() -> None:
     """The precise change: a throw must not aim the spider anywhere.
 
     This is what actually caused the run-on, and unlike the distance
@@ -165,7 +157,7 @@ def check_no_projected_target() -> None:
         assert spider.throw_recovery > 0.0, "a throw scheduled no recovery beat"
 
 
-def check_recovery_beat_is_held() -> None:
+def test_recovery_beat_is_held() -> None:
     random.seed(3)
     model, personality = load()
     spider = Creature(model, personality, *SCREEN, index=0, progression_id="throw:2")
@@ -186,7 +178,7 @@ def check_recovery_beat_is_held() -> None:
     assert settled < 12.0, f"the spider drifted {settled:.1f}px during the recovery beat"
 
 
-def check_gentle_drop_still_scurries() -> None:
+def test_gentle_drop_still_scurries() -> None:
     """Only a real throw changes behaviour; a drop keeps the old startle.
 
     Two thresholds matter and they are not the same. Any release above 1 px/s
@@ -217,17 +209,3 @@ def check_gentle_drop_still_scurries() -> None:
     assert math.dist((nudged.x, nudged.y), (nudged.target_x, nudged.target_y)) > 40.0, (
         "a nudged spider was given nowhere to scurry to"
     )
-
-
-def main() -> int:
-    check_slide_decelerates()
-    worst = check_does_not_run_on()
-    check_no_projected_target()
-    check_recovery_beat_is_held()
-    check_gentle_drop_still_scurries()
-    print(f"throw slide smoke: OK (worst case {worst:.0f}px travelled after the slide)")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

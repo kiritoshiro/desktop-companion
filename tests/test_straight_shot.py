@@ -8,21 +8,13 @@ spider earns it instead of starting with it.
 """
 
 import math
-import os
-import sys
-import tempfile
 from types import SimpleNamespace
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-from pathlib import Path  # noqa: E402
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug.flies import WebShotProjectile  # noqa: E402
-from desktop_bug.mouse_webs import MouseWebWorld, _Projectile  # noqa: E402
-from desktop_bug.progression import ABILITY_BY_ID, ProgressionState  # noqa: E402
+from desktop_bug.flies import WebShotProjectile
+from desktop_bug.mouse_webs import MouseWebWorld, _Projectile
+from desktop_bug.progression import ABILITY_BY_ID, ProgressionState
 
 DT = 1.0 / 120.0
 
@@ -37,7 +29,7 @@ def fly_path(projectile: _Projectile, pointer, steps: int = 400):
     return "fly", steps * DT
 
 
-def check_ability_exists() -> None:
+def test_ability_exists() -> None:
     node = ABILITY_BY_ID.get("silk_tracking")
     assert node is not None, "the Silk tracking ability is missing"
     assert node.effects.get("web_homing", 0.0) > 0.0, node.effects
@@ -61,7 +53,7 @@ def closest_approach(projectile: _Projectile, pointer, steps: int = 900):
     return "fly", nearest
 
 
-def check_straight_shot_misses_a_dodge() -> None:
+def test_straight_shot_misses_a_dodge() -> None:
     """The point of the change: a moving target can get out of the way.
 
     Tracking is asserted as *following*, not as a guaranteed hit. Measured
@@ -85,7 +77,7 @@ def check_straight_shot_misses_a_dodge() -> None:
     )
 
 
-def check_straight_shot_still_hits_a_still_target() -> None:
+def test_straight_shot_still_hits_a_still_target() -> None:
     """Removing homing must not make the shot useless."""
     still = lambda _t: (900.0, 400.0)  # noqa: E731
     for homing in (0.0, 1.0):
@@ -94,7 +86,7 @@ def check_straight_shot_still_hits_a_still_target() -> None:
         assert outcome == "hit", f"a shot at a stationary pointer missed (homing={homing})"
 
 
-def check_lead_is_applied() -> None:
+def test_lead_is_applied() -> None:
     """Aimed where the target is going, not where it was."""
     straight = _Projectile((100.0, 400.0), (900.0, 400.0), "trap", homing=0.0)
     assert abs(straight.vel[1]) < 1e-6, f"a shot at a still target was aimed off-axis: {straight.vel}"
@@ -111,7 +103,7 @@ def check_lead_is_applied() -> None:
     assert outcome == "hit", f"a led shot missed a steadily moving pointer: {outcome}"
 
 
-def check_world_defaults_to_straight() -> None:
+def test_world_defaults_to_straight() -> None:
     world = MouseWebWorld(1920, 1080, can_control=False)
     assert world.shoot((100.0, 400.0), (900.0, 400.0)) is True
     assert world.projectile.homing == 0.0, "the world fires a homing shot by default"
@@ -121,7 +113,7 @@ def check_world_defaults_to_straight() -> None:
     assert world.projectile.homing == 1.0
 
 
-def check_fly_glob_matches() -> None:
+def test_fly_glob_matches() -> None:
     shooter = SimpleNamespace(x=100.0, y=400.0, heading=0.0, size=12.0)
     fly = SimpleNamespace(x=900.0, y=400.0, vx=0.0, vy=900.0, alive=True, eaten=False,
                           dragging=False, trapped=False)
@@ -167,18 +159,3 @@ def check_fly_glob_matches() -> None:
         f"the fly glob did not follow its target when tracking was granted: "
         f"closest {tracking_near:.0f}px against {straight_near:.0f}px straight"
     )
-
-
-def main() -> int:
-    check_ability_exists()
-    check_straight_shot_misses_a_dodge()
-    check_straight_shot_still_hits_a_still_target()
-    check_lead_is_applied()
-    check_world_defaults_to_straight()
-    check_fly_glob_matches()
-    print("straight shot smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

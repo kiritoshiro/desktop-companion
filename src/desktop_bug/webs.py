@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Spider silk: webs the creatures weave, walk on, bounce-test, and finish.
 
 A :class:`Web` is a shared world object.  One spider builds it strand by strand,
@@ -24,6 +22,8 @@ their own logic instead.
 Qt is imported lazily inside :meth:`Web.draw` so the module can be imported in
 headless contexts (tests, validators) without a display.
 """
+
+from __future__ import annotations
 
 import math
 import random

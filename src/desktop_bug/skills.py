@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Skill registry for creature abilities.
 
 The animation/AI state machine still lives in :mod:`desktop_bug.creature` so the
@@ -7,6 +5,8 @@ existing behaviour stays stable.  This module is the small, explicit skill layer
 used by presets, the settings UI, and the runtime context menu to decide which
 abilities a creature is allowed to enter.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Iterable, Tuple

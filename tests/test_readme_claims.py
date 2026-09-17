@@ -6,13 +6,9 @@ listed a project structure that omitted every module added since the original
 import. Documentation drifts silently; this makes it fail loudly instead.
 """
 
-import os
 import re
-import tempfile
-from pathlib import Path
+from support import ROOT
 
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
 
 README = ROOT / "README.md"
 SRC = ROOT / "src" / "desktop_bug"
@@ -28,12 +24,12 @@ def preset_slug(name: str) -> str:
     return name.strip().lower().replace(" ", "-")
 
 
-def check_single_title() -> None:
+def test_single_title() -> None:
     titles = [line for line in TEXT.splitlines() if line.startswith("# ")]
     assert len(titles) == 1, f"expected one document title, found {titles}"
 
 
-def check_named_presets_exist() -> None:
+def test_named_presets_exist() -> None:
     """Every preset the README names by title must be in presets/."""
     available = {q.stem for q in PRESETS.glob("*.json")}
     missing = []
@@ -48,7 +44,7 @@ def check_named_presets_exist() -> None:
     )
 
 
-def check_referenced_preset_paths_exist() -> None:
+def test_referenced_preset_paths_exist() -> None:
     """Every presets/<file>.json path written out must resolve."""
     missing = []
     for path in sorted(set(re.findall(r"presets[\\/]([A-Za-z0-9_.-]+\.json)", TEXT))):
@@ -57,7 +53,7 @@ def check_referenced_preset_paths_exist() -> None:
     assert not missing, "the README references preset files that do not exist:\n  " + "\n  ".join(missing)
 
 
-def check_one_build_story() -> None:
+def test_one_build_story() -> None:
     """The README must describe the build that is actually performed.
 
     The spec file is the single definition of the build; the batch file and the
@@ -77,7 +73,7 @@ def check_one_build_story() -> None:
     assert "dist\\DesktopBugCompanion.exe" in TEXT, "the README does not name the built executable"
 
 
-def check_structure_block_matches_source() -> None:
+def test_structure_block_matches_source() -> None:
     """The project structure must list every module, and no module that is gone."""
     start = TEXT.index("## Project structure")
     fence = TEXT.index("```text", start)
@@ -109,33 +105,17 @@ def check_structure_block_matches_source() -> None:
         assert found, f"the project structure names {name}, which does not exist"
 
 
-def check_named_paths_exist() -> None:
+def test_named_paths_exist() -> None:
     """Top-level files the README tells a user to run must be present."""
     for name in ("run_dev.bat", "build_exe.bat", "requirements.txt", "launcher.py"):
         assert name in TEXT, f"the README no longer mentions {name}"
         assert (ROOT / name).is_file(), f"the README names {name}, which does not exist"
 
 
-def check_module_references_exist() -> None:
+def test_module_references_exist() -> None:
     """Any src/desktop_bug/<module>.py the prose points at must exist."""
     missing = []
     for name in sorted(set(re.findall(r"src[\\/]desktop_bug[\\/]([a-z0-9_]+\.py)", TEXT))):
         if not (SRC / name).is_file():
             missing.append(name)
     assert not missing, "the README references modules that do not exist:\n  " + "\n  ".join(missing)
-
-
-def main() -> int:
-    check_single_title()
-    check_named_presets_exist()
-    check_referenced_preset_paths_exist()
-    check_one_build_story()
-    check_structure_block_matches_source()
-    check_named_paths_exist()
-    check_module_references_exist()
-    print("readme claims smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -19,21 +19,27 @@ exact everywhere, and it is what actually went wrong.
 
 import json
 import math
-import os
 import random
-import sys
-import tempfile
-from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt5.QtGui import QColor, QGuiApplication, QImage, QPainter  # noqa: E402
+from PyQt5.QtGui import QColor, QImage, QPainter
 
-from desktop_bug.creature import Creature  # noqa: E402
-from desktop_bug.manager import CreatureManager  # noqa: E402
+from desktop_bug.creature import Creature
+from desktop_bug.manager import CreatureManager
+from support import ROOT
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _qt(qapp):
+    """Every check in this module needs the one Qt application object.
+
+    Each of these files used to build its own, and several dropped the only
+    reference to it on the same line. In one process per test that was merely
+    wasteful; in one process for the whole suite it is an access violation,
+    because the next module inherits a pointer to an application that has
+    already been collected. `conftest.qapp` owns it now.
+    """
 
 SCREEN = (1280, 720)
 DT = 1.0 / 60.0
@@ -116,8 +122,7 @@ def run_frames(frames: int, cached: bool) -> list:
          Creature._spider_gait_config) = saved
 
 
-def check_caching_changed_nothing_on_screen() -> None:
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+def test_caching_changed_nothing_on_screen() -> None:
     with_caches = run_frames(40, cached=True)
     without = run_frames(40, cached=False)
     assert len(with_caches) == len(without) == 3
@@ -133,9 +138,8 @@ def check_caching_changed_nothing_on_screen() -> None:
     assert with_caches[0] != different, "image comparison is not comparing anything"
 
 
-def check_gait_tuning_is_built_once() -> None:
+def test_gait_tuning_is_built_once() -> None:
     """Seventy-two rebuilds per spider per frame was the single worst cost."""
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
     manager = build_manager(count=1)
     creature = manager.creatures[0]
 
@@ -172,7 +176,7 @@ def check_gait_tuning_is_built_once() -> None:
         Creature._build_spider_gait_config = original
 
 
-def check_the_second_pass_reuses_the_first() -> None:
+def test_the_second_pass_reuses_the_first() -> None:
     """A procedural spider asks for every leg chain twice a frame.
 
     Once for the leg, once for the sockets and knuckles drawn over it. For a
@@ -187,7 +191,6 @@ def check_the_second_pass_reuses_the_first() -> None:
     tried first and failed on CI at 86 solves against a limit of 80 -- the
     machine happened to catch a leg mid-swing, which is correct behaviour.
     """
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
     manager = build_manager(count=1)
     creature = manager.creatures[0]
     legs = len(creature.legs)
@@ -233,9 +236,8 @@ def check_the_second_pass_reuses_the_first() -> None:
     )
 
 
-def check_the_chain_cache_hands_out_copies() -> None:
+def test_the_chain_cache_hands_out_copies() -> None:
     """A shared list would let one caller corrupt the next frame."""
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
     manager = build_manager(count=1)
     creature = manager.creatures[0]
     config = creature._sprite_leg_chain_config()
@@ -263,8 +265,7 @@ def check_the_chain_cache_hands_out_copies() -> None:
     assert third[0] != (0.0, 0.0), "a caller was able to corrupt the cached chain"
 
 
-def check_colour_and_reach_caches_invalidate() -> None:
-    QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
+def test_colour_and_reach_caches_invalidate() -> None:
     manager = build_manager(count=1)
     creature = manager.creatures[0]
 
@@ -291,7 +292,7 @@ def check_colour_and_reach_caches_invalidate() -> None:
     )
 
 
-def check_the_recorded_baseline_still_describes_this_code() -> None:
+def test_the_recorded_baseline_still_describes_this_code() -> None:
     """The benchmark's baseline is DC-12's measurement, from before this work.
 
     Leaving it in place would report a permanent 20% improvement and never fail
@@ -303,18 +304,3 @@ def check_the_recorded_baseline_still_describes_this_code() -> None:
     assert "dc-35" in note, (
         "the committed baseline still describes the code before DC-35: " + note
     )
-
-
-def main() -> int:
-    check_caching_changed_nothing_on_screen()
-    check_gait_tuning_is_built_once()
-    check_the_second_pass_reuses_the_first()
-    check_the_chain_cache_hands_out_copies()
-    check_colour_and_reach_caches_invalidate()
-    check_the_recorded_baseline_still_describes_this_code()
-    print("render cost smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

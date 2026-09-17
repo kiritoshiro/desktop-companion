@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Sticky silk the spiders shoot *at the real cursor*.
 
 This is a separate kind of silk from :mod:`desktop_bug.webs`.  The webs module
@@ -33,6 +31,8 @@ free) and the engine applies it.  Everything here is failure-safe:
 Qt is imported lazily inside the ``draw`` methods so the module stays importable
 in headless contexts (tests, validators) with no display.
 """
+
+from __future__ import annotations
 
 import math
 import random

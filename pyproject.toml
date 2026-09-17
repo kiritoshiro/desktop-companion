@@ -1,0 +1,40 @@
+# Tool configuration for the project.
+#
+# There is deliberately no [project] table. The overlay is not installed with
+# pip: it runs from `src/` on the path and ships as a PyInstaller one-file
+# build, and `requirements.txt` is the pinned dependency set that both
+# workflows and `build_exe.bat` install. Adding a [project] table would put a
+# second version number beside `desktop_bug.__version__`, which the release
+# workflow compares against the tag -- exactly the kind of pair that drifts
+# apart without anyone noticing.
+
+[tool.ruff]
+target-version = "py313"
+# Line length is not enforced (E501 is not selected); this only affects how
+# ruff would format if it is ever asked to.
+line-length = 110
+extend-exclude = ["build", "dist", "ci-build", "ci-dist"]
+
+[tool.ruff.lint]
+# Ruff's default set, spelled out. The tree is clean under it, so a new finding
+# means new code rather than a new rule. E402 matters here in particular: it is
+# what caught every test file bootstrapping its own `sys.path` before importing
+# the package, which `tests/conftest.py` now does once.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# These two run as standalone scripts against a source checkout, so they must
+# put `src/` on the path themselves before importing the package. There is no
+# conftest to do it for them.
+"tools/benchmark.py" = ["E402"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+# --strict-markers and --strict-config turn a typo in a marker or a setting
+# into a failure rather than into silently running nothing, which is the same
+# failure mode the hand-written test list in the workflows used to have.
+addopts = "--strict-markers --strict-config -ra"
+markers = [
+    "slow: takes seconds rather than milliseconds (rendering and profiling sweeps)",
+]

@@ -6805,8 +6805,12 @@ class Creature:
             held_response = clamp(float(getattr(self, "held_drag_response", 0.0)), 0.0, 1.0)
             # Fold the suspended chain through its knuckles. The walking pose
             # is deliberately restrained, but a carried spider needs a visible
-            # soft knee instead of a straight radial spoke.
-            bend_base *= 3.40 + held_response * 0.90
+            # soft knee instead of a straight radial spoke. The speed term is
+            # the one the comment above has always promised and the code never
+            # applied: it was computed, left unused, and reported by ruff as
+            # B6. It carries about half the weight of the drag response, which
+            # is the ratio the suspended-knee helper below already uses.
+            bend_base *= 3.40 + held_response * 0.90 + held_speed01 * 0.45
             forward_bias *= 0.35
             elevated_arc = 0.0
             proximal_lift = 1.0
