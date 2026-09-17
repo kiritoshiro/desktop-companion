@@ -793,7 +793,9 @@ read straight out of the model -- was rebuilt about **seventy-two times per
 spider per frame**. The heading's forward and right vectors, four trigonometric
 calls, were recomputed about **460 times per spider per frame**. Every leg chain
 was solved **twice**: once for the leg, once for the sockets and knuckles drawn
-over it, from identical inputs.
+over it. For a planted leg those two are identical, which is most legs most of
+the time; for one mid-swing they are not, because the leg pass raises the foot
+before solving, so that one stays two real solves.
 
 Caching those, plus the palette colours and the leg reach limits, made a frame
 about **21 % cheaper** with no change at all to what is drawn:

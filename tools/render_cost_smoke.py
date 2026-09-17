@@ -172,9 +172,21 @@ def check_gait_tuning_is_built_once() -> None:
         Creature._build_spider_gait_config = original
 
 
-def check_each_leg_is_solved_once_per_frame() -> None:
-    """A procedural spider solved every leg twice: once for the leg, once for
-    the sockets and knuckles drawn over it, from identical inputs."""
+def check_the_second_pass_reuses_the_first() -> None:
+    """A procedural spider asks for every leg chain twice a frame.
+
+    Once for the leg, once for the sockets and knuckles drawn over it. For a
+    planted leg the two asks are identical and the second is free. For a leg
+    that is lifting or airborne they are not: the leg pass raises the foot
+    before solving and the socket pass does not, so that one is two real solves
+    and always will be.
+
+    So this compares solves against asks rather than against a fixed number.
+    Before the cache the two were equal; a tetrapod gait lifts at most three of
+    eight legs, so the ratio cannot exceed about 0.7 now. An exact bound was
+    tried first and failed on CI at 86 solves against a limit of 80 -- the
+    machine happened to catch a leg mid-swing, which is correct behaviour.
+    """
     QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
     manager = build_manager(count=1)
     creature = manager.creatures[0]
@@ -182,29 +194,43 @@ def check_each_leg_is_solved_once_per_frame() -> None:
     assert legs >= 4, legs
 
     solves = [0]
-    # Count real solves by watching the cache fill, which is what a repeat call
-    # skips. Patching the method itself would count the cheap lookups too.
-    original_store = creature._chain_points_cache
+    asks = [0]
 
     class CountingCache(dict):
         def __setitem__(self, key, value):
             solves[0] += 1
             dict.__setitem__(self, key, value)
 
-    creature._chain_points_cache = CountingCache(original_store)
-    image = QImage(*SCREEN, QImage.Format_ARGB32_Premultiplied)
-    frames = 10
-    for _ in range(frames):
-        manager.update(DT, -100000.0, -100000.0)
-        painter = QPainter(image)
-        manager.render(painter)
-        painter.end()
+    creature._chain_points_cache = CountingCache(creature._chain_points_cache)
 
-    assert solves[0] <= legs * frames, (
-        f"{solves[0]} leg solves over {frames} frames for {legs} legs; one per "
-        "leg per frame is the most that should be needed"
+    original = Creature._sprite_leg_chain_points
+
+    def counted(self, *args, **kwargs):
+        asks[0] += 1
+        return original(self, *args, **kwargs)
+
+    Creature._sprite_leg_chain_points = counted
+    try:
+        image = QImage(*SCREEN, QImage.Format_ARGB32_Premultiplied)
+        frames = 10
+        for _ in range(frames):
+            manager.update(DT, -100000.0, -100000.0)
+            painter = QPainter(image)
+            manager.render(painter)
+            painter.end()
+    finally:
+        Creature._sprite_leg_chain_points = original
+
+    assert asks[0] > legs * frames, (
+        f"only {asks[0]} chain requests over {frames} frames for {legs} legs; "
+        "the second drawing pass seems to have gone away, so this is measuring "
+        "nothing"
     )
     assert solves[0] > 0, "no leg was solved at all, so this is measuring nothing"
+    assert solves[0] <= asks[0] * 0.8, (
+        f"{solves[0]} solves for {asks[0]} requests: the second pass is "
+        "re-solving what the first already worked out"
+    )
 
 
 def check_the_chain_cache_hands_out_copies() -> None:
@@ -217,8 +243,19 @@ def check_the_chain_cache_hands_out_copies() -> None:
         return  # this model does not use chained legs
     leg = creature.legs[0]
     ax, ay = creature._leg_attach(leg)
+    solves = [0]
+
+    class CountingCache(dict):
+        def __setitem__(self, key, value):
+            solves[0] += 1
+            dict.__setitem__(self, key, value)
+
+    creature._chain_points_cache = CountingCache()
     first = creature._sprite_leg_chain_points(leg, ax, ay, ax + 30.0, ay + 20.0, config)
     second = creature._sprite_leg_chain_points(leg, ax, ay, ax + 30.0, ay + 20.0, config)
+    # The deterministic half of the claim, with no gait phase involved: asking
+    # twice for the same leg at the same place solves once.
+    assert solves[0] == 1, f"the same request was solved {solves[0]} times"
     assert first == second, "the same inputs gave two different chains"
     assert first is not second, "the cache handed out the same list twice"
     first[0] = (0.0, 0.0)
@@ -271,7 +308,7 @@ def check_the_recorded_baseline_still_describes_this_code() -> None:
 def main() -> int:
     check_caching_changed_nothing_on_screen()
     check_gait_tuning_is_built_once()
-    check_each_leg_is_solved_once_per_frame()
+    check_the_second_pass_reuses_the_first()
     check_the_chain_cache_hands_out_copies()
     check_colour_and_reach_caches_invalidate()
     check_the_recorded_baseline_still_describes_this_code()
