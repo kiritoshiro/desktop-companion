@@ -425,26 +425,49 @@ def _snap_to_edge(p: Point, sw: float, sh: float) -> Point:
 # Projectile: the flying glob of silk.
 # ======================================================================
 class _Projectile:
-    def __init__(self, origin: Point, target: Point, kind: str) -> None:
+    """A glob of silk, thrown rather than guided.
+
+    It used to steer onto the pointer for its whole flight, so it could not be
+    dodged and read as a homing missile instead of a thrown web. It now aims
+    once, leading a moving target by the time the glob will take to arrive, and
+    then flies straight. Correcting in flight is what the Silk tracking ability
+    restores, so a spider earns it rather than starting with it.
+    """
+
+    def __init__(self, origin: Point, target: Point, kind: str,
+                 homing: float = 0.0, lead: Point = (0.0, 0.0)) -> None:
         self.kind = kind
         self.pos = (float(origin[0]), float(origin[1]))
         self.origin = self.pos
-        d = distance(origin[0], origin[1], target[0], target[1])
+        self.homing = max(0.0, float(homing))
+        # Aim where the target is going to be, not where it was. Without this a
+        # straight shot at anything moving would always trail behind it.
+        # Solved iteratively: aiming ahead lengthens the flight, which moves the
+        # interception point again. One pass under-leads enough to miss.
+        travel = distance(origin[0], origin[1], target[0], target[1]) / SHOT_SPEED
+        aim = target
+        for _ in range(4):
+            aim = (target[0] + lead[0] * travel, target[1] + lead[1] * travel)
+            travel = distance(origin[0], origin[1], aim[0], aim[1]) / SHOT_SPEED
+        d = distance(origin[0], origin[1], aim[0], aim[1])
         self.max_travel = max(SHOT_MIN_TRAVEL, d * SHOT_MAX_TRAVEL_MULT)
         self.travelled = 0.0
-        ux, uy = _unit(target[0] - origin[0], target[1] - origin[1])
+        ux, uy = _unit(aim[0] - origin[0], aim[1] - origin[1])
         self.vel = (ux * SHOT_SPEED, uy * SHOT_SPEED)
         self.trail: List[Point] = [self.pos]
 
     def update(self, dt: float, mx: float, my: float) -> str:
-        """Advance toward the (live) pointer.  Returns 'fly' | 'hit' | 'miss'."""
-        # Light homing so the glob curves onto the moving pointer.
-        desired = _unit(mx - self.pos[0], my - self.pos[1])
-        vx = self.vel[0] + desired[0] * SHOT_SPEED * SHOT_HOMING * dt
-        vy = self.vel[1] + desired[1] * SHOT_SPEED * SHOT_HOMING * dt
-        sp = math.hypot(vx, vy)
-        if sp > 1e-6:
-            vx, vy = vx / sp * SHOT_SPEED, vy / sp * SHOT_SPEED
+        """Advance the glob.  Returns 'fly' | 'hit' | 'miss'."""
+        if self.homing > 0.0:
+            # Silk tracking: steer onto the live pointer while in flight.
+            desired = _unit(mx - self.pos[0], my - self.pos[1])
+            vx = self.vel[0] + desired[0] * SHOT_SPEED * SHOT_HOMING * self.homing * dt
+            vy = self.vel[1] + desired[1] * SHOT_SPEED * SHOT_HOMING * self.homing * dt
+            sp = math.hypot(vx, vy)
+            if sp > 1e-6:
+                vx, vy = vx / sp * SHOT_SPEED, vy / sp * SHOT_SPEED
+        else:
+            vx, vy = self.vel
         self.vel = (vx, vy)
         step = (vx * dt, vy * dt)
         self.pos = (self.pos[0] + step[0], self.pos[1] + step[1])
@@ -573,12 +596,13 @@ class MouseWebWorld:
         return None
 
     # -- weaver/spider API ---------------------------------------------
-    def shoot(self, origin: Point, target: Point, kind: str = "trap") -> bool:
+    def shoot(self, origin: Point, target: Point, kind: str = "trap",
+              homing: float = 0.0, lead: Point = (0.0, 0.0)) -> bool:
         """Launch a glob from ``origin`` toward ``target``.  One at a time."""
         if not self.enabled or self.busy():
             return False
         kind = "wall" if str(kind).lower().startswith("w") else "trap"
-        self.projectile = _Projectile(origin, target, kind)
+        self.projectile = _Projectile(origin, target, kind, homing=homing, lead=lead)
         return True
 
     # -- per-frame ------------------------------------------------------

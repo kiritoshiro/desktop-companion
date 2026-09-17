@@ -781,22 +781,37 @@ WEB_SHOT_HIT_RADIUS = 16.0
 
 
 class WebShotProjectile:
-    """A glob of silk a spider flings at a fly; homes on, then wraps it.
+    """A glob of silk a spider flings at a fly: thrown, not guided.
 
     This is the same idea as the cursor web shot, but aimed at a fly instead of
-    the pointer, so it never touches the real mouse.
+    the pointer, so it never touches the real mouse. Like that one it used to
+    steer onto its target for the whole flight. It now aims once, leading the
+    fly by where it is actually going, and flies straight; in-flight correction
+    is what the Silk tracking ability restores.
     """
 
-    def __init__(self, shooter, fly, kind: str = "trap") -> None:
+    def __init__(self, shooter, fly, kind: str = "trap", homing: float = 0.0) -> None:
         self.shooter = shooter
         self.fly = fly
         self.kind = kind
+        self.homing = max(0.0, float(homing))
         fx, fy = math.cos(shooter.heading), math.sin(shooter.heading)
         ox = shooter.x + fx * shooter.size * 0.6
         oy = shooter.y + fy * shooter.size * 0.6
         self.origin = (ox, oy)
         self.pos = (ox, oy)
-        ux, uy = (fly.x - ox), (fly.y - oy)
+        # Lead the fly, or a straight shot would always arrive behind it.
+        # Solved iteratively for the same reason as the cursor glob: aiming
+        # ahead lengthens the flight, which moves the interception point again.
+        travel = (math.hypot(fly.x - ox, fly.y - oy) or 1.0) / WEB_SHOT_SPEED
+        fvx = getattr(fly, "vx", 0.0)
+        fvy = getattr(fly, "vy", 0.0)
+        aim_x, aim_y = fly.x, fly.y
+        for _ in range(4):
+            aim_x = fly.x + fvx * travel
+            aim_y = fly.y + fvy * travel
+            travel = (math.hypot(aim_x - ox, aim_y - oy) or 1.0) / WEB_SHOT_SPEED
+        ux, uy = (aim_x - ox), (aim_y - oy)
         d = math.hypot(ux, uy) or 1.0
         self.vel = (ux / d * WEB_SHOT_SPEED, uy / d * WEB_SHOT_SPEED)
         self.travelled = 0.0
@@ -812,12 +827,15 @@ class WebShotProjectile:
             self.done = True
             return
         tx, ty = fly.x, fly.y
-        dx, dy = tx - self.pos[0], ty - self.pos[1]
-        dd = math.hypot(dx, dy) or 1.0
-        vx = self.vel[0] + dx / dd * WEB_SHOT_SPEED * 5.0 * dt
-        vy = self.vel[1] + dy / dd * WEB_SHOT_SPEED * 5.0 * dt
-        sp = math.hypot(vx, vy) or 1.0
-        vx, vy = vx / sp * WEB_SHOT_SPEED, vy / sp * WEB_SHOT_SPEED
+        if self.homing > 0.0:
+            dx, dy = tx - self.pos[0], ty - self.pos[1]
+            dd = math.hypot(dx, dy) or 1.0
+            vx = self.vel[0] + dx / dd * WEB_SHOT_SPEED * 5.0 * self.homing * dt
+            vy = self.vel[1] + dy / dd * WEB_SHOT_SPEED * 5.0 * self.homing * dt
+            sp = math.hypot(vx, vy) or 1.0
+            vx, vy = vx / sp * WEB_SHOT_SPEED, vy / sp * WEB_SHOT_SPEED
+        else:
+            vx, vy = self.vel
         self.vel = (vx, vy)
         nx, ny = self.pos[0] + vx * dt, self.pos[1] + vy * dt
         self.travelled += math.hypot(nx - self.pos[0], ny - self.pos[1])
@@ -1150,7 +1168,11 @@ class FlyWorld:
     def launch_web_shot(self, shooter, fly, kind: str = "trap") -> bool:
         if fly is None or not fly.alive or fly.trapped or fly.dragging:
             return False
-        self.projectiles.append(WebShotProjectile(shooter, fly, kind))
+        homing = 0.0
+        tracking = getattr(shooter, "_progression_effect", None)
+        if callable(tracking):
+            homing = tracking("web_homing")
+        self.projectiles.append(WebShotProjectile(shooter, fly, kind, homing=homing))
         return True
 
     def add_remains(self, at: Point, scale: float = 1.0) -> None:

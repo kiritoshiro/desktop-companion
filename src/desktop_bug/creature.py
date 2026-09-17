@@ -4435,7 +4435,16 @@ class Creature:
         else:
             world = self.mouse_web_world
             if world is not None and self._can_shoot_web(kind):
-                launched = world.shoot(origin, (mx, my), kind=kind)
+                # Silk is thrown, not guided: aim once, leading the pointer by
+                # its current velocity. In-flight correction arrives with the
+                # Silk tracking ability rather than being free from level one.
+                launched = world.shoot(
+                    origin,
+                    (mx, my),
+                    kind=kind,
+                    homing=self._progression_effect("web_homing"),
+                    lead=(self.prev_cursor_vx, self.prev_cursor_vy),
+                )
         if launched:
             self.mood.bump(arousal=0.12, valence=0.12, curiosity=0.05)
             self.enter_web_shot()

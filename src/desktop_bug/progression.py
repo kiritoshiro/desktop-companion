@@ -50,6 +50,7 @@ ABILITY_TREE = (
     AbilityNode("carapace_harden", "Hardened carapace", "A denser spider shell that absorbs more damage.", 5, effects={"armor": 2.0}, prerequisites=("vitality",)),
     AbilityNode("power_strike", "Power strike", "Stronger bites, pounces, and future attacks.", 6, effects={"damage": 2.0}),
     AbilityNode("web_crafter", "Web crafter", "Unlocks a progression hook for advanced web abilities.", 8, effects={"max_energy": 8.0}, prerequisites=("silk_sense",)),
+    AbilityNode("silk_tracking", "Silk tracking", "Thrown silk corrects itself in flight and follows a moving target.", 9, effects={"web_homing": 1.0}, prerequisites=("web_crafter",)),
     AbilityNode("long_stride", "Long stride", "Uses more of the leg range before asking for another step.", 10, effects={"speed": 0.08}, prerequisites=("quick_step",)),
     AbilityNode("apex_predator", "Apex predator", "A late-game damage and stamina improvement.", 15, effects={"damage": 4.0, "max_energy": 16.0}, prerequisites=("power_strike", "carapace_harden")),
 )
