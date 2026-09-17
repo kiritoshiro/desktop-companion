@@ -574,6 +574,20 @@ class Creature:
         self._feed_cooldown = 0.0
         self._pounce_cooldown = self.rng.uniform(0.0, 0.7)
         self._trap_shot_cooldown = self.rng.uniform(0.4, 1.6)
+        # A short intense bout of working caught prey; set for real by
+        # enter_feed, which runs long before the Feed state ever reads them.
+        self._feed_frenzy = 0.0
+        self._feed_anchor = (self.x, self.y)
+        self._feed_paw = 0.0
+        # Set for real on the first locomotion tick and the first gait update;
+        # declared here so the state of a creature is visible in one place (C4)
+        # rather than only appearing once those first ticks have run.
+        self._spider_solver_dt = 0.016
+        self._spider_turn_speed = 0.0
+        # A web-walk anchor point on whichever web is currently being walked;
+        # None until _begin_web_walk (or similar) sets a real one, since there
+        # is no web to derive a default point from until then.
+        self._web_walk_point = None
         # The fly world (set by the manager) plus the fly a web shot is aimed at,
         # so the spider can fling its trapping silk at prey, not just the cursor.
         self.fly_world = None
@@ -681,7 +695,7 @@ class Creature:
         leg's own side, inside its wedge, and within a believable distance; this
         is what guarantees the lively gait never crosses or overstretches a leg.
         """
-        sec = getattr(self, "_leg_sectors", {}).get(id(leg))
+        sec = self._leg_sectors.get(id(leg))
         if not sec:
             return x, y
         lo, hi, rmin_m, rmax_m = sec
@@ -1099,7 +1113,7 @@ class Creature:
             dot += weight * (qx * px + qy * py)
             cross += weight * (qx * py - qy * px)
         solved_heading = math.atan2(cross, dot) if abs(dot) + abs(cross) > 1e-7 else self.heading
-        solver_dt = max(0.001, getattr(self, "_spider_solver_dt", 0.016))
+        solver_dt = max(0.001, self._spider_solver_dt)
         max_heading_step = config["max_body_turn_rate"] * solver_dt
         if abs(effective_turn_delta) > 1e-7:
             # Do not let the geometric fit reintroduce a larger angular jump
@@ -1178,7 +1192,7 @@ class Creature:
         noise around the cursor from constantly waking the turn/gait scheduler.
         The wrapped error keeps the filter stable across +/- pi.
         """
-        current = float(getattr(self, "_spider_heading_filter", self.heading))
+        current = float(self._spider_heading_filter)
         error = ((raw_heading - current + math.pi) % math.tau) - math.pi
         if abs(error) <= config["heading_deadband"]:
             return current
@@ -1610,7 +1624,7 @@ class Creature:
     # ------------------------------------------------------------------
     def _speed_mult(self) -> float:
         return float(self.personality.get("speed_multiplier", 1.0)) * float(
-            getattr(self, "_progression_speed_multiplier", 1.0)
+            self._progression_speed_multiplier
         )
 
     @property
@@ -2108,7 +2122,7 @@ class Creature:
         # explicit stop/walk state instead of a smoothed pixel-speed estimate.
         # That makes Hunter stalking switch exactly with the prey's movement.
         if self._hunting_prey:
-            prey = getattr(self, "_prey", None)
+            prey = self._prey
             if prey is not None:
                 # A loose fly's stop-and-go motion controls Hunter stalking: the
                 # spider freezes whenever the fly pauses or turns. Once prey is
@@ -2968,7 +2982,7 @@ class Creature:
         self._camouflage_strength = 0.0
         self._camouflage_color = None
         self._camouflage_idle_timer = 0.0
-        self._camouflage_visible_timer = max(float(getattr(self, "_camouflage_visible_timer", 0.0)), visible_time)
+        self._camouflage_visible_timer = max(float(self._camouflage_visible_timer), visible_time)
 
     def _panic_rehome_legs(self, intensity: float = 1.0) -> None:
         intensity = clamp(intensity, 0.0, 1.0)
@@ -3140,7 +3154,7 @@ class Creature:
         self.heading = angle_lerp(self.heading, self.target_heading, self.turn_rate * 2.2 * dt)
         # If it has locked onto a fly while being carried, it turns to face the
         # prey (and, if it can, will web it from the hand via the hunt driver).
-        prey = getattr(self, "_prey", None)
+        prey = self._prey
         if prey is not None and getattr(prey, "alive", False) and not getattr(prey, "eaten", False):
             self.target_heading = angle_to(self.x, self.y, prey.x, prey.y)
             self.heading = angle_lerp(self.heading, self.target_heading, self.turn_rate * 2.6 * dt)
@@ -3198,7 +3212,7 @@ class Creature:
     # ------------------------------------------------------------------
     def _phase_focus_context(self, mx: float, my: float) -> str:
         """Classify the object currently most relevant to this spider."""
-        prey = getattr(self, "_prey", None)
+        prey = self._prey
         if self._hunting_prey and prey is not None and getattr(prey, "alive", False):
             return "prey"
         if (
@@ -3223,7 +3237,7 @@ class Creature:
     def _phase_target(self, focus: str, mx: float, my: float) -> Tuple[float, float, "Creature" | None]:
         """Resolve a phase focus to coordinates and, when applicable, a mate."""
         if focus == "prey":
-            prey = getattr(self, "_prey", None)
+            prey = self._prey
             if prey is not None and getattr(prey, "alive", False) and not getattr(prey, "eaten", False):
                 return prey.x, prey.y, None
         if focus == "creature":
@@ -3393,9 +3407,9 @@ class Creature:
         self.weave_cooldown = max(0.0, self.weave_cooldown - dt)
         self.web_walk_cooldown = max(0.0, self.web_walk_cooldown - dt)
         self.web_shot_cooldown = max(0.0, self.web_shot_cooldown - dt)
-        self._feed_cooldown = max(0.0, getattr(self, "_feed_cooldown", 0.0) - dt)
-        self._pounce_cooldown = max(0.0, getattr(self, "_pounce_cooldown", 0.0) - dt)
-        self._trap_shot_cooldown = max(0.0, getattr(self, "_trap_shot_cooldown", 0.0) - dt)
+        self._feed_cooldown = max(0.0, self._feed_cooldown - dt)
+        self._pounce_cooldown = max(0.0, self._pounce_cooldown - dt)
+        self._trap_shot_cooldown = max(0.0, self._trap_shot_cooldown - dt)
         self._regenerate_energy(dt)
         if not self.dragging:
             self.phase_scheduler.tick(dt)
@@ -3414,7 +3428,7 @@ class Creature:
 
         # Hidden spiders are behind a real desktop window, so they are no longer
         # in the same visible interaction layer as the cursor or other spiders.
-        if getattr(self, "_desktop_fully_hidden", False):
+        if self._desktop_fully_hidden:
             self.social_target = None
         elif self.social_target is not None and getattr(self.social_target, "_desktop_fully_hidden", False):
             self.social_target = None
@@ -3875,9 +3889,9 @@ class Creature:
             self.speed = 0.0
             self.crouch = min(1.0, self.crouch + dt * 1.5)
             self.catch_blend = 1.0          # keep the front legs reaching the prey
-            self._feed_paw = getattr(self, "_feed_paw", 0.0) + dt
-            self._feed_frenzy = getattr(self, "_feed_frenzy", 0.0) - dt
-            anchor = getattr(self, "_feed_anchor", (self.x, self.y))
+            self._feed_paw = self._feed_paw + dt
+            self._feed_frenzy = self._feed_frenzy - dt
+            anchor = self._feed_anchor
             # Hold the body exactly on the catch spot; only the legs move.
             self.x += (anchor[0] - self.x) * clamp(dt * 14.0, 0.0, 1.0)
             self.y += (anchor[1] - self.y) * clamp(dt * 14.0, 0.0, 1.0)
@@ -4358,7 +4372,7 @@ class Creature:
             self.web_target = None
             self.enter_idle()
             return
-        px, py = getattr(self, "_web_walk_point", (web.hub[0], web.hub[1]))
+        px, py = self._web_walk_point if self._web_walk_point is not None else (web.hub[0], web.hub[1])
         self.target_x, self.target_y = px, py
         self._set_focus(px, py, 0.5)
         if distance(self.x, self.y, px, py) < 16.0 or self.state_timer <= 0.0:
@@ -5073,7 +5087,7 @@ class Creature:
                         move_heading, dt, gait_config
                     )
                 else:
-                    filtered = float(getattr(self, "_spider_heading_filter", self.heading))
+                    filtered = float(self._spider_heading_filter)
                     bearing_error = ((move_heading - filtered + math.pi) % math.tau) - math.pi
                     if abs(bearing_error) > 0.05:
                         filtered += bearing_error * (1.0 - math.exp(-dt * 10.0))
@@ -5752,7 +5766,7 @@ class Creature:
             leg.step_duration = self._spider_step_duration(
                 spider_gait,
                 clamp(self.current_speed / 150.0, 0.0, 1.0),
-                float(getattr(self, "_spider_turn_speed", 0.0)),
+                float(self._spider_turn_speed),
                 force_fast=force_fast,
             )
         else:
@@ -6543,8 +6557,8 @@ class Creature:
     def _blend_palette_color(self, key: str) -> tuple:
         raw = self.colors.get(key, [35, 30, 25])
         rgb = [float(raw[0]), float(raw[1]), float(raw[2])]
-        camo = getattr(self, "_camouflage_color", None)
-        strength = clamp(float(getattr(self, "_camouflage_strength", 0.0)), 0.0, 1.0)
+        camo = self._camouflage_color
+        strength = clamp(float(self._camouflage_strength), 0.0, 1.0)
         color_blend = clamp(float(self.personality.get("camouflage_color_blend", 0.0) or 0.0), 0.0, 1.0)
         if camo is not None and strength > 0.001 and color_blend > 0.001:
             blend = strength * color_blend * (0.72 if key == "eyes" else 0.96 if key == "highlight" else 1.0)
@@ -6586,8 +6600,8 @@ class Creature:
 
     def _blend_triplet(self, rgb) -> tuple:
         out = [float(rgb[0]), float(rgb[1]), float(rgb[2])]
-        camo = getattr(self, "_camouflage_color", None)
-        strength = clamp(float(getattr(self, "_camouflage_strength", 0.0)), 0.0, 1.0)
+        camo = self._camouflage_color
+        strength = clamp(float(self._camouflage_strength), 0.0, 1.0)
         color_blend = clamp(float(self.personality.get("camouflage_color_blend", 0.0) or 0.0), 0.0, 1.0)
         if camo is not None and strength > 0.001 and color_blend > 0.001:
             blend = strength * color_blend * 0.92
@@ -7787,7 +7801,7 @@ class Creature:
             # Work the prey held at the front: rapid in/out tugging along the
             # line to the catch point, plus a small sideways knead, each front
             # leg slightly out of phase so they look like busy little hands.
-            paw = getattr(self, "_feed_paw", 0.0)
+            paw = self._feed_paw
             cx, cy = self.catch_point
             dx, dy = cx - foot_x, cy - foot_y
             dl = math.hypot(dx, dy) or 1.0
@@ -8473,7 +8487,7 @@ class Creature:
         # every frame and would otherwise never be looked up again.
         self._chain_points_cache.clear()
         render_mode = str(self.model.get("render_mode", "procedural")).lower()
-        camouflage_strength = clamp(float(getattr(self, "_camouflage_strength", 0.0)), 0.0, 1.0)
+        camouflage_strength = clamp(float(self._camouflage_strength), 0.0, 1.0)
         camouflage_opacity = clamp(1.0 - camouflage_strength * float(self.personality.get("camouflage_opacity_drop", 0.72)), 0.12, 1.0)
         camouflage_saved = False
         if camouflage_opacity < 0.999:
