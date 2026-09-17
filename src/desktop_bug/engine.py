@@ -418,7 +418,7 @@ class CreatureInspectorDialog(QDialog):
 
 
 class OverlayWindow(QWidget):
-    def __init__(self, preset_path: Path):
+    def __init__(self, preset_path: Path, seed: int | None = None):
         super().__init__(None)
         self.setWindowTitle("Desktop Bug Companion Overlay")
         self.setWindowFlags(
@@ -439,7 +439,7 @@ class OverlayWindow(QWidget):
         self._last_desktop_surface_check_ms = 0
         self._last_camouflage_sample_ms = 0
         self.setGeometry(self.geometry_rect)
-        self.manager = CreatureManager(preset_path, self.width(), self.height())
+        self.manager = CreatureManager(preset_path, self.width(), self.height(), seed=seed)
         for warning in self.manager.warnings:
             log.warning("%s", warning)
 
@@ -1388,6 +1388,10 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the transparent Desktop Bug Companion overlay")
     parser.add_argument("--preset", default="presets/default.json", help="Path to preset JSON")
     parser.add_argument("--verbose", action="store_true", help="Log debug detail as well")
+    parser.add_argument(
+        "--seed", type=int, default=None,
+        help="Seed every spider's randomness so the run can be replayed",
+    )
     args = parser.parse_args(argv)
 
     # Before anything that can fail, so a startup problem is recorded rather
@@ -1402,7 +1406,7 @@ def main(argv=None) -> int:
     # Must search the bundled data too. A one-file build keeps its presets in
     # the directory it extracts itself into, not beside the executable.
     preset = resolve_preset_path(args.preset)
-    window = OverlayWindow(preset)
+    window = OverlayWindow(preset, seed=args.seed)
     window.show()
     apply_click_through(window)
     app.aboutToQuit.connect(window.manager.save_runtime_state)
@@ -1414,7 +1418,7 @@ def main(argv=None) -> int:
     # crash before this point still reaches the log.
     install_excepthook(notify=window._notify_crash)
     _install_qt_message_handler()
-    log.info("Overlay ready: preset=%s log=%s", preset, written_to)
+    log.info("Overlay ready: preset=%s seed=%s log=%s", preset, args.seed, written_to)
 
     # Let Ctrl+C work in development consoles.
     try:

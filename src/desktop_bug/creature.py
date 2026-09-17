@@ -88,9 +88,12 @@ class LegState:
     stepping: bool = False
     pending_step: bool = False
     lift: float = 0.0
-    phase_seed: float = field(default_factory=lambda: random.random() * math.tau)
+    # Randomised per instance by Creature, after construction, from the
+    # creature's own seeded generator -- a dataclass default factory has no
+    # access to it.
+    phase_seed: float = 0.0
     twitch_clock: float = 0.0
-    gait_phase_offset: float = field(default_factory=lambda: random.uniform(-0.42, 0.42))
+    gait_phase_offset: float = 0.0
     step_cooldown: float = 0.0
     # Grounded locomotion state.  ``foot_x/y`` is the world-space contact;
     # these values describe how that fixed contact is being stroked behind the
@@ -136,6 +139,7 @@ class Creature:
         progression_state: dict | None = None,
         progression_id: str | None = None,
         job_id: str = "none",
+        seed: int | None = None,
     ):
         self.model = model
         # (model, config) for _spider_gait_config, which is otherwise the
@@ -152,18 +156,33 @@ class Creature:
         self._reach_cache: dict = {}
         self._triplet_cache = None
         self.personality = personality
-        self.skills = SkillSet(
-            skills if skills is not None else default_skills_for_personality(personality)
-        )
-        # High-level behaviour periods are planned independently of the concrete
-        # FSM.  The scheduler uses a per-creature RNG so two identical spiders do
-        # not march through the same personality sequence.
-        self.phase_scheduler = BehaviourPhaseScheduler(personality, self.skills.ids())
         self.screen_w = max(200, int(screen_w))
         self.screen_h = max(200, int(screen_h))
         self.margin = 50.0
         self.index = index
         self.progression_id = str(progression_id or f"runtime:{index}")
+
+        # A caller that wants a replayable run passes a seed; it is combined
+        # with this spider's own identity so that two spiders given the same
+        # run seed still diverge from each other, and the same spider always
+        # gets the same stream across a run regardless of how many other
+        # spiders were constructed first. A caller that does not care about
+        # replay gets `random` itself, so every existing behaviour that seeds
+        # the module-level generator (tests, mainly) is unaffected.
+        self.rng = random if seed is None else random.Random(f"{seed}:{self.progression_id}")
+
+        self.skills = SkillSet(
+            skills if skills is not None else default_skills_for_personality(personality)
+        )
+        # High-level behaviour periods are planned independently of the concrete
+        # FSM.  With no seed, the scheduler keeps its own independent RNG (as
+        # before) so two identical spiders do not march through the same
+        # personality sequence and so the module-level random stream that an
+        # unseeded caller may itself be seeding is not disturbed. A seeded
+        # caller gets the scheduler tied to the same replayable stream.
+        self.phase_scheduler = BehaviourPhaseScheduler(
+            personality, self.skills.ids(), rng=self.rng if seed is not None else None
+        )
 
         # Runtime progression is deliberately separate from the preset's model
         # and personality.  Older callers can omit it and receive a fresh level
@@ -190,12 +209,12 @@ class Creature:
         self.team_profiles: dict = {}
 
         self.size_scale = clamp(float(size_scale), 0.45, 2.25)
-        self.size_jitter = random.uniform(0.90, 1.12)
+        self.size_jitter = self.rng.uniform(0.90, 1.12)
         self._progression_base_size = float(model.get("base_size", 25)) * self.size_jitter
         self.size = self._progression_base_size * self.size_scale
-        self.x = random.uniform(self.margin, self.screen_w - self.margin)
-        self.y = random.uniform(self.margin, self.screen_h - self.margin)
-        self.heading = random.uniform(-math.pi, math.pi)
+        self.x = self.rng.uniform(self.margin, self.screen_w - self.margin)
+        self.y = self.rng.uniform(self.margin, self.screen_h - self.margin)
+        self.heading = self.rng.uniform(-math.pi, math.pi)
         self.target_heading = self.heading
         self.target_x = self.x
         self.target_y = self.y
@@ -204,15 +223,15 @@ class Creature:
         self.vel_x = 0.0
         self.vel_y = 0.0
         self.strafe_observe = False
-        self.turn_rate = random.uniform(4.0, 6.0)
+        self.turn_rate = self.rng.uniform(4.0, 6.0)
         self.state = "Idle"
-        self.state_timer = rand_range(personality.get("idle_time"), 1.0, 3.0)
-        self.decision_timer = random.uniform(0.2, 0.5)
+        self.state_timer = rand_range(personality.get("idle_time"), 1.0, 3.0, rng=self.rng)
+        self.decision_timer = self.rng.uniform(0.2, 0.5)
         self.motion_paused = False
         self.chase_timer = 0.0
-        self.hop_timer = rand_range(personality.get("hop_interval"), 0.25, 0.65)
+        self.hop_timer = rand_range(personality.get("hop_interval"), 0.25, 0.65, rng=self.rng)
         self.nope_repeats = 0
-        self.nope_zigzag_dir = random.choice((-1.0, 1.0))
+        self.nope_zigzag_dir = self.rng.choice((-1.0, 1.0))
         self.nope_cooldown = 0.0
 
         # Direct manipulation / throw physics. The overlay stays click-through,
@@ -242,16 +261,16 @@ class Creature:
         # the leg palette unchanged during that transition; color should not
         # flash when the spider is grabbed or set down.
         self._startle_highlight_suppression = 0.0
-        self.startle_phase = random.random() * math.tau
+        self.startle_phase = self.rng.random() * math.tau
 
         # Drift movement: a deliberate sideways slip layered on top of normal
         # running/retreat/throw motion.  It only becomes active for personalities
         # that opt in (for example the Drifter personality) and when the Drift
         # skill is enabled.
-        self.drift_phase = random.random() * math.tau
-        self.drift_dir = random.choice((-1.0, 1.0))
+        self.drift_phase = self.rng.random() * math.tau
+        self.drift_dir = self.rng.choice((-1.0, 1.0))
         self.drift_boost = 0.0
-        self.drift_flip_timer = rand_range(personality.get("drift_switch_time"), 0.55, 1.35)
+        self.drift_flip_timer = rand_range(personality.get("drift_switch_time"), 0.55, 1.35, rng=self.rng)
         self.last_drift_amount = 0.0
         self.drift_momentum = 0.0
         self.drift_lean = 0.0
@@ -261,13 +280,13 @@ class Creature:
         # the Drifter personality can occasionally tear around the desktop in a
         # committed drift-run: circling in place, carving arcs along screen edges,
         # or skidding around corners.
-        self.drift_run_cooldown = rand_range(personality.get("drift_run_interval"), 4.5, 10.5)
+        self.drift_run_cooldown = rand_range(personality.get("drift_run_interval"), 4.5, 10.5, rng=self.rng)
         self.drift_run_mode = "circle"
         self.drift_run_center_x = self.x
         self.drift_run_center_y = self.y
         self.drift_run_radius = max(self.size * 2.8, 70.0)
         self.drift_run_angle = self.heading
-        self.drift_run_dir = random.choice((-1.0, 1.0))
+        self.drift_run_dir = self.rng.choice((-1.0, 1.0))
         self.drift_run_turn_rate = 2.8
         self.drift_run_speed = 150.0
         self.drift_run_corner_index = 0
@@ -275,8 +294,8 @@ class Creature:
         self.drift_run_phase_timer = 0.0
 
         # Separate animation clocks. Leg gait is tied to speed, but body breathing is alive even at rest.
-        self.bob_phase = random.random() * math.tau
-        self.breath_phase = random.random() * math.tau
+        self.bob_phase = self.rng.random() * math.tau
+        self.breath_phase = self.rng.random() * math.tau
         self.body_bob = 0.0
         self.body_sway = 0.0
         self.abdomen_pulse = 0.0
@@ -309,8 +328,11 @@ class Creature:
                 self.color_overrides[str(key)] = rgb
                 self.colors[str(key)] = list(rgb)
         self.legs: List[LegState] = [LegState(definition=dict(item)) for item in model.get("legs", [])]
+        for leg in self.legs:
+            leg.phase_seed = self.rng.random() * math.tau
+            leg.gait_phase_offset = self.rng.uniform(-0.42, 0.42)
         self.gait_groups = sorted({int(leg.definition.get("gait_group", 0)) for leg in self.legs}) or [0]
-        self.active_gait_index = random.randrange(len(self.gait_groups))
+        self.active_gait_index = self.rng.randrange(len(self.gait_groups))
         self.stepping_group = None
         # Movement style. "classic" keeps the original reactive gait. "lively"
         # drives a clearer alternating-tetrapod cadence, lifts the swinging legs
@@ -318,11 +340,11 @@ class Creature:
         # based on lively but runs in quick burst-burst-stop successions, like
         # a small jumping spider in a macro video.
         self.gait_style = normalize_gait_style(gait_style)
-        self._lively_gait_phase = random.random()
-        self._skitter_burst_timer = random.uniform(0.14, 0.34)
+        self._lively_gait_phase = self.rng.random()
+        self._skitter_burst_timer = self.rng.uniform(0.14, 0.34)
         self._skitter_pause_timer = 0.0
-        self._skitter_phase = random.random() * math.tau
-        self._skitter_burst_jitter = random.uniform(0.94, 1.16)
+        self._skitter_phase = self.rng.random() * math.tau
+        self._skitter_burst_jitter = self.rng.uniform(0.94, 1.16)
         self._prev_heading_gait = self.heading
         # The cursor is an intent signal, not a torque command.  Keep a
         # filtered heading target so a zig-zagging mouse produces one graceful
@@ -336,14 +358,14 @@ class Creature:
         self._turn_speed_smooth = 0.0
         # Feeler-probe pacing (lively style only): a gap timer between probes and
         # the current probe pulse envelope.
-        self._feeler_clock = random.uniform(0.4, 1.4)
+        self._feeler_clock = self.rng.uniform(0.4, 1.4)
         self._feeler_pulse = 0.0
         self._feeler_pulse_dur = 0.0
         self._feeler_pulse_t = 0.0
         # Per-leg angular territories for the lively gait (built below once the
         # leg list and size are known).  Keeps legs from crossing into a pinwheel.
         self._leg_sectors = {}
-        self.idle_twitch_timer = random.uniform(0.6, 1.8)
+        self.idle_twitch_timer = self.rng.uniform(0.6, 1.8)
         self.turn_rehome_pressure = 0.0
 
         # ------------------------------------------------------------------
@@ -354,13 +376,13 @@ class Creature:
         self.mood.set_baseline_named(self.mood_mode if self.mood_mode != "auto" else personality.get("id", "auto"))
         # Slight per-individual emotional temperament so a group is not uniform.
         self.mood.bump(
-            valence=random.uniform(-0.12, 0.12),
-            arousal=random.uniform(-0.10, 0.10),
-            affection=random.uniform(-0.10, 0.10),
-            curiosity=random.uniform(-0.10, 0.10),
+            valence=self.rng.uniform(-0.12, 0.12),
+            arousal=self.rng.uniform(-0.10, 0.10),
+            affection=self.rng.uniform(-0.10, 0.10),
+            curiosity=self.rng.uniform(-0.10, 0.10),
         )
         self.expression_blink = 0.0
-        self.blink_timer = random.uniform(1.5, 5.0)
+        self.blink_timer = self.rng.uniform(1.5, 5.0)
         self.head_tilt = 0.0            # body-local cosmetic head roll
         self.look_fwd = 1.0             # pupil gaze direction in body-local forward
         self.look_side = 0.0
@@ -371,7 +393,7 @@ class Creature:
         self.crouch = 0.0               # 0 upright .. 1 coiled/low (jump prep, play bow)
         self.rear = 0.0                 # 0 flat .. 1 reared front (alert/excited)
         self.squash = 1.0               # landing squash-and-stretch (1 = neutral)
-        self.wiggle_phase = random.random() * math.tau
+        self.wiggle_phase = self.rng.random() * math.tau
         self.wiggle_amp = 0.0           # target amplitude driven by mood/intent
         self.wiggle_burst = 0.0         # transient extra wiggle (aim waggle, excitement)
 
@@ -413,7 +435,7 @@ class Creature:
         self.focus_strength = 0.0
 
         # Antenna animation clocks.
-        self.antenna_phase = [random.random() * math.tau, random.random() * math.tau]
+        self.antenna_phase = [self.rng.random() * math.tau, self.rng.random() * math.tau]
         # Some models use these as sensory front legs rather than thin cartoon
         # antennae.  Each side keeps its own per-segment pose so proximal lift,
         # knee flexion, and distal probing can travel through the chain in order.
@@ -430,7 +452,7 @@ class Creature:
         self.neighbors: List["Creature"] = []
         self.social_target: "Creature" | None = None
         self.social_role = "none"       # "chase" / "flee" / "play"
-        self.social_cooldown = random.uniform(1.5, 5.0)
+        self.social_cooldown = self.rng.uniform(1.5, 5.0)
         self.allow_social = True
 
         # User-assigned identity. Empty means the spider is unnamed and shows no
@@ -450,7 +472,7 @@ class Creature:
         self._desktop_hidden_timer = 0.0
         self._desktop_fully_hidden = False
         self._desktop_occluding_keys = set()
-        self._desktop_seek_timer = rand_range(personality.get("desktop_hide_seek_interval"), 28.0, 64.0)
+        self._desktop_seek_timer = rand_range(personality.get("desktop_hide_seek_interval"), 28.0, 64.0, rng=self.rng)
         # Window/folder hiding is now intentional instead of automatic.  The
         # manager sets this to the specific top-visible surface the spider decided
         # to enter; ordinary movement, mouse chasing, and lower covered windows do
@@ -465,9 +487,9 @@ class Creature:
         # startup.
         self._desktop_spawn_grace = 2.4
         self._desktop_surface_keys_seen_outside = set()
-        self._folder_portal_cooldown = rand_range(personality.get("folder_portal_cooldown"), 24.0, 55.0)
+        self._folder_portal_cooldown = rand_range(personality.get("folder_portal_cooldown"), 24.0, 55.0, rng=self.rng)
         self._folder_portal_dwell = 0.0
-        self._folder_portal_threshold = rand_range(personality.get("folder_portal_dwell"), 0.85, 1.39)
+        self._folder_portal_threshold = rand_range(personality.get("folder_portal_dwell"), 0.85, 1.39, rng=self.rng)
 
         # Camouflage personalities are drawn with lower opacity only. Earlier
         # builds sampled/recoloured against the desktop; that was expensive and
@@ -479,7 +501,7 @@ class Creature:
         # after spawning or after any touch/grab, then slowly hides only after it
         # has been left alone for a while.
         self._camouflage_idle_timer = 0.0
-        self._camouflage_visible_timer = rand_range(personality.get("camouflage_initial_visible_time"), 3.5, 6.0)
+        self._camouflage_visible_timer = rand_range(personality.get("camouflage_initial_visible_time"), 3.5, 6.0, rng=self.rng)
 
         # Gameplay stats are derived values.  The behaviour code can continue to
         # assign ordinary movement speeds while ``_speed_mult`` folds progression
@@ -525,9 +547,9 @@ class Creature:
                              or self._personality_flag("webber")) else 1.0
         # Webbers come off cooldown quickly and often; everyone else rarely.
         self.weave_cooldown = rand_range(personality.get("weave_cooldown"),
-                                         6.0, 14.0) / weave_bias
-        self.web_walk_cooldown = rand_range(personality.get("web_walk_cooldown"), 8.0, 20.0)
-        self._weave_speed = rand_range(personality.get("weave_speed"), 250.0, 330.0)
+                                         6.0, 14.0, rng=self.rng) / weave_bias
+        self.web_walk_cooldown = rand_range(personality.get("web_walk_cooldown"), 8.0, 20.0, rng=self.rng)
+        self._weave_speed = rand_range(personality.get("weave_speed"), 250.0, 330.0, rng=self.rng)
 
         # Cursor-trapping silk. ``mouse_web_world`` is the shared world object set
         # by the manager after construction. The spider shoots a glob of sticky
@@ -536,7 +558,7 @@ class Creature:
         self._web_shot_kind = "trap"      # which shot the current aim will fire
         shot_bias = 5.0 if self._personality_flag("web_shooter") else 1.0
         self.web_shot_cooldown = rand_range(personality.get("web_shot_cooldown"),
-                                            8.0, 18.0) / shot_bias
+                                            8.0, 18.0, rng=self.rng) / shot_bias
 
         # Fly hunting.  When the manager points this spider at a fly it feeds the
         # fly's position in place of the cursor so the normal hunting/approach/
@@ -550,8 +572,8 @@ class Creature:
         self._prey = None
         self._prey_recheck = 0.0
         self._feed_cooldown = 0.0
-        self._pounce_cooldown = random.uniform(0.0, 0.7)
-        self._trap_shot_cooldown = random.uniform(0.4, 1.6)
+        self._pounce_cooldown = self.rng.uniform(0.0, 0.7)
+        self._trap_shot_cooldown = self.rng.uniform(0.4, 1.6)
         # The fly world (set by the manager) plus the fly a web shot is aimed at,
         # so the spider can fling its trapping silk at prey, not just the cursor.
         self.fly_world = None
@@ -1458,10 +1480,10 @@ class Creature:
     def _initialize_legs(self) -> None:
         for leg in self.legs:
             fx, fy = self._leg_ideal_foot(leg)
-            leg.foot_x, leg.foot_y = self._constrain_leg_point(leg, fx + random.uniform(-2.0, 2.0), fy + random.uniform(-2.0, 2.0))
+            leg.foot_x, leg.foot_y = self._constrain_leg_point(leg, fx + self.rng.uniform(-2.0, 2.0), fy + self.rng.uniform(-2.0, 2.0))
             leg.step_target_x = leg.foot_x
             leg.step_target_y = leg.foot_y
-            leg.twitch_clock = random.uniform(0.0, 1.0)
+            leg.twitch_clock = self.rng.uniform(0.0, 1.0)
             try:
                 leg.joint_phase = float(leg.definition.get("phase_offset", 0.0)) * math.tau + leg.phase_seed * 0.11
             except (TypeError, ValueError):
@@ -1476,7 +1498,7 @@ class Creature:
         self.state = "Idle"
         self.speed = 0.0
         self.motion_paused = False
-        self.state_timer = rand_range(self.personality.get("idle_time"), 1.0, 3.0)
+        self.state_timer = rand_range(self.personality.get("idle_time"), 1.0, 3.0, rng=self.rng)
 
     def enter_alert(self, mx: float, my: float) -> None:
         self.state = "Alert"
@@ -1484,7 +1506,7 @@ class Creature:
         self.motion_paused = False
         self.target_x = mx
         self.target_y = my
-        self.state_timer = rand_range(self.personality.get("alert_time"), 0.3, 0.9)
+        self.state_timer = rand_range(self.personality.get("alert_time"), 0.3, 0.9, rng=self.rng)
 
     def enter_approach(self, mx: float, my: float) -> None:
         if not self._phase_allowed("approach") or not self.has_skill("approach"):
@@ -1499,7 +1521,7 @@ class Creature:
             self.speed = self._hunter_approach_speed(distance(self.x, self.y, mx, my), reaction)
         else:
             self.speed = 52.0 * self._speed_mult()
-        self.state_timer = rand_range(self.personality.get("approach_move_time"), 0.5, 1.3)
+        self.state_timer = rand_range(self.personality.get("approach_move_time"), 0.5, 1.3, rng=self.rng)
         self._prime_drift(0.35)
 
     def enter_chase(self, mx: float, my: float) -> None:
@@ -1511,15 +1533,15 @@ class Creature:
             return
         self.state = "Chase"
         self.motion_paused = False
-        self.target_x = mx + random.uniform(-16.0, 16.0)
-        self.target_y = my + random.uniform(-16.0, 16.0)
+        self.target_x = mx + self.rng.uniform(-16.0, 16.0)
+        self.target_y = my + self.rng.uniform(-16.0, 16.0)
         base_speed = float(self.personality.get("hunt_chase_speed", 150.0)) if self._is_hunter_personality() else 112.0
         self.speed = base_speed * self._speed_mult()
         self.chase_timer = float(self.personality.get("chase_persistence", 2.5))
         if self._is_hunter_personality():
-            self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.06, 0.14)
+            self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.06, 0.14, rng=self.rng)
         else:
-            self.state_timer = random.uniform(0.12, 0.28)
+            self.state_timer = self.rng.uniform(0.12, 0.28)
         self._prime_drift(0.85)
 
     def enter_retreat(self, mx: float, my: float) -> None:
@@ -1527,14 +1549,14 @@ class Creature:
             self.enter_alert(mx, my)
             return
         angle_away = math.atan2(self.y - my, self.x - mx)
-        distance_away = rand_range(self.personality.get("retreat_distance"), 220.0, 380.0)
+        distance_away = rand_range(self.personality.get("retreat_distance"), 220.0, 380.0, rng=self.rng)
         self.target_x = self.x + math.cos(angle_away) * distance_away
         self.target_y = self.y + math.sin(angle_away) * distance_away
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
         self.state = "Retreat"
         self.motion_paused = False
         self.speed = 148.0 * self._speed_mult()
-        self.state_timer = rand_range(self.personality.get("retreat_time"), 0.6, 1.2)
+        self.state_timer = rand_range(self.personality.get("retreat_time"), 0.6, 1.2, rng=self.rng)
         self._prime_drift(0.95)
 
     def enter_startled(self, mx: float, my: float) -> None:
@@ -1554,17 +1576,17 @@ class Creature:
             # A beat on the spot after the skid: plant, gather itself, then
             # react. Without it the startled scurry begins the instant friction
             # wins and the stop is never visible.
-            self.throw_recovery = random.uniform(0.34, 0.52)
+            self.throw_recovery = self.rng.uniform(0.34, 0.52)
         else:
             heading = away
-            distance_out = random.uniform(80.0, 160.0)
+            distance_out = self.rng.uniform(80.0, 160.0)
             self.throw_recovery = 0.0
         self.target_x = self.x + math.cos(heading) * distance_out
         self.target_y = self.y + math.sin(heading) * distance_out
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
         self.target_heading = heading
         self.speed = 74.0 * self._speed_mult()
-        self.state_timer = random.uniform(0.65, 1.15)
+        self.state_timer = self.rng.uniform(0.65, 1.15)
         throw_boost = clamp(math.hypot(self.inertia_vx, self.inertia_vy) / 580.0, 0.45, 1.45)
         self._prime_drift(throw_boost)
 
@@ -1574,13 +1596,13 @@ class Creature:
             return
         self.state = "Wander"
         self.motion_paused = False
-        angle = random.uniform(-math.pi, math.pi)
-        dist = random.uniform(120.0, 320.0)
+        angle = self.rng.uniform(-math.pi, math.pi)
+        dist = self.rng.uniform(120.0, 320.0)
         self.target_x = self.x + math.cos(angle) * dist
         self.target_y = self.y + math.sin(angle) * dist
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
         self.speed = 38.0 * self._speed_mult()
-        self.state_timer = random.uniform(1.4, 3.2)
+        self.state_timer = self.rng.uniform(1.4, 3.2)
         self._prime_drift(0.25)
 
     # ------------------------------------------------------------------
@@ -1988,7 +2010,7 @@ class Creature:
         self.drift_boost = max(float(getattr(self, "drift_boost", 0.0)), clamp(boost, 0.0, 1.6))
         self.drift_flip_timer = max(
             float(getattr(self, "drift_flip_timer", 0.0)),
-            rand_range(self.personality.get("drift_switch_time"), 1.15, 2.4),
+            rand_range(self.personality.get("drift_switch_time"), 1.15, 2.4, rng=self.rng),
         )
         self.wiggle_burst = max(self.wiggle_burst, 0.16 + self.drift_boost * 0.10)
 
@@ -2030,10 +2052,10 @@ class Creature:
         if self.drift_flip_timer <= 0.0:
             # Drifts should hold an arc.  Direction changes are rare and read as
             # deliberate counter-steer, not twitchy foot grip.
-            if random.random() < float(self.personality.get("drift_flip_chance", 0.18)):
+            if self.rng.random() < float(self.personality.get("drift_flip_chance", 0.18)):
                 self.drift_dir *= -1.0
                 self.wiggle_burst = max(self.wiggle_burst, 0.34)
-            self.drift_flip_timer = rand_range(self.personality.get("drift_switch_time"), 1.15, 2.4)
+            self.drift_flip_timer = rand_range(self.personality.get("drift_switch_time"), 1.15, 2.4, rng=self.rng)
 
         slip_key = "drift_throw_slip" if inertia else "drift_slip"
         base = float(self.personality.get(slip_key, self.personality.get("drift_slip", 0.48)))
@@ -2132,7 +2154,7 @@ class Creature:
         mate = self._find_social_target(social_range)
         if mate is not None:
             dist_to_mate = distance(self.x, self.y, mate.x, mate.y)
-            if dist_to_cursor > cursor_range or dist_to_mate <= dist_to_cursor * 1.12 or random.random() < social_pref:
+            if dist_to_cursor > cursor_range or dist_to_mate <= dist_to_cursor * 1.12 or self.rng.random() < social_pref:
                 return mate.x, mate.y, mate
         if dist_to_cursor < cursor_range:
             return mx, my, None
@@ -2146,8 +2168,8 @@ class Creature:
         self.hop_timer -= dt
         if self.hop_timer > 0.0:
             return False
-        self.hop_timer = rand_range(self.personality.get("hop_interval"), 0.18, 0.42)
-        power = rand_range(self.personality.get("hop_power"), 0.34, 0.58)
+        self.hop_timer = rand_range(self.personality.get("hop_interval"), 0.18, 0.42, rng=self.rng)
+        power = rand_range(self.personality.get("hop_power"), 0.34, 0.58, rng=self.rng)
         self.enter_coil(after=after, power=power, toward=toward)
         return True
 
@@ -2188,10 +2210,10 @@ class Creature:
         if not continuing:
             count_pair = self.personality.get("nope_jump_count", [3, 5])
             if isinstance(count_pair, (list, tuple)) and len(count_pair) >= 2:
-                self.nope_repeats = random.randint(int(count_pair[0]), int(count_pair[1]))
+                self.nope_repeats = self.rng.randint(int(count_pair[0]), int(count_pair[1]))
             else:
                 self.nope_repeats = int(count_pair) if count_pair is not None else 4
-            self.nope_zigzag_dir = random.choice((-1.0, 1.0))
+            self.nope_zigzag_dir = self.rng.choice((-1.0, 1.0))
             self.mood.bump(arousal=0.6, valence=-0.22, curiosity=-0.12)
         else:
             self.nope_repeats = max(0, self.nope_repeats - 1)
@@ -2200,8 +2222,8 @@ class Creature:
         if distance(self.x, self.y, mx, my) < 1.0:
             away = self.heading + math.pi
         self.nope_zigzag_dir *= -1.0
-        jump_dist = rand_range(self.personality.get("nope_jump_distance"), self.size * 4.5, self.size * 8.0)
-        zigzag = rand_range(self.personality.get("nope_zigzag_distance"), self.size * 2.2, self.size * 4.6)
+        jump_dist = rand_range(self.personality.get("nope_jump_distance"), self.size * 4.5, self.size * 8.0, rng=self.rng)
+        zigzag = rand_range(self.personality.get("nope_zigzag_distance"), self.size * 2.2, self.size * 4.6, rng=self.rng)
         perp = away + math.pi * 0.5
         target_x = self.x + math.cos(away) * jump_dist + math.cos(perp) * zigzag * self.nope_zigzag_dir
         target_y = self.y + math.sin(away) * jump_dist + math.sin(perp) * zigzag * self.nope_zigzag_dir
@@ -2231,10 +2253,10 @@ class Creature:
         self._set_focus(tx, ty, 1.0)
         self.target_x, self.target_y = tx, ty
         self.speed = 46.0 * self._speed_mult()
-        self.state_timer = random.uniform(2.2, 4.8)
+        self.state_timer = self.rng.uniform(2.2, 4.8)
         self.inspect_phase = "approach"
         self.inspect_clock = 0.0
-        self.orbit_dir = random.choice((-1.0, 1.0))
+        self.orbit_dir = self.rng.choice((-1.0, 1.0))
         self.mood.bump(curiosity=0.22, arousal=0.06)
 
     def enter_observe(self, tx: float, ty: float, target: "Creature" | None = None) -> None:
@@ -2249,7 +2271,7 @@ class Creature:
         self.social_target = target
         self._set_focus(tx, ty, 1.0)
         self.target_x, self.target_y = tx, ty
-        self.observe_dir = random.choice((-1.0, 1.0))
+        self.observe_dir = self.rng.choice((-1.0, 1.0))
         self.observe_clock = 0.0
         lo, hi = self._observer_radius_bounds()
         current = distance(self.x, self.y, tx, ty)
@@ -2261,7 +2283,7 @@ class Creature:
         self.observe_vertical_scale = clamp(float(self.personality.get("observe_vertical_scale", 0.58)), 0.35, 1.0)
         self.observe_horizontal_scale = max(1.0, float(self.personality.get("observe_horizontal_scale", 1.18)))
         self.speed = float(self.personality.get("observe_speed", 44.0)) * self._speed_mult()
-        self.state_timer = rand_range(self.personality.get("observe_orbit_time"), 2.8, 6.4)
+        self.state_timer = rand_range(self.personality.get("observe_orbit_time"), 2.8, 6.4, rng=self.rng)
         self.mood.bump(curiosity=0.18, arousal=0.04)
 
     def enter_cuddle(self, tx: float, ty: float, target: "Creature" | None = None) -> None:
@@ -2274,10 +2296,10 @@ class Creature:
         self._set_focus(tx, ty, 1.0)
         self.target_x, self.target_y = tx, ty
         self.speed = 40.0 * self._speed_mult()
-        self.state_timer = random.uniform(3.0, 6.5)
+        self.state_timer = self.rng.uniform(3.0, 6.5)
         self.cuddle_phase = "approach"
         self.cuddle_clock = 0.0
-        self.boop_timer = random.uniform(0.4, 0.9)
+        self.boop_timer = self.rng.uniform(0.4, 0.9)
         self.mood.bump(affection=0.18, valence=0.06)
 
     def enter_aim(
@@ -2310,12 +2332,12 @@ class Creature:
         self.social_target = target
         self._set_focus(tx, ty, 1.0)
         self.target_heading = angle_to(self.x, self.y, tx, ty)
-        self.state_timer = rand_range(ranging, ranging[0], ranging[1])
+        self.state_timer = rand_range(ranging, ranging[0], ranging[1], rng=self.rng)
         self.aim_after = after
         self.aim_abort_chance = clamp(abort_chance, 0.0, 0.9)
         self.range_clock = 0.0
         self.range_mode = "waggle"
-        self.range_switch = random.uniform(0.18, 0.34)
+        self.range_switch = self.rng.uniform(0.18, 0.34)
         self.mood.bump(arousal=0.16, curiosity=0.05)
 
     def enter_coil(self, after: str = "idle", power: float = 1.0, toward: Tuple[float, float] | None = None) -> None:
@@ -2333,7 +2355,7 @@ class Creature:
         self.state = "Coil"
         self.motion_paused = True
         self.speed = 0.0
-        self.state_timer = random.uniform(0.10, 0.20)
+        self.state_timer = self.rng.uniform(0.10, 0.20)
         self.coil_after = after
         self.coil_power = clamp(power, 0.4, 1.6)
         self.coil_toward = toward
@@ -2379,8 +2401,8 @@ class Creature:
             coil_power = getattr(self, "coil_power", 1.0)
             hop_peak_mult = float(self.personality.get("hop_peak_multiplier", 1.0))
             hop_duration_mult = float(self.personality.get("hop_duration_multiplier", 1.0))
-            self.jump_peak = peak if peak is not None else self.size * random.uniform(0.85, 1.25) * coil_power * hop_peak_mult
-            self.jump_duration = duration if duration is not None else random.uniform(0.36, 0.5) * hop_duration_mult
+            self.jump_peak = peak if peak is not None else self.size * self.rng.uniform(0.85, 1.25) * coil_power * hop_peak_mult
+            self.jump_duration = duration if duration is not None else self.rng.uniform(0.36, 0.5) * hop_duration_mult
         elif kind == "escape":
             # Nope escape: a deliberately long, very fast backward hop.  Heading is
             # already aimed at the mouse in enter_nope_escape; do not rotate toward
@@ -2391,11 +2413,11 @@ class Creature:
             land_y = self.y + math.sin(ang) * travel
             peak_pair = self.personality.get("nope_jump_peak_mult", [1.4, 2.4])
             if isinstance(peak_pair, (list, tuple)) and len(peak_pair) >= 2:
-                peak_mult = random.uniform(float(peak_pair[0]), float(peak_pair[1]))
+                peak_mult = self.rng.uniform(float(peak_pair[0]), float(peak_pair[1]))
             else:
                 peak_mult = float(peak_pair) if peak_pair is not None else 1.8
             self.jump_peak = peak if peak is not None else self.size * peak_mult
-            self.jump_duration = duration if duration is not None else rand_range(self.personality.get("nope_jump_duration"), 0.14, 0.22)
+            self.jump_duration = duration if duration is not None else rand_range(self.personality.get("nope_jump_duration"), 0.14, 0.22, rng=self.rng)
         else:
             # Pounce: land a touch beyond the target so it reads as committing onto it.
             overshoot = self.size * 0.4
@@ -2431,7 +2453,7 @@ class Creature:
         self.squash = 0.88 if self._spider_gait_config() is not None else 0.66
         self.land_recover = 0.22
         if after == "nope":
-            self.state_timer = rand_range(self.personality.get("nope_land_pause"), 0.02, 0.05)
+            self.state_timer = rand_range(self.personality.get("nope_land_pause"), 0.02, 0.05, rng=self.rng)
         else:
             self.state_timer = 0.16
         self.land_after = after
@@ -2445,7 +2467,7 @@ class Creature:
         self.social_target = target
         self._set_focus(tx, ty, 1.0)
         self.catch_point = (tx, ty)
-        self.state_timer = random.uniform(0.45, 0.72)
+        self.state_timer = self.rng.uniform(0.45, 0.72)
         self.catch_resolved = False
         self.mood.bump(arousal=0.2)
 
@@ -2474,10 +2496,10 @@ class Creature:
         self.wiggle_burst = max(self.wiggle_burst, 0.9)
         # A short, intense bout of working the prey with the front legs, then a
         # settling beat.  The body stays put; the legs do the visible work.
-        self._feed_frenzy = random.uniform(0.5, 0.75)
+        self._feed_frenzy = self.rng.uniform(0.5, 0.75)
         self._feed_anchor = (self.x, self.y)
         self._feed_paw = 0.0
-        self.state_timer = self._feed_frenzy + random.uniform(0.4, 0.6)
+        self.state_timer = self._feed_frenzy + self.rng.uniform(0.4, 0.6)
         self.mood.bump(valence=0.45, arousal=0.3, affection=0.05, curiosity=0.05)
 
     def enter_play(self, target: "Creature", role: str | None = None) -> None:
@@ -2494,9 +2516,9 @@ class Creature:
             role = "chase" if self.index <= getattr(target, "index", self.index) else "flee"
         self.social_role = role
         self.speed = (92.0 if role == "chase" else 104.0) * self._speed_mult()
-        self.state_timer = random.uniform(2.6, 5.5)
+        self.state_timer = self.rng.uniform(2.6, 5.5)
         self.play_clock = 0.0
-        self.play_lookback = random.uniform(0.5, 1.1)
+        self.play_lookback = self.rng.uniform(0.5, 1.1)
         self._prime_drift(0.55)
         self.mood.bump(valence=0.16, arousal=0.2, curiosity=0.08)
 
@@ -2506,19 +2528,19 @@ class Creature:
             return
         self.state = "Zoom"
         self.motion_paused = False
-        angle = random.uniform(-math.pi, math.pi)
-        dist = random.uniform(120.0, 260.0)
+        angle = self.rng.uniform(-math.pi, math.pi)
+        dist = self.rng.uniform(120.0, 260.0)
         self.target_x = self.x + math.cos(angle) * dist
         self.target_y = self.y + math.sin(angle) * dist
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
         self.speed = 138.0 * self._speed_mult()
-        self.state_timer = random.uniform(0.35, 0.7)
-        self.zoom_repeats = random.randint(1, 3)
+        self.state_timer = self.rng.uniform(0.35, 0.7)
+        self.zoom_repeats = self.rng.randint(1, 3)
         self._prime_drift(1.0)
         self.mood.bump(valence=0.14, arousal=0.24)
 
     def _reset_drift_run_cooldown(self) -> None:
-        self.drift_run_cooldown = rand_range(self.personality.get("drift_run_interval"), 4.5, 10.5)
+        self.drift_run_cooldown = rand_range(self.personality.get("drift_run_interval"), 4.5, 10.5, rng=self.rng)
 
     def _should_start_drift_run(self, *, from_idle: bool) -> bool:
         if not self._is_drifter_personality() or self.airborne or self.dragging:
@@ -2529,7 +2551,7 @@ class Creature:
             return False
         chance_key = "drift_run_start_chance" if from_idle else "drift_run_wander_chance"
         fallback = 0.86 if from_idle else 0.34
-        return random.random() < clamp(float(self.personality.get(chance_key, fallback)), 0.0, 1.0)
+        return self.rng.random() < clamp(float(self.personality.get(chance_key, fallback)), 0.0, 1.0)
 
     def enter_drift_run(self, mode: str | None = None) -> None:
         """Autonomous Drifter burst: fast circular/corner screen drifting."""
@@ -2540,13 +2562,13 @@ class Creature:
         self.state = "DriftRun"
         self.motion_paused = False
         self.social_target = None
-        self.drift_run_dir = random.choice((-1.0, 1.0))
+        self.drift_run_dir = self.rng.choice((-1.0, 1.0))
         self.drift_dir = self.drift_run_dir
-        self.state_timer = rand_range(self.personality.get("drift_run_time"), 2.2, 4.6)
-        self.drift_run_turn_rate = rand_range(self.personality.get("drift_circle_turn_rate"), 0.95, 1.85)
-        self.drift_run_radius = rand_range(self.personality.get("drift_circle_radius"), max(92.0, self.size * 4.0), max(230.0, self.size * 8.0))
+        self.state_timer = rand_range(self.personality.get("drift_run_time"), 2.2, 4.6, rng=self.rng)
+        self.drift_run_turn_rate = rand_range(self.personality.get("drift_circle_turn_rate"), 0.95, 1.85, rng=self.rng)
+        self.drift_run_radius = rand_range(self.personality.get("drift_circle_radius"), max(92.0, self.size * 4.0), max(230.0, self.size * 8.0), rng=self.rng)
         self.drift_run_phase = "charge"
-        self.drift_run_phase_timer = rand_range(self.personality.get("drift_charge_time"), 0.55, 1.05)
+        self.drift_run_phase_timer = rand_range(self.personality.get("drift_charge_time"), 0.55, 1.05, rng=self.rng)
         self.drift_momentum = min(float(getattr(self, "drift_momentum", 0.0)), 0.25)
         self.drift_boost = 0.0
         self.last_drift_amount = 0.0
@@ -2560,7 +2582,7 @@ class Creature:
                 or self.y > self.screen_h - edge_band
             )
             corner_chance = clamp(float(self.personality.get("drift_corner_chance", 0.46)) + (0.20 if near_edge else 0.0), 0.0, 0.92)
-            mode = "corner" if random.random() < corner_chance else "circle"
+            mode = "corner" if self.rng.random() < corner_chance else "circle"
         self.drift_run_mode = mode
 
         radius = max(35.0, self.drift_run_radius)
@@ -2575,8 +2597,8 @@ class Creature:
             # Prefer the nearest corner with a little randomness, so it often looks
             # like the spider intentionally skids into the corner it is already near.
             ranked = sorted(enumerate(corners), key=lambda item: distance(self.x, self.y, item[1][0], item[1][1]))
-            if len(ranked) > 1 and random.random() < 0.32:
-                idx, (cx, cy) = random.choice(ranked[:2])
+            if len(ranked) > 1 and self.rng.random() < 0.32:
+                idx, (cx, cy) = self.rng.choice(ranked[:2])
             else:
                 idx, (cx, cy) = ranked[0]
             self.drift_run_corner_index = idx
@@ -2585,7 +2607,7 @@ class Creature:
             self.drift_run_angle = angle_to(self.drift_run_center_x, self.drift_run_center_y, self.x, self.y)
             self.drift_run_turn_rate *= 0.86
         else:
-            radial = random.uniform(-math.pi, math.pi)
+            radial = self.rng.uniform(-math.pi, math.pi)
             cx = self.x - math.cos(radial) * radius
             cy = self.y - math.sin(radial) * radius
             low_x = min(self.screen_w * 0.5, self.margin + radius)
@@ -2596,7 +2618,7 @@ class Creature:
             self.drift_run_center_y = clamp(cy, low_y, high_y)
             self.drift_run_angle = angle_to(self.drift_run_center_x, self.drift_run_center_y, self.x, self.y)
 
-        self.drift_run_speed = rand_range(self.personality.get("drift_run_speed"), 145.0, 205.0)
+        self.drift_run_speed = rand_range(self.personality.get("drift_run_speed"), 145.0, 205.0, rng=self.rng)
         self.speed = self.drift_run_speed * self._speed_mult()
         self.wiggle_burst = max(self.wiggle_burst, 0.45)
         self.mood.bump(valence=0.10, arousal=0.32, curiosity=0.08)
@@ -2612,13 +2634,13 @@ class Creature:
         phase = getattr(self, "drift_run_phase", "charge")
         if phase == "charge" and (self.drift_run_phase_timer <= 0.0 or float(getattr(self, "drift_momentum", 0.0)) > 0.54):
             self.drift_run_phase = "slide"
-            self.drift_run_phase_timer = rand_range(self.personality.get("drift_slide_time"), 0.95, 1.65)
+            self.drift_run_phase_timer = rand_range(self.personality.get("drift_slide_time"), 0.95, 1.65, rng=self.rng)
             self._prime_drift(1.18, direction=self.drift_run_dir)
             self.wiggle_burst = max(self.wiggle_burst, 0.42)
             phase = "slide"
         elif phase == "slide" and self.drift_run_phase_timer <= 0.0 and self.state_timer > 0.45:
             self.drift_run_phase = "charge"
-            self.drift_run_phase_timer = rand_range(self.personality.get("drift_charge_time"), 0.45, 0.95)
+            self.drift_run_phase_timer = rand_range(self.personality.get("drift_charge_time"), 0.45, 0.95, rng=self.rng)
             phase = "charge"
 
         slide01 = smootherstep(float(getattr(self, "drift_momentum", 0.0))) if phase == "slide" else 0.0
@@ -2652,16 +2674,16 @@ class Creature:
         self._set_focus(self.target_x, self.target_y, 0.55)
 
         if self.decision_timer <= 0.0:
-            self.decision_timer = random.uniform(0.42, 0.80)
-            if phase == "charge" and random.random() < float(self.personality.get("drift_run_flip_chance", 0.07)):
+            self.decision_timer = self.rng.uniform(0.42, 0.80)
+            if phase == "charge" and self.rng.random() < float(self.personality.get("drift_run_flip_chance", 0.07)):
                 self.drift_run_dir *= -1.0
                 self.drift_dir = self.drift_run_dir
                 self.wiggle_burst = max(self.wiggle_burst, 0.36)
 
         if self.state_timer <= 0.0:
             repeat_chance = float(self.personality.get("drift_run_chain_chance", 0.18))
-            if random.random() < repeat_chance:
-                next_mode = "corner" if self.drift_run_mode == "circle" and random.random() < 0.48 else None
+            if self.rng.random() < repeat_chance:
+                next_mode = "corner" if self.drift_run_mode == "circle" and self.rng.random() < 0.48 else None
                 self.enter_drift_run(next_mode)
             else:
                 self.enter_idle()
@@ -2696,16 +2718,16 @@ class Creature:
         self.inertia_vy = 0.0
         self.inertia_timer = 0.0
         self.social_target = None
-        self.roll_dir = random.choice((-1.0, 1.0))
+        self.roll_dir = self.rng.choice((-1.0, 1.0))
         # Whole turns. The spin is a draw rotation that is dropped to zero the
         # instant the roll finishes, while the legs re-plant against the
         # unchanged logical heading -- so a fractional turn made the body jump
         # by up to 173 degrees on the last frame and left the legs looking
         # wrong. One or two turns still reads as a tumble; a turn and a half
         # reads as a glitch.
-        turns = float(random.randint(1, 2))
+        turns = float(self.rng.randint(1, 2))
         self.roll_total = math.tau * turns
-        self.roll_duration = random.uniform(0.7, 1.15)
+        self.roll_duration = self.rng.uniform(0.7, 1.15)
         self.roll_progress = 0.0
         self.roll_eased = 0.0
         self.roll_spin = 0.0
@@ -2718,9 +2740,9 @@ class Creature:
         # Clear any leftover jump compression so the next frame cannot render
         # a flattened body, especially on the smaller sprite-rig spiders.
         self.squash = 1.0
-        self.roll_distance = self.size * random.uniform(1.6, 3.4)
+        self.roll_distance = self.size * self.rng.uniform(1.6, 3.4)
         if direction is None:
-            direction = random.uniform(-math.pi, math.pi)
+            direction = self.rng.uniform(-math.pi, math.pi)
         self.roll_drift_dir = float(direction)
         self.state_timer = self.roll_duration + 0.1
         self.mood.bump(valence=0.2, arousal=0.16, curiosity=0.05)
@@ -2748,7 +2770,7 @@ class Creature:
             cuddle_w *= 0.3
             flee_w += 0.25
         total = catch_w + cuddle_w + flee_w
-        roll = random.random() * total
+        roll = self.rng.random() * total
         if roll < catch_w:
             self.enter_catch(tx, ty, target)
         elif roll < catch_w + cuddle_w and in_range:
@@ -2938,7 +2960,7 @@ class Creature:
         if max_strength <= 0.0:
             return
         if visible_time is None:
-            visible_time = rand_range(self.personality.get("camouflage_touch_visible_time"), 4.5, 8.0)
+            visible_time = rand_range(self.personality.get("camouflage_touch_visible_time"), 4.5, 8.0, rng=self.rng)
         try:
             visible_time = max(0.4, float(visible_time))
         except Exception:
@@ -2956,16 +2978,16 @@ class Creature:
                 continue
             ix, iy = self._leg_ideal_foot(leg)
             dist = math.hypot(leg.foot_x - ix, leg.foot_y - iy)
-            candidates.append((dist + random.random() * self.size * 0.12, i, leg, ix, iy))
+            candidates.append((dist + self.rng.random() * self.size * 0.12, i, leg, ix, iy))
         candidates.sort(reverse=True, key=lambda item: item[0])
         # Start a few quick, staggered corrective steps instead of snapping every foot.
         for rank, (_, _, leg, ix, iy) in enumerate(candidates[: max(2, int(2 + intensity * 3))]):
-            delay = rank * random.uniform(0.012, 0.035)
+            delay = rank * self.rng.uniform(0.012, 0.035)
             side = self._side_sign(leg.definition.get("side", "right"))
-            ix += random.uniform(-0.10, 0.10) * self.size
-            iy += side * random.uniform(0.02, 0.15) * self.size * intensity
+            ix += self.rng.uniform(-0.10, 0.10) * self.size
+            iy += side * self.rng.uniform(0.02, 0.15) * self.size * intensity
             self._schedule_step(leg, ix, iy, delay=delay, force_fast=True)
-            leg.step_cooldown = random.uniform(0.012, 0.040)
+            leg.step_cooldown = self.rng.uniform(0.012, 0.040)
 
     def _finish_roll(self) -> None:
         """Undo everything a tumble was doing: the spin, the tuck, the feet."""
@@ -3136,7 +3158,7 @@ class Creature:
         # Do not over-clamp planted rear feet here; that made them look frozen.
         # Instead, let the scheduler see the overreach and lift them into quick
         # corrective steps while the renderer hides any temporary rubber-band length.
-        if drag_speed > 45.0 and random.random() < 0.82:
+        if drag_speed > 45.0 and self.rng.random() < 0.82:
             self._panic_rehome_legs(clamp(drag_speed / 800.0, 0.35, 1.0))
 
     def release_drag(self, mx: float, my: float) -> None:
@@ -3234,7 +3256,7 @@ class Creature:
         if phase_id == "wander":
             self.enter_wander()
         elif phase_id == "jump":
-            self.enter_spring(after="idle", power=random.uniform(0.72, 1.15))
+            self.enter_spring(after="idle", power=self.rng.uniform(0.72, 1.15))
         elif phase_id == "roll":
             self.enter_roll()
         elif phase_id == "zoomies":
@@ -3533,7 +3555,7 @@ class Creature:
             self.speed = 0.0
             self.target_heading = angle_to(self.x, self.y, mx, my) if dist_to_cursor < reaction else self.target_heading
             if hunter and dist_to_cursor < reaction and self.decision_timer <= 0.0:
-                self.decision_timer = random.uniform(0.08, 0.18)
+                self.decision_timer = self.rng.uniform(0.08, 0.18)
                 if cursor_still:
                     self.enter_alert(mx, my)
                 else:
@@ -3541,27 +3563,27 @@ class Creature:
                 return
             if jumper and self.state_timer <= 0.0 and self.decision_timer <= 0.0:
                 # A jumper rarely slides straight out of idle; it starts roaming with a small hop.
-                if random.random() < float(self.personality.get("idle_hop_chance", 0.55)):
-                    tx = self.x + math.cos(self.heading + random.uniform(-0.65, 0.65)) * self.size * random.uniform(1.0, 2.0)
-                    ty = self.y + math.sin(self.heading + random.uniform(-0.65, 0.65)) * self.size * random.uniform(1.0, 2.0)
-                    self.enter_coil(after="wander", power=rand_range(self.personality.get("hop_power"), 0.34, 0.58), toward=(tx, ty))
+                if self.rng.random() < float(self.personality.get("idle_hop_chance", 0.55)):
+                    tx = self.x + math.cos(self.heading + self.rng.uniform(-0.65, 0.65)) * self.size * self.rng.uniform(1.0, 2.0)
+                    ty = self.y + math.sin(self.heading + self.rng.uniform(-0.65, 0.65)) * self.size * self.rng.uniform(1.0, 2.0)
+                    self.enter_coil(after="wander", power=rand_range(self.personality.get("hop_power"), 0.34, 0.58, rng=self.rng), toward=(tx, ty))
                     return
             if observer and self.decision_timer <= 0.0:
                 anchor = self._observer_anchor(mx, my)
                 if anchor is not None and (dist_to_cursor < reaction * 1.18 or anchor[2] is not None):
-                    self.decision_timer = random.uniform(0.16, 0.32)
+                    self.decision_timer = self.rng.uniform(0.16, 0.32)
                     ax, ay, target = anchor
                     self.enter_observe(ax, ay, target)
                     return
             if self.state_timer <= 0.0 and self.decision_timer <= 0.0:
-                self.decision_timer = random.uniform(0.2, 0.5)
+                self.decision_timer = self.rng.uniform(0.2, 0.5)
                 if self._activate_scheduled_phase(mx, my):
                     return
                 if self._consider_special_actions(dist_to_cursor, mx, my, from_idle=True):
                     return
                 if dist_to_cursor < reaction:
                     self.enter_alert(mx, my)
-                elif random.random() < float(self.personality.get("wander_frequency", 0.35)):
+                elif self.rng.random() < float(self.personality.get("wander_frequency", 0.35)):
                     self.enter_wander()
                 else:
                     self.enter_idle()
@@ -3579,7 +3601,7 @@ class Creature:
                         # A motionless pointer is an easy mark for sticky silk.
                         if self._maybe_shoot_web_at_cursor(dist_to_cursor, mx, my):
                             return
-                        self.state_timer = rand_range(self.personality.get("observe_pause_time"), 0.18, 0.42)
+                        self.state_timer = rand_range(self.personality.get("observe_pause_time"), 0.18, 0.42, rng=self.rng)
                     return
                 if dist_to_cursor <= hunt_catch_distance * 1.5:
                     # Within striking range: a web-shooter webs its prey; others pounce.
@@ -3601,11 +3623,11 @@ class Creature:
                     return
                 if self._consider_special_actions(dist_to_cursor, mx, my, from_idle=False):
                     return
-                if self.has_skill("run_away") and dist_to_cursor < float(self.personality.get("threat_radius", 180)) * 0.55 and random.random() > boldness:
+                if self.has_skill("run_away") and dist_to_cursor < float(self.personality.get("threat_radius", 180)) * 0.55 and self.rng.random() > boldness:
                     self.enter_retreat(mx, my)
-                elif self.has_skill("chase") and dist_to_cursor < 95.0 and random.random() < 0.45 + boldness * 0.45:
+                elif self.has_skill("chase") and dist_to_cursor < 95.0 and self.rng.random() < 0.45 + boldness * 0.45:
                     self.enter_chase(mx, my)
-                elif dist_to_cursor < reaction and random.random() < 0.25 + boldness * 0.65:
+                elif dist_to_cursor < reaction and self.rng.random() < 0.25 + boldness * 0.65:
                     self.enter_approach(mx, my)
                 else:
                     self.enter_idle()
@@ -3622,7 +3644,7 @@ class Creature:
                     if self.state_timer <= 0.0:
                         if self._maybe_shoot_web_at_cursor(dist_to_cursor, mx, my):
                             return
-                        self.state_timer = rand_range(self.personality.get("observe_pause_time"), 0.18, 0.42)
+                        self.state_timer = rand_range(self.personality.get("observe_pause_time"), 0.18, 0.42, rng=self.rng)
                     return
                 if self.motion_paused:
                     # The instant prey moves again, break observation and burst forward.
@@ -3644,9 +3666,9 @@ class Creature:
                         return
                     self.motion_paused = True
                     self.speed = 0.0
-                    self.state_timer = rand_range(self.personality.get("approach_pause_time"), 0.08, 0.20)
+                    self.state_timer = rand_range(self.personality.get("approach_pause_time"), 0.08, 0.20, rng=self.rng)
                 return
-            if self.has_skill("chase") and dist_to_cursor < 78.0 and random.random() < 0.025 + boldness * 0.035:
+            if self.has_skill("chase") and dist_to_cursor < 78.0 and self.rng.random() < 0.025 + boldness * 0.035:
                 self.enter_chase(mx, my)
                 return
             if dist_to_cursor > reaction * 1.35:
@@ -3666,11 +3688,11 @@ class Creature:
                     self.target_x = mx
                     self.target_y = my
                     self.speed = 52.0 * self._speed_mult()
-                    self.state_timer = rand_range(self.personality.get("approach_move_time"), 0.5, 1.3)
+                    self.state_timer = rand_range(self.personality.get("approach_move_time"), 0.5, 1.3, rng=self.rng)
                 else:
                     self.motion_paused = True
                     self.speed = 0.0
-                    self.state_timer = rand_range(self.personality.get("approach_pause_time"), 0.25, 0.7)
+                    self.state_timer = rand_range(self.personality.get("approach_pause_time"), 0.25, 0.7, rng=self.rng)
 
         elif self.state == "Chase":
             self.chase_timer -= dt
@@ -3708,31 +3730,31 @@ class Creature:
                     self.mood.bump(valence=0.08, arousal=0.18, curiosity=0.08)
                     self.wiggle_burst = max(self.wiggle_burst, 0.75)
                     self.catch_blend = 0.0
-                    spin = angle_to(mx, my, self.x, self.y) + random.choice((-1.0, 1.0)) * random.uniform(1.35, 2.75)
-                    orbit = random.uniform(self.size * 1.2, self.size * 2.8)
+                    spin = angle_to(mx, my, self.x, self.y) + self.rng.choice((-1.0, 1.0)) * self.rng.uniform(1.35, 2.75)
+                    orbit = self.rng.uniform(self.size * 1.2, self.size * 2.8)
                     self.target_x = mx + math.cos(spin) * orbit
                     self.target_y = my + math.sin(spin) * orbit
                     self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
                     self.speed = base_speed * 1.18
                     self.chase_timer = max(self.chase_timer, float(self.personality.get("chase_persistence", 2.5)))
-                    self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.05, 0.12)
-                    self.decision_timer = random.uniform(0.10, 0.22)
+                    self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.05, 0.12, rng=self.rng)
+                    self.decision_timer = self.rng.uniform(0.10, 0.22)
                     return
                 if self.state_timer <= 0.0:
                     lead = clamp(self._cursor_speed() / 80.0, 0.0, 18.0)
-                    self.target_x = mx + self.prev_cursor_vx * 0.035 + random.uniform(-10.0 - lead, 10.0 + lead)
-                    self.target_y = my + self.prev_cursor_vy * 0.035 + random.uniform(-10.0 - lead, 10.0 + lead)
+                    self.target_x = mx + self.prev_cursor_vx * 0.035 + self.rng.uniform(-10.0 - lead, 10.0 + lead)
+                    self.target_y = my + self.prev_cursor_vy * 0.035 + self.rng.uniform(-10.0 - lead, 10.0 + lead)
                     self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
-                    self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.05, 0.12)
+                    self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.05, 0.12, rng=self.rng)
                 self.speed = base_speed
                 if self.chase_timer <= 0.0 or dist_to_cursor > reaction * 1.75:
                     self.enter_alert(mx, my) if dist_to_cursor < reaction else self.enter_idle()
                 return
             if self.state_timer <= 0.0:
-                self.target_x = mx + random.uniform(-18.0, 18.0)
-                self.target_y = my + random.uniform(-18.0, 18.0)
+                self.target_x = mx + self.rng.uniform(-18.0, 18.0)
+                self.target_y = my + self.rng.uniform(-18.0, 18.0)
                 self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
-                self.state_timer = random.uniform(0.10, 0.24)
+                self.state_timer = self.rng.uniform(0.10, 0.24)
             self.speed = 112.0 * self._speed_mult()
             if self._maybe_jumper_hop(dt, "chase", (mx, my)):
                 return
@@ -3768,11 +3790,11 @@ class Creature:
                 self.speed = 74.0 * self._speed_mult()
                 if dist_to_cursor < reaction * 0.85 and self.decision_timer <= 0.0:
                     away = math.atan2(self.y - my, self.x - mx)
-                    self.target_x = self.x + math.cos(away) * random.uniform(95.0, 180.0)
-                    self.target_y = self.y + math.sin(away) * random.uniform(95.0, 180.0)
+                    self.target_x = self.x + math.cos(away) * self.rng.uniform(95.0, 180.0)
+                    self.target_y = self.y + math.sin(away) * self.rng.uniform(95.0, 180.0)
                     self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
                     self.target_heading = away
-                    self.decision_timer = random.uniform(0.25, 0.45)
+                    self.decision_timer = self.rng.uniform(0.25, 0.45)
             if self.state_timer <= 0.0 and self.inertia_timer <= 0.0 and self.throw_recovery <= 0.0:
                 if self.has_skill("run_away") and dist_to_cursor < reaction * 0.65:
                     self.enter_retreat(mx, my)
@@ -3796,11 +3818,11 @@ class Creature:
                 self.enter_idle()
                 return
             if self.decision_timer <= 0.0:
-                self.decision_timer = random.uniform(0.35, 0.8)
+                self.decision_timer = self.rng.uniform(0.35, 0.8)
                 if self._should_start_drift_run(from_idle=False):
                     self.enter_drift_run()
                     return
-                if random.random() < 0.25:
+                if self.rng.random() < 0.25:
                     self.motion_paused = not self.motion_paused
 
         elif self.state == "DriftRun":
@@ -3828,10 +3850,10 @@ class Creature:
                     if self.nope_repeats > 0 and self.has_skill("jump") and self.has_skill("run_away"):
                         self.enter_nope_escape(mx, my, continuing=True)
                     elif self.has_skill("run_away"):
-                        self.nope_cooldown = rand_range(self.personality.get("nope_cooldown"), 0.12, 0.28)
+                        self.nope_cooldown = rand_range(self.personality.get("nope_cooldown"), 0.12, 0.28, rng=self.rng)
                         self.enter_retreat(mx, my)
                     else:
-                        self.nope_cooldown = rand_range(self.personality.get("nope_cooldown"), 0.12, 0.28)
+                        self.nope_cooldown = rand_range(self.personality.get("nope_cooldown"), 0.12, 0.28, rng=self.rng)
                         self.enter_idle()
                 elif after == "play" and self.social_target is not None and not self.social_target.dragging:
                     self.enter_play(self.social_target, role=self.social_role if self.social_role in ("chase", "flee") else None)
@@ -3872,10 +3894,10 @@ class Creature:
             self._update_play(dt, mx, my)
         elif self.state == "Zoom":
             if self.state_timer <= 0.0 or distance(self.x, self.y, self.target_x, self.target_y) < 26.0:
-                if self.zoom_repeats > 0 and random.random() < 0.7:
+                if self.zoom_repeats > 0 and self.rng.random() < 0.7:
                     self.zoom_repeats -= 1
-                    if random.random() < 0.3:
-                        self.enter_spring(after="idle", power=random.uniform(0.7, 1.1))
+                    if self.rng.random() < 0.3:
+                        self.enter_spring(after="idle", power=self.rng.uniform(0.7, 1.1))
                     else:
                         self.enter_zoomies()
                 else:
@@ -3924,7 +3946,7 @@ class Creature:
             # other spiders only mend one that is reasonably close.
             repairable = self.web_world.find_repairable_web(
                 self, max_dist=1e9 if webber else reaction * 1.5)
-            if repairable is not None and random.random() < (0.9 if webber else 0.25):
+            if repairable is not None and self.rng.random() < (0.9 if webber else 0.25):
                 if self._begin_repair(repairable):
                     return True
             # Next, prefer finishing an abandoned, unfinished web -- even one
@@ -3932,7 +3954,7 @@ class Creature:
             # other spiders only adopt one that is reasonably close.
             adoptable = self.web_world.find_adoptable_web(
                 self, max_dist=1e9 if webber else reaction * 1.6)
-            if adoptable is not None and random.random() < (0.85 if webber else 0.22):
+            if adoptable is not None and self.rng.random() < (0.85 if webber else 0.22):
                 if self._begin_adopt(adoptable):
                     return True
             # Otherwise start a brand-new web.  Each finished, intact web already
@@ -3943,7 +3965,7 @@ class Creature:
             satiation = clamp(1.0 - intact * float(self.personality.get("web_satiation_per_web", 0.22)),
                               0.12, 1.0)
             start_chance = ((0.62 + m.curiosity * 0.28) if webber else 0.03) * satiation
-            if random.random() < start_chance:
+            if self.rng.random() < start_chance:
                 if self._begin_weave():
                     return True
 
@@ -3953,7 +3975,7 @@ class Creature:
             walkable = self.web_world.find_walkable_web(self, max_dist=reaction * 1.8)
             if walkable is not None:
                 walk_chance = 0.45 if webber else 0.16 + m.curiosity * 0.2
-                if random.random() < walk_chance:
+                if self.rng.random() < walk_chance:
                     if self._begin_web_walk(walkable):
                         return True
 
@@ -3975,11 +3997,11 @@ class Creature:
                 inspect_w = 0.25 + m.curiosity * 0.8
                 cuddle_w = 0.1 + m.affection * 0.8
                 chance = clamp(0.35 + m.arousal * 0.4 + m.curiosity * 0.3, 0.2, 0.92)
-                if random.random() < chance:
-                    self.social_cooldown = random.uniform(4.0, 8.0)
-                    roll = random.random() * (play_w + inspect_w + cuddle_w)
+                if self.rng.random() < chance:
+                    self.social_cooldown = self.rng.uniform(4.0, 8.0)
+                    roll = self.rng.random() * (play_w + inspect_w + cuddle_w)
                     if roll < play_w:
-                        if d > self.size * 3.0 and m.arousal > 0.45 and random.random() < 0.5:
+                        if d > self.size * 3.0 and m.arousal > 0.45 and self.rng.random() < 0.5:
                             self.enter_aim(mate.x, mate.y, target=mate, after="play", ranging=(0.4, 0.8), abort_chance=0.1)
                         else:
                             self.enter_play(mate)
@@ -3995,25 +4017,25 @@ class Creature:
             mid = dist_to_cursor < reaction * 0.8
 
             # Hunter-ish aim+pounce at the cursor from mid range.
-            if mid and (boldness > 0.6 or m.arousal > 0.6) and random.random() < 0.10 + boldness * 0.30 + m.arousal * 0.2:
+            if mid and (boldness > 0.6 or m.arousal > 0.6) and self.rng.random() < 0.10 + boldness * 0.30 + m.arousal * 0.2:
                 self.enter_aim(mx, my, target=None, after="outcome",
                                ranging=(0.55, 1.2), abort_chance=0.22 - boldness * 0.15)
                 return True
             # Curious lean-in inspection.
-            if mid and m.curiosity > 0.55 and random.random() < 0.18 + m.curiosity * 0.4:
+            if mid and m.curiosity > 0.55 and self.rng.random() < 0.18 + m.curiosity * 0.4:
                 self.enter_inspect(mx, my, target=None)
                 return True
             # Affectionate cuddle when close.
-            if near and m.affection > 0.55 and random.random() < 0.2 + m.affection * 0.5:
+            if near and m.affection > 0.55 and self.rng.random() < 0.2 + m.affection * 0.5:
                 self.enter_cuddle(mx, my, target=None)
                 return True
             # Playful little pounce when close.
-            if near and m.valence > 0.4 and m.arousal > 0.5 and random.random() < 0.25:
+            if near and m.valence > 0.4 and m.arousal > 0.5 and self.rng.random() < 0.25:
                 self.enter_aim(mx, my, target=None, after="outcome",
                                ranging=(0.35, 0.7), abort_chance=0.1)
                 return True
             # Happy little tumble away from the cursor.
-            if near and m.valence > 0.5 and m.arousal > 0.55 and random.random() < 0.12:
+            if near and m.valence > 0.5 and m.arousal > 0.55 and self.rng.random() < 0.12:
                 self.enter_roll(direction=angle_to(self.x, self.y, mx, my) + math.pi)
                 return True
 
@@ -4022,12 +4044,12 @@ class Creature:
         # do not let the generic happy-mood flourish chooser turn a hunter into
         # a roller/zoomies spider between prey sightings.
         if from_idle and not hunter and m.valence > 0.4 and m.arousal > 0.55:
-            r = random.random()
+            r = self.rng.random()
             if r < 0.12:
                 self.enter_roll()
                 return True
             if r < 0.26:
-                self.enter_spring(after="idle", power=random.uniform(0.7, 1.2))
+                self.enter_spring(after="idle", power=self.rng.uniform(0.7, 1.2))
                 return True
             if r < 0.34:
                 self.enter_zoomies()
@@ -4081,11 +4103,11 @@ class Creature:
         """
         if self.web_world is None or self.cage is not None:
             return False
-        prefer_corner = random.random() < float(self.personality.get("web_corner_bias", 0.55))
+        prefer_corner = self.rng.random() < float(self.personality.get("web_corner_bias", 0.55))
         web = self.web_world.claim_site(self, prefer_corner=prefer_corner)
         if web is None:
             # Every site is taken; back off briefly before trying again.
-            self.weave_cooldown = rand_range(self.personality.get("weave_retry_cooldown"), 5.0, 10.0)
+            self.weave_cooldown = rand_range(self.personality.get("weave_retry_cooldown"), 5.0, 10.0, rng=self.rng)
             return False
         self.weaving_web = web
         self.enter_weave_approach()
@@ -4117,12 +4139,12 @@ class Creature:
         self._weave_drawing = False
         # Short cooldown so an interrupted spider does not instantly re-weave.
         self.weave_cooldown = max(self.weave_cooldown,
-                                  rand_range(self.personality.get("weave_retry_cooldown"), 3.5, 7.5))
+                                  rand_range(self.personality.get("weave_retry_cooldown"), 3.5, 7.5, rng=self.rng))
 
     def _finish_weave(self) -> None:
         self.weaving_web = None
         self._weave_drawing = False
-        base = rand_range(self.personality.get("weave_cooldown"), 8.0, 16.0)
+        base = rand_range(self.personality.get("weave_cooldown"), 8.0, 16.0, rng=self.rng)
         self.weave_cooldown = base / (4.0 if self._is_webber_personality() else 1.0)
         self.mood.bump(arousal=-0.05, valence=0.18, affection=0.04)
         self.enter_idle()
@@ -4145,7 +4167,7 @@ class Creature:
             self.web_world.release_repair(self.repairing_web)
         self.repairing_web = None
         self.weave_cooldown = max(self.weave_cooldown,
-                                  rand_range(self.personality.get("weave_retry_cooldown"), 2.5, 5.0))
+                                  rand_range(self.personality.get("weave_retry_cooldown"), 2.5, 5.0, rng=self.rng))
 
     def _finish_repair(self) -> None:
         if self.repairing_web is not None and self.web_world is not None:
@@ -4153,7 +4175,7 @@ class Creature:
         self.repairing_web = None
         # Mending is satisfying but quick to come off cooldown for a webber, so it
         # stays attentive to further damage.
-        base = rand_range(self.personality.get("weave_cooldown"), 8.0, 16.0)
+        base = rand_range(self.personality.get("weave_cooldown"), 8.0, 16.0, rng=self.rng)
         self.weave_cooldown = base / (6.0 if self._is_webber_personality() else 1.5)
         self.mood.bump(valence=0.14, affection=0.05, arousal=-0.04)
         self.enter_idle()
@@ -4267,7 +4289,7 @@ class Creature:
         if web.is_complete():
             # Someone finished it while this spider was on its way over.
             self.weaving_web = None
-            self.weave_cooldown = rand_range(self.personality.get("weave_cooldown"), 6.0, 14.0)
+            self.weave_cooldown = rand_range(self.personality.get("weave_cooldown"), 6.0, 14.0, rng=self.rng)
             self.enter_idle()
             return
         point, _drawing = web.working_point(screen_w=self.screen_w, screen_h=self.screen_h)
@@ -4349,8 +4371,8 @@ class Creature:
         self.state = "WebWalk"
         self.motion_paused = True
         self.speed = 0.0
-        self._web_pluck_count = random.randint(2, 4)
-        self._web_pluck_timer = rand_range(None, 0.25, 0.5)
+        self._web_pluck_count = self.rng.randint(2, 4)
+        self._web_pluck_timer = rand_range(None, 0.25, 0.5, rng=self.rng)
         self.state_timer = 6.0
         self.mood.bump(arousal=0.06, valence=0.05, curiosity=0.05)
 
@@ -4369,9 +4391,9 @@ class Creature:
         self._web_pluck_timer -= dt
         if self._web_pluck_timer <= 0.0:
             if self._web_pluck_count > 0:
-                web.pluck((self.x, self.y), strength=random.uniform(0.6, 1.3))
+                web.pluck((self.x, self.y), strength=self.rng.uniform(0.6, 1.3))
                 self._web_pluck_count -= 1
-                self._web_pluck_timer = rand_range(None, 0.5, 0.95)
+                self._web_pluck_timer = rand_range(None, 0.5, 0.95, rng=self.rng)
                 self.mood.bump(arousal=0.03, valence=0.04, curiosity=0.03)
             else:
                 self._leave_web_walk()
@@ -4381,7 +4403,7 @@ class Creature:
 
     def _leave_web_walk(self) -> None:
         self.web_target = None
-        self.web_walk_cooldown = rand_range(self.personality.get("web_walk_cooldown"), 8.0, 20.0)
+        self.web_walk_cooldown = rand_range(self.personality.get("web_walk_cooldown"), 8.0, 20.0, rng=self.rng)
         self.motion_paused = False
         self.enter_idle()
 
@@ -4437,13 +4459,13 @@ class Creature:
         if self._cursor_is_still_for_observe():
             chance *= 1.55
         chance = clamp(chance + m.arousal * 0.15 + boldness * 0.1, 0.0, 0.97)
-        if random.random() >= chance:
+        if self.rng.random() >= chance:
             return False
         # Pick the shot. The wall shove is a flashier finisher used a little less
         # often when the spider can also trap in place.
         kind = "trap"
         if can_wall and (not can_trap or
-                         random.random() < float(self.personality.get("wall_web_bias", 0.3))):
+                         self.rng.random() < float(self.personality.get("wall_web_bias", 0.3))):
             kind = "wall"
         self.enter_web_aim(mx, my, kind)
         return True
@@ -4473,11 +4495,11 @@ class Creature:
         boldness = clamp(float(self.personality.get("boldness", 0.5)), 0.0, 1.0)
         chance = float(self.personality.get("web_shot_chance", 0.6 if web_shooter else 0.12))
         chance = clamp(chance + self.mood.arousal * 0.15 + boldness * 0.1, 0.0, 0.97)
-        if random.random() >= chance:
+        if self.rng.random() >= chance:
             return False
         kind = "trap"
         if can_wall and (not can_trap or
-                         random.random() < float(self.personality.get("wall_web_bias", 0.3))):
+                         self.rng.random() < float(self.personality.get("wall_web_bias", 0.3))):
             kind = "wall"
         self.enter_web_aim(prey.x, prey.y, kind, prey=prey)
         return True
@@ -4495,10 +4517,10 @@ class Creature:
         self._web_shot_kind = "wall" if kind == "wall" else "trap"
         self._set_focus(mx, my, 1.0)
         self.target_heading = angle_to(self.x, self.y, mx, my)
-        self.state_timer = rand_range(self.personality.get("web_aim_time"), 0.3, 0.58)
+        self.state_timer = rand_range(self.personality.get("web_aim_time"), 0.3, 0.58, rng=self.rng)
         self.range_clock = 0.0
         self.range_mode = "waggle"
-        self.range_switch = random.uniform(0.14, 0.28)
+        self.range_switch = self.rng.uniform(0.14, 0.28)
         self.mood.bump(arousal=0.2, curiosity=0.05)
 
     def _update_web_aim(self, dt: float, mx: float, my: float) -> None:
@@ -4528,7 +4550,7 @@ class Creature:
         self.range_clock += dt
         if self.range_clock >= self.range_switch:
             self.range_clock = 0.0
-            self.range_switch = random.uniform(0.14, 0.28)
+            self.range_switch = self.rng.uniform(0.14, 0.28)
             self.range_mode = "nod" if self.range_mode == "waggle" else "waggle"
             if self.range_mode == "waggle":
                 self.wiggle_burst = max(self.wiggle_burst, 0.6)
@@ -4569,7 +4591,7 @@ class Creature:
         self.state = "WebShot"
         self.motion_paused = True
         self.speed = 0.0
-        self.state_timer = rand_range(self.personality.get("web_recoil_time"), 0.18, 0.3)
+        self.state_timer = rand_range(self.personality.get("web_recoil_time"), 0.18, 0.3, rng=self.rng)
         self.rear = min(1.0, self.rear + 0.4)
         self.wiggle_burst = max(self.wiggle_burst, 0.5)
 
@@ -4588,10 +4610,10 @@ class Creature:
         prey_shot = self._web_shot_prey is not None
         self._web_shot_prey = None
         if fired:
-            base = rand_range(self.personality.get("web_shot_cooldown"), 8.0, 18.0)
+            base = rand_range(self.personality.get("web_shot_cooldown"), 8.0, 18.0, rng=self.rng)
         else:
             # Did not actually fire (blocked/cancelled): retry sooner.
-            base = rand_range(self.personality.get("web_shot_retry_cooldown"), 2.0, 4.5)
+            base = rand_range(self.personality.get("web_shot_retry_cooldown"), 2.0, 4.5, rng=self.rng)
         self.web_shot_cooldown = base / (3.5 if web_shooter else 1.0)
         if prey_shot:
             # After webbing a fly the spider should close in promptly to eat it,
@@ -4660,21 +4682,21 @@ class Creature:
         self.target_heading = angle_to(self.x, self.y, fx, fy)
         self.speed = float(self.personality.get("observe_speed", 44.0)) * self._speed_mult()
 
-        if self.decision_timer <= 0.0 and random.random() < 0.18:
-            self.decision_timer = random.uniform(0.45, 0.9)
-            self.observe_radius = clamp(desired + random.uniform(-self.size * 0.8, self.size * 0.8), lo, hi)
+        if self.decision_timer <= 0.0 and self.rng.random() < 0.18:
+            self.decision_timer = self.rng.uniform(0.45, 0.9)
+            self.observe_radius = clamp(desired + self.rng.uniform(-self.size * 0.8, self.size * 0.8), lo, hi)
 
         if self.state_timer <= 0.0:
             linger = clamp(float(self.personality.get("observe_linger_chance", 0.78)), 0.0, 1.0)
             next_anchor = self._observer_anchor(mx, my)
-            if next_anchor is not None and random.random() < linger:
+            if next_anchor is not None and self.rng.random() < linger:
                 ax, ay, next_target = next_anchor
                 self.enter_observe(ax, ay, next_target)
-                if random.random() < 0.45:
+                if self.rng.random() < 0.45:
                     self.observe_dir *= -1.0
                 return
             self.social_target = None
-            if current < reaction * 0.8 and random.random() < 0.35:
+            if current < reaction * 0.8 and self.rng.random() < 0.35:
                 self.enter_alert(fx, fy)
             else:
                 self.enter_idle()
@@ -4709,15 +4731,15 @@ class Creature:
             self.target_heading = angle_to(self.x, self.y, fx, fy)
             self.wiggle_burst = max(self.wiggle_burst, 0.25)
             # Periodic head tilts and an occasional probing lunge.
-            if self.inspect_clock > random.uniform(0.7, 1.3):
+            if self.inspect_clock > self.rng.uniform(0.7, 1.3):
                 self.inspect_clock = 0.0
-                roll = random.random()
+                roll = self.rng.random()
                 if roll < 0.4:
                     self.inspect_phase = "orbit"
                     self.orbit_clock = 0.0
-                    self.orbit_dir = random.choice((-1.0, 1.0))
+                    self.orbit_dir = self.rng.choice((-1.0, 1.0))
                 elif roll < 0.62:
-                    self.head_tilt = random.uniform(-0.5, 0.5)
+                    self.head_tilt = self.rng.uniform(-0.5, 0.5)
                 elif roll < 0.78:
                     # tiny boop/tap toward the target
                     self.wiggle_burst = 0.6
@@ -4733,14 +4755,14 @@ class Creature:
             self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
             self.target_heading = angle_to(self.x, self.y, fx, fy)
             self.speed = 40.0 * self._speed_mult()
-            if self.orbit_clock > random.uniform(0.8, 1.6):
+            if self.orbit_clock > self.rng.uniform(0.8, 1.6):
                 self.inspect_phase = "study"
                 self.inspect_clock = 0.0
 
         if self.state_timer <= 0.0:
             # Inspection concludes: escalate by mood, or lose interest.
             m = self.mood
-            roll = random.random()
+            roll = self.rng.random()
             if m.affection > 0.6 and roll < 0.35:
                 self.enter_cuddle(fx, fy, target)
             elif m.valence > 0.45 and m.arousal > 0.5 and roll < 0.6:
@@ -4785,7 +4807,7 @@ class Creature:
             self.wiggle_burst = max(self.wiggle_burst, 0.2)
             self.boop_timer -= dt
             if self.boop_timer <= 0.0:
-                self.boop_timer = random.uniform(0.5, 1.0)
+                self.boop_timer = self.rng.uniform(0.5, 1.0)
                 self.wiggle_burst = 0.5
                 self.rear = min(1.0, self.rear + 0.4)
             if d > snug * 2.6:
@@ -4817,7 +4839,7 @@ class Creature:
         self.range_clock += dt
         if self.range_clock >= self.range_switch:
             self.range_clock = 0.0
-            self.range_switch = random.uniform(0.16, 0.32)
+            self.range_switch = self.rng.uniform(0.16, 0.32)
             self.range_mode = "nod" if self.range_mode == "waggle" else "waggle"
             if self.range_mode == "waggle":
                 self.wiggle_burst = max(self.wiggle_burst, 0.7)
@@ -4825,7 +4847,7 @@ class Creature:
                 self.rear = min(1.0, self.rear + 0.5)
 
         if self.state_timer <= 0.0:
-            if random.random() < self.aim_abort_chance:
+            if self.rng.random() < self.aim_abort_chance:
                 # Stand down: did not commit to the leap.
                 self.mood.bump(arousal=-0.1)
                 if self.aim_after == "play" and target is not None:
@@ -4848,7 +4870,7 @@ class Creature:
             self.catch_resolved = True
             d = distance(self.x, self.y, cx, cy)
             got_it = d < self.size * 2.6 and (target is None or (not target.dragging and target in self.neighbors))
-            if got_it and random.random() < 0.6:
+            if got_it and self.rng.random() < 0.6:
                 self.mood.bump(valence=0.28, affection=0.18, arousal=0.1)
                 if target is not None:
                     self.enter_play(target, role="chase")
@@ -4858,7 +4880,7 @@ class Creature:
                 # Missed/escaped: a small frustrated shake, then maybe re-pounce.
                 self.mood.bump(valence=-0.1, arousal=0.18)
                 self.wiggle_burst = 0.8
-                if random.random() < 0.4 and self.mood.arousal > 0.5:
+                if self.rng.random() < 0.4 and self.mood.arousal > 0.5:
                     self.enter_aim(cx, cy, target, after="outcome", ranging=(0.3, 0.6), abort_chance=0.1)
                 else:
                     self.enter_idle()
@@ -4876,8 +4898,8 @@ class Creature:
 
         if self.social_role == "chase":
             self.motion_paused = False
-            self.target_x = target.x + random.uniform(-12.0, 12.0)
-            self.target_y = target.y + random.uniform(-12.0, 12.0)
+            self.target_x = target.x + self.rng.uniform(-12.0, 12.0)
+            self.target_y = target.y + self.rng.uniform(-12.0, 12.0)
             self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
             self.speed = 92.0 * self._speed_mult()
             self.target_heading = angle_to(self.x, self.y, target.x, target.y)
@@ -4885,7 +4907,7 @@ class Creature:
                 # Tag! A happy bounce, then resolve the bout.
                 self.mood.bump(valence=0.22, arousal=0.18)
                 target.mood.bump(valence=0.2, arousal=0.2)
-                roll = random.random()
+                roll = self.rng.random()
                 if roll < 0.45:
                     # Swap roles: the other becomes the chaser, we flee playfully.
                     self.social_role = "flee"
@@ -4903,7 +4925,7 @@ class Creature:
             self.play_lookback -= dt
             if self.play_lookback <= 0.0 and d > contact * 2.5:
                 # Pause and glance back, inviting another chase.
-                self.play_lookback = random.uniform(0.6, 1.2)
+                self.play_lookback = self.rng.uniform(0.6, 1.2)
                 self.speed = 0.0
                 self.target_heading = angle_to(self.x, self.y, target.x, target.y)
                 self.wiggle_burst = 0.4
@@ -4933,7 +4955,7 @@ class Creature:
             # Reset to a fresh burst when movement starts again, rather than
             # unexpectedly beginning inside a pause.
             self._skitter_pause_timer = 0.0
-            self._skitter_burst_timer = min(self._skitter_burst_timer, random.uniform(0.12, 0.24))
+            self._skitter_burst_timer = min(self._skitter_burst_timer, self.rng.uniform(0.12, 0.24))
             return 1.0
         # Do not make low-grip drifting more nervous; that personality already
         # has its own momentum rhythm.
@@ -4950,9 +4972,9 @@ class Creature:
         self._skitter_burst_timer -= dt
         if self._skitter_burst_timer <= 0.0:
             fast_state = self.state in ("Chase", "Retreat", "Startled")
-            self._skitter_pause_timer = random.uniform(0.055, 0.135) if fast_state else random.uniform(0.085, 0.22)
-            self._skitter_burst_timer = random.uniform(0.10, 0.24) if fast_state else random.uniform(0.16, 0.36)
-            self._skitter_burst_jitter = random.uniform(0.94, 1.20)
+            self._skitter_pause_timer = self.rng.uniform(0.055, 0.135) if fast_state else self.rng.uniform(0.085, 0.22)
+            self._skitter_burst_timer = self.rng.uniform(0.10, 0.24) if fast_state else self.rng.uniform(0.16, 0.36)
+            self._skitter_burst_jitter = self.rng.uniform(0.94, 1.20)
             return 0.0
 
         # The burst is not perfectly steady: a tiny internal pulse makes the run
@@ -5242,7 +5264,7 @@ class Creature:
             self.expression_blink = max(0.0, self.expression_blink - dt * 7.0)
         elif self.blink_timer <= 0.0:
             self.expression_blink = 1.0
-            self.blink_timer = random.uniform(2.0, 6.0)
+            self.blink_timer = self.rng.uniform(2.0, 6.0)
 
     def _update_posture(self, dt: float) -> None:
         m = self.mood
@@ -5771,8 +5793,8 @@ class Creature:
             target_f += math.sin(leg.phase_seed) * 0.018 * self.size
             target_s += side * math.cos(leg.phase_seed * 1.37) * 0.012 * self.size
         else:
-            target_f += random.uniform(-0.060, 0.095) * self.size * (0.7 + speed01)
-            target_s += side * random.uniform(-0.040, 0.055) * self.size * (0.6 + speed01 * 0.5)
+            target_f += self.rng.uniform(-0.060, 0.095) * self.size * (0.7 + speed01)
+            target_s += side * self.rng.uniform(-0.040, 0.055) * self.size * (0.6 + speed01 * 0.5)
         tx, ty = self._body_local_to_world(target_f, target_s)
         leg.step_target_x, leg.step_target_y = self._constrain_leg_point(leg, tx, ty)
 
@@ -5803,7 +5825,7 @@ class Creature:
         # Choose the outward side for the swing arc.
         if nx * out_x + ny * out_y < 0.0:
             nx, ny = -nx, -ny
-        arc = clamp(path_len * random.uniform(0.22, 0.36), self.size * 0.12, self.size * 0.56)
+        arc = clamp(path_len * self.rng.uniform(0.22, 0.36), self.size * 0.12, self.size * 0.56)
         if self._uses_skitter_gait():
             arc *= 0.78
         leg.step_control_x = mid_x + nx * arc
@@ -5865,9 +5887,9 @@ class Creature:
                         # two tetrapod windows.
                         leg.step_cooldown = leg.step_duration * spider_gait["refractory_fraction"]
                     elif self._uses_skitter_gait():
-                        leg.step_cooldown = random.uniform(0.012, 0.045) * (1.08 - speed01 * 0.36)
+                        leg.step_cooldown = self.rng.uniform(0.012, 0.045) * (1.08 - speed01 * 0.36)
                     else:
-                        leg.step_cooldown = random.uniform(0.035, 0.095) * (1.15 - speed01 * 0.45)
+                        leg.step_cooldown = self.rng.uniform(0.035, 0.095) * (1.15 - speed01 * 0.45)
 
     def _update_legs(self, dt: float) -> None:
         """Update spider legs using leg-level coordination instead of locked groups.
@@ -5952,7 +5974,7 @@ class Creature:
         emergency_slots = max(0, max_swinging - swinging_now)
         for _, i, leg, ix, iy in emergency_candidates[:emergency_slots]:
             self._schedule_step(leg, ix, iy, delay=0.0, force_fast=True)
-            leg.step_cooldown = random.uniform(0.020, 0.055)
+            leg.step_cooldown = self.rng.uniform(0.020, 0.055)
             swinging_now += 1
 
         if hold_still:
@@ -5980,7 +6002,7 @@ class Creature:
                 dist = max(dist, abs(local_f - rest_f) * 0.34 + threshold + self.size * 0.08)
 
             urgency = dist / max(1.0, threshold)
-            if urgency <= 1.0 and not (not moving and random.random() < 0.012):
+            if urgency <= 1.0 and not (not moving and self.rng.random() < 0.012):
                 continue
 
             # Bias toward alternating tetrapod timing, but do not enforce it.  Each
@@ -6010,7 +6032,7 @@ class Creature:
 
             # Slightly favor the most stale planted foot, so pairs do not remain
             # frozen just because another leg in the old group moved recently.
-            urgency += random.uniform(-0.10, 0.18)
+            urgency += self.rng.uniform(-0.10, 0.18)
             if urgency > 1.0:
                 candidates.append((urgency, i, leg, ix, iy))
 
@@ -6035,9 +6057,9 @@ class Creature:
             local_ix += side_sign * turn_bias * self.size * 0.035
             ix, iy = self._body_local_to_world(local_ix, local_iy)
             fast_footwork = (self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun") or drifting_fast) and not sliding
-            delay = random.uniform(0.030, 0.120) if sliding else random.uniform(0.000, 0.040 if fast_footwork else 0.070)
+            delay = self.rng.uniform(0.030, 0.120) if sliding else self.rng.uniform(0.000, 0.040 if fast_footwork else 0.070)
             self._schedule_step(leg, ix, iy, delay=delay, force_fast=fast_footwork)
-            leg.step_cooldown = random.uniform(0.070, 0.160) if sliding else random.uniform(0.025, 0.070)
+            leg.step_cooldown = self.rng.uniform(0.070, 0.160) if sliding else self.rng.uniform(0.025, 0.070)
             used_indices.add(i)
             scheduled_count += 1
             started = True
@@ -6046,12 +6068,12 @@ class Creature:
         if not started and self.current_speed < 2.0 and self.idle_twitch_timer <= 0.0:
             idle_candidates = [leg for leg in self.legs if not leg.stepping and not leg.pending_step]
             if idle_candidates:
-                leg = random.choice(idle_candidates)
+                leg = self.rng.choice(idle_candidates)
                 ix, iy = self._leg_ideal_foot(leg)
                 # Tiny independent toe probe, not a whole-group twitch.
-                self._schedule_step(leg, ix + random.uniform(-3.2, 3.2), iy + random.uniform(-3.2, 3.2), force_fast=False)
+                self._schedule_step(leg, ix + self.rng.uniform(-3.2, 3.2), iy + self.rng.uniform(-3.2, 3.2), force_fast=False)
                 started = True
-            self.idle_twitch_timer = random.uniform(0.75, 2.0)
+            self.idle_twitch_timer = self.rng.uniform(0.75, 2.0)
 
         if started:
             self.turn_rehome_pressure = max(0.0, self.turn_rehome_pressure - 0.18)
@@ -6344,7 +6366,7 @@ class Creature:
         broken_candidates.sort(reverse=True, key=lambda it: it[0])
         for _, i, leg, ix, iy in broken_candidates[:max(0, max_air - swinging_now)]:
             self._schedule_step(leg, ix, iy, delay=0.0, force_fast=True)
-            leg.step_cooldown = random.uniform(0.010, 0.032) if skitter else random.uniform(0.02, 0.05)
+            leg.step_cooldown = self.rng.uniform(0.010, 0.032) if skitter else self.rng.uniform(0.02, 0.05)
             swinging_now += 1
 
         # Feeler probing runs whether or not the body is moving.
@@ -6417,11 +6439,11 @@ class Creature:
             if any(abs(i - j) in (1, 2) for j in used):
                 continue
             if skitter:
-                delay = random.uniform(0.0, 0.010 if fast_state else 0.020)
-                cooldown = random.uniform(0.012, 0.044)
+                delay = self.rng.uniform(0.0, 0.010 if fast_state else 0.020)
+                cooldown = self.rng.uniform(0.012, 0.044)
             else:
-                delay = random.uniform(0.0, 0.02 if fast_state else 0.05)
-                cooldown = random.uniform(0.04, 0.10)
+                delay = self.rng.uniform(0.0, 0.02 if fast_state else 0.05)
+                cooldown = self.rng.uniform(0.04, 0.10)
             self._schedule_step(leg, ix, iy, delay=delay, force_fast=fast_state or skitter)
             leg.step_cooldown = cooldown
             used.add(i)
@@ -6481,9 +6503,9 @@ class Creature:
             self._feeler_pulse = 0.0
             self._feeler_clock -= dt
             if self._feeler_clock <= 0.0:
-                self._feeler_pulse_dur = random.uniform(0.45, 0.85)
+                self._feeler_pulse_dur = self.rng.uniform(0.45, 0.85)
                 self._feeler_pulse_t = self._feeler_pulse_dur
-                self._feeler_clock = random.uniform(0.5, 1.5)
+                self._feeler_clock = self.rng.uniform(0.5, 1.5)
 
         if self._feeler_pulse > 0.001:
             # Reach the front legs toward the object and let the palps probe it.
