@@ -778,14 +778,46 @@ slower; `--update-baseline` records a new one. A baseline only applies to the
 machine it was recorded on, so it is compared against a hardware fingerprint and
 skipped rather than failed elsewhere.
 
-**What the first measurement found.** Drawing the spiders is about 79 % of a
-frame and scales linearly with the colony, at roughly 1.8 ms per spider. Ten
-spiders cost about 23 ms per frame against a 16.7 ms budget at 60 FPS, which is
-why ten is where it starts to stutter. Simulating them is only about a fifth of
-that. Webs, flies, jobs, behaviour scheduling and desktop probing together
-account for under 0.05 ms, and the repaint region at ten spiders still covers
-only about 16 % of the screen, so this is not a pixel-count problem and not a
-behaviour-scheduling one.
+**What the measurement found.** Drawing the spiders is about four fifths of a
+frame and scales linearly with the colony. Ten spiders cost about 23 ms per
+frame against a 16.7 ms budget at 60 FPS, which is why ten was where it started
+to stutter. Simulating them is only about a fifth of that. Webs, flies, jobs,
+behaviour scheduling and desktop probing together account for under 0.05 ms,
+and the repaint region at ten spiders still covers only about 16 % of the
+screen, so this was never a pixel-count problem and never a behaviour-scheduling
+one.
+
+Profiling inside the drawing found the cost was not Qt but Python recomputing
+answers it already had. The gait tuning -- a thirty-key table of bounded values
+read straight out of the model -- was rebuilt about **seventy-two times per
+spider per frame**. The heading's forward and right vectors, four trigonometric
+calls, were recomputed about **460 times per spider per frame**. Every leg chain
+was solved **twice**: once for the leg, once for the sockets and knuckles drawn
+over it, from identical inputs.
+
+Caching those, plus the palette colours and the leg reach limits, made a frame
+about **21 % cheaper** with no change at all to what is drawn:
+
+| spiders | before | after |
+| --- | --- | --- |
+| 1 | 2.23 ms | 1.75 ms |
+| 4 | 8.99 ms | 7.09 ms |
+| 10 | 22.11 ms | 17.56 ms |
+| 20 | 44.36 ms | 35.26 ms |
+
+Both columns come from one paired run on the same machine, with the old and new
+`creature.py` swapped in turn, because two measurements taken minutes apart vary
+by a few percent and a mixed table would flatter the result.
+
+Ten spiders now run at roughly 57 FPS rather than 45. That is close to the
+16.7 ms budget but not inside it, so a large colony on a slower machine will
+still drop frames; the remaining cost is the draw calls themselves and the leg
+solver, and reducing those means either batching the drawing or simplifying how
+a spider looks when several are on screen.
+
+"Faster" here means *only* faster: the identity is checked by rendering the same
+seeded run twice, once with every cache disabled, and comparing the images pixel
+by pixel.
 
 ### Frame rate that follows the machine
 

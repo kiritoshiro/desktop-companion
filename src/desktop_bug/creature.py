@@ -138,6 +138,19 @@ class Creature:
         job_id: str = "none",
     ):
         self.model = model
+        # (model, config) for _spider_gait_config, which is otherwise the
+        # most expensive call in a frame. Keyed on the model object so a
+        # swapped model rebuilds rather than serving a stale gait.
+        self._gait_config_cache = None
+        # (heading, basis) and (camouflage signature, {key: rgb}). Both are pure
+        # caches of values recomputed hundreds of times per frame; see the
+        # methods that use them for why each key is the right one.
+        self._basis_cache = None
+        self._qcolor_cache = None
+        # Leg chain solves for the frame being drawn, cleared by `render`.
+        self._chain_points_cache: dict = {}
+        self._reach_cache: dict = {}
+        self._triplet_cache = None
         self.personality = personality
         self.skills = SkillSet(
             skills if skills is not None else default_skills_for_personality(personality)
@@ -547,16 +560,40 @@ class Creature:
     # Geometry helpers
     # ------------------------------------------------------------------
     def _basis(self) -> Tuple[float, float, float, float]:
-        fx = math.cos(self.heading)
-        fy = math.sin(self.heading)
-        # Screen-space right vector. At heading 0, right points downward.
-        rx = -math.sin(self.heading)
-        ry = math.cos(self.heading)
-        return fx, fy, rx, ry
+        """Forward and right unit vectors for the current heading.
 
-    @staticmethod
-    def _side_sign(side: str) -> float:
-        return -1.0 if str(side).lower().startswith("l") else 1.0
+        Measured at about 460 calls per spider per frame, which is four
+        trigonometric functions each time for a heading that only changes once
+        per update. Cached on the heading value itself, so a changed heading
+        recomputes and there is no way to serve a stale basis.
+        """
+        heading = self.heading
+        cached = self._basis_cache
+        if cached is not None and cached[0] == heading:
+            return cached[1]
+        fx = math.cos(heading)
+        fy = math.sin(heading)
+        # Screen-space right vector. At heading 0, right points downward.
+        basis = (fx, fy, -fy, fx)
+        self._basis_cache = (heading, basis)
+        return basis
+
+    # Leg definitions carry a handful of distinct side strings, and this is
+    # asked about 270 times per spider per frame, so the string work is done
+    # once per distinct value rather than once per call.
+    _SIDE_SIGNS: dict = {}
+
+    @classmethod
+    def _side_sign(cls, side: str) -> float:
+        try:
+            return cls._SIDE_SIGNS[side]
+        except (KeyError, TypeError):
+            sign = -1.0 if str(side).lower().startswith("l") else 1.0
+            try:
+                cls._SIDE_SIGNS[side] = sign
+            except TypeError:
+                pass
+            return sign
 
     def _world_to_body_local(self, x: float, y: float) -> Tuple[float, float]:
         fx, fy, rx, ry = self._basis()
@@ -639,7 +676,15 @@ class Creature:
         version used this value inside foot target placement, which made the rear
         legs freeze because their valid rest lane was being clipped too tightly.
         Keep it generous for scheduling and a little tighter only for rendering.
+
+        Pure in the leg definition and the body size, and asked about fifty
+        times per spider per frame, so it is cached on exactly those. A spider
+        that grows a level changes its size and the cache misses.
         """
+        cache_key = (id(leg), visual, self.size)
+        cached = self._reach_cache.get(cache_key)
+        if cached is not None:
+            return cached
         d = leg.definition
         reach = max(self.size * 0.85, float(d.get("reach", 1.8)) * self.size)
         upper = max(self.size * 0.22, float(d.get("upper_len", 0.85)) * self.size)
@@ -655,7 +700,13 @@ class Creature:
         chain_limit = (upper + lower) * (1.08 if visual else 1.18)
         target_limit = reach * (1.04 if visual else 1.14)
         rest_allowance = rest_dist * (1.18 if visual else 1.30)
-        return max(min(chain_limit, target_limit), rest_allowance, self.size * 0.92)
+        reach_limit = max(min(chain_limit, target_limit), rest_allowance, self.size * 0.92)
+        if len(self._reach_cache) > 64:
+            # Bounded: a size that changes every frame would otherwise grow this
+            # without limit, and only the current size is ever asked about.
+            self._reach_cache.clear()
+        self._reach_cache[cache_key] = reach_limit
+        return reach_limit
 
     def _leg_reach_metrics(self, leg: LegState, x: float, y: float, visual: bool = False) -> Tuple[float, float, bool, bool]:
         ax, ay = self._leg_attach(leg)
@@ -802,7 +853,21 @@ class Creature:
         The existing lively/skitter scheduler is shared by many creatures.  A
         sprite model can opt in to a more grounded spider stride without
         changing the legacy gait of unrelated models.
+
+        Cached, because this is a pure function of the model's appearance block
+        and was the single most expensive thing in a frame: measured at 72 calls
+        per spider per frame, each rebuilding a thirty-key dictionary through
+        thirty `clamp(float(...))` calls. The cache is keyed on the identity of
+        the model dict, so swapping a creature's model still rebuilds it.
         """
+        cached = self._gait_config_cache
+        if cached is not None and cached[0] is self.model:
+            return cached[1]
+        config = self._build_spider_gait_config()
+        self._gait_config_cache = (self.model, config)
+        return config
+
+    def _build_spider_gait_config(self):
         raw = self._appearance("spider_gait", None)
         if not isinstance(raw, dict) or not bool(raw.get("enabled", False)):
             return None
@@ -6387,8 +6452,29 @@ class Creature:
     # Rendering
     # ------------------------------------------------------------------
     def _qcolor(self, key: str, alpha: int = 255):
+        """A painting colour for one palette slot, blended toward camouflage.
+
+        Asked about 100 times per spider per frame. The blended integer triple
+        is cached per palette key and thrown away whenever the camouflage state
+        changes, so a camouflaging spider still recomputes every frame and a
+        spider that is simply walking about does not. A fresh QColor is still
+        built each call rather than a shared one being handed out, because a
+        caller that mutated it would corrupt every later frame.
+        """
         from PyQt5.QtGui import QColor
 
+        signature = (self._camouflage_color, self._camouflage_strength)
+        cache = self._qcolor_cache
+        if cache is None or cache[0] != signature:
+            cache = (signature, {})
+            self._qcolor_cache = cache
+        triple = cache[1].get(key)
+        if triple is None:
+            triple = self._blend_palette_color(key)
+            cache[1][key] = triple
+        return QColor(triple[0], triple[1], triple[2], alpha)
+
+    def _blend_palette_color(self, key: str) -> tuple:
         raw = self.colors.get(key, [35, 30, 25])
         rgb = [float(raw[0]), float(raw[1]), float(raw[2])]
         camo = getattr(self, "_camouflage_color", None)
@@ -6397,7 +6483,7 @@ class Creature:
         if camo is not None and strength > 0.001 and color_blend > 0.001:
             blend = strength * color_blend * (0.72 if key == "eyes" else 0.96 if key == "highlight" else 1.0)
             rgb = [rgb[i] * (1.0 - blend) + float(camo[i]) * blend for i in range(3)]
-        return QColor(int(clamp(rgb[0], 0, 255)), int(clamp(rgb[1], 0, 255)), int(clamp(rgb[2], 0, 255)), alpha)
+        return (int(clamp(rgb[0], 0, 255)), int(clamp(rgb[1], 0, 255)), int(clamp(rgb[2], 0, 255)))
 
     def _appearance(self, key: str, default):
         return self.model.get("appearance", {}).get(key, default)
@@ -6411,8 +6497,28 @@ class Creature:
         return self._appearance(key, self.colors.get(fallback_key, [120, 80, 60]))
 
     def _qcolor_triplet(self, rgb, alpha: int = 255):
+        """Same as `_qcolor`, for a colour that is not in the palette.
+
+        Cached the same way and for the same reason: about fifty calls per
+        spider per frame, nearly all of them repeats of a handful of accents.
+        """
         from PyQt5.QtGui import QColor
 
+        key = (float(rgb[0]), float(rgb[1]), float(rgb[2]))
+        signature = (self._camouflage_color, self._camouflage_strength)
+        cache = self._triplet_cache
+        if cache is None or cache[0] != signature:
+            cache = (signature, {})
+            self._triplet_cache = cache
+        blended = cache[1].get(key)
+        if blended is None:
+            blended = self._blend_triplet(key)
+            if len(cache[1]) > 128:
+                cache[1].clear()
+            cache[1][key] = blended
+        return QColor(blended[0], blended[1], blended[2], alpha)
+
+    def _blend_triplet(self, rgb) -> tuple:
         out = [float(rgb[0]), float(rgb[1]), float(rgb[2])]
         camo = getattr(self, "_camouflage_color", None)
         strength = clamp(float(getattr(self, "_camouflage_strength", 0.0)), 0.0, 1.0)
@@ -6420,7 +6526,7 @@ class Creature:
         if camo is not None and strength > 0.001 and color_blend > 0.001:
             blend = strength * color_blend * 0.92
             out = [out[i] * (1.0 - blend) + float(camo[i]) * blend for i in range(3)]
-        return QColor(int(clamp(out[0], 0, 255)), int(clamp(out[1], 0, 255)), int(clamp(out[2], 0, 255)), alpha)
+        return (int(clamp(out[0], 0, 255)), int(clamp(out[1], 0, 255)), int(clamp(out[2], 0, 255)))
 
     def _load_sprite_assets(self):
         from PyQt5.QtGui import QPixmap
@@ -6594,6 +6700,12 @@ class Creature:
                                  fx: float, fy: float, chain_config: dict):
         """Solve a bounded four- or five-segment leg as one coordinated chain.
 
+        Memoised for the frame being drawn. A procedural spider solves every leg
+        twice per frame -- once for the leg itself and once for the sockets and
+        knuckles drawn over it -- from identical inputs. The key is those exact
+        inputs, so a cached answer is the answer the solve would have produced,
+        and a copy is handed out so a caller cannot corrupt the second use.
+
         The old renderer solved one large outward knee and then subdivided the
         remaining line.  That made the extra knuckle decorative: all joints
         inherited the same forced bow, and a long foot catch could stretch the
@@ -6602,6 +6714,11 @@ class Creature:
         chain solve. The root and foot stay fixed while every knuckle receives
         its own anatomical length limit.
         """
+        cache_key = (id(leg), ax, ay, fx, fy)
+        cached = self._chain_points_cache.get(cache_key)
+        if cached is not None:
+            return list(cached)
+
         a_f, a_s = self._world_to_body_local(ax, ay)
         f_f, f_s = self._world_to_body_local(fx, fy)
         direct = max(1e-4, math.hypot(f_f - a_f, f_s - a_s))
@@ -6764,7 +6881,8 @@ class Creature:
             extra = max(1e-4, path_len - direct)
             bend_scale = clamp((path_budget - direct) / extra, 0.0, 1.0)
             points, _ = build(bend_scale)
-        return points
+        self._chain_points_cache[cache_key] = points
+        return list(points)
 
     def _draw_sprite_segment(self, painter, pixmap, x1: float, y1: float, x2: float, y2: float, thickness: float, opacity: float = 1.0):
         from PyQt5.QtCore import QRectF
@@ -8230,6 +8348,10 @@ class Creature:
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
 
     def render(self, painter, always_show_names: bool = False) -> None:
+        # One frame's worth of solved leg chains. Cleared here rather than
+        # grown forever, because the key includes foot positions that change
+        # every frame and would otherwise never be looked up again.
+        self._chain_points_cache.clear()
         render_mode = str(self.model.get("render_mode", "procedural")).lower()
         camouflage_strength = clamp(float(getattr(self, "_camouflage_strength", 0.0)), 0.0, 1.0)
         camouflage_opacity = clamp(1.0 - camouflage_strength * float(self.personality.get("camouflage_opacity_drop", 0.72)), 0.12, 1.0)
