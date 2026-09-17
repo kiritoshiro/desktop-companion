@@ -1,0 +1,30 @@
+{
+  "machine": "AMD64|AMD64 Family 26 Model 68 Stepping 0, AuthenticAMD|32 cores|py3.13",
+  "note": "DC-12 first measurement, before any DC-35 optimisation",
+  "screen": [
+    2560,
+    1440
+  ],
+  "runs": {
+    "1": {
+      "mean_ms": 2.19,
+      "p95_ms": 2.679,
+      "repaint_fraction_mean": 0.0152
+    },
+    "5": {
+      "mean_ms": 11.406,
+      "p95_ms": 14.101,
+      "repaint_fraction_mean": 0.0872
+    },
+    "10": {
+      "mean_ms": 23.111,
+      "p95_ms": 27.728,
+      "repaint_fraction_mean": 0.156
+    },
+    "20": {
+      "mean_ms": 46.453,
+      "p95_ms": 51.534,
+      "repaint_fraction_mean": 0.2094
+    }
+  }
+}

@@ -38,6 +38,8 @@ from .manager import CreatureManager
 from .preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos
 from .desktop_environment import snapshot_desktop_surfaces
+from .frame_policy import FramePolicy
+from .profiling import hud_requested, profiler_from_env
 from .skills import SKILLS
 from .progression import ABILITY_TREE, ARMOR_CATALOG, TEAM_OPTIONS, xp_to_next_level
 from .jobs import job_definition
@@ -419,7 +421,17 @@ class OverlayWindow(QWidget):
         # cage repaints its whole old area and leaves no translucent ghost behind.
         self._cage_fp_prev = {}
 
+        # Measurement, off unless DESKTOP_BUG_PROFILE asks for it. Held on the
+        # window so the tray menu and the HUD can read the same numbers the
+        # manager is recording into.
+        self.profiler = profiler_from_env()
+        self.show_profile_hud = hud_requested()
+
         self.current_fps = TARGET_FPS
+        # A fullscreen window in front means nothing the overlay draws can be
+        # seen, and a laptop on battery should not be paying for a pet at 60 Hz.
+        # The policy owns the ceiling; the tray menu sets the target it works from.
+        self.frame_policy = FramePolicy(TARGET_FPS)
         self.timer = QTimer(self)
         self.timer.setTimerType(Qt.PreciseTimer)
         self.timer.timeout.connect(self.tick)
@@ -437,8 +449,17 @@ class OverlayWindow(QWidget):
         QTimer.singleShot(250, lambda: apply_click_through(self))
 
     def set_target_fps(self, fps: float) -> None:
-        """Change animation FPS at runtime from the tray menu."""
-        self.current_fps = max(10.0, min(60.0, float(fps)))
+        """Change animation FPS at runtime from the tray menu.
+
+        This sets the ceiling rather than the rate: if a fullscreen window is in
+        front or the machine is on battery, the policy still runs slower than
+        what was asked for, and restores this rate when that stops being true.
+        """
+        target = max(10.0, min(60.0, float(fps)))
+        self._apply_fps(self.frame_policy.set_target_fps(target))
+
+    def _apply_fps(self, fps: float) -> None:
+        self.current_fps = max(1.0, float(fps))
         self.timer.setInterval(_frame_interval_ms_for_fps(self.current_fps))
         # Reset timing so switching FPS does not produce one large simulation step.
         self.last_ms = self.elapsed.elapsed()
@@ -599,9 +620,16 @@ class OverlayWindow(QWidget):
         return super().nativeEvent(event_type, message)
 
     def tick(self) -> None:
+        self.profiler.begin_frame()
         current_ms = self.elapsed.elapsed()
         dt = max(0.001, min(0.05, (current_ms - self.last_ms) / 1000.0))
         self.last_ms = current_ms
+        # Ask, a couple of times a second, whether this machine still deserves
+        # the full frame rate. `poll` returns a number only when it changed.
+        decided = self.frame_policy.poll(current_ms, exclude_hwnd=self._own_hwnd())
+        if decided is not None:
+            log.info("frame rate now %.0f FPS (%s)", decided, self.frame_policy.reason)
+            self._apply_fps(decided)
         # Checking monitor geometry every frame is unnecessary work; it only
         # needs to react when displays are added/removed or resolution changes.
         if current_ms - self._last_screen_check_ms >= SCREEN_GEOMETRY_CHECK_MS:
@@ -615,7 +643,10 @@ class OverlayWindow(QWidget):
                 self._request_full_repaint()
         if current_ms - self._last_desktop_surface_check_ms >= DESKTOP_SURFACE_CHECK_MS:
             self._last_desktop_surface_check_ms = current_ms
-            self._refresh_desktop_surfaces()
+            # Timed separately because it still runs on the frame thread; DC-13
+            # is the package that moves it off, and this is the evidence for it.
+            with self.profiler.section("desktop-probe"):
+                self._refresh_desktop_surfaces()
         if current_ms - self._last_preset_check_ms >= PRESET_WATCH_MS:
             self._last_preset_check_ms = current_ms
             if self._check_stop_request():
@@ -646,7 +677,18 @@ class OverlayWindow(QWidget):
             set_cursor_pos(int(round(origin.x() + desired[0])),
                            int(round(origin.y() + desired[1])))
         self._update_hover_and_cursor(mx, my)
-        self.request_repaint()
+        with self.profiler.section("repaint-region"):
+            self.request_repaint()
+        # Painting happens after this returns, when Qt delivers the paint event,
+        # so it records a sample of its own rather than joining this frame.
+        self.profiler.end_frame()
+
+    def _own_hwnd(self):
+        """This overlay's window handle, or None where there is not one."""
+        try:
+            return int(self.winId())
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Hover labels and cursor feedback
@@ -777,9 +819,17 @@ class OverlayWindow(QWidget):
         if fly_world is not None:
             for fp in fly_world.dirty_rects():
                 region += self._rect_from_xywh(fp)
+        if self.show_profile_hud:
+            # The HUD changes every frame, so its panel has to be exposed every
+            # frame or the old numbers stay on the backing store underneath.
+            region += self._hud_rect()
         return region
 
     def paintEvent(self, event):  # noqa: N802 - Qt API name
+        with self.profiler.section("paint"):
+            self._paint(event)
+
+    def _paint(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         # Clip to the exposed region so the manager can cull off-region spiders
@@ -803,7 +853,45 @@ class OverlayWindow(QWidget):
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
         self.manager.render(painter)
+        if self.show_profile_hud:
+            self._draw_profile_hud(painter)
         painter.end()
+
+    # The HUD is a debugging aid, not a feature: it only exists while
+    # DESKTOP_BUG_PROFILE is set, and it is what makes a claim about frame cost
+    # checkable while you watch the overlay rather than only in a benchmark.
+    HUD_ORIGIN = (24, 24)
+    HUD_LINE_HEIGHT = 15
+    HUD_WIDTH = 260
+    # Room for the header line plus every section the HUD will show.
+    HUD_MAX_LINES = 9
+
+    def _hud_rect(self) -> QRect:
+        left, top = self.HUD_ORIGIN
+        return QRect(left - 8, top - 8, self.HUD_WIDTH,
+                     self.HUD_LINE_HEIGHT * self.HUD_MAX_LINES + 14)
+
+    def _hud_header(self) -> str:
+        return (f"{len(self.manager.creatures)} spiders @ {self.current_fps:.0f} FPS"
+                f" ({self.frame_policy.reason})")
+
+    def _draw_profile_hud(self, painter) -> None:
+        lines = self.profiler.hud_lines()
+        if not lines:
+            return
+        lines = [self._hud_header()] + lines
+        left, top = self.HUD_ORIGIN
+        painter.save()
+        painter.setClipping(False)
+        painter.fillRect(self._hud_rect(), QColor(0, 0, 0, 170))
+        font = painter.font()
+        font.setFamily("Consolas")
+        font.setPointSizeF(8.5)
+        painter.setFont(font)
+        painter.setPen(QColor(210, 255, 210))
+        for i, line in enumerate(lines):
+            painter.drawText(left, top + 4 + self.HUD_LINE_HEIGHT * (i + 1), line)
+        painter.restore()
 
     # ------------------------------------------------------------------
     # Right-click: name spiders and manage cages
@@ -1053,7 +1141,9 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     for label, fps in fps_options:
         action = performance_menu.addAction(label)
         action.setCheckable(True)
-        action.setChecked(abs(window.current_fps - fps) <= 2.0)
+        # Check the rate the user chose, not the one the policy may have
+        # throttled to, so a fullscreen game does not appear to move the tick.
+        action.setChecked(abs(window.frame_policy.target_fps - fps) <= 2.0)
         fps_group.addAction(action)
         action.triggered.connect(lambda checked=False, f=fps, text=label: (window.set_target_fps(f), announce(f"Performance set to {text}.")))
     add_note(performance_menu, "Tip: fewer/lower-size spiders matter more than FPS.")

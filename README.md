@@ -452,6 +452,7 @@ DesktopBugCompanion/
       discovery.py
       engine.py
       flies.py
+      frame_policy.py
       jobs.py
       logging_setup.py
       manager.py
@@ -462,6 +463,7 @@ DesktopBugCompanion/
       personality_profiles.py
       phase_scheduler.py
       preset_io.py
+      profiling.py
       progression.py
       runtime_state.py
       session_control.py
@@ -484,9 +486,12 @@ DesktopBugCompanion/
     tarantula.json
 
   tools/
+    benchmark.py             # frame cost at 1/5/10/20 spiders
+    benchmark_baseline.json  # what a frame cost before any optimisation
+    run_all_checks.py        # everything CI runs, in one command
     validate_model.py
     validate_preset.py
-    <name>_smoke.py          # 18 headless checks, all run by CI
+    <name>_smoke.py          # 24 headless checks, all run by CI
 ```
 
 ## Add a new creature model
@@ -700,6 +705,52 @@ DesktopBugCompanion.exe
 ```
 
 Leave `DESKTOP_BUG_FAST_PIXMAPS` off unless you are testing speed and can accept lower quality sprite rendering.
+
+### Measuring, instead of guessing
+
+Until recently nothing in the frame loop was timed, so every explanation for why
+a larger colony feels heavy was a hunch. It is now measured.
+
+Set `DESKTOP_BUG_PROFILE=1` to time each system per frame, and a small HUD
+appears in the top-left corner showing the frame cost, the costliest systems and
+the rate the overlay is running at. `DESKTOP_BUG_PROFILE_HUD=0` keeps the timing
+and hides the panel. Both are off by default.
+
+Leaving the instrumentation in the code costs about 0.07 ms per frame with ten
+spiders when profiling is off, which is smaller than the run-to-run variation of
+the measurement itself, so treat it as free rather than as zero. Switching it on
+costs about 0.4 ms per frame at that colony size.
+
+To measure without running the overlay at all:
+
+```bat
+python tools/benchmark.py
+```
+
+It runs the real manager and the real painter headless at 1, 5, 10 and 20
+spiders and prints where the time goes. `--check` compares against
+`tools/benchmark_baseline.json` and fails if a colony size got more than 15 %
+slower; `--update-baseline` records a new one. A baseline only applies to the
+machine it was recorded on, so it is compared against a hardware fingerprint and
+skipped rather than failed elsewhere.
+
+**What the first measurement found.** Drawing the spiders is about 79 % of a
+frame and scales linearly with the colony, at roughly 1.8 ms per spider. Ten
+spiders cost about 23 ms per frame against a 16.7 ms budget at 60 FPS, which is
+why ten is where it starts to stutter. Simulating them is only about a fifth of
+that. Webs, flies, jobs, behaviour scheduling and desktop probing together
+account for under 0.05 ms, and the repaint region at ten spiders still covers
+only about 16 % of the screen, so this is not a pixel-count problem and not a
+behaviour-scheduling one.
+
+### Frame rate that follows the machine
+
+A desktop pet painting at 60 FPS behind a fullscreen game, or on a laptop
+running off its battery, is being a bad guest. The overlay now drops to 10 FPS
+while a fullscreen window has the foreground, and to 30 FPS on battery, and
+returns to the rate you chose when that stops being true. The tray **Performance**
+menu sets the ceiling it works from, so your choice is remembered rather than
+overwritten.
 
 ### Partial-repaint efficiency
 

@@ -28,6 +28,7 @@ from .math_utils import distance
 from .progression import RELATIONS, normalize_team_stances
 from .jobs import BaseWorld, job_ability_ids, normalize_job_id
 from .personality_profiles import COMPACT_TEMPERAMENT_IDS
+from .profiling import get_profiler
 from .runtime_state import (
     build_payload,
     evict,
@@ -1358,30 +1359,44 @@ class CreatureManager:
             self._neighbor_refresh_accum = 0.0
             self._refresh_neighbor_links()
 
+        # Every system below is timed so the cost of a frame can be attributed
+        # instead of guessed at. `get_profiler()` returns a do-nothing object
+        # unless DESKTOP_BUG_PROFILE asked for measurement.
+        profiler = get_profiler()
+
         # Decide which fly (if any) each spider is hunting this frame.
-        self._update_prey_targets(dt)
+        with profiler.section("behaviour"):
+            self._update_prey_targets(dt)
         # Jobs publish their per-frame work intent before the Creature FSM runs:
         # builders travel/build, guards patrol/raise alerts, and personality
         # remains free to describe *how* that work looks.
-        self.base_world.update(dt, self.creatures)
+        with profiler.section("jobs"):
+            self.base_world.update(dt, self.creatures)
         # Base construction advances continuously, so it uses the same debounced
         # save as feeding instead of only being persisted on quit.
         if any(getattr(creature, "job_mode", "idle") == "build" for creature in self.creatures):
             self.mark_runtime_state_dirty()
         self._flush_runtime_state(dt)
 
+        # Hoisted out of the loop: the span objects are reused, so timing ten
+        # spiders costs ten clock reads per system rather than ten lookups too.
+        desktop_span = profiler.section("desktop")
+        creatures_span = profiler.section("creatures")
         for creature in self.creatures:
             has_prey = getattr(creature, "_prey", None) is not None
-            # A spider locked onto a fly should not wander off behind a window.
-            if not has_prey:
-                self._maybe_seek_desktop_cover(creature, dt)
-            if self._is_fully_hidden(creature) and not creature.dragging:
+            with desktop_span:
+                # A spider locked onto a fly should not wander off behind a window.
+                if not has_prey:
+                    self._maybe_seek_desktop_cover(creature, dt)
+                hidden = self._is_fully_hidden(creature)
+            if hidden and not creature.dragging:
                 # Once a spider is fully behind a window, it is no longer in the
                 # overlay layer: it should keep crawling, but it should not react
                 # to the real mouse cursor or visible spiders until it emerges.
                 creature.social_target = None
                 creature._hunting_prey = False
-                creature.update(dt, -100000.0, -100000.0, self.screen_w, self.screen_h)
+                with creatures_span:
+                    creature.update(dt, -100000.0, -100000.0, self.screen_w, self.screen_h)
             else:
                 fx, fy, hunting = self._creature_focus(creature, mx, my)
                 creature._hunting_prey = hunting
@@ -1389,23 +1404,28 @@ class CreatureManager:
                     # Set up the chase/pounce/trap-shot, then let the spider's own
                     # update act on it this frame with the fly fed in as its focus.
                     self._drive_hunt(creature, dt, fx, fy)
-                creature.update(dt, fx, fy, self.screen_w, self.screen_h)
-            self._update_desktop_awareness(creature, dt)
+                with creatures_span:
+                    creature.update(dt, fx, fy, self.screen_w, self.screen_h)
+            with desktop_span:
+                self._update_desktop_awareness(creature, dt)
 
         # Advance web build progress, bounce decay, tearing from the moving
         # cursor, and dirty-rect bookkeeping once after all spiders have moved.
-        self.web_world.update(dt, (mx, my))
+        with profiler.section("webs"):
+            self.web_world.update(dt, (mx, my))
 
         # Advance the cursor-silk world. While a spider has the pointer trapped
         # or is shoving it to a wall, this returns the overlay-local position the
         # engine should force the OS pointer to this frame; otherwise None.
         self.mouse_web_world.enabled = self.allow_mouse_capture
-        self._desired_cursor = self.mouse_web_world.update(dt, mx, my)
+        with profiler.section("mouse-webs"):
+            self._desired_cursor = self.mouse_web_world.update(dt, mx, my)
 
         # Move the flies (they flee the spiders that just moved and may stick to
         # webs), then let any spider that reached a fly devour it.
-        self.fly_world.update(dt, self.creatures, self.web_world)
-        self._resolve_fly_catches()
+        with profiler.section("flies"):
+            self.fly_world.update(dt, self.creatures, self.web_world)
+            self._resolve_fly_catches()
 
         # Resort enough to look correct when spiders cross, without paying the
         # sort/allocation cost every single frame. Dragging still updates quickly.
@@ -1417,68 +1437,72 @@ class CreatureManager:
         return self._desired_cursor
 
     def render(self, painter) -> None:
+        profiler = get_profiler()
         # Cages draw first so spiders appear inside them.
         active_cage = self._cage_drag["cage"] if self._cage_drag else None
-        if self.cages:
-            counts = {id(c): 0 for c in self.cages}
-            for creature in self.creatures:
-                if creature.cage is not None and id(creature.cage) in counts:
-                    counts[id(creature.cage)] += 1
-            for cage in self.cages:
-                cage.draw(painter, member_count=counts.get(id(cage), 0), active=cage is active_cage)
-        # During partial repaints only the exposed region is redrawn; skip
-        # spiders that fall entirely outside it so we do not build leg paths for
-        # creatures that would be clipped away anyway.
-        clip = None
-        try:
-            cr = painter.clipBoundingRect()
-            if not cr.isNull():
-                clip = (cr.left() - 2.0, cr.top() - 2.0, cr.right() + 2.0, cr.bottom() + 2.0)
-        except Exception:
+        with profiler.section("render-props"):
+            if self.cages:
+                counts = {id(c): 0 for c in self.cages}
+                for creature in self.creatures:
+                    if creature.cage is not None and id(creature.cage) in counts:
+                        counts[id(creature.cage)] += 1
+                for cage in self.cages:
+                    cage.draw(painter, member_count=counts.get(id(cage), 0), active=cage is active_cage)
+            # During partial repaints only the exposed region is redrawn; skip
+            # spiders that fall entirely outside it so we do not build leg paths for
+            # creatures that would be clipped away anyway.
             clip = None
-        # Webs sit above the cages but beneath the spiders, so a spider always
-        # appears to stand on top of the silk it is weaving or walking.
-        self.base_world.render(painter, clip)
-        self.web_world.render(painter, clip)
-        # Cursor-silk (the flying glob, the trap splat, the wall shove) draws in
-        # the same layer, beneath the spiders.
-        self.mouse_web_world.render(painter, clip)
-        # Flies buzz above the silk but beneath the spiders, so a spider visibly
-        # covers a fly as it lands on it to feed.
-        self.fly_world.render(painter, clip)
+            try:
+                cr = painter.clipBoundingRect()
+                if not cr.isNull():
+                    clip = (cr.left() - 2.0, cr.top() - 2.0, cr.right() + 2.0, cr.bottom() + 2.0)
+            except Exception:
+                clip = None
+            # Webs sit above the cages but beneath the spiders, so a spider always
+            # appears to stand on top of the silk it is weaving or walking.
+            self.base_world.render(painter, clip)
+            self.web_world.render(painter, clip)
+            # Cursor-silk (the flying glob, the trap splat, the wall shove) draws in
+            # the same layer, beneath the spiders.
+            self.mouse_web_world.render(painter, clip)
+            # Flies buzz above the silk but beneath the spiders, so a spider visibly
+            # covers a fly as it lands on it to feed.
+            self.fly_world.render(painter, clip)
         order = self._render_order if self._render_order else self.creatures
+        render_span = profiler.section("render")
         for creature in order:
-            if clip is not None:
-                x0, y0, x1, y1 = creature.bounding_rect(self.always_show_names)
-                if x1 < clip[0] or x0 > clip[2] or y1 < clip[1] or y0 > clip[3]:
+            with render_span:
+                if clip is not None:
+                    x0, y0, x1, y1 = creature.bounding_rect(self.always_show_names)
+                    if x1 < clip[0] or x0 > clip[2] or y1 < clip[1] or y0 > clip[3]:
+                        continue
+
+                occluders = self._occluding_surfaces_for_creature(creature)
+                if occluders and self._creature_fully_covered_by_any_surface(creature, occluders):
                     continue
 
-            occluders = self._occluding_surfaces_for_creature(creature)
-            if occluders and self._creature_fully_covered_by_any_surface(creature, occluders):
-                continue
-
-            # Do not fade the entire spider.  Clip drawing against the *visible*
-            # part of the chosen top window, so the border cuts the spider cleanly
-            # and lower covered windows do not create invisible walls.
-            if occluders:
-                try:
-                    from PyQt5.QtCore import QRect, Qt
-                    from PyQt5.QtGui import QRegion
-                    visible_region = QRegion(QRect(0, 0, int(self.screen_w), int(self.screen_h)))
-                    for surface in occluders:
-                        hidden_region = self._surface_visible_qregion(surface, QRect, QRegion)
-                        if not hidden_region.isEmpty():
-                            visible_region -= hidden_region
-                    painter.save()
-                    painter.setClipRegion(visible_region, Qt.IntersectClip)
+                # Do not fade the entire spider.  Clip drawing against the *visible*
+                # part of the chosen top window, so the border cuts the spider cleanly
+                # and lower covered windows do not create invisible walls.
+                if occluders:
+                    try:
+                        from PyQt5.QtCore import QRect, Qt
+                        from PyQt5.QtGui import QRegion
+                        visible_region = QRegion(QRect(0, 0, int(self.screen_w), int(self.screen_h)))
+                        for surface in occluders:
+                            hidden_region = self._surface_visible_qregion(surface, QRect, QRegion)
+                            if not hidden_region.isEmpty():
+                                visible_region -= hidden_region
+                        painter.save()
+                        painter.setClipRegion(visible_region, Qt.IntersectClip)
+                        creature.render(painter, always_show_names=self.always_show_names)
+                        painter.restore()
+                    except Exception:
+                        # If a Qt clipping call fails for any reason, keep the spider
+                        # visible rather than making it vanish suddenly.
+                        creature.render(painter, always_show_names=self.always_show_names)
+                else:
                     creature.render(painter, always_show_names=self.always_show_names)
-                    painter.restore()
-                except Exception:
-                    # If a Qt clipping call fails for any reason, keep the spider
-                    # visible rather than making it vanish suddenly.
-                    creature.render(painter, always_show_names=self.always_show_names)
-            else:
-                creature.render(painter, always_show_names=self.always_show_names)
 
     # ------------------------------------------------------------------
     # Desktop window / folder awareness
