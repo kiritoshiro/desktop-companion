@@ -7,17 +7,13 @@ into. Reads must search both; writes must not.
 """
 
 import json
-import os
 import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug.discovery import resolve_preset_path  # noqa: E402
+from desktop_bug.discovery import resolve_preset_path
+from support import ROOT
 
 
 class FakeFrozen:
@@ -69,7 +65,7 @@ def write_preset(path: Path, name: str) -> None:
     )
 
 
-def check_source_build() -> None:
+def test_source_build() -> None:
     # The ordinary development case: a relative path finds the project's own
     # preset, and the resolved file actually exists.
     resolved = resolve_preset_path("presets/colony.json")
@@ -86,7 +82,7 @@ def check_source_build() -> None:
     assert resolve_preset_path("presets/default.json").is_file()
 
 
-def check_frozen_build() -> None:
+def test_frozen_build() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
         exe_dir = tmp_path / "dist"
@@ -124,7 +120,7 @@ def check_frozen_build() -> None:
             assert missing.name == "no_such_preset.json", missing
 
 
-def check_engine_uses_it() -> None:
+def test_engine_uses_it() -> None:
     # Guard against the engine quietly going back to resolving against the
     # writable root only, which is what produced the crash.
     engine_src = (ROOT / "src" / "desktop_bug" / "engine.py").read_text(encoding="utf-8")
@@ -138,15 +134,3 @@ def check_engine_uses_it() -> None:
     preset_io_src = (ROOT / "src" / "desktop_bug" / "preset_io.py").read_text(encoding="utf-8")
     assert "user_presets_dir()" in preset_io_src, "saving no longer targets a writable user folder"
     assert "is_shipped_preset(path)" in preset_io_src, "saving no longer refuses shipped presets"
-
-
-def main() -> int:
-    check_source_build()
-    check_frozen_build()
-    check_engine_uses_it()
-    print("preset path smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

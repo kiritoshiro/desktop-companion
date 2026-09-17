@@ -13,52 +13,48 @@ say plainly what hostility does, which is alert a Guard, not start a fight.
 
 import json
 import math
-import os
 import random
-import sys
-import tempfile
-from pathlib import Path
-
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from desktop_bug import teams  # noqa: E402
-from desktop_bug.manager import CreatureManager  # noqa: E402
-from desktop_bug.progression import normalize_team_stances, team_stance  # noqa: E402
 
 
-_APP = None
+from desktop_bug import teams
+from desktop_bug.manager import CreatureManager
+from desktop_bug.progression import normalize_team_stances, team_stance
+from support import ROOT
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _qt(qapp):
+    """Every check in this module needs the one Qt application object.
+
+    Each of these files used to build its own, and several dropped the only
+    reference to it on the same line. In one process per test that was merely
+    wasteful; in one process for the whole suite it is an access violation,
+    because the next module inherits a pointer to an application that has
+    already been collected. `conftest.qapp` owns it now.
+    """
 
 
 def qt_app():
-    """Create the one Qt application these checks share, and keep it alive.
+    """The one application object, owned by the `qapp` fixture in conftest.
 
-    Two traps, both of which this test walked into. `QGuiApplication.instance()
-    or QGuiApplication(argv)` builds one and drops the only reference on the
-    same line, and Qt then dies with an access violation as soon as anything
-    asks for font metrics. And Qt allows exactly one application object, so a
-    `QGuiApplication` created by the rendering checks made the settings-window
-    check abort when it tried to create a `QApplication` -- it is a
-    `QGuiApplication`, so building that kind from the start serves both.
+    It used to be created here, and the two ways of getting that wrong are
+    written up in conftest: dropping the only reference on the same line, and
+    creating a QGuiApplication that then makes every widget check in the
+    process abort.
     """
-    global _APP
     from PyQt5.QtWidgets import QApplication
 
-    existing = QApplication.instance()
-    if existing is not None:
-        return existing
-    if _APP is None:
-        _APP = QApplication(sys.argv[:1])
-    return _APP
+    app = QApplication.instance()
+    assert app is not None, "the qapp fixture has not run; nothing owns the application"
+    return app
 
 
 def color_distance(left, right) -> float:
     return math.dist(tuple(left)[:3], tuple(right)[:3])
 
 
-def check_profiles_from_a_preset_block() -> None:
+def test_profiles_from_a_preset_block() -> None:
     profiles = teams.normalize_teams({
         "porch_guard": {"name": "Porch guard", "color": "#3fa9d9"},
         "shed": "Shed crew",                      # a bare name, written by hand
@@ -78,7 +74,7 @@ def check_profiles_from_a_preset_block() -> None:
     assert profiles["attic_watch"].name == "Attic Watch"
 
 
-def check_ids_are_case_folded() -> None:
+def test_ids_are_case_folded() -> None:
     """The fifth instance of a trap that has already caused four bugs."""
     profiles = teams.normalize_teams({"Porch Guard": {"name": "Porch guard"}},
                                      ["PORCH_guard", "porch guard"])
@@ -89,7 +85,7 @@ def check_ids_are_case_folded() -> None:
     assert teams.team_color("Rivals") == teams.team_color("rivals")
 
 
-def check_colors_parse_and_differ() -> None:
+def test_colors_parse_and_differ() -> None:
     assert teams.parse_color("#3fa9d9") == (63, 169, 217)
     assert teams.parse_color("3fa9d9") == (63, 169, 217)
     assert teams.parse_color("#abc") == (170, 187, 204)
@@ -122,7 +118,7 @@ def check_colors_parse_and_differ() -> None:
     assert chosen["a_team"].color == chosen["b_team"].color == (63, 169, 217)
 
 
-def check_shipped_colony_shows_two_teams() -> None:
+def test_shipped_colony_shows_two_teams() -> None:
     random.seed(3)
     manager = CreatureManager(ROOT / "presets" / "colony.json", 1600, 900)
     profiles = manager.team_profiles
@@ -144,7 +140,7 @@ def check_shipped_colony_shows_two_teams() -> None:
         assert creature.team_profiles is manager.team_profiles, "a live rename missed a spider"
 
 
-def check_team_color_reaches_the_screen() -> None:
+def test_team_color_reaches_the_screen() -> None:
     """Render a spider and look at the pixels, rather than trusting the call."""
     from PyQt5.QtGui import QColor, QImage, QPainter
 
@@ -195,7 +191,7 @@ def check_team_color_reaches_the_screen() -> None:
     assert alone == 0, f"a spider on no team was marked anyway: {alone} pixels"
 
 
-def check_base_ring_uses_the_team_color() -> None:
+def test_base_ring_uses_the_team_color() -> None:
     from PyQt5.QtGui import QColor, QImage, QPainter
 
     from desktop_bug.jobs import MAX_BUILD_PROGRESS, BaseSite, BaseWorld
@@ -226,7 +222,7 @@ def check_base_ring_uses_the_team_color() -> None:
     assert found > 12, f"the base ring was not drawn in its team colour: {found} pixels"
 
 
-def check_stances_round_trip_minimally() -> None:
+def test_stances_round_trip_minimally() -> None:
     declared = normalize_team_stances({"pack_a": {"rivals": "foe"}})
     assert declared == {"pack_a": {"rivals": "foe"}, "rivals": {"pack_a": "foe"}}
     # Saved one way round, so a hand-written preset is not rewritten on first save.
@@ -244,7 +240,7 @@ def check_stances_round_trip_minimally() -> None:
     assert team_stance("pack_a", "rivals", {}) == "foe", "the Rivals default stopped working"
 
 
-def check_settings_window_round_trips_names_and_colours() -> None:
+def test_settings_window_round_trips_names_and_colours() -> None:
     from desktop_bug.config_ui import ConfigWindow
 
     app = qt_app()
@@ -301,7 +297,7 @@ def check_settings_window_round_trips_names_and_colours() -> None:
         window.deleteLater()
 
 
-def check_the_interface_says_what_hostility_does() -> None:
+def test_the_interface_says_what_hostility_does() -> None:
     """The one sentence that stops the words over-promising."""
     note = teams.HOSTILITY_NOTE.lower()
     assert "no combat" in note, teams.HOSTILITY_NOTE
@@ -318,21 +314,3 @@ def check_the_interface_says_what_hostility_does() -> None:
     assert "Nothing takes damage" in readme, readme[:0]
     # And it documents the block a person would otherwise have to guess at.
     assert '"teams": {' in readme, "the README does not document the teams block"
-
-
-def main() -> int:
-    check_profiles_from_a_preset_block()
-    check_ids_are_case_folded()
-    check_colors_parse_and_differ()
-    check_shipped_colony_shows_two_teams()
-    check_team_color_reaches_the_screen()
-    check_base_ring_uses_the_team_color()
-    check_stances_round_trip_minimally()
-    check_settings_window_round_trips_names_and_colours()
-    check_the_interface_says_what_hostility_does()
-    print("team identity smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

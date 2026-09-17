@@ -6,19 +6,14 @@ see, and an unhandled exception in a Qt slot terminated the app in silence.
 """
 
 import logging
-import os
 import re
 import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug import __version__  # noqa: E402
-from desktop_bug.logging_setup import (  # noqa: E402
+from desktop_bug import __version__
+from desktop_bug.logging_setup import (
     BACKUP_COUNT,
     MAX_BYTES,
     configure_logging,
@@ -28,6 +23,7 @@ from desktop_bug.logging_setup import (  # noqa: E402
     reset_for_tests,
     restore_excepthook,
 )
+from support import ROOT
 
 SRC = ROOT / "src" / "desktop_bug"
 # ``footprint(`` and friends contain "print(", so a bare substring search
@@ -35,7 +31,7 @@ SRC = ROOT / "src" / "desktop_bug"
 PRINT_CALL = re.compile(r"(?:^|[^A-Za-z0-9_.])print\(")
 
 
-def check_configures_once() -> None:
+def test_configures_once() -> None:
     reset_for_tests()
     with tempfile.TemporaryDirectory() as tmp:
         path = configure_logging(tmp, logging.DEBUG)
@@ -66,7 +62,7 @@ def check_configures_once() -> None:
         reset_for_tests()
 
 
-def check_unwritable_directory() -> None:
+def test_unwritable_directory() -> None:
     """Losing the log must not stop the overlay running."""
     reset_for_tests()
     # A path whose parent is a file cannot be turned into a directory.
@@ -79,7 +75,7 @@ def check_unwritable_directory() -> None:
         reset_for_tests()
 
 
-def check_excepthook_logs_and_notifies() -> None:
+def test_excepthook_logs_and_notifies() -> None:
     reset_for_tests()
     with tempfile.TemporaryDirectory() as tmp:
         path = configure_logging(tmp, logging.DEBUG)
@@ -144,7 +140,7 @@ def check_excepthook_logs_and_notifies() -> None:
         reset_for_tests()
 
 
-def check_keyboard_interrupt_passes_through() -> None:
+def test_keyboard_interrupt_passes_through() -> None:
     reset_for_tests()
     with tempfile.TemporaryDirectory() as tmp:
         configure_logging(tmp, logging.DEBUG)
@@ -164,7 +160,7 @@ def check_keyboard_interrupt_passes_through() -> None:
             reset_for_tests()
 
 
-def check_no_prints_left() -> None:
+def test_no_prints_left() -> None:
     """Guard against diagnostics going back to a console nobody sees."""
     offenders = []
     for path in sorted(SRC.glob("*.py")):
@@ -174,7 +170,7 @@ def check_no_prints_left() -> None:
     assert not offenders, "print() in application code:\n" + "\n".join(offenders)
 
 
-def check_version_is_surfaced() -> None:
+def test_version_is_surfaced() -> None:
     engine_src = (SRC / "engine.py").read_text(encoding="utf-8")
     config_src = (SRC / "config_ui.py").read_text(encoding="utf-8")
     assert "__version__" in engine_src, "the overlay does not log its version"
@@ -182,19 +178,3 @@ def check_version_is_surfaced() -> None:
         "the settings window does not show its version"
     )
     assert re.fullmatch(r"\d+\.\d+\.\d+", __version__), __version__
-
-
-def main() -> int:
-    print("logging smoke: the tracebacks below are deliberate, they are the cases being tested")
-    check_configures_once()
-    check_unwritable_directory()
-    check_excepthook_logs_and_notifies()
-    check_keyboard_interrupt_passes_through()
-    check_no_prints_left()
-    check_version_is_surfaced()
-    print("logging smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

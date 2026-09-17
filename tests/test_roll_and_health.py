@@ -14,44 +14,45 @@ the legs still tucked, permanently.
 
 import json
 import math
-import os
 import random
-import sys
-import tempfile
-from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt5.QtGui import QGuiApplication  # noqa: E402
 
-from desktop_bug.creature import Creature  # noqa: E402
-from desktop_bug.progression import ProgressionState  # noqa: E402
+from desktop_bug.creature import Creature
+from desktop_bug.progression import ProgressionState
+from support import ROOT
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _qt(qapp):
+    """Every check in this module needs the one Qt application object.
+
+    Each of these files used to build its own, and several dropped the only
+    reference to it on the same line. In one process per test that was merely
+    wasteful; in one process for the whole suite it is an access violation,
+    because the next module inherits a pointer to an application that has
+    already been collected. `conftest.qapp` owns it now.
+    """
 
 DT = 1.0 / 60.0
 SCREEN = (1600, 900)
 AWAY = (-100000.0, -100000.0)
 SEEDS = (1, 7, 11, 23, 42, 99, 123)
 
-_APP = None
-
-
 def qt_app():
-    """Create the Qt application once and keep it alive.
+    """The one application object, owned by the `qapp` fixture in conftest.
 
-    `QGuiApplication.instance() or QGuiApplication(argv)` builds one and drops
-    the only reference to it on the same line; Qt then dies with an access
-    violation the moment anything asks for font metrics.
+    It used to be created here, and the two ways of getting that wrong are
+    written up in conftest: dropping the only reference on the same line, and
+    creating a QGuiApplication that then makes every widget check in the
+    process abort.
     """
-    global _APP
-    existing = QGuiApplication.instance()
-    if existing is not None:
-        return existing
-    if _APP is None:
-        _APP = QGuiApplication(sys.argv[:1])
-    return _APP
+    from PyQt5.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    assert app is not None, "the qapp fixture has not run; nothing owns the application"
+    return app
 
 
 def build(seed: int, personality: str = "playful") -> Creature:
@@ -98,7 +99,7 @@ def assert_tidy(creature: Creature, label: str) -> None:
     assert ratio < 1.15, f"{label}: a foot ended up at {ratio:.2f} times its own reach"
 
 
-def check_a_finished_spin_does_not_snap() -> None:
+def test_a_finished_spin_does_not_snap() -> None:
     """The body has to end facing the way its legs are about to re-plant."""
     worst_snap = 0.0
     rolled = 0
@@ -147,7 +148,7 @@ def interrupt_and_settle(seed: int, interrupt) -> Creature:
     return creature
 
 
-def check_every_way_out_of_a_spin_tidies_up() -> None:
+def test_every_way_out_of_a_spin_tidies_up() -> None:
     """A state can be left in more ways than it can be finished."""
     ways = {
         "startled": lambda c: c.enter_startled(900.0, 500.0),
@@ -166,7 +167,7 @@ def check_every_way_out_of_a_spin_tidies_up() -> None:
         assert tested >= 5, f"{label}: only {tested} spiders were interrupted"
 
 
-def check_a_dragged_spider_is_tidied_before_it_is_drawn() -> None:
+def test_a_dragged_spider_is_tidied_before_it_is_drawn() -> None:
     """A grab makes `update` return early, so the tidy-up has to come first.
 
     Takes the first seed that is still mid-spin rather than assuming a fixed
@@ -190,7 +191,7 @@ def check_a_dragged_spider_is_tidied_before_it_is_drawn() -> None:
     raise AssertionError("no spider stayed in a spin long enough to be grabbed")
 
 
-def check_no_frame_ever_ends_mid_tidy() -> None:
+def test_no_frame_ever_ends_mid_tidy() -> None:
     """The invariant, checked where it matters: the moment a frame is drawn.
 
     Tidying up at the top of the next frame is not enough on its own. The phase
@@ -231,7 +232,7 @@ def check_no_frame_ever_ends_mid_tidy() -> None:
 # The pinned health bar
 # ----------------------------------------------------------------------
 
-def check_the_pin_is_remembered() -> None:
+def test_the_pin_is_remembered() -> None:
     state = ProgressionState()
     assert state.pin_health is False
     state.pin_health = True
@@ -240,7 +241,7 @@ def check_the_pin_is_remembered() -> None:
     assert ProgressionState.from_dict({}).pin_health is False
 
 
-def check_pinning_shows_the_label_on_its_own() -> None:
+def test_pinning_shows_the_label_on_its_own() -> None:
     creature = build(5)
     assert creature.label_visible(False) is False, "an unnamed spider showed a label"
     creature.set_health_label_pinned(True)
@@ -253,7 +254,7 @@ def check_pinning_shows_the_label_on_its_own() -> None:
     assert creature.label_visible(False) is False
 
 
-def check_the_bar_is_drawn_and_follows_the_health() -> None:
+def test_the_bar_is_drawn_and_follows_the_health() -> None:
     """Read the pixels rather than trusting that a colour was passed to a brush."""
     from PyQt5.QtGui import QColor, QImage, QPainter
 
@@ -303,7 +304,7 @@ def check_the_bar_is_drawn_and_follows_the_health() -> None:
     assert run_of(paint(True, 0.25), green) < 8, "a quarter-health spider still read as healthy"
 
 
-def check_the_bar_is_inside_the_repaint_footprint() -> None:
+def test_the_bar_is_inside_the_repaint_footprint() -> None:
     """Outside it, the bar would smear instead of updating."""
     creature = build(11)
     creature._hovered = True
@@ -317,7 +318,7 @@ def check_the_bar_is_inside_the_repaint_footprint() -> None:
     )
 
 
-def check_the_colour_says_what_the_number_says() -> None:
+def test_the_colour_says_what_the_number_says() -> None:
     from PyQt5.QtGui import QColor
 
     creature = build(13)
@@ -335,21 +336,3 @@ def check_the_colour_says_what_the_number_says() -> None:
     assert hurt.red() != healthy.red() and hurt.red() != dying.red(), (
         "the middle of the range is not distinguishable from either end"
     )
-
-
-def main() -> int:
-    check_a_finished_spin_does_not_snap()
-    check_every_way_out_of_a_spin_tidies_up()
-    check_a_dragged_spider_is_tidied_before_it_is_drawn()
-    check_no_frame_ever_ends_mid_tidy()
-    check_the_pin_is_remembered()
-    check_pinning_shows_the_label_on_its_own()
-    check_the_bar_is_drawn_and_follows_the_health()
-    check_the_bar_is_inside_the_repaint_footprint()
-    check_the_colour_says_what_the_number_says()
-    print("roll and health smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

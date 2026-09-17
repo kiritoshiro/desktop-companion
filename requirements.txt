@@ -3,3 +3,8 @@
 # environment differ from CI without either of them noticing.
 PyQt5==5.15.11
 pyinstaller==6.22.3
+
+# Development and CI. Pinned for the same reason: the checks a release must
+# pass should not change because a test runner published a new version.
+pytest==8.3.3
+ruff==0.7.1

@@ -461,15 +461,38 @@ To override bundled data, put an edited copy in a `models`, `personalities` or
 `presets` folder next to the executable; those are searched before the bundled
 copies.
 
+## Running the checks
+
+One command runs everything CI runs:
+
+```bat
+python toolsun_all_checks.py
+```
+
+That compiles every source file, validates every model and preset, runs the
+test suite and lints. To run only the tests, or only some of them:
+
+```bat
+python -m pytest
+python -m pytest tests	est_roll_and_health.py -v
+python -m pytest -k "team" 
+python -m pytest -m "not slow"
+```
+
+The tests are headless: `tests/conftest.py` forces Qt's offscreen platform,
+creates the one `QApplication` the process is allowed, and points the runtime
+state at a temporary directory so a test run never touches your own saved
+spiders. Nothing needs to be installed beyond `requirements.txt`.
+
 ## GitHub Actions builds and releases
 
 The repository includes Windows workflows under `.github/workflows/`:
 
 - `ci.yml` runs on pushes and pull requests targeting `main`. It compiles the Python sources, validates every model and preset, and performs a PyInstaller build smoke test.
 - Both workflows run `tools/run_all_checks.py`, which compiles the sources,
-  validates every model and preset, and discovers and runs every
-  `tools/*_smoke.py`. A new test is therefore picked up by both without
-  editing a workflow.
+  validates every model and preset, runs `pytest` over `tests/`, and lints with
+  `ruff`. Discovery is pytest's: a new `tests/test_<name>.py` is picked up by
+  both workflows and by a developer without editing anything.
 - `release-windows.yml` runs for version tags such as `v1.0.0`. It refuses a
   tag that disagrees with `__version__` in `src/desktop_bug/__init__.py`, so a
   published build always reports the version its tag claims. It builds the one-file Windows executable with all current creature models, personalities, and presets bundled, then publishes the `.exe` and a ZIP containing the executable and README to a GitHub Release.
@@ -543,7 +566,12 @@ DesktopBugCompanion/
     run_all_checks.py        # everything CI runs, in one command
     validate_model.py
     validate_preset.py
-    <name>_smoke.py          # 24 headless checks, all run by CI
+
+  tests/
+    conftest.py              # offscreen Qt, one QApplication, a private state dir
+    support.py               # repository paths and shipped-data loaders
+    movement.py              # the gait rig, driven headlessly
+    test_<name>.py           # 29 headless modules, all run by CI
 ```
 
 ## Add a new creature model

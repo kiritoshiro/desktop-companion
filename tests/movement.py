@@ -1,15 +1,15 @@
-"""Deterministic headless checks for the Snowpuff-2 spider gait."""
+"""The spider gait rig, driven headlessly.
 
-import argparse
-import json
+These helpers build a creature, step its controller and walk it for a
+while, reporting what the legs did. Two test modules use them --
+the gait checks and the tarantula checks -- so they live beside the tests
+rather than inside one of them; importing one test module from another
+made the gait file both a test and a library.
+"""
+
+from __future__ import annotations
+
 import math
-import random
-import sys
-from pathlib import Path
-
-
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
 from desktop_bug.creature import Creature
 
@@ -292,70 +292,3 @@ def run_walk(model: dict, personality: dict, config: dict, seconds: float,
         "max_joint_bend_range": max_joint_bend_range,
         "max_joint_motion_spread": max_joint_motion_spread,
     }
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--seconds", type=float, default=8.0)
-    parser.add_argument("--speed", type=float, default=80.0)
-    parser.add_argument("--turn-rate", type=float, default=0.0,
-                        help="Body turn rate in radians/second for turning checks")
-    args = parser.parse_args()
-
-    root = ROOT
-    random.seed(19)
-    model = json.loads((root / "models/plush_snow_hybrid_2/model.json").read_text())
-    personality = json.loads((root / "personalities/cuddly.json").read_text())
-    config = build_creature(model, personality)._spider_gait_config()
-    # Causality checks specifically guard against reintroducing body-first motion.
-    random.seed(19)
-    run_causality_checks(model, personality, config)
-    random.seed(19)
-    heading_filter = run_heading_filter_check(model, personality)
-    random.seed(19)
-    roll_recovery = run_roll_recovery_check(model, personality)
-    random.seed(19)
-    quick_turn = run_quick_turn_check(model, personality)
-    random.seed(19)
-    result = run_walk(model, personality, config, args.seconds, args.speed, args.turn_rate, 1.0 / 60.0)
-    assert result["starts"] > 0, "no spider gait steps started"
-    assert result["max_airborne"] <= config["max_airborne"], result["max_airborne"]
-    assert result["planted_displacements"] == 0, result["planted_displacements"]
-    assert result["outside"] == 0, (result["outside"], result["starts"])
-    assert result["max_chain_stretch"] <= 1.35, result["max_chain_stretch"]
-    assert result["max_segment_ratio"] <= 1.001, result["max_segment_ratio"]
-    assert result["min_supports"] >= len(model["legs"]) - config["max_airborne"]
-    # Pose changes are bounded by the support solve, not by a direct body teleport.
-    assert result["max_pose_jump"] < max(12.0, args.speed * 0.05)
-    assert result["max_heading_jump"] < 0.16
-    if abs(args.turn_rate) > 1e-6:
-        final_turn = abs(((result["creature"].heading + math.pi) % math.tau) - math.pi)
-        assert final_turn > 0.50, final_turn
-
-    consistency = []
-    for frame_dt in (1.0 / 30.0, 1.0 / 60.0, 1.0 / 120.0):
-        random.seed(19)
-        consistency.append(run_walk(model, personality, config, args.seconds, args.speed, args.turn_rate, frame_dt)["creature"])
-    base = consistency[1]
-    for other in (consistency[0], consistency[2]):
-        assert math.hypot(other.x - base.x, other.y - base.y) < 32.0
-        assert abs(((other.heading - base.heading + math.pi) % math.tau) - math.pi) < 0.35
-
-    print(
-        f"spider-movement-smoke: starts={result['starts']} outside={result['outside']} "
-        f"max_airborne={result['max_airborne']} supports>={result['min_supports']} "
-        f"planted_displacements={result['planted_displacements']} "
-        f"max_pose_jump={result['max_pose_jump']:.2f} "
-        f"max_heading_jump={result['max_heading_jump']:.3f} "
-        f"zigzag_target_step={heading_filter['max_target_step']:.3f} "
-        f"zigzag_settled={heading_filter['settled_amplitude']:.3f} "
-        f"roll_contacts={roll_recovery['contacts']} "
-        f"quick_turn_step={quick_turn['max_step']:.3f} "
-        f"max_chain_stretch={result['max_chain_stretch']:.3f} "
-        f"max_segment_ratio={result['max_segment_ratio']:.3f}"
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

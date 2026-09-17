@@ -6,22 +6,15 @@ state file that never dropped an entry.
 """
 
 import json
-import os
-import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 # Keep a test run from reading or rewriting a real player's saved spiders; the
 # manager round trip below redirects again to its own temporary file.
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from PyQt5.QtWidgets import QApplication  # noqa: E402
 
-from desktop_bug.manager import CreatureManager  # noqa: E402
-from desktop_bug.runtime_state import (  # noqa: E402
+from desktop_bug.manager import CreatureManager
+from desktop_bug.runtime_state import (
     RETAIN_LAUNCHES,
     STATE_SCHEMA_VERSION,
     entry_rank,
@@ -32,6 +25,19 @@ from desktop_bug.runtime_state import (  # noqa: E402
     normalize_namespace,
     normalize_state_key,
 )
+import pytest
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _qt(qapp):
+    """Every check in this module needs the one Qt application object.
+
+    Each of these files used to build its own, and several dropped the only
+    reference to it on the same line. In one process per test that was merely
+    wasteful; in one process for the whole suite it is an access violation,
+    because the next module inherits a pointer to an application that has
+    already been collected. `conftest.qapp` owns it now.
+    """
 
 
 def entry(level: int, name: str = "", last_seen=None) -> dict:
@@ -46,7 +52,7 @@ def entry(level: int, name: str = "", last_seen=None) -> dict:
     return data
 
 
-def check_keys() -> None:
+def test_keys() -> None:
     assert normalize_namespace("Default") == "default"
     assert normalize_namespace("  COLONY  ") == "colony"
     assert normalize_namespace("") == "default"
@@ -71,7 +77,7 @@ def check_keys() -> None:
     assert entry_rank({"level": 4, "total_xp": 400}) == (4, 400)
 
 
-def check_migration() -> None:
+def test_migration() -> None:
     raw = {
         "Default|slot-0:0": entry(5, "Webster"),
         "default|slot-0:0": entry(2),
@@ -105,7 +111,7 @@ def check_migration() -> None:
     assert migrate_creatures({"default|a:0": "nonsense"}, 1) == {}
 
 
-def check_launch_and_eviction() -> None:
+def test_launch_and_eviction() -> None:
     assert next_launch(None) == 1
     assert next_launch({}) == 1
     assert next_launch({"launch": 4}) == 5
@@ -132,9 +138,7 @@ def check_launch_and_eviction() -> None:
     assert load_payload({"creatures": "nonsense", "bases": "nonsense"}, 1) == ({}, [])
 
 
-def check_manager_round_trip() -> None:
-    app = QApplication.instance() or QApplication(sys.argv[:1])
-    assert app is not None
+def test_manager_round_trip() -> None:
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -205,16 +209,3 @@ def check_manager_round_trip() -> None:
         spider = manager._create_creature(model, personality, 0, progression_id="default|slot-0:0")
         assert spider.level == 5, spider.level
         assert spider.name == "Webster", spider.name
-
-
-def main() -> int:
-    check_keys()
-    check_migration()
-    check_launch_and_eviction()
-    check_manager_round_trip()
-    print("state migration smoke: OK")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

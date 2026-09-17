@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Lightweight desktop/window awareness helpers.
 
 The companion overlay is always-on-top and transparent. Real application
@@ -13,6 +11,8 @@ The Win32 code is intentionally defensive. On non-Windows platforms, or if the
 API calls fail, callers simply get an empty list and the overlay behaves as it
 always did.
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 import ctypes

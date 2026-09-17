@@ -57,7 +57,7 @@ jobs:
 
       # A release used to validate data and run no tests, so it could ship
       # code that the CI workflow would have rejected. Same runner as CI.
-      - name: Run all checks
+      - name: Run all checks (compile, data, pytest, ruff)
         shell: pwsh
         run: python tools/run_all_checks.py
 

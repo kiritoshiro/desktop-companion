@@ -8,24 +8,19 @@ configuration, silently. It happened twice during development before the
 mechanism was understood.
 """
 
-import os
-import sys
 import tempfile
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-test-"))
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug.discovery import (  # noqa: E402
+from desktop_bug.discovery import (
     discover_presets,
     is_shipped_preset,
     resolve_preset_path,
     shipped_presets_dirs,
     user_presets_dir,
 )
-from desktop_bug.preset_io import load_preset, save_preset  # noqa: E402
+from desktop_bug.preset_io import load_preset, save_preset
+from support import ROOT
 
 SHIPPED = ROOT / "presets"
 
@@ -38,7 +33,7 @@ def preset(name: str, model: str = "tarantula") -> dict:
     }
 
 
-def check_shipped_detection() -> None:
+def test_shipped_detection() -> None:
     dirs = [str(d).casefold() for d in shipped_presets_dirs()]
     assert str(SHIPPED).casefold() in dirs, dirs
 
@@ -50,7 +45,7 @@ def check_shipped_detection() -> None:
     assert not is_shipped_preset(Path(tempfile.gettempdir()) / "elsewhere" / "default.json")
 
 
-def check_save_goes_to_the_user_folder() -> None:
+def test_save_goes_to_the_user_folder() -> None:
     """The exact sequence that destroyed the shipped preset twice."""
     before = (SHIPPED / "default.json").read_bytes()
 
@@ -69,7 +64,7 @@ def check_save_goes_to_the_user_folder() -> None:
         saved.unlink(missing_ok=True)
 
 
-def check_shipped_path_is_refused() -> None:
+def test_shipped_path_is_refused() -> None:
     """Even an explicit path into the shipped folder must be rejected.
 
     The write is restored in a ``finally`` rather than merely asserted about.
@@ -93,7 +88,7 @@ def check_shipped_path_is_refused() -> None:
             target_file.write_bytes(before)
 
 
-def check_user_preset_shadows_shipped() -> None:
+def test_user_preset_shadows_shipped() -> None:
     """A user's copy wins over the shipped one rather than replacing it."""
     saved = save_preset(preset("Colony", model="spider"))
     try:
@@ -118,7 +113,7 @@ def check_user_preset_shadows_shipped() -> None:
         saved.unlink(missing_ok=True)
 
 
-def check_shipped_presets_are_intact() -> None:
+def test_shipped_presets_are_intact() -> None:
     """A blunt guard: every shipped preset still loads and names a real model."""
     models = {p.parent.name for p in (ROOT / "models").glob("*/model.json")}
     for path in sorted(SHIPPED.glob("*.json")):
@@ -126,17 +121,3 @@ def check_shipped_presets_are_intact() -> None:
         assert data.get("slots"), f"{path.name} has no slots"
         for slot in data["slots"]:
             assert slot.get("model") in models, f"{path.name} names a missing model: {slot.get('model')}"
-
-
-def main() -> int:
-    check_shipped_detection()
-    check_save_goes_to_the_user_folder()
-    check_shipped_path_is_refused()
-    check_user_preset_shadows_shipped()
-    check_shipped_presets_are_intact()
-    print(f"preset save location smoke: OK (user presets -> {user_presets_dir()})")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

@@ -1,26 +1,47 @@
-"""Deterministic geometry and locomotion checks for the Tarantula model."""
+"""Deterministic geometry, palp and locomotion checks for the tarantula model.
+
+The three parts were one 430-line `main()`. They are split where the state is
+actually shared: the model dictionary is only read, so the shape checks stand
+alone, and the walks only need the solved gait configuration. The middle part
+stays whole because each step mutates the same probe -- the feelers, then the
+antennae, then the leg release -- and splitting it would quietly change what
+each check starts from.
+"""
+
+from __future__ import annotations
 
 import json
 import math
 import random
-import sys
-from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "src"))
-
-from spider_movement_smoke import (
+import pytest
+from movement import (
     advance_controller,
     build_creature,
     run_causality_checks,
     run_heading_filter_check,
     run_walk,
 )
+from support import ROOT
+
+SEED = 19
 
 
-def main() -> int:
+@pytest.fixture(scope="module")
+def tarantula():
     model = json.loads((ROOT / "models/tarantula/model.json").read_text())
     personality = json.loads((ROOT / "personalities/curious.json").read_text())
+    return model, personality
+
+
+@pytest.fixture(scope="module")
+def config(tarantula):
+    random.seed(SEED)
+    return build_creature(*tarantula)._spider_gait_config()
+
+
+def test_the_model_is_shaped_as_the_gait_expects(tarantula):
+    model, personality = tarantula
     chain = model["appearance"]["leg_chain"]
     gait = model["appearance"]["spider_gait"]
 
@@ -134,6 +155,11 @@ def main() -> int:
     assert average_reach >= 2.15
     assert average_chain >= 2.20
 
+def test_the_palps_feelers_and_leg_release_hold_together(tarantula):
+    model, personality = tarantula
+    ceph_scale = model["appearance"]["cephalothorax_scale"]
+    ceph_offset = float(model["appearance"]["cephalothorax_offset_x"])
+    antennae = model["appearance"]["antennae"]
     random.seed(19)
     probe = build_creature(model, personality)
     probe.focus_strength = 1.0
@@ -389,7 +415,7 @@ def main() -> int:
     assert left_change > 0.0 and right_change < 0.0
 
     random.seed(19)
-    hunter_heading_filter = run_heading_filter_check(
+    run_heading_filter_check(
         model,
         json.loads((ROOT / "personalities/hunter.json").read_text()),
     )
@@ -404,44 +430,27 @@ def main() -> int:
         # the remaining chain then descends toward the planted foot.
         assert points[1][1] <= points[0][1] + 0.25
 
-    reports = []
-    for speed, turn_rate in ((45.0, 0.0), (100.0, 0.0), (170.0, 0.0), (100.0, 1.1), (170.0, -1.1)):
-        random.seed(19)
-        result = run_walk(model, personality, config, 5.0, speed, turn_rate, 1.0 / 60.0)
-        assert result["starts"] > 0
-        assert result["outside"] == 0
-        assert result["max_airborne"] <= config["max_airborne"]
-        assert result["min_supports"] >= 5
-        assert result["planted_displacements"] == 0
-        assert result["max_chain_stretch"] <= 1.30
-        assert result["max_segment_ratio"] <= 1.001
-        assert result["max_joint_bend_range"] > 0.08
-        assert result["max_joint_motion_spread"] > 1e-5
-        assert result["max_heading_jump"] < 0.12
-        if not turn_rate and speed >= 100.0:
-            travelled = math.hypot(result["creature"].x - 900.0, result["creature"].y - 700.0)
-            assert travelled > (300.0 if speed < 150.0 else 650.0)
-        if turn_rate:
-            final_turn = abs(((result["creature"].heading + math.pi) % math.tau) - math.pi)
-            assert final_turn > 0.50
-        reports.append((speed, turn_rate, result))
-
-    print("tarantula-smoke: geometry=8-legs/5-segments/elevated profile=tarantula")
-    for speed, turn_rate, result in reports:
-        print(
-            f"  speed={speed:.0f} turn={turn_rate:+.1f} starts={result['starts']} "
-            f"air={result['max_airborne']} supports>={result['min_supports']} "
-            f"stretch={result['max_chain_stretch']:.3f} "
-            f"segment_limit={result['max_segment_ratio']:.3f} "
-            f"joint_range={result['max_joint_bend_range']:.3f}"
-        )
-    print(
-        f"  hunter zigzag target_step={hunter_heading_filter['max_target_step']:.3f} "
-        f"settled={hunter_heading_filter['settled_amplitude']:.3f} "
-        f"sustained_error={hunter_heading_filter['sustained_error']:.3f}"
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+@pytest.mark.parametrize(
+    "speed,turn_rate",
+    [(45.0, 0.0), (100.0, 0.0), (170.0, 0.0), (100.0, 1.1), (170.0, -1.1)],
+)
+def test_a_walk_stays_inside_its_limits(tarantula, config, speed, turn_rate):
+    model, personality = tarantula
+    random.seed(19)
+    result = run_walk(model, personality, config, 5.0, speed, turn_rate, 1.0 / 60.0)
+    assert result["starts"] > 0
+    assert result["outside"] == 0
+    assert result["max_airborne"] <= config["max_airborne"]
+    assert result["min_supports"] >= 5
+    assert result["planted_displacements"] == 0
+    assert result["max_chain_stretch"] <= 1.30
+    assert result["max_segment_ratio"] <= 1.001
+    assert result["max_joint_bend_range"] > 0.08
+    assert result["max_joint_motion_spread"] > 1e-5
+    assert result["max_heading_jump"] < 0.12
+    if not turn_rate and speed >= 100.0:
+        travelled = math.hypot(result["creature"].x - 900.0, result["creature"].y - 700.0)
+        assert travelled > (300.0 if speed < 150.0 else 650.0)
+    if turn_rate:
+        final_turn = abs(((result["creature"].heading + math.pi) % math.tau) - math.pi)
+        assert final_turn > 0.50
