@@ -218,6 +218,8 @@ class Creature:
         self.inertia_vx = 0.0
         self.inertia_vy = 0.0
         self.inertia_timer = 0.0
+        # Beat held on the spot after a throw has skidded to a halt.
+        self.throw_recovery = 0.0
         self.startled_timer = 0.0
         # Pickup/release uses the pose to communicate a timid reaction. Keep
         # the leg palette unchanged during that transition; color should not
@@ -1470,12 +1472,20 @@ class Creature:
         away = math.atan2(self.y - my, self.x - mx)
         throw_speed = math.hypot(self.inertia_vx, self.inertia_vy)
         if throw_speed > 60.0:
-            # Continue with the throw first, then self-correct once friction wins.
+            # A throw is carried by friction alone. Projecting a target further
+            # along the throw heading made the spider *walk* the rest of the way
+            # once the slide ended, for several seconds, which read as running
+            # away in the thrown direction rather than being thrown.
             heading = math.atan2(self.inertia_vy, self.inertia_vx)
-            distance_out = clamp(throw_speed * 0.28, 80.0, 300.0)
+            distance_out = 0.0
+            # A beat on the spot after the skid: plant, gather itself, then
+            # react. Without it the startled scurry begins the instant friction
+            # wins and the stop is never visible.
+            self.throw_recovery = random.uniform(0.34, 0.52)
         else:
             heading = away
             distance_out = random.uniform(80.0, 160.0)
+            self.throw_recovery = 0.0
         self.target_x = self.x + math.cos(heading) * distance_out
         self.target_y = self.y + math.sin(heading) * distance_out
         self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
@@ -3628,7 +3638,15 @@ class Creature:
             # the spider takes a short nervous scurry away from the pointer.
             if self.inertia_timer > 0.0:
                 self.speed = 0.0
+            elif getattr(self, "throw_recovery", 0.0) > 0.0:
+                # Skid finished: hold still for a beat so the stop is visible,
+                # then let the ordinary startled reaction take over.
+                self.throw_recovery = max(0.0, self.throw_recovery - dt)
+                self.speed = 0.0
+                self.motion_paused = True
+                self.target_x, self.target_y = self.x, self.y
             else:
+                self.motion_paused = False
                 self.speed = 74.0 * self._speed_mult()
                 if dist_to_cursor < reaction * 0.85 and self.decision_timer <= 0.0:
                     away = math.atan2(self.y - my, self.x - mx)
@@ -3637,7 +3655,7 @@ class Creature:
                     self.target_x, self.target_y = clamp_point(self.target_x, self.target_y, self.margin, self.screen_w, self.screen_h)
                     self.target_heading = away
                     self.decision_timer = random.uniform(0.25, 0.45)
-            if self.state_timer <= 0.0 and self.inertia_timer <= 0.0:
+            if self.state_timer <= 0.0 and self.inertia_timer <= 0.0 and self.throw_recovery <= 0.0:
                 if self.has_skill("run_away") and dist_to_cursor < reaction * 0.65:
                     self.enter_retreat(mx, my)
                 else:
