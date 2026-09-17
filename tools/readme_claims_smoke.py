@@ -58,9 +58,17 @@ def check_referenced_preset_paths_exist() -> None:
 
 
 def check_one_build_story() -> None:
-    """The README must describe the build that build_exe.bat actually performs."""
+    """The README must describe the build that is actually performed.
+
+    The spec file is the single definition of the build; the batch file and the
+    workflows run it rather than repeating its flags, so that is what the
+    README has to agree with.
+    """
     batch = (ROOT / "build_exe.bat").read_text(encoding="utf-8")
-    assert "--onefile" in batch, "build_exe.bat no longer builds one-file; the README needs updating"
+    spec = (ROOT / "DesktopBugCompanion.spec").read_text(encoding="utf-8")
+    assert "DesktopBugCompanion.spec" in batch, "build_exe.bat no longer builds from the spec"
+    # One-file means a single EXE with the data inlined and no COLLECT step.
+    assert "COLLECT" not in spec, "the spec builds one-folder; the README says one-file"
     assert "one-folder" not in TEXT, "the README still describes a one-folder build"
     # The one-folder layout puts the exe inside a folder of the same name.
     assert "DesktopBugCompanion\\DesktopBugCompanion.exe" not in TEXT, (

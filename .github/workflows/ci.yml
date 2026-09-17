@@ -23,70 +23,29 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          # Matches the version developers use locally, so a failure here is
+          # reproducible on a workstation.
+          python-version: '3.13'
           cache: pip
 
       - name: Install dependencies
         shell: pwsh
         run: python -m pip install -r requirements.txt
 
-      - name: Validate source and data
+      # One runner, shared with the release workflow. It discovers the smoke
+      # tests rather than being handed a list that can drift out of date, and a
+      # forgotten list entry fails silently by simply not running anything.
+      - name: Run all checks
         shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $env:PYTHONPATH = Join-Path $PWD 'src'
-
-          python -m compileall -q src tools launcher.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          Get-ChildItem models -Recurse -Filter model.json -File | ForEach-Object {
-            python tools/validate_model.py $_.FullName
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-          Get-ChildItem presets -Filter *.json -File | ForEach-Object {
-            python tools/validate_preset.py $_.FullName
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
-
-          python tools/model_variations_smoke.py
-          python tools/color_override_smoke.py
-          python tools/progression_smoke.py
-          python tools/personality_catalog_smoke.py
-          python tools/phase_scheduler_smoke.py
-          python tools/jobs_smoke.py
-          python tools/job_blend_smoke.py
-          python tools/drifter_smoke.py
-          python tools/inspector_ui_smoke.py
-          python tools/preset_abilities_smoke.py
-          python tools/state_migration_smoke.py
-          python tools/shutdown_smoke.py
-          python tools/preset_path_smoke.py
-          python tools/team_relations_smoke.py
-          python tools/logging_smoke.py
-          python tools/readme_claims_smoke.py
-          python tools/spider_movement_smoke.py
-          python tools/tarantula_smoke.py
-          python tools/chosen_one_smoke.py
+        run: python tools/run_all_checks.py
 
       - name: Build Windows executable smoke test
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m PyInstaller `
-            --noconfirm `
-            --clean `
-            --onefile `
-            --windowed `
-            --name DesktopBugCompanion `
-            --distpath ci-dist `
-            --workpath ci-build `
-            --paths src `
-            --add-data 'models;models' `
-            --add-data 'personalities;personalities' `
-            --add-data 'presets;presets' `
-            --hidden-import desktop_bug.engine `
-            launcher.py
+          python -m PyInstaller --noconfirm --clean `
+            --distpath ci-dist --workpath ci-build `
+            DesktopBugCompanion.spec
 
           if (-not (Test-Path -LiteralPath 'ci-dist/DesktopBugCompanion.exe')) {
             throw 'PyInstaller did not produce ci-dist/DesktopBugCompanion.exe'

@@ -375,6 +375,10 @@ Double-click:
 build_exe.bat
 ```
 
+`DesktopBugCompanion.spec` is the single definition of the build. The batch
+file and both GitHub workflows run it rather than repeating its flags, so there
+is one place to change and nothing to keep in step.
+
 The build uses PyInstaller one-file mode and writes a single executable:
 
 ```text
@@ -394,7 +398,13 @@ preset, because saved presets have to be writable and the bundle is not.
 The repository includes Windows workflows under `.github/workflows/`:
 
 - `ci.yml` runs on pushes and pull requests targeting `main`. It compiles the Python sources, validates every model and preset, and performs a PyInstaller build smoke test.
-- `release-windows.yml` runs for version tags such as `v1.0.0`. It builds the one-file Windows executable with all current creature models, personalities, and presets bundled, then publishes the `.exe` and a ZIP containing the executable and README to a GitHub Release.
+- Both workflows run `tools/run_all_checks.py`, which compiles the sources,
+  validates every model and preset, and discovers and runs every
+  `tools/*_smoke.py`. A new test is therefore picked up by both without
+  editing a workflow.
+- `release-windows.yml` runs for version tags such as `v1.0.0`. It refuses a
+  tag that disagrees with `__version__` in `src/desktop_bug/__init__.py`, so a
+  published build always reports the version its tag claims. It builds the one-file Windows executable with all current creature models, personalities, and presets bundled, then publishes the `.exe` and a ZIP containing the executable and README to a GitHub Release.
 
 To publish a release, push a semantic-version tag:
 

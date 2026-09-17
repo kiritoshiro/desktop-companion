@@ -30,48 +30,42 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
           cache: pip
 
       - name: Install dependencies
         shell: pwsh
         run: python -m pip install -r requirements.txt
 
-      - name: Validate source and data
+      # A release whose tag disagrees with the version in the source ships an
+      # executable that reports a number nobody can match to a commit.
+      - name: Check the tag matches __version__
+        if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           $ErrorActionPreference = 'Stop'
           $env:PYTHONPATH = Join-Path $PWD 'src'
-
-          python -m compileall -q src tools launcher.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          Get-ChildItem models -Recurse -Filter model.json -File | ForEach-Object {
-            python tools/validate_model.py $_.FullName
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = python -c "import desktop_bug; print(desktop_bug.__version__)"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read desktop_bug.__version__' }
+          $expected = "v$version"
+          if ($env:REF_NAME -ne $expected) {
+            throw "Tag $env:REF_NAME does not match __version__ ($expected). Update src/desktop_bug/__init__.py or retag."
           }
+          Write-Host "Tag $env:REF_NAME matches __version__ $version"
 
-          Get-ChildItem presets -Filter *.json -File | ForEach-Object {
-            python tools/validate_preset.py $_.FullName
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
+      # A release used to validate data and run no tests, so it could ship
+      # code that the CI workflow would have rejected. Same runner as CI.
+      - name: Run all checks
+        shell: pwsh
+        run: python tools/run_all_checks.py
 
       - name: Build one-file executable
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m PyInstaller `
-            --noconfirm `
-            --clean `
-            --onefile `
-            --windowed `
-            --name DesktopBugCompanion `
-            --paths src `
-            --add-data 'models;models' `
-            --add-data 'personalities;personalities' `
-            --add-data 'presets;presets' `
-            --hidden-import desktop_bug.engine `
-            launcher.py
+          python -m PyInstaller --noconfirm --clean DesktopBugCompanion.spec
 
           if (-not (Test-Path -LiteralPath 'dist/DesktopBugCompanion.exe')) {
             throw 'PyInstaller did not produce dist/DesktopBugCompanion.exe'
