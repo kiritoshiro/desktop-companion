@@ -580,7 +580,8 @@ DesktopBugCompanion/
     conftest.py              # offscreen Qt, one QApplication, a private state dir
     support.py               # repository paths and shipped-data loaders
     movement.py              # the gait rig, driven headlessly
-    test_<name>.py           # 29 headless modules, all run by CI
+    metrics.py               # behaviour metrics over a headless colony run (DC-24)
+    test_<name>.py           # headless modules, all run by CI
 ```
 
 ## Add a new creature model
