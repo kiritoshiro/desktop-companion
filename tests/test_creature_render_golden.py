@@ -51,11 +51,10 @@ def render_reference_frame() -> QImage:
     for _ in range(FRAMES):
         manager.update(DT, -100000.0, -100000.0)
     # FlyWorld.ensure_spawner() plants a nest marker at screen-centre even with
-    # flies off, and FlySpawner itself carries a pulse phase from flies.py's
-    # own (unseeded, out-of-scope-for-DC-09) module-level random -- confirmed
-    # by comparing two in-process runs with identical creature state that
-    # still disagreed on a ~44x40 patch centred on (screen_w/2, screen_h/2).
-    # Dropping it keeps this test about the split, not about that gap.
+    # flies off. Its pulse phase is seeded and reproducible since DC-40, but
+    # this test's reference PNG predates that and was captured without the
+    # nest in frame -- dropping it keeps this test about the split, not about
+    # re-baselining an image over an unrelated package.
     manager.fly_world.spawners.clear()
     # A fresh cache per process is deterministic; a *reused* one is not once
     # more than one manager has been built in the same run (its keys are

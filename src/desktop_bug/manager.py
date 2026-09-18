@@ -66,6 +66,14 @@ class CreatureManager:
         # unaffected.
         self.seed = seed
         self._rng = random if seed is None else random.Random(seed)
+        # FlyWorld gets its own `Random` instance rather than sharing `_rng`:
+        # sharing the object would interleave every fly draw into the same
+        # stream the hunting/decision code reads, so merely having a fly
+        # nest on screen would shift every creature roll after it (breaking
+        # existing seeded traces, including the DC-11 golden-image test, for
+        # a reason that has nothing to do with what changed there). A second
+        # instance built from the same seed is still fully reproducible.
+        self._fly_rng = random if seed is None else random.Random(seed)
         self.screen_w = screen_w
         self.screen_h = screen_h
         self.creatures: List[Creature] = []
@@ -120,6 +128,7 @@ class CreatureManager:
             max_interval=self.fly_max_interval,
             max_flies=self.fly_max,
             scale=self.size_scale,
+            rng=self._fly_rng,
         )
         self._dragged_fly = None
         self._dragged_spawner = None
