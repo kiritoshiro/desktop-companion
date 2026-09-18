@@ -4,6 +4,7 @@
   "mood": "drifter",
   "drifter": true,
   "drift_movement": true,
+  "behaviour_modules": ["drifter"],
   "speed_multiplier": 1.22,
   "reaction_radius": 455,
   "threat_radius": 145,

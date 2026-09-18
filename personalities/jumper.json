@@ -3,6 +3,7 @@
   "display_name": "Jumper",
   "mood": "playful",
   "constant_small_hops": true,
+  "behaviour_modules": ["jumper"],
   "speed_multiplier": 1.02,
   "reaction_radius": 390,
   "threat_radius": 150,

@@ -389,7 +389,7 @@ class Fly:
             # visually silent, otherwise the prey notices the spider every time it
             # advances and the stop-and-go hunt can never close the distance.
             is_hunter = False
-            hunter_check = getattr(sp, "_is_hunter_personality", None)
+            hunter_check = getattr(sp, "_acts_as_hunter", None)
             if callable(hunter_check):
                 try:
                     is_hunter = bool(hunter_check())

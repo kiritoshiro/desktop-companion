@@ -65,14 +65,18 @@ Deliberately out of scope, and why
 Personality-id conditionals that run *inside* an already-committed activity
 -- a Hunter's stalk-freeze cadence while already in Alert/Approach/Chase, a
 Drifter's mid-slide physics, a Jumper's hop kinematics once launched -- are
-not touched. Those are execution of a choice the arbiter (or, for hunting,
-``_pursue_prey``) already made, exactly the category the plan places
-``enter_*`` methods in ("the existing enter_* methods stay as executors").
-Fully deleting ``_is_hunter_personality``/``_is_jumper_personality``/etc. and
-converting temperament into pure trait-driven modules is DC-19's explicitly
-separate job ("Delete `_is_*_personality`"); doing that here as well would
-duplicate DC-19 and risks exactly the kind of stalk-mechanic regression the
-plan's own guardrails warn about on the highest-risk package in the plan.
+not touched here. Those are execution of a choice the arbiter (or, for
+hunting, ``_pursue_prey``) already made, exactly the category the plan
+places ``enter_*`` methods in ("the existing enter_* methods stay as
+executors"). This module still asks "is this creature acting as a Hunter/
+Jumper/Webber/etc. right now" through ``creature._acts_as_hunter()`` and
+its siblings in ``creature/behaviour.py`` -- but as of DC-19 those methods
+no longer branch on a personality id or a raw boolean flag themselves; they
+read ``personality_profiles.behaviour_modules_for()``, which resolves an
+explicit ``behaviour_modules`` list (or, for an un-migrated personality
+file, the same legacy flags/id equality the old personality-id branches
+checked) plus the dynamic ``job_id``/``has_skill`` gate that stays here.
+See that function's docstring for the module catalog.
 """
 
 from __future__ import annotations
@@ -137,7 +141,7 @@ def _engage_cursor_candidate(creature, perception, mx: float, my: float,
     reaction = float(creature.personality.get("reaction_radius", 360))
     if dist_to_cursor >= reaction:
         return None
-    hunter = creature._is_hunter_personality()
+    hunter = creature._acts_as_hunter()
     cursor_still = hunter and creature._cursor_is_still_for_observe()
     closeness = 1.0 - min(1.0, max(0.0, dist_to_cursor / max(1.0, reaction)))
     weight = _phase_weight(creature.personality, "approach") + (2.5 if hunter else 0.0)
@@ -156,7 +160,7 @@ def _engage_cursor_candidate(creature, perception, mx: float, my: float,
 
 
 def _hop_candidate(creature, state_timer_expired: bool) -> Optional[Candidate]:
-    if not state_timer_expired or not creature._is_jumper_personality():
+    if not state_timer_expired or not creature._acts_as_jumper():
         return None
     if creature.rng.random() >= float(creature.personality.get("idle_hop_chance", 0.55)):
         return None
@@ -227,7 +231,7 @@ def _drift_run_candidate(creature, from_idle: bool) -> Optional[Candidate]:
 def _web_care_candidates(creature, perception, reaction: float):
     """Repair, adopt, weave-new and web-walk, folded from `_consider_special_actions`."""
     if creature.has_skill("weave_web") and creature.cage is None and perception.has_web_world and creature.weave_cooldown <= 0.0:
-        webber = creature._is_webber_personality()
+        webber = creature._acts_as_webber()
         repairable = perception.repairable_web(max_dist=1e9 if webber else reaction * 1.5)
         if repairable is not None:
             score = (9.0 if webber else 2.5) * _noise(creature)
@@ -248,7 +252,7 @@ def _web_care_candidates(creature, perception, reaction: float):
     if creature.has_skill("web_walk") and creature.cage is None and perception.has_web_world and creature.web_walk_cooldown <= 0.0:
         walkable = perception.walkable_web(max_dist=reaction * 1.8)
         if walkable is not None:
-            webber = creature._is_webber_personality()
+            webber = creature._acts_as_webber()
             m = creature.mood
             score = (4.5 if webber else 1.6 + m.curiosity * 2.0) * _noise(creature)
             yield Candidate("web_walk", score, lambda w=walkable: creature._begin_web_walk(w))
@@ -266,7 +270,7 @@ def _shoot_web_candidate(creature, dist_to_cursor: float, reaction: float, mx: f
 
 
 def _social_candidates(creature, focus: str):
-    hunter = creature._is_hunter_personality()
+    hunter = creature._acts_as_hunter()
     if not creature.allow_social or hunter or creature.social_cooldown > 0.0:
         return
     reaction = float(creature.personality.get("reaction_radius", 360))
@@ -340,7 +344,7 @@ def _cursor_expressive_candidates(creature, dist_to_cursor: float, mx: float, my
 def _self_flourish_candidates(creature, from_idle: bool, state_timer_expired: bool, focus: str):
     if not (from_idle and state_timer_expired):
         return
-    hunter = creature._is_hunter_personality()
+    hunter = creature._acts_as_hunter()
     if hunter:
         return
     m = creature.mood

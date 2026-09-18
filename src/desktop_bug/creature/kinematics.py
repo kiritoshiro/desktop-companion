@@ -692,7 +692,7 @@ class KinematicsMixin:
         dx = self.target_x - self.x
         dy = self.target_y - self.y
         target_dist = math.hypot(dx, dy)
-        strafe = self.state == "Observe" and self._is_observer_personality()
+        strafe = self.state == "Observe" and self._acts_as_observer()
         self.strafe_observe = strafe
         if target_dist > 2.0 and not strafe:
             raw_heading = math.atan2(dy, dx)
@@ -927,7 +927,7 @@ class KinematicsMixin:
             # Normal personalities plant ahead of the body-facing direction. Observer
             # is special: it keeps its head aimed at its focus while the body backs
             # or scurries away, so next footfalls need to follow the actual travel vector.
-            if self.state == "Observe" and self._is_observer_personality() and self.current_speed > 2.0:
+            if self.state == "Observe" and self._acts_as_observer() and self.current_speed > 2.0:
                 inv_speed = 1.0 / max(1e-4, math.hypot(self.vel_x, self.vel_y))
                 move_f = (self.vel_x * fx + self.vel_y * fy) * inv_speed
                 move_s = (self.vel_x * rx + self.vel_y * ry) * inv_speed
@@ -1300,7 +1300,7 @@ class KinematicsMixin:
         dy = self.target_y - self.y
         target_dist = math.hypot(dx, dy)
         move_heading = math.atan2(dy, dx) if target_dist > 2.0 else self.heading
-        strafe_observe = self.state == "Observe" and self._is_observer_personality()
+        strafe_observe = self.state == "Observe" and self._acts_as_observer()
         self.strafe_observe = strafe_observe
 
         if target_dist > 2.0 and not strafe_observe:
@@ -1643,7 +1643,7 @@ class KinematicsMixin:
             threshold *= float(self.personality.get("drift_slide_rehome_slop", 1.58))
         elif self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun") or drifting_fast:
             threshold *= 0.72
-        if self.state == "Observe" and self._is_observer_personality():
+        if self.state == "Observe" and self._acts_as_observer():
             # Side-stepping makes feet drift out of their comfortable lane sooner
             # than forward walking, so replant a little earlier and more often.
             threshold *= 0.78
@@ -1656,7 +1656,7 @@ class KinematicsMixin:
             max_swinging = min(max_swinging, int(self.personality.get("drift_slide_max_swinging", 2)))
         elif self.state in ("Chase", "Retreat", "Dragged", "Startled", "DriftRun") or drifting_fast:
             max_swinging = 4 if self.state in ("Dragged", "DriftRun") or drifting_fast else 3
-        if self.state == "Observe" and self._is_observer_personality() and moving:
+        if self.state == "Observe" and self._acts_as_observer() and moving:
             max_swinging = max(max_swinging, 2)
         swinging_now = sum(1 for leg in self.legs if leg.stepping or leg.pending_step)
 
