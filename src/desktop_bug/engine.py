@@ -6,6 +6,7 @@ import math
 import os
 import signal
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from PyQt5.QtCore import QElapsedTimer, QRect, QTimer, Qt
@@ -32,8 +33,10 @@ from PyQt5.QtWidgets import (
 
 from . import __version__
 from .discovery import migrate_legacy_state_dir, resolve_preset_path, state_dir
+from .dpi import enable_high_dpi_scaling, logical_to_physical, screen_device_pixel_ratio_at
 from .logging_setup import configure_logging, get_logger, install_excepthook, log_path
 from .session_control import clear_stop_request, consume_stop_request
+from .live_channel import OverlayChannelServer, channel_name
 from .manager import CreatureManager
 from .preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos
@@ -110,6 +113,17 @@ def left_mouse_button_down() -> bool:
         return False
 
 def virtual_screen_geometry() -> QRect:
+    """Union of every screen's geometry, in Qt logical (device-independent) pixels.
+
+    ``QScreen.geometry()`` is documented to report device-independent pixels
+    once ``Qt.AA_EnableHighDpiScaling`` is set (see dpi.py), and Qt lays out
+    each screen's logical origin so adjacent monitors tile without gaps or
+    overlaps even when they run at different scale factors. That means this
+    function, `QCursor.pos()` and every widget-local coordinate in this file
+    already share one consistent logical space and need no DPI conversion
+    among themselves -- only the boundary into raw Win32 calls does (see
+    `_refresh_desktop_surfaces` and the cursor-trap conversion in `tick`).
+    """
     screens = QGuiApplication.screens()
     if not screens:
         return QRect(0, 0, 1280, 720)
@@ -460,6 +474,18 @@ class OverlayWindow(QWidget):
         self._stop_requested = False
         clear_stop_request(self._state_dir)
 
+        # Live two-way channel to any settings window (DC-16). One local-socket
+        # server per running overlay; the preset-file poll above and the
+        # stop-request file both stay in place as fallbacks for a settings
+        # window on an incompatible build, or for whenever the channel simply
+        # fails to bind (another process already holds the name, no local
+        # socket support in this environment, etc).
+        self._channel_server = OverlayChannelServer(channel_name(self._state_dir), self)
+        self._channel_server.message_received.connect(self._on_channel_message)
+        self._channel_server.client_connected.connect(self._broadcast_session_state)
+        if not self._channel_server.listen():
+            log.warning("Live channel unavailable; settings window will use file polling only")
+
         self.elapsed = QElapsedTimer()
         self.elapsed.start()
         self.last_ms = self.elapsed.elapsed()
@@ -526,14 +552,35 @@ class OverlayWindow(QWidget):
         except Exception:
             hwnd = None
         top_left = self.geometry_rect.topLeft()
-        self.manager.set_desktop_surfaces(snapshot_desktop_surfaces(
+        # snapshot_desktop_surfaces reads raw Win32 window/icon rectangles,
+        # which are always native pixels. geometry_rect/width()/height() are
+        # Qt logical pixels once high-DPI scaling is on, so convert the
+        # origin/size into native pixels before the call, then scale the
+        # native-local rectangles it returns back down into the logical
+        # pixels the manager and every creature position live in (DC-14).
+        # This uses one ratio for the whole snapshot (the screen under the
+        # overlay's own origin), which is exact for a single monitor or a
+        # multi-monitor desktop at one uniform scale; a real mixed-DPI rig
+        # still needs the manual check this package's plan entry defers to a
+        # person, since a window on a differently-scaled monitor than the
+        # origin's would need its own ratio.
+        dpr = screen_device_pixel_ratio_at(top_left.x(), top_left.y())
+        physical_origin_x, physical_origin_y = logical_to_physical(top_left.x(), top_left.y(), dpr)
+        physical_w, physical_h = logical_to_physical(self.width(), self.height(), dpr)
+        surfaces = snapshot_desktop_surfaces(
             exclude_hwnd=hwnd,
-            origin_x=int(top_left.x()),
-            origin_y=int(top_left.y()),
-            screen_w=int(self.width()),
-            screen_h=int(self.height()),
+            origin_x=int(round(physical_origin_x)),
+            origin_y=int(round(physical_origin_y)),
+            screen_w=int(round(physical_w)),
+            screen_h=int(round(physical_h)),
             include_desktop_icons=self.manager.desktop_icons_enabled,
-        ))
+        )
+        if dpr != 1.0:
+            surfaces = [
+                replace(surface, x=surface.x / dpr, y=surface.y / dpr, w=surface.w / dpr, h=surface.h / dpr)
+                for surface in surfaces
+            ]
+        self.manager.set_desktop_surfaces(surfaces)
 
     def _refresh_camouflage_samples(self) -> None:
         """Animate visibility-only camouflage strength.
@@ -722,16 +769,22 @@ class OverlayWindow(QWidget):
         mouse_released = self.last_left_mouse_down and not mouse_down
         self.last_left_mouse_down = mouse_down
 
-        self.manager.update(dt, mx, my, mouse_down=mouse_down, mouse_pressed=mouse_pressed, mouse_released=mouse_released)
         # A spider may be trapping or shoving the pointer with sticky silk. The
         # manager returns the overlay-local position the pointer should be forced
         # to this frame (or None to leave it alone). Only the engine can move the
         # real OS pointer, so apply it here, converting back to global pixels.
-        desired = self.manager._desired_cursor
+        desired = self.manager.update(dt, mx, my, mouse_down=mouse_down, mouse_pressed=mouse_pressed, mouse_released=mouse_released)
         if desired is not None:
             origin = self.geometry_rect.topLeft()
-            set_cursor_pos(int(round(origin.x() + desired[0])),
-                           int(round(origin.y() + desired[1])))
+            logical_x = origin.x() + desired[0]
+            logical_y = origin.y() + desired[1]
+            # geometry_rect/desired are Qt logical (device-independent) pixels,
+            # but SetCursorPos is a raw Win32 call that always takes native
+            # pixels, so convert using the device pixel ratio of the screen
+            # the target point actually falls on (DC-14).
+            dpr = screen_device_pixel_ratio_at(logical_x, logical_y)
+            physical_x, physical_y = logical_to_physical(logical_x, logical_y, dpr)
+            set_cursor_pos(int(round(physical_x)), int(round(physical_y)))
         self._update_hover_and_cursor(mx, my)
         with self.profiler.section("repaint-region"):
             self.request_repaint()
@@ -1048,6 +1101,7 @@ class OverlayWindow(QWidget):
             pass
         self._request_full_repaint()
         apply_click_through(self)
+        self._broadcast_session_state()
 
     def _notify_unwritable_state_dir(self, path) -> None:
         """Tell the user progress will not be saved this session (D3).
@@ -1089,17 +1143,18 @@ class OverlayWindow(QWidget):
     def _request_full_repaint(self) -> None:
         self._full_repaint_pending = True
 
-    def _check_stop_request(self) -> bool:
-        """Save and quit if the settings window asked the overlay to stop.
+    def _do_graceful_stop(self) -> None:
+        """Save and quit. Shared by the file-based and channel-based stop paths.
 
         This is the path that used to be a bare ``TerminateProcess``, which
-        killed the overlay before anything could be written. Returns whether a
-        stop was handled, so the caller can skip the rest of the frame.
+        killed the overlay before anything could be written (DC-04). DC-16
+        adds a second, faster way to reach it -- a ``stop_request`` over the
+        live channel -- alongside the original stop-request file, so an old
+        settings window or a channel that failed to bind still works exactly
+        as before.
         """
         if self._stop_requested:
-            return True
-        if not consume_stop_request(self._state_dir):
-            return False
+            return
         self._stop_requested = True
         self.timer.stop()
         # Save here rather than relying only on aboutToQuit, so the state is on
@@ -1108,10 +1163,81 @@ class OverlayWindow(QWidget):
             self.manager.save_runtime_state()
         except Exception:
             log.exception("Could not save runtime state while stopping")
+        server = getattr(self, "_channel_server", None)
+        if server is not None:
+            server.close()
         app = QApplication.instance()
         if app is not None:
             app.quit()
+
+    def _check_stop_request(self) -> bool:
+        """Save and quit if the settings window asked the overlay to stop.
+
+        Returns whether a stop was handled, so the caller can skip the rest
+        of the frame. This is the file-based fallback; `_on_channel_message`
+        handles the same request arriving over the live channel instead.
+        """
+        if self._stop_requested:
+            return True
+        if not consume_stop_request(self._state_dir):
+            return False
+        self._do_graceful_stop()
         return True
+
+    def _on_channel_message(self, message: dict) -> None:
+        """Handle a JSON message pushed by a connected settings window."""
+        mtype = message.get("type")
+        if mtype == "preset_update":
+            self._apply_pushed_preset(message.get("data"), message.get("preset_path"))
+        elif mtype == "stop_request":
+            self._do_graceful_stop()
+        elif mtype == "hello":
+            # `client_connected` already queued a fresh broadcast; nothing else to do.
+            pass
+        else:
+            log.debug("Ignoring unknown live-channel message type %r", mtype)
+
+    def _apply_pushed_preset(self, data, preset_path) -> None:
+        """Apply a preset the settings window pushed live over the channel.
+
+        Mirrors `_check_preset_reload`'s file-based path so the two stay in
+        sync, but takes effect immediately instead of waiting up to
+        PRESET_WATCH_MS for the next poll.
+        """
+        if not isinstance(data, dict):
+            return
+        if preset_path:
+            try:
+                if Path(preset_path).resolve() != self._preset_path.resolve():
+                    return
+            except OSError:
+                pass
+        try:
+            message = self.manager.reload_from_preset_data(data)
+        except Exception:
+            log.exception("Live reload via the live channel failed")
+            return
+        for warning in self.manager.warnings:
+            log.warning("%s", warning)
+        log.info("%s", message)
+        # Keep the mtime bookkeeping in step so the file-polling fallback does
+        # not immediately reload the same content again a moment later.
+        try:
+            self._last_preset_mtime = self._preset_path.stat().st_mtime
+        except OSError:
+            pass
+        self._request_full_repaint()
+        self._broadcast_session_state()
+
+    def _broadcast_session_state(self) -> None:
+        """Publish the tray-changeable state to every connected settings window."""
+        server = getattr(self, "_channel_server", None)
+        if server is None or server.client_count == 0:
+            return
+        try:
+            server.broadcast({"type": "session_state", "state": self.manager.session_snapshot()})
+        except Exception:
+            log.debug("Could not broadcast session state", exc_info=True)
 
     def closeEvent(self, event):  # noqa: N802 - Qt API name
         # Closing the window is another exit that must not lose progress.
@@ -1119,6 +1245,9 @@ class OverlayWindow(QWidget):
             self.manager.save_runtime_state()
         except Exception:
             log.exception("Could not save runtime state while closing")
+        server = getattr(self, "_channel_server", None)
+        if server is not None:
+            server.close()
         super().closeEvent(event)
 
     def _check_preset_reload(self) -> None:
@@ -1205,6 +1334,7 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
         except Exception:
             pass
         apply_click_through(window)
+        window._broadcast_session_state()
 
     performance_menu = menu.addMenu("Performance")
     fps_group = QActionGroup(menu)
@@ -1427,6 +1557,7 @@ def main(argv=None) -> int:
     if written_to is None:
         log.warning("No log file could be opened under %s", state_dir())
 
+    enable_high_dpi_scaling()
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
     # Must search the bundled data too. A one-file build keeps its presets in

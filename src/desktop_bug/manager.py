@@ -1049,6 +1049,30 @@ class CreatureManager:
             self._replace_with_traits(traits, keep_positions=False)
         return f"Applied live: {len(self.creatures)} spider(s)."
 
+    def session_snapshot(self) -> dict:
+        """A JSON-safe snapshot of the state a tray action can change live.
+
+        Sent to any connected settings window over the live channel (DC-16)
+        so its model reflects mood, size, flies and social-play toggles, and
+        per-spider names and teams, instead of only learning about them the
+        next time it happens to reload the preset file (C7).
+        """
+        return {
+            "mood_mode": self.mood_mode,
+            "size_scale": self.size_scale,
+            "social_play": self.social_play,
+            "flies_enabled": self.flies_enabled,
+            "interferable": self.interferable,
+            "creatures": [
+                {
+                    "id": str(getattr(creature, "progression_id", creature.index)),
+                    "name": creature.name,
+                    "team_id": creature.progression.team_id,
+                }
+                for creature in self.creatures
+            ],
+        }
+
     def randomize_models(self) -> str:
         if not self.creatures or not self.models:
             return "No models available."

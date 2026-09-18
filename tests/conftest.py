@@ -31,6 +31,15 @@ os.environ.setdefault(
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+# DC-14: Qt reads Qt.AA_EnableHighDpiScaling while it builds the platform
+# integration for the *first* QApplication/QGuiApplication in the process and
+# ignores a later change, so this has to run here -- before any test module
+# gets a chance to construct one some other way -- rather than inside the
+# `qapp` fixture below, which only runs on the first test that requests it.
+from desktop_bug.dpi import enable_high_dpi_scaling  # noqa: E402
+
+enable_high_dpi_scaling()
+
 # Qt allows exactly one application object per process, and it must outlive
 # every widget and every QFontMetrics built from it. Binding it to a fixture
 # alone is not enough: a session fixture's value is released at the end of the
