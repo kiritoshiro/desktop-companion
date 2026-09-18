@@ -96,8 +96,17 @@ def test_release() -> None:
         assert guard.motion_paused is False, state
 
 
-def test_colony_behaviour() -> int:
+def test_colony_behaviour(monkeypatch, tmp_path) -> int:
     """A working colony must still behave like spiders over a long run."""
+    # DC-21: build progress now depends on the team's banked food (state that
+    # persists across runs, per ``BaseSite``), so this test must not read or
+    # write whatever real save happens to sit at the machine's actual
+    # ``DESKTOP_BUG_STATE_DIR`` -- a leftover base from an earlier real launch
+    # (or an earlier test run) would make the ``build_progress`` assertion
+    # below pass or fail depending on unrelated history instead of on this
+    # run. Giving it a private directory, like test_creature_render_golden.py
+    # already does for the same reason, makes it deterministic again.
+    monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(tmp_path / "state"))
     random.seed(5)
     manager = CreatureManager(ROOT / "presets" / "colony.json", 1600, 900)
     manager.base_world.clear()
@@ -125,6 +134,14 @@ def test_colony_behaviour() -> int:
         assert len(off_states) >= 4, (job, sorted(off_states))
 
     site = next(iter(manager.base_world.bases.values()))
+    # DC-21: build progress spends the team's banked food now, and
+    # `colony.json` deliberately puts its Hunter on a base-less rival team
+    # (see this file's own module docstring context and DC-20's notes), so
+    # `pack_a` has no dedicated food-runner. This still passes because DC-21
+    # widened crediting: the Builder/Guard/Scout/Webber occasionally eat a
+    # wandering fly themselves (`FLY_CATCH_RESOURCE_AMOUNT`), which is enough
+    # over four minutes at the preset's default fly rate to fund some
+    # progress, just slower than a colony with its own Hunter would see.
     assert site.build_progress > 0.0, site.build_progress
     builder_job = sum(c for s, c in seen["builder"].items() if s in JOB_STATES)
     guard_job = sum(c for s, c in seen["guard"].items() if s in JOB_STATES)
