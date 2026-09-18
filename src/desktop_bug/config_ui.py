@@ -40,6 +40,7 @@ from . import __version__
 from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, migrate_legacy_state_dir, state_dir, user_presets_dir
 from .logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
+from .live_channel import SettingsChannelClient, channel_name
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
 from .jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
 from .personality_profiles import selectable_personality_ids
@@ -202,6 +203,14 @@ class ConfigWindow(QMainWindow):
         # the overlay runs rewrites this file, which the overlay watches and
         # reloads, so edits apply live without stopping it.
         self.launched_preset_path = None
+        # Live two-way channel to a running overlay (DC-16). Connected lazily
+        # (see `_ensure_channel_connected`) because there may be no overlay
+        # running yet, or it may be an older build with no server; the preset
+        # file write below and `session_control`'s stop-request file both stay
+        # in place as the fallback for exactly that case.
+        self._channel_client = SettingsChannelClient(channel_name(state_dir()), self)
+        self._channel_client.message_received.connect(self._on_channel_message)
+        self._live_creature_state: list = []
         self._loaded_settings: dict = {}
         # The teams this preset knows about, and what stands between them. Held
         # here rather than read back out of widgets, because the panel is rebuilt
@@ -1702,12 +1711,85 @@ class ConfigWindow(QMainWindow):
     def _overlay_running(self) -> bool:
         return bool(self.overlay_process and self.overlay_process.poll() is None)
 
+    def _ensure_channel_connected(self, timeout_ms: int = 100) -> bool:
+        """Best-effort connect to a running overlay's live channel.
+
+        A failed connection is routine, not an error: the overlay may not be
+        up yet, may be an older build with no server, or the channel may
+        simply have failed to bind. Every caller falls back to the preset
+        file and `session_control`'s stop-request file exactly as before this
+        channel existed.
+        """
+        client = getattr(self, "_channel_client", None)
+        if client is None:
+            return False
+        if client.is_connected():
+            return True
+        try:
+            return client.try_connect(timeout_ms)
+        except Exception:
+            return False
+
+    def _on_channel_message(self, message: dict) -> None:
+        if not isinstance(message, dict):
+            return
+        if message.get("type") == "session_state":
+            self._apply_live_session_state(message.get("state"))
+
+    def _apply_live_session_state(self, state) -> None:
+        """A tray-driven change arrived live from the running overlay (C7).
+
+        Updates only the widgets a tray action can actually touch, so this
+        never clobbers a slot edit made here that has not been saved or
+        applied yet. Per-spider name/team detail is kept on
+        `_live_creature_state` for callers (and tests) that want it; the slot
+        table edits groups of spiders, not individual runtime creatures, so
+        reconciling a rename or a team change back into a specific row is
+        left for a later package rather than guessed at here.
+        """
+        if not isinstance(state, dict):
+            return
+        if "mood_mode" in state:
+            mood_idx = self.mood_combo.findData(str(state["mood_mode"] or "auto").lower())
+            if mood_idx >= 0:
+                self.mood_combo.setCurrentIndex(mood_idx)
+        if "size_scale" in state:
+            try:
+                size_scale = float(state["size_scale"])
+            except (TypeError, ValueError):
+                size_scale = None
+            if size_scale is not None:
+                closest_index, closest_distance = 0, float("inf")
+                for idx in range(self.size_combo.count()):
+                    distance = abs(float(self.size_combo.itemData(idx)) - size_scale)
+                    if distance < closest_distance:
+                        closest_index, closest_distance = idx, distance
+                self.size_combo.setCurrentIndex(closest_index)
+        if "social_play" in state:
+            self.social_play_check.setChecked(bool(state["social_play"]))
+        if "flies_enabled" in state:
+            self.flies_enabled_check.setChecked(bool(state["flies_enabled"]))
+        if "interferable" in state:
+            self.interferable_check.setChecked(bool(state["interferable"]))
+        self._live_creature_state = list(state.get("creatures") or [])
+        self.status.setText("Live update received from the running overlay.")
+
     def _apply_live_if_running(self) -> bool:
         """If the overlay is running, rewrite its preset so it reloads live."""
         if not self._overlay_running() or not self.launched_preset_path:
             return False
         try:
-            save_preset(self.current_preset_data(), Path(self.launched_preset_path))
+            data = self.current_preset_data()
+            save_preset(data, Path(self.launched_preset_path))
+            # The file write above is the fallback that always works; push it
+            # over the live channel too so the overlay applies it immediately
+            # instead of waiting for the next 700 ms poll.
+            if self._ensure_channel_connected():
+                self._channel_client.send({
+                    "type": "preset_update",
+                    "preset_path": self.launched_preset_path,
+                    "data": data,
+                })
             return True
         except Exception as exc:
             QMessageBox.warning(self, "Could not apply live", str(exc))
@@ -1815,6 +1897,13 @@ class ConfigWindow(QMainWindow):
 
         self.status.setText("Stopping overlay...")
         self._wait_tick(0.0)
+        # Ask over the live channel first, if it is up: it reaches the overlay
+        # immediately rather than on its next poll. `stop_process` below still
+        # leaves the stop-request file regardless, so a channel that is down,
+        # unreachable, or talking to an older build behaves exactly as it did
+        # before this channel existed.
+        if self._ensure_channel_connected():
+            self._channel_client.send({"type": "stop_request"})
         # Ask the overlay to save and quit before killing it. Terminating it
         # outright discarded any XP, names and base progress that the debounced
         # flush had not yet written.
@@ -1835,6 +1924,10 @@ class ConfigWindow(QMainWindow):
             self.overlay_process = None
             self.launched_preset_path = None
             self.status.setText(f"Overlay exited with code {code}.")
+        if self._overlay_running():
+            # A short, non-blocking-in-practice retry: the overlay's server
+            # may not have been listening yet the moment it was launched.
+            self._ensure_channel_connected(50)
 
     def open_project_folder(self):
         path = str(self.root)
@@ -1861,6 +1954,9 @@ class ConfigWindow(QMainWindow):
                 return
             if reply == QMessageBox.Yes:
                 self.stop_overlay()
+        client = getattr(self, "_channel_client", None)
+        if client is not None:
+            client.close()
         super().closeEvent(event)
 
 
