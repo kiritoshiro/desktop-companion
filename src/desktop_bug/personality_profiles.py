@@ -127,12 +127,103 @@ def canonical_personality_definitions() -> dict[str, dict]:
 
 
 def selectable_personality_ids(personalities: dict | None = None, include_id: str | None = None) -> tuple[str, ...]:
-    """Return the compact menu, plus a requested legacy id for compatibility."""
+    """Return the compact menu plus every legacy personality that actually ships.
+
+    Previously this returned only the six compact ids plus one specifically
+    requested legacy id, so every other legacy personality under
+    ``personalities/`` (hunter, jumper, observer, nope, drifter, webber,
+    trapper, ...) stayed loadable but invisible in the settings menu -- the
+    UI and the data disagreed about what personalities existed (DC-19, C5).
+    Now every id actually present in ``personalities`` is offered, labelled
+    "Legacy: ..." by the caller (``config_ui.py`` already does this).
+    """
     values = list(COMPACT_TEMPERAMENT_IDS)
+    if personalities:
+        for personality_id in sorted(personalities):
+            if personality_id not in values:
+                values.append(personality_id)
     legacy_id = str(include_id or "").strip().lower()
-    if legacy_id and legacy_id not in values and personalities and legacy_id in personalities:
+    if legacy_id and legacy_id not in values:
         values.append(legacy_id)
     return tuple(values)
+
+
+# Behaviour modules replace the personality-id conditionals that used to sit
+# inside ``creature/behaviour.py`` (DC-19, C5: the trait system above already
+# projects every personality into continuous temperament, but the legacy
+# specialist flags still drove behaviour through hard-coded id branches --
+# two sources of truth). A module is selected either by an explicit
+# ``behaviour_modules`` list in the personality JSON (every personality
+# shipped in ``personalities/`` that needs one now carries it), or, for an
+# older personality file that has not been migrated, by the same legacy
+# boolean flags/id equality the old personality-id branches in
+# ``creature/behaviour.py`` checked -- preserved here unchanged so an
+# un-migrated custom personality keeps behaving exactly as it did before
+# this package.
+BEHAVIOUR_MODULE_IDS = ("hunter", "jumper", "observer", "nope", "drifter", "webber", "web_shooter")
+
+_LEGACY_MODULE_FLAGS = {
+    "mouse_hunter": "hunter",
+    "constant_small_hops": "jumper",
+    "horizontal_orbit_observer": "observer",
+    "nope_escape": "nope",
+    "drifter": "drifter",
+    "drift_movement": "drifter",
+    "web_weaver": "webber",
+    "webber": "webber",
+    "web_shooter": "web_shooter",
+}
+
+_LEGACY_MODULE_IDS = {
+    "hunter": "hunter",
+    "jumper": "jumper",
+    "observer": "observer",
+    "nope": "nope",
+    "drifter": "drifter",
+    "webber": "webber",
+    "weaver": "webber",
+    "trapper": "web_shooter",
+    "webslinger": "web_shooter",
+}
+
+
+def _flag_enabled(personality: dict, key: str) -> bool:
+    value = personality.get(key, False)
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+
+def behaviour_modules_for(personality) -> frozenset[str]:
+    """Return the behaviour-module ids a personality selects.
+
+    This does not include job-linked modules (a Hunter job or a Scout job
+    granting hunter/observer regardless of personality) or the runtime skill
+    gate (``has_skill(...)``): both stay dynamic, per-creature checks in
+    ``creature/behaviour.py`` alongside this, exactly as the personality-id
+    branches this replaces used to check ``job_id``/``has_skill`` themselves.
+    """
+    if not isinstance(personality, dict):
+        pid = str(personality or "").strip().lower()
+        module = _LEGACY_MODULE_IDS.get(pid)
+        return frozenset({module}) if module else frozenset()
+
+    explicit = personality.get("behaviour_modules")
+    if isinstance(explicit, (list, tuple, set, frozenset)):
+        return frozenset(
+            str(item).strip().lower() for item in explicit
+            if str(item).strip().lower() in BEHAVIOUR_MODULE_IDS
+        )
+
+    pid = str(personality.get("id", "")).strip().lower()
+    modules = set()
+    id_module = _LEGACY_MODULE_IDS.get(pid)
+    if id_module:
+        modules.add(id_module)
+    for flag, module_id in _LEGACY_MODULE_FLAGS.items():
+        if _flag_enabled(personality, flag):
+            modules.add(module_id)
+    return frozenset(modules)
 
 # Reusable movement/behavior aspects.  These are not abilities: they describe
 # how a creature moves or chooses states.  A full personality can combine one

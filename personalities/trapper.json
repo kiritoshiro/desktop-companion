@@ -4,6 +4,7 @@
   "mood": "hunter",
   "mouse_hunter": true,
   "web_shooter": true,
+  "behaviour_modules": ["hunter", "web_shooter"],
   "speed_multiplier": 1.0,
   "reaction_radius": 720,
   "threat_radius": 90,

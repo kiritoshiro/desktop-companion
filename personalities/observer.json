@@ -3,6 +3,7 @@
   "display_name": "Observer",
   "mood": "curious",
   "horizontal_orbit_observer": true,
+  "behaviour_modules": ["observer"],
   "speed_multiplier": 0.96,
   "reaction_radius": 430,
   "threat_radius": 125,

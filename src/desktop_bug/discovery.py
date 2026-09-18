@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple
 
 from .personality_profiles import (
     ABILITY_BUNDLES,
+    BEHAVIOUR_MODULE_IDS,
     BEHAVIOUR_PHASE_IDS,
     MOVEMENT_PROFILES,
     TEMPERAMENT_TRAIT_IDS,
@@ -367,6 +368,13 @@ def validate_personality(data: dict, path: Path) -> Tuple[bool, str]:
                     return False, f"{path}: unknown ability bundle(s): {', '.join(unknown)}"
     if "include_common_abilities" in data and not isinstance(data["include_common_abilities"], bool):
         return False, f"{path}: include_common_abilities must be true or false"
+    if "behaviour_modules" in data:
+        modules = data["behaviour_modules"]
+        if not isinstance(modules, list) or not all(isinstance(value, str) for value in modules):
+            return False, f"{path}: behaviour_modules must be a list of strings"
+        unknown = [value for value in modules if value.strip().lower() not in BEHAVIOUR_MODULE_IDS]
+        if unknown:
+            return False, f"{path}: unknown behaviour_modules id(s): {', '.join(unknown)}"
     if "movement_profile" in data:
         movement_profile = str(data["movement_profile"]).strip().lower()
         if movement_profile not in MOVEMENT_PROFILES:

@@ -20,6 +20,7 @@ from ..math_utils import (
     rand_range,
     smoothstep,
 )
+from ..personality_profiles import behaviour_modules_for
 from ..phase_scheduler import phase_id_for_state
 from .constants import (
     HUNT_COMMITTED_STATES,
@@ -56,7 +57,7 @@ class BehaviourMixin:
         self.state = "Approach"
         self.motion_paused = False
         reaction = float(self.personality.get("reaction_radius", 360))
-        if self._is_hunter_personality():
+        if self._acts_as_hunter():
             self.speed = self._hunter_approach_speed(distance(self.x, self.y, mx, my), reaction)
         else:
             self.speed = 52.0 * self._speed_mult()
@@ -74,10 +75,10 @@ class BehaviourMixin:
         self.motion_paused = False
         self.target_x = mx + self.rng.uniform(-16.0, 16.0)
         self.target_y = my + self.rng.uniform(-16.0, 16.0)
-        base_speed = float(self.personality.get("hunt_chase_speed", 150.0)) if self._is_hunter_personality() else 112.0
+        base_speed = float(self.personality.get("hunt_chase_speed", 150.0)) if self._acts_as_hunter() else 112.0
         self.speed = base_speed * self._speed_mult()
         self.chase_timer = float(self.personality.get("chase_persistence", 2.5))
-        if self._is_hunter_personality():
+        if self._acts_as_hunter():
             self.state_timer = rand_range(self.personality.get("chase_retarget_time"), 0.06, 0.14, rng=self.rng)
         else:
             self.state_timer = self.rng.uniform(0.12, 0.28)
@@ -193,7 +194,7 @@ class BehaviourMixin:
 
         d = distance(self.x, self.y, mx, my)
         strike = self.size * 5.0 + prey.size
-        hunter = self._is_hunter_personality()
+        hunter = self._acts_as_hunter()
         prey_moving = bool(getattr(prey, "is_moving", False))
 
         # A Hunter uses the fly's stop-and-go rhythm as camouflage: it advances
@@ -304,49 +305,45 @@ class BehaviourMixin:
         self.enter_idle()
         return True
 
-    def _is_hunter_personality(self) -> bool:
-        pid = str(self.personality.get("id", "")).lower()
-        return (self.job_id == "hunter" or self._personality_flag("mouse_hunter") or pid == "hunter") and self.has_skill("chase")
+    def _behaviour_modules(self) -> frozenset[str]:
+        """Behaviour modules this personality selects (DC-19, C5).
 
-    def _is_jumper_personality(self) -> bool:
-        pid = str(self.personality.get("id", "")).lower()
-        return (self._personality_flag("constant_small_hops") or pid == "jumper") and self.has_skill("jump")
+        Computed fresh from ``self.personality`` rather than cached: the
+        settings window can rewrite a live creature's personality dict, and
+        this is cheap (a handful of dict lookups). Job-linked modules
+        (a Hunter job, a Scout job) and the runtime skill gate stay separate,
+        dynamic checks at each call site below, exactly as the personality-id
+        branches this replaces used to check ``job_id``/``has_skill``
+        themselves alongside the personality flags this now replaces.
+        """
+        return behaviour_modules_for(self.personality)
 
-    def _is_observer_personality(self) -> bool:
-        pid = str(self.personality.get("id", "")).lower()
-        return (self.job_id == "scout" or self._personality_flag("horizontal_orbit_observer") or pid == "observer") and self.has_skill("observe")
+    def _has_behaviour_module(self, module_id: str) -> bool:
+        return module_id in self._behaviour_modules()
 
-    def _is_nope_personality(self) -> bool:
-        pid = str(self.personality.get("id", "")).lower()
-        return (self._personality_flag("nope_escape") or pid == "nope") and self.has_skill("run_away")
+    def _acts_as_hunter(self) -> bool:
+        return (self.job_id == "hunter" or self._has_behaviour_module("hunter")) and self.has_skill("chase")
 
-    def _is_drifter_personality(self) -> bool:
-        pid = str(self.personality.get("id", "")).lower()
-        return (
-            self._personality_flag("drifter")
-            or self._personality_flag("drift_movement")
-            or pid == "drifter"
-        ) and self.has_skill("drift")
+    def _acts_as_jumper(self) -> bool:
+        return self._has_behaviour_module("jumper") and self.has_skill("jump")
 
-    def _is_webber_personality(self) -> bool:
-        pid = str(self.personality.get("id", "")).lower()
-        return (
-            self.job_id == "webber"
-            or
-            self._personality_flag("web_weaver")
-            or self._personality_flag("webber")
-            or pid in ("webber", "weaver")
-        ) and self.has_skill("weave_web")
+    def _acts_as_observer(self) -> bool:
+        return (self.job_id == "scout" or self._has_behaviour_module("observer")) and self.has_skill("observe")
 
-    def _is_web_shooter_personality(self) -> bool:
-        pid = str(self.personality.get("id", "")).lower()
-        return (
-            self._personality_flag("web_shooter")
-            or pid in ("trapper", "webslinger")
-        ) and (self.has_skill("shoot_web") or self.has_skill("wall_web"))
+    def _acts_as_nope(self) -> bool:
+        return self._has_behaviour_module("nope") and self.has_skill("run_away")
+
+    def _acts_as_drifter(self) -> bool:
+        return self._has_behaviour_module("drifter") and self.has_skill("drift")
+
+    def _acts_as_webber(self) -> bool:
+        return (self.job_id == "webber" or self._has_behaviour_module("webber")) and self.has_skill("weave_web")
+
+    def _acts_as_web_shooter(self) -> bool:
+        return self._has_behaviour_module("web_shooter") and (self.has_skill("shoot_web") or self.has_skill("wall_web"))
 
     def _drift_state_multiplier(self, *, inertia: bool = False) -> float:
-        if not self._is_drifter_personality():
+        if not self._acts_as_drifter():
             return 0.0
         if inertia:
             return 1.18
@@ -363,7 +360,7 @@ class BehaviourMixin:
         }.get(self.state, 0.0)
 
     def _is_drift_sliding(self) -> bool:
-        if not self._is_drifter_personality():
+        if not self._acts_as_drifter():
             return False
         if self.state == "DriftRun" and getattr(self, "drift_run_phase", "charge") == "slide":
             return True
@@ -373,7 +370,7 @@ class BehaviourMixin:
         )
 
     def _prime_drift(self, boost: float = 0.5, direction: float | None = None) -> None:
-        if not self._is_drifter_personality():
+        if not self._acts_as_drifter():
             return
         if direction is not None:
             self.drift_dir = 1.0 if direction >= 0.0 else -1.0
@@ -452,7 +449,7 @@ class BehaviourMixin:
         facing direction.  Clamp only that pathological case and leave ordinary
         sideways drift untouched.
         """
-        if self.state != "DriftRun" or not self._is_drifter_personality():
+        if self.state != "DriftRun" or not self._acts_as_drifter():
             return move_x, move_y
         travel_length = math.hypot(move_x, move_y)
         if travel_length <= 1e-5:
@@ -514,7 +511,7 @@ class BehaviourMixin:
         return lo, hi
 
     def _observer_anchor(self, mx: float, my: float) -> Tuple[float, float, "Creature" | None] | None:
-        if not self._is_observer_personality():
+        if not self._acts_as_observer():
             return None
         reaction = float(self.personality.get("reaction_radius", 360))
         cursor_range = reaction * float(self.personality.get("observe_cursor_range_mult", 1.18))
@@ -531,7 +528,7 @@ class BehaviourMixin:
         return None
 
     def _maybe_jumper_hop(self, dt: float, after: str, toward: Tuple[float, float]) -> bool:
-        if not self.has_skill("jump") or not self._is_jumper_personality() or self.airborne or self.motion_paused:
+        if not self.has_skill("jump") or not self._acts_as_jumper() or self.airborne or self.motion_paused:
             return False
         if self.speed <= 1.0 and self.current_speed <= 8.0:
             return False
@@ -544,7 +541,7 @@ class BehaviourMixin:
         return True
 
     def _cursor_triggers_nope_escape(self, mx: float, my: float, cursor_vx: float, cursor_vy: float) -> bool:
-        if not self._is_nope_personality() or self.dragging or self.airborne or self.nope_cooldown > 0.0:
+        if not self._acts_as_nope() or self.dragging or self.airborne or self.nope_cooldown > 0.0:
             return False
         if self.state in ("Jump", "Land", "Retreat", "Startled", "Dragged"):
             return False
@@ -913,7 +910,7 @@ class BehaviourMixin:
         self.drift_run_cooldown = rand_range(self.personality.get("drift_run_interval"), 4.5, 10.5, rng=self.rng)
 
     def _should_start_drift_run(self, *, from_idle: bool) -> bool:
-        if not self._is_drifter_personality() or self.airborne or self.dragging:
+        if not self._acts_as_drifter() or self.airborne or self.dragging:
             return False
         if self.state in ("Dragged", "Startled", "Retreat", "Chase", "Jump", "Land", "Roll", "Coil", "Catch"):
             return False
@@ -925,7 +922,7 @@ class BehaviourMixin:
 
     def enter_drift_run(self, mode: str | None = None) -> None:
         """Autonomous Drifter burst: fast circular/corner screen drifting."""
-        if not self._is_drifter_personality():
+        if not self._acts_as_drifter():
             self.enter_idle()
             return
 
@@ -1358,16 +1355,16 @@ class BehaviourMixin:
         dist_to_cursor = distance(self.x, self.y, mx, my)
         boldness = clamp(float(self.personality.get("boldness", 0.5)), 0.0, 1.0)
         reaction = float(self.personality.get("reaction_radius", 360))
-        hunter = self._is_hunter_personality()
-        jumper = self._is_jumper_personality()
-        observer = self._is_observer_personality()
+        hunter = self._acts_as_hunter()
+        jumper = self._acts_as_jumper()
+        observer = self._acts_as_observer()
         cursor_still = hunter and self._cursor_is_still_for_observe()
         hunt_catch_distance = self.size * float(self.personality.get("hunt_catch_distance_mult", 2.25))
         if self._update_job_state(dt, mx, my):
             # Jobs own their work target, while temperament still drives the
             # leg solver, posture, and animation style underneath it.
             return
-        if self._is_drifter_personality() and self.state != "DriftRun":
+        if self._acts_as_drifter() and self.state != "DriftRun":
             self.drift_run_cooldown = max(0.0, float(getattr(self, "drift_run_cooldown", 0.0)) - dt)
 
         if self.state == "Idle":
@@ -1749,7 +1746,7 @@ class BehaviourMixin:
         self.weaving_web = None
         self._weave_drawing = False
         base = rand_range(self.personality.get("weave_cooldown"), 8.0, 16.0, rng=self.rng)
-        self.weave_cooldown = base / (4.0 if self._is_webber_personality() else 1.0)
+        self.weave_cooldown = base / (4.0 if self._acts_as_webber() else 1.0)
         self.mood.bump(arousal=-0.05, valence=0.18, affection=0.04)
         self.enter_idle()
 
@@ -1777,7 +1774,7 @@ class BehaviourMixin:
         # Mending is satisfying but quick to come off cooldown for a webber, so it
         # stays attentive to further damage.
         base = rand_range(self.personality.get("weave_cooldown"), 8.0, 16.0, rng=self.rng)
-        self.weave_cooldown = base / (6.0 if self._is_webber_personality() else 1.5)
+        self.weave_cooldown = base / (6.0 if self._acts_as_webber() else 1.5)
         self.mood.bump(valence=0.14, affection=0.05, arousal=-0.04)
         self.enter_idle()
 
@@ -2043,7 +2040,7 @@ class BehaviourMixin:
         can_wall = self._can_shoot_web("wall")
         if not (can_trap or can_wall):
             return False
-        web_shooter = self._is_web_shooter_personality()
+        web_shooter = self._acts_as_web_shooter()
         reaction = float(self.personality.get("reaction_radius", 360))
         range_mult = float(self.personality.get("web_shot_range_mult",
                                                 0.85 if web_shooter else 0.5))
@@ -2082,7 +2079,7 @@ class BehaviourMixin:
         can_wall = self._can_shoot_web("wall", prey=prey)
         if not (can_trap or can_wall):
             return False
-        web_shooter = self._is_web_shooter_personality()
+        web_shooter = self._acts_as_web_shooter()
         reaction = float(self.personality.get("reaction_radius", 360))
         range_mult = float(self.personality.get("web_shot_range_mult",
                                                 0.85 if web_shooter else 0.5))
@@ -2204,7 +2201,7 @@ class BehaviourMixin:
             self._finish_web_shot(fired=True)
 
     def _finish_web_shot(self, fired: bool) -> None:
-        web_shooter = self._is_web_shooter_personality()
+        web_shooter = self._acts_as_web_shooter()
         prey_shot = self._web_shot_prey is not None
         self._web_shot_prey = None
         if fired:

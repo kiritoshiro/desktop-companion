@@ -3,6 +3,7 @@
   "display_name": "Nope",
   "mood": "nope",
   "nope_escape": true,
+  "behaviour_modules": ["nope"],
   "speed_multiplier": 2.35,
   "acceleration_multiplier": 1.85,
   "turn_rate_multiplier": 1.65,

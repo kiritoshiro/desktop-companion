@@ -3,6 +3,7 @@
   "display_name": "Webber",
   "mood": "calm",
   "web_weaver": true,
+  "behaviour_modules": ["webber"],
   "speed_multiplier": 0.95,
   "reaction_radius": 320,
   "threat_radius": 120,

@@ -476,8 +476,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self._web_pluck_count = 0        # plucks remaining in the current web walk
         self._web_pluck_timer = 0.0
         self._web_wiggle = 0.0
-        weave_bias = 4.0 if (self._personality_flag("web_weaver")
-                             or self._personality_flag("webber")) else 1.0
+        weave_bias = 4.0 if self._acts_as_webber() else 1.0
         # Webbers come off cooldown quickly and often; everyone else rarely.
         self.weave_cooldown = rand_range(personality.get("weave_cooldown"),
                                          6.0, 14.0, rng=self.rng) / weave_bias
@@ -489,7 +488,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # silk at the real pointer that pins it (trap) or shoves it to a wall.
         self.mouse_web_world = None
         self._web_shot_kind = "trap"      # which shot the current aim will fire
-        shot_bias = 5.0 if self._personality_flag("web_shooter") else 1.0
+        shot_bias = 5.0 if self._acts_as_web_shooter() else 1.0
         self.web_shot_cooldown = rand_range(personality.get("web_shot_cooldown"),
                                             8.0, 18.0, rng=self.rng) / shot_bias
 
@@ -901,7 +900,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         drag_speed = math.hypot(self.drag_vel_x, self.drag_vel_y)
         if drag_speed > 18.0:
             self.target_heading = math.atan2(self.drag_vel_y, self.drag_vel_x)
-            if self._is_drifter_personality():
+            if self._acts_as_drifter():
                 self._prime_drift(clamp(drag_speed / 700.0, 0.25, 1.15))
                 self.target_heading += self.drift_dir * clamp(drag_speed / 900.0, 0.0, 0.56)
         self.heading = angle_lerp(self.heading, self.target_heading, self.turn_rate * 2.2 * dt)

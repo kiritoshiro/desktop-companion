@@ -3,6 +3,7 @@
   "display_name": "Hunter",
   "mood": "hunter",
   "mouse_hunter": true,
+  "behaviour_modules": ["hunter"],
   "speed_multiplier": 1.2,
   "reaction_radius": 760,
   "threat_radius": 80,
