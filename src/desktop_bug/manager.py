@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from .creature import Creature, GAIT_LABELS, normalize_gait_style
+from .creature.constants import HUNT_BUSY_STATES
 from .cage import Cage
 from .webs import WebWorld
 from .mouse_webs import MouseWebWorld
@@ -1115,17 +1116,18 @@ class CreatureManager:
         return f"{label} {'enabled' if enabled else 'disabled'} for {name}."
 
     # ------------------------------------------------------------------
-    # Fly hunting: which spider chases which fly, and the killing bite
+    # Fly hunting: which spider chases which fly, and the killing bite.
+    #
+    # DC-18 (C1): the manager still owns *target selection* below -- which
+    # fly (if any) a spider locks onto -- the same manager-injected state
+    # DC-17's docstring already treats as acceptable. Acting on that lock
+    # used to be CreatureManager._drive_hunt, which called
+    # enter_approach/enter_chase and wrote target_x/speed/motion_paused on
+    # the creature directly, every frame, from outside -- the outside-in
+    # overwrite the plan calls out. That reaction moved onto the creature
+    # itself as BehaviourMixin._pursue_prey, reading the candidate through
+    # Perception.prey() and using the creature's own seeded rng.
     # ------------------------------------------------------------------
-    _HUNT_COMMITTED_STATES = frozenset((
-        "Aim", "Coil", "Jump", "Land", "Catch", "Feed", "Roll", "DriftRun",
-        "Play", "Cuddle", "Inspect", "WebAim", "WebShot",
-        "Weave", "WeaveApproach", "Repair", "RepairApproach",
-    ))
-    # States the spider should be allowed to finish before it will pick up a hunt.
-    _HUNT_BUSY_STATES = frozenset((
-        "WebAim", "WebShot", "Weave", "WeaveApproach", "Repair", "RepairApproach",
-    ))
 
     def _creature_can_hunt(self, creature: Creature) -> bool:
         if creature.airborne:
@@ -1138,7 +1140,7 @@ class CreatureManager:
         # it just cannot run it down; so dragging does not block acquisition.
         if creature.dragging or creature is self.dragged_creature:
             return True
-        if creature.state in self._HUNT_BUSY_STATES:
+        if creature.state in HUNT_BUSY_STATES:
             return False
         # Needs some way to actually close on prey.
         return (creature.has_skill("chase") or creature.has_skill("approach")
@@ -1229,79 +1231,6 @@ class CreatureManager:
         if prey is not None and prey.alive and not prey.eaten:
             return prey.x, prey.y, True
         return mx, my, False
-
-    def _drive_hunt(self, creature: Creature, dt: float, fx: float, fy: float) -> None:
-        """Drive a locked spider in to its prey using its own abilities.
-
-        Every spider gets a committed chase so it keeps closing even when the
-        fly hovers, plus the odd pounce so it visibly leaps onto it.  Web
-        shooters fling the same trapping silk they use on the cursor to pin the
-        fly from range, then close in to eat it.
-        """
-        prey = getattr(creature, "_prey", None)
-        if prey is None:
-            return
-
-        # Never interrupt a committed action (a pounce, a web aim/shot, feeding).
-        # Putting this first means a spider that has just begun a web shot does
-        # not re-trigger the aim every frame and never gets to fire.
-        if creature.state in self._HUNT_COMMITTED_STATES or creature.airborne:
-            return
-
-        # Held in the hand: it can still fling silk at the fly it locked onto,
-        # but it cannot chase or pounce, so do only the web shot and stop here.
-        if creature.dragging or creature is self.dragged_creature:
-            if not prey.trapped and (creature.has_skill("shoot_web")
-                                     or creature.has_skill("wall_web")):
-                creature._maybe_shoot_web_at_prey(prey)
-            return
-
-        # Web shooters: pin a still-loose fly with silk from range (the same
-        # shot used on the cursor), then the committed check above lets the shot
-        # finish before the spider closes in to eat it.
-        if not prey.trapped and (creature.has_skill("shoot_web") or creature.has_skill("wall_web")):
-            if creature._maybe_shoot_web_at_prey(prey):
-                return
-
-        d = distance(creature.x, creature.y, fx, fy)
-        strike = creature.size * 5.0 + prey.size
-        hunter = creature._is_hunter_personality()
-        prey_moving = bool(getattr(prey, "is_moving", False))
-
-        # A Hunter uses the fly's stop-and-go rhythm as camouflage: it advances
-        # only during a walking bout and freezes while the fly pauses or turns.
-        # A trapped fly is an exception because its struggling web is already a
-        # strong signal and it otherwise could never be reached.
-        if hunter and not prey_moving and not prey.trapped:
-            creature.target_x, creature.target_y = fx, fy
-            creature.target_heading = math.atan2(fy - creature.y, fx - creature.x)
-            creature.motion_paused = True
-            creature.speed = 0.0
-            return
-
-        # Pounce only at loose prey.  A trapped fly cannot escape, so forcing a
-        # jump here makes every capture look identical and prevents the normal
-        # contact catcher below from doing its job.  Spiders now keep walking or
-        # running into a trapped fly and eat it as soon as their bodies touch.
-        if (not prey.trapped and d <= strike and creature.has_skill("jump")
-                and creature.has_skill("prepare_jump_attack")
-                and getattr(creature, "_pounce_cooldown", 0.0) <= 0.0
-                and self._rng.random() < (0.5 if creature._is_hunter_personality() else 0.4)):
-            creature._pounce_cooldown = self._rng.uniform(0.8, 1.5)
-            creature.enter_aim(fx, fy, target=None, after="outcome",
-                               ranging=(0.4, 0.85), abort_chance=0.06)
-            return
-
-        # Hunters stalk in Approach so the normal still-target observation
-        # logic can freeze them.  Other personalities retain the direct chase.
-        if hunter and creature.has_skill("approach"):
-            if creature.state != "Approach":
-                creature.enter_approach(fx, fy)
-        elif creature.has_skill("chase"):
-            if creature.state != "Chase":
-                creature.enter_chase(fx, fy)
-        elif creature.has_skill("approach") and creature.state != "Approach":
-            creature.enter_approach(fx, fy)
 
     def _resolve_fly_catches(self) -> None:
         for fly in self.fly_world.flies:
@@ -1466,11 +1395,10 @@ class CreatureManager:
                     creature.update(dt, -100000.0, -100000.0, self.screen_w, self.screen_h)
             else:
                 fx, fy, hunting = self._creature_focus(creature, mx, my)
+                # Publish the lock; the spider's own update() reacts to it via
+                # Perception.prey()/_pursue_prey (DC-18, C1) with the fly fed
+                # in as its focus, instead of the manager driving it directly.
                 creature._hunting_prey = hunting
-                if hunting:
-                    # Set up the chase/pounce/trap-shot, then let the spider's own
-                    # update act on it this frame with the fly fed in as its focus.
-                    self._drive_hunt(creature, dt, fx, fy)
                 with creatures_span:
                     creature.update(dt, fx, fy, self.screen_w, self.screen_h)
             with desktop_span:

@@ -22,10 +22,13 @@ from ..math_utils import (
 )
 from ..phase_scheduler import phase_id_for_state
 from .constants import (
+    HUNT_COMMITTED_STATES,
+    JOB_MODE_STATES,
     JOB_PREEMPTING_STATES,
     JOB_STATES,
     smootherstep,
 )
+from .. import arbiter
 
 class BehaviourMixin:
     """State entry points and per-state updates."""
@@ -141,49 +144,142 @@ class BehaviourMixin:
         self.state_timer = self.rng.uniform(1.4, 3.2)
         self._prime_drift(0.25)
 
+    def _pursue_prey(self, dt: float, mx: float, my: float) -> None:
+        """Act on the prey candidate ``perception`` publishes (DC-18, C1).
+
+        Every locked-on spider commits to closing on its prey using its own
+        abilities, with the odd pounce so it visibly leaps onto it; web
+        shooters fling the same trapping silk they use on the cursor to pin
+        it from range first.
+
+        Moved here from ``CreatureManager._drive_hunt``, which used to call
+        ``enter_approach``/``enter_chase`` and write ``target_x``/``speed``/
+        ``motion_paused`` on this creature directly from outside, every frame
+        -- the exact outside-in overwrite the plan calls out. The manager
+        still decides *which* fly (if any) this spider is locked onto
+        (``self._prey``, set by ``CreatureManager._update_prey_targets``) --
+        that is target selection among the manager's own flies, the kind of
+        manager-injected state DC-17's docstring already treats as
+        acceptable, not a decision about this creature's own behaviour. This
+        method is that decision: it reads the published candidate through
+        ``self.perception.prey()`` and reacts to it with its own seeded
+        ``self.rng`` instead of the manager's.
+
+        Called once per tick from ``Creature.update()``, before the dragging
+        branch (a spider held in the hand can still fire silk at prey it is
+        locked onto), not gated by the arbiter's 5-10 Hz throttle: closing on
+        a moving fly needs the same every-frame reactivity Approach/Chase
+        already give a spider stalking the cursor, so this is execution of
+        an already-standing hunt commitment, not a fresh "what should I do"
+        choice -- see arbiter.py's module docstring for the same distinction
+        applied to Alert-state stalking.
+        """
+        prey = self.perception.prey()
+        if prey is None:
+            return
+        if self.state in HUNT_COMMITTED_STATES or self.airborne:
+            return
+        if self.dragging:
+            if not prey.trapped and (self.has_skill("shoot_web") or self.has_skill("wall_web")):
+                self._maybe_shoot_web_at_prey(prey)
+            return
+
+        # Web shooters: pin a still-loose fly with silk from range (the same
+        # shot used on the cursor); HUNT_COMMITTED_STATES above lets the shot
+        # finish before the spider closes in to eat it.
+        if not prey.trapped and (self.has_skill("shoot_web") or self.has_skill("wall_web")):
+            if self._maybe_shoot_web_at_prey(prey):
+                return
+
+        d = distance(self.x, self.y, mx, my)
+        strike = self.size * 5.0 + prey.size
+        hunter = self._is_hunter_personality()
+        prey_moving = bool(getattr(prey, "is_moving", False))
+
+        # A Hunter uses the fly's stop-and-go rhythm as camouflage: it advances
+        # only during a walking bout and freezes while the fly pauses or turns.
+        # A trapped fly is an exception because its struggling web is already a
+        # strong signal and it otherwise could never be reached.
+        if hunter and not prey_moving and not prey.trapped:
+            self.target_x, self.target_y = mx, my
+            self.target_heading = math.atan2(my - self.y, mx - self.x)
+            self.motion_paused = True
+            self.speed = 0.0
+            return
+
+        # Pounce only at loose prey; a trapped fly cannot escape, so a forced
+        # jump here would make every capture look identical and prevent the
+        # normal contact catcher from doing its job.
+        if (not prey.trapped and d <= strike and self.has_skill("jump")
+                and self.has_skill("prepare_jump_attack")
+                and getattr(self, "_pounce_cooldown", 0.0) <= 0.0
+                and self.rng.random() < (0.5 if hunter else 0.4)):
+            self._pounce_cooldown = self.rng.uniform(0.8, 1.5)
+            self.enter_aim(mx, my, target=None, after="outcome",
+                           ranging=(0.4, 0.85), abort_chance=0.06)
+            return
+
+        # Hunters stalk in Approach so the normal still-target observation
+        # logic can freeze them. Other personalities retain the direct chase.
+        if hunter and self.has_skill("approach"):
+            if self.state != "Approach":
+                self.enter_approach(mx, my)
+        elif self.has_skill("chase"):
+            if self.state != "Chase":
+                self.enter_chase(mx, my)
+        elif self.has_skill("approach") and self.state != "Approach":
+            self.enter_approach(mx, my)
+
     def _update_job_state(self, dt: float, mx: float, my: float) -> bool:
-        """Apply a Builder/Guard work intent before ordinary personality FSM logic."""
-        if self.job_id not in ("builder", "guard"):
-            return False
+        """Apply a job's work intent before ordinary personality FSM logic.
+
+        Data-driven over ``JOB_MODE_STATES`` (DC-18, C6) rather than an
+        if/elif hard-coded to specific job ids: this method used to start
+        with ``if self.job_id not in ("builder", "guard"): return False``,
+        so a future job with any other id would return *before* ever
+        reaching the hand-back call below, leaving a leftover job state
+        frozen. That id gate is gone: this now runs unconditionally for
+        every creature every tick, keyed only on ``job_mode``, and
+        ``_release_job_state()`` (via its own ``state in JOB_STATES`` check)
+        hands back anything the table does not recognise -- see
+        ``tests/test_arbiter.py::test_unrecognized_job_id_still_hands_back_a_leftover_job_state``,
+        proved by reverting to the old id-gated form.
+        """
         mode = str(getattr(self, "job_mode", "idle") or "idle")
         target = getattr(self, "job_target", None)
+        state_for_mode = JOB_MODE_STATES.get(mode)
         self.job_busy = self._job_outranked_by_personality(mode)
-        if self.job_busy or mode == "idle":
-            # Either temperament is mid-something more urgent, or this spider is
-            # off shift. Hand it back rather than overwriting the state it is in.
+        if self.job_busy or state_for_mode is None or (state_for_mode != "JobBuild" and target is None):
+            # Either temperament is mid-something more urgent, this spider is
+            # off shift, or its job published a mode this table does not (yet)
+            # know how to move for. Hand it back rather than overwriting
+            # whatever state it is already in.
             self._release_job_state()
             return False
-        if mode == "build_travel" and target is not None:
-            self.state = "JobTravel"
+
+        self.state = state_for_mode
+        if state_for_mode == "JobTravel":
             self.motion_paused = False
             self.target_x, self.target_y = float(target[0]), float(target[1])
             self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
             self.speed = 52.0 * self._speed_mult()
-            return True
-        if mode == "build":
-            self.state = "JobBuild"
+        elif state_for_mode == "JobBuild":
             self.motion_paused = True
             self.speed = 0.0
             self.target_x, self.target_y = self.x, self.y
             self.aim_intent = min(1.0, self.aim_intent + max(0.0, dt) * 0.9)
-            return True
-        if mode == "patrol" and target is not None:
-            self.state = "JobPatrol"
+        elif state_for_mode == "JobPatrol":
             self.motion_paused = False
             self.target_x, self.target_y = float(target[0]), float(target[1])
             self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
             self.speed = 38.0 * self._speed_mult()
-            return True
-        if mode == "guard_alert" and target is not None:
-            self.state = "JobGuardAlert"
+        elif state_for_mode == "JobGuardAlert":
             self.motion_paused = False
             self.target_x, self.target_y = float(target[0]), float(target[1])
             self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
             self.speed = 72.0 * self._speed_mult()
             self.aim_intent = min(1.0, self.aim_intent + max(0.0, dt) * 2.0)
-            return True
-        self._release_job_state()
-        return False
+        return True
 
     def _job_outranked_by_personality(self, mode: str) -> bool:
         """Return whether temperament currently beats this spider's job."""
@@ -1206,23 +1302,6 @@ class BehaviourMixin:
             return False
         return phase_id_for_state(self.state) == phase_id
 
-    def _activate_scheduled_phase(self, mx: float, my: float) -> bool:
-        """Draw and start a focus-aware phase when the FSM reaches a decision point."""
-        if self.airborne or self.dragging or self.state not in ("Idle", "Alert"):
-            return False
-        focus = self._phase_focus_context(mx, my)
-        # Failed context-specific actions (for example social play with no mate)
-        # consume their deck slot and let the next weighted phase try immediately.
-        for _ in range(len(self.phase_scheduler.phase_ids) + 1):
-            plan = self.phase_scheduler.choose(focus)
-            if plan is None:
-                return False
-            if self._dispatch_scheduled_phase(plan.phase_id, focus, mx, my):
-                self.state_timer = plan.duration
-                return True
-            self.phase_scheduler.finish()
-        return False
-
     def _sync_scheduled_phase(self, focus: str | None = None) -> None:
         """Adopt legacy FSM entries so their periods also use personality pacing."""
         phase_id = phase_id_for_state(self.state)
@@ -1254,6 +1333,23 @@ class BehaviourMixin:
             return True
         return False
 
+    def _run_arbiter(self, mx: float, my: float, dist_to_cursor: float, *, from_idle: bool) -> None:
+        """Score every candidate action and commit to the winner (DC-18, C1).
+
+        This is the single utility arbiter's only entry point: called from
+        the Idle/Alert decision points below, throttled to 5-10 Hz by always
+        resetting ``decision_timer`` here (rather than the assortment of
+        per-branch resets the old personality/`_consider_special_actions`/
+        scheduled-phase code used), never from every frame. See
+        ``arbiter.py``'s module docstring for what is and is not folded in
+        here, and why.
+        """
+        self.decision_timer = self.rng.uniform(0.1, 0.2)  # 5-10 Hz
+        state_timer_expired = self.state_timer <= 0.0
+        winner = arbiter.decide(self, self.perception, mx, my, dist_to_cursor,
+                                 from_idle=from_idle, state_timer_expired=state_timer_expired)
+        winner.execute()
+
     def _update_state(self, dt: float, mx: float, my: float) -> None:
         self.state_timer -= dt
         self.decision_timer -= dt
@@ -1277,39 +1373,9 @@ class BehaviourMixin:
         if self.state == "Idle":
             self.speed = 0.0
             self.target_heading = angle_to(self.x, self.y, mx, my) if dist_to_cursor < reaction else self.target_heading
-            if hunter and dist_to_cursor < reaction and self.decision_timer <= 0.0:
-                self.decision_timer = self.rng.uniform(0.08, 0.18)
-                if cursor_still:
-                    self.enter_alert(mx, my)
-                else:
-                    self.enter_approach(mx, my)
+            if self.decision_timer <= 0.0:
+                self._run_arbiter(mx, my, dist_to_cursor, from_idle=True)
                 return
-            if jumper and self.state_timer <= 0.0 and self.decision_timer <= 0.0:
-                # A jumper rarely slides straight out of idle; it starts roaming with a small hop.
-                if self.rng.random() < float(self.personality.get("idle_hop_chance", 0.55)):
-                    tx = self.x + math.cos(self.heading + self.rng.uniform(-0.65, 0.65)) * self.size * self.rng.uniform(1.0, 2.0)
-                    ty = self.y + math.sin(self.heading + self.rng.uniform(-0.65, 0.65)) * self.size * self.rng.uniform(1.0, 2.0)
-                    self.enter_coil(after="wander", power=rand_range(self.personality.get("hop_power"), 0.34, 0.58, rng=self.rng), toward=(tx, ty))
-                    return
-            if observer and self.decision_timer <= 0.0:
-                anchor = self._observer_anchor(mx, my)
-                if anchor is not None and (dist_to_cursor < reaction * 1.18 or anchor[2] is not None):
-                    self.decision_timer = self.rng.uniform(0.16, 0.32)
-                    ax, ay, target = anchor
-                    self.enter_observe(ax, ay, target)
-                    return
-            if self.state_timer <= 0.0 and self.decision_timer <= 0.0:
-                self.decision_timer = self.rng.uniform(0.2, 0.5)
-                if self._activate_scheduled_phase(mx, my):
-                    return
-                if self._consider_special_actions(dist_to_cursor, mx, my, from_idle=True):
-                    return
-                if dist_to_cursor < reaction:
-                    self.enter_alert(mx, my)
-                elif self.rng.random() < float(self.personality.get("wander_frequency", 0.35)):
-                    self.enter_wander()
-                else:
-                    self.enter_idle()
 
         elif self.state == "Alert":
             self.speed = 0.0
@@ -1317,6 +1383,10 @@ class BehaviourMixin:
             self.target_y = my
             self.target_heading = angle_to(self.x, self.y, mx, my)
             if hunter:
+                # A Hunter's stalk-and-strike cadence while already watching the
+                # cursor is execution of a commitment the arbiter already made
+                # (entering Alert in the first place), not a fresh decision --
+                # see arbiter.py's module docstring, "deliberately out of scope".
                 self.aim_intent = min(1.0, self.aim_intent + dt * 2.2)
                 if cursor_still:
                     # Freeze and watch a still cursor instead of creeping into it.
@@ -1335,25 +1405,9 @@ class BehaviourMixin:
                 if dist_to_cursor < reaction:
                     self.enter_approach(mx, my)
                     return
-            if observer and self.state_timer <= 0.0:
-                anchor = self._observer_anchor(mx, my)
-                if anchor is not None:
-                    ax, ay, target = anchor
-                    self.enter_observe(ax, ay, target)
-                    return
             if self.state_timer <= 0.0:
-                if self._activate_scheduled_phase(mx, my):
-                    return
-                if self._consider_special_actions(dist_to_cursor, mx, my, from_idle=False):
-                    return
-                if self.has_skill("run_away") and dist_to_cursor < float(self.personality.get("threat_radius", 180)) * 0.55 and self.rng.random() > boldness:
-                    self.enter_retreat(mx, my)
-                elif self.has_skill("chase") and dist_to_cursor < 95.0 and self.rng.random() < 0.45 + boldness * 0.45:
-                    self.enter_chase(mx, my)
-                elif dist_to_cursor < reaction and self.rng.random() < 0.25 + boldness * 0.65:
-                    self.enter_approach(mx, my)
-                else:
-                    self.enter_idle()
+                self._run_arbiter(mx, my, dist_to_cursor, from_idle=False)
+                return
 
         elif self.state == "Approach":
             self.target_heading = angle_to(self.x, self.y, mx, my)
@@ -1643,136 +1697,6 @@ class BehaviourMixin:
             self._update_repair_approach(dt, mx, my)
         elif self.state == "Repair":
             self._update_repair(dt, mx, my)
-
-    def _consider_special_actions(self, dist_to_cursor: float, mx: float, my: float, from_idle: bool) -> bool:
-        self.social_cooldown = max(0.0, self.social_cooldown - 0.0)  # decremented in mood update
-        m = self.mood
-        reaction = float(self.personality.get("reaction_radius", 360))
-        boldness = clamp(float(self.personality.get("boldness", 0.5)), 0.0, 1.0)
-        hunter = self._is_hunter_personality()
-
-        # --- Drifter self-directed flourish ---
-        if self._should_start_drift_run(from_idle=from_idle):
-            self.enter_drift_run()
-            return True
-
-        webber = self._is_webber_personality()
-
-        # --- Web weaving / repairing / finishing (webbers do this constantly) ---
-        if (self.has_skill("weave_web") and self.cage is None
-                and self.perception.has_web_world and self.weave_cooldown <= 0.0):
-            # First, prefer mending a torn finished web -- a webber dislikes a
-            # broken net and will go fix it.  Webbers travel anywhere for it;
-            # other spiders only mend one that is reasonably close.
-            repairable = self.perception.repairable_web(max_dist=1e9 if webber else reaction * 1.5)
-            if repairable is not None and self.rng.random() < (0.9 if webber else 0.25):
-                if self._begin_repair(repairable):
-                    return True
-            # Next, prefer finishing an abandoned, unfinished web -- even one
-            # another spider began.  Webbers will travel anywhere to finish it;
-            # other spiders only adopt one that is reasonably close.
-            adoptable = self.perception.adoptable_web(max_dist=1e9 if webber else reaction * 1.6)
-            if adoptable is not None and self.rng.random() < (0.85 if webber else 0.22):
-                if self._begin_adopt(adoptable):
-                    return True
-            # Otherwise start a brand-new web.  Each finished, intact web already
-            # on screen reduces the urge to build another, so a webber stops once
-            # it has spun a few; a torn web does not count, so damage keeps the
-            # webber motivated (to repair, or to replace) until it is whole again.
-            intact = self.perception.intact_web_count()
-            satiation = clamp(1.0 - intact * float(self.personality.get("web_satiation_per_web", 0.22)),
-                              0.12, 1.0)
-            start_chance = ((0.62 + m.curiosity * 0.28) if webber else 0.03) * satiation
-            if self.rng.random() < start_chance:
-                if self._begin_weave():
-                    return True
-
-        # --- Walking onto a finished web to bounce-test it (any spider) ---
-        if (self.has_skill("web_walk") and self.cage is None
-                and self.perception.has_web_world and self.web_walk_cooldown <= 0.0):
-            walkable = self.perception.walkable_web(max_dist=reaction * 1.8)
-            if walkable is not None:
-                walk_chance = 0.45 if webber else 0.16 + m.curiosity * 0.2
-                if self.rng.random() < walk_chance:
-                    if self._begin_web_walk(walkable):
-                        return True
-
-        # --- Shooting sticky silk at the pointer (trap it / shove it to a wall) ---
-        # The hunting states drive this for stalkers; this covers every other
-        # spider that has the skill, so a non-hunter web-shooter still fires.
-        if dist_to_cursor < reaction:
-            if self._maybe_shoot_web_at_cursor(dist_to_cursor, mx, my):
-                return True
-
-        # --- Social play with another creature ---
-        if self.allow_social and not hunter and self.social_cooldown <= 0.0:
-            social_range = max(reaction * 0.85, self.size * 12.0)
-            mate = self._find_social_target(social_range)
-            if mate is not None:
-                d = distance(self.x, self.y, mate.x, mate.y)
-                # Pick an interaction by current mood.
-                play_w = 0.25 + m.arousal * 0.6 + max(0.0, m.valence) * 0.4
-                inspect_w = 0.25 + m.curiosity * 0.8
-                cuddle_w = 0.1 + m.affection * 0.8
-                chance = clamp(0.35 + m.arousal * 0.4 + m.curiosity * 0.3, 0.2, 0.92)
-                if self.rng.random() < chance:
-                    self.social_cooldown = self.rng.uniform(4.0, 8.0)
-                    roll = self.rng.random() * (play_w + inspect_w + cuddle_w)
-                    if roll < play_w:
-                        if d > self.size * 3.0 and m.arousal > 0.45 and self.rng.random() < 0.5:
-                            self.enter_aim(mate.x, mate.y, target=mate, after="play", ranging=(0.4, 0.8), abort_chance=0.1)
-                        else:
-                            self.enter_play(mate)
-                    elif roll < play_w + inspect_w:
-                        self.enter_inspect(mate.x, mate.y, target=mate)
-                    else:
-                        self.enter_cuddle(mate.x, mate.y, target=mate)
-                    return True
-
-        # --- Cursor-directed expressive actions ---
-        if dist_to_cursor < reaction:
-            near = dist_to_cursor < self.size * 6.5
-            mid = dist_to_cursor < reaction * 0.8
-
-            # Hunter-ish aim+pounce at the cursor from mid range.
-            if mid and (boldness > 0.6 or m.arousal > 0.6) and self.rng.random() < 0.10 + boldness * 0.30 + m.arousal * 0.2:
-                self.enter_aim(mx, my, target=None, after="outcome",
-                               ranging=(0.55, 1.2), abort_chance=0.22 - boldness * 0.15)
-                return True
-            # Curious lean-in inspection.
-            if mid and m.curiosity > 0.55 and self.rng.random() < 0.18 + m.curiosity * 0.4:
-                self.enter_inspect(mx, my, target=None)
-                return True
-            # Affectionate cuddle when close.
-            if near and m.affection > 0.55 and self.rng.random() < 0.2 + m.affection * 0.5:
-                self.enter_cuddle(mx, my, target=None)
-                return True
-            # Playful little pounce when close.
-            if near and m.valence > 0.4 and m.arousal > 0.5 and self.rng.random() < 0.25:
-                self.enter_aim(mx, my, target=None, after="outcome",
-                               ranging=(0.35, 0.7), abort_chance=0.1)
-                return True
-            # Happy little tumble away from the cursor.
-            if near and m.valence > 0.5 and m.arousal > 0.55 and self.rng.random() < 0.12:
-                self.enter_roll(direction=angle_to(self.x, self.y, mx, my) + math.pi)
-                return True
-
-        # --- Self-directed play when no obvious target (playful temperament) ---
-        # Hunters reserve idle time for scanning and stalking.  In particular,
-        # do not let the generic happy-mood flourish chooser turn a hunter into
-        # a roller/zoomies spider between prey sightings.
-        if from_idle and not hunter and m.valence > 0.4 and m.arousal > 0.55:
-            r = self.rng.random()
-            if r < 0.12:
-                self.enter_roll()
-                return True
-            if r < 0.26:
-                self.enter_spring(after="idle", power=self.rng.uniform(0.7, 1.2))
-                return True
-            if r < 0.34:
-                self.enter_zoomies()
-                return True
-        return False
 
     def _begin_weave(self) -> bool:
         """Claim a fresh site and start walking to it to build.

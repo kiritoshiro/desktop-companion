@@ -17,6 +17,40 @@ def smootherstep(t: float) -> float:
 # branch and keep its last speed and pause flag forever.
 JOB_STATES = ("JobTravel", "JobBuild", "JobPatrol", "JobGuardAlert")
 
+# Data-driven job-mode -> state mapping (DC-18, C6): the single place a new
+# job mode registers its state. ``_update_job_state`` used to gate itself on
+# ``self.job_id not in ("builder", "guard")`` before doing anything else, so
+# a future job (a Scout roam state, say) that forgot to add its id to that
+# tuple would return early *before* reaching the hand-back call at all, and a
+# leftover job state would then match no branch in ``_update_state`` and
+# freeze forever -- the exact bug this finding warns about. Keying off
+# ``job_mode`` through this table instead removes the id gate entirely:
+# ``_update_job_state`` runs unconditionally every tick for every creature,
+# looks up whatever mode is currently published, and calls
+# ``_release_job_state()`` for anything the table does not recognise. A new
+# job mode is one entry here (plus a matching state name in JOB_STATES above);
+# there is no separate hand-back call left to forget.
+JOB_MODE_STATES = {
+    "build_travel": "JobTravel",
+    "build": "JobBuild",
+    "patrol": "JobPatrol",
+    "guard_alert": "JobGuardAlert",
+}
+
+# Hunting: which states a locked-on spider must finish before joining/leaving
+# a hunt. Shared between CreatureManager (target selection) and the creature's
+# own BehaviourMixin._pursue_prey (DC-18: hunting execution moved onto the
+# creature so the manager stops overwriting creature state from outside).
+HUNT_COMMITTED_STATES = frozenset((
+    "Aim", "Coil", "Jump", "Land", "Catch", "Feed", "Roll", "DriftRun",
+    "Play", "Cuddle", "Inspect", "WebAim", "WebShot",
+    "Weave", "WeaveApproach", "Repair", "RepairApproach",
+))
+# States the spider should be allowed to finish before it will pick up a hunt.
+HUNT_BUSY_STATES = frozenset((
+    "WebAim", "WebShot", "Weave", "WeaveApproach", "Repair", "RepairApproach",
+))
+
 # Personality states that outrank colony work: fleeing, a jump already
 # committed, eating, and silk that is partway through being made or thrown.
 # A job is a shift, not ownership of the spider.

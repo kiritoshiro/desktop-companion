@@ -525,6 +525,7 @@ DesktopBugCompanion/
   src/
     desktop_bug/
       __init__.py
+      arbiter.py
       cage.py
       config_ui.py
       creature/              # Creature, split into a package by concern (DC-11):
