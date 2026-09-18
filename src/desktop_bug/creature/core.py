@@ -26,6 +26,7 @@ from ..math_utils import (
     rand_range,
 )
 from ..mood import Mood
+from ..perception import build_perception
 from ..phase_scheduler import BehaviourPhaseScheduler
 from ..progression import (
     ABILITY_BY_ID,
@@ -525,6 +526,12 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.fly_world = None
         self._web_shot_prey = None
 
+        # A read-only snapshot of what this spider can currently query about the
+        # shared world (DC-17); rebuilt at the top of every update() tick so
+        # decision code reads it instead of self.web_world/self.fly_world
+        # directly. None only before the first tick.
+        self.perception = None
+
         self._compute_leg_sectors()
         self._initialize_legs()
 
@@ -995,6 +1002,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     def update(self, dt: float, mx: float, my: float, sw: int, sh: int) -> None:
         dt = clamp(dt, 0.001, 0.05)
         self.resize_screen(sw, sh)
+        self.perception = build_perception(self)
 
         if self.prev_mx is None:
             cursor_vx = 0.0
