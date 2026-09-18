@@ -6,6 +6,7 @@ import math
 import os
 import signal
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from PyQt5.QtCore import QElapsedTimer, QRect, QTimer, Qt
@@ -32,6 +33,7 @@ from PyQt5.QtWidgets import (
 
 from . import __version__
 from .discovery import migrate_legacy_state_dir, resolve_preset_path, state_dir
+from .dpi import enable_high_dpi_scaling, logical_to_physical, screen_device_pixel_ratio_at
 from .logging_setup import configure_logging, get_logger, install_excepthook, log_path
 from .session_control import clear_stop_request, consume_stop_request
 from .live_channel import OverlayChannelServer, channel_name
@@ -111,6 +113,17 @@ def left_mouse_button_down() -> bool:
         return False
 
 def virtual_screen_geometry() -> QRect:
+    """Union of every screen's geometry, in Qt logical (device-independent) pixels.
+
+    ``QScreen.geometry()`` is documented to report device-independent pixels
+    once ``Qt.AA_EnableHighDpiScaling`` is set (see dpi.py), and Qt lays out
+    each screen's logical origin so adjacent monitors tile without gaps or
+    overlaps even when they run at different scale factors. That means this
+    function, `QCursor.pos()` and every widget-local coordinate in this file
+    already share one consistent logical space and need no DPI conversion
+    among themselves -- only the boundary into raw Win32 calls does (see
+    `_refresh_desktop_surfaces` and the cursor-trap conversion in `tick`).
+    """
     screens = QGuiApplication.screens()
     if not screens:
         return QRect(0, 0, 1280, 720)
@@ -539,14 +552,35 @@ class OverlayWindow(QWidget):
         except Exception:
             hwnd = None
         top_left = self.geometry_rect.topLeft()
-        self.manager.set_desktop_surfaces(snapshot_desktop_surfaces(
+        # snapshot_desktop_surfaces reads raw Win32 window/icon rectangles,
+        # which are always native pixels. geometry_rect/width()/height() are
+        # Qt logical pixels once high-DPI scaling is on, so convert the
+        # origin/size into native pixels before the call, then scale the
+        # native-local rectangles it returns back down into the logical
+        # pixels the manager and every creature position live in (DC-14).
+        # This uses one ratio for the whole snapshot (the screen under the
+        # overlay's own origin), which is exact for a single monitor or a
+        # multi-monitor desktop at one uniform scale; a real mixed-DPI rig
+        # still needs the manual check this package's plan entry defers to a
+        # person, since a window on a differently-scaled monitor than the
+        # origin's would need its own ratio.
+        dpr = screen_device_pixel_ratio_at(top_left.x(), top_left.y())
+        physical_origin_x, physical_origin_y = logical_to_physical(top_left.x(), top_left.y(), dpr)
+        physical_w, physical_h = logical_to_physical(self.width(), self.height(), dpr)
+        surfaces = snapshot_desktop_surfaces(
             exclude_hwnd=hwnd,
-            origin_x=int(top_left.x()),
-            origin_y=int(top_left.y()),
-            screen_w=int(self.width()),
-            screen_h=int(self.height()),
+            origin_x=int(round(physical_origin_x)),
+            origin_y=int(round(physical_origin_y)),
+            screen_w=int(round(physical_w)),
+            screen_h=int(round(physical_h)),
             include_desktop_icons=self.manager.desktop_icons_enabled,
-        ))
+        )
+        if dpr != 1.0:
+            surfaces = [
+                replace(surface, x=surface.x / dpr, y=surface.y / dpr, w=surface.w / dpr, h=surface.h / dpr)
+                for surface in surfaces
+            ]
+        self.manager.set_desktop_surfaces(surfaces)
 
     def _refresh_camouflage_samples(self) -> None:
         """Animate visibility-only camouflage strength.
@@ -742,8 +776,15 @@ class OverlayWindow(QWidget):
         desired = self.manager.update(dt, mx, my, mouse_down=mouse_down, mouse_pressed=mouse_pressed, mouse_released=mouse_released)
         if desired is not None:
             origin = self.geometry_rect.topLeft()
-            set_cursor_pos(int(round(origin.x() + desired[0])),
-                           int(round(origin.y() + desired[1])))
+            logical_x = origin.x() + desired[0]
+            logical_y = origin.y() + desired[1]
+            # geometry_rect/desired are Qt logical (device-independent) pixels,
+            # but SetCursorPos is a raw Win32 call that always takes native
+            # pixels, so convert using the device pixel ratio of the screen
+            # the target point actually falls on (DC-14).
+            dpr = screen_device_pixel_ratio_at(logical_x, logical_y)
+            physical_x, physical_y = logical_to_physical(logical_x, logical_y, dpr)
+            set_cursor_pos(int(round(physical_x)), int(round(physical_y)))
         self._update_hover_and_cursor(mx, my)
         with self.profiler.section("repaint-region"):
             self.request_repaint()
@@ -1516,6 +1557,7 @@ def main(argv=None) -> int:
     if written_to is None:
         log.warning("No log file could be opened under %s", state_dir())
 
+    enable_high_dpi_scaling()
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
     # Must search the bundled data too. A one-file build keeps its presets in
