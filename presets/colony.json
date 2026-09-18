@@ -23,6 +23,13 @@
       "job": "scout"
     },
     {
+      "model": "moss_velvet_orbweaver",
+      "personality": "webber",
+      "count": 1,
+      "team": "pack_a",
+      "job": "webber"
+    },
+    {
       "model": "spider",
       "personality": "bold",
       "count": 1,

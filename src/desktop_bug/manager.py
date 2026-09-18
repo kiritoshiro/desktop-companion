@@ -1391,7 +1391,7 @@ class CreatureManager:
         # builders travel/build, guards patrol/raise alerts, and personality
         # remains free to describe *how* that work looks.
         with profiler.section("jobs"):
-            self.base_world.update(dt, self.creatures)
+            self.base_world.update(dt, self.creatures, self.web_world)
         # Base construction advances continuously, so it uses the same debounced
         # save as feeding instead of only being persisted on quit.
         if any(getattr(creature, "job_mode", "idle") == "build" for creature in self.creatures):
