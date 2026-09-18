@@ -1660,20 +1660,18 @@ class BehaviourMixin:
 
         # --- Web weaving / repairing / finishing (webbers do this constantly) ---
         if (self.has_skill("weave_web") and self.cage is None
-                and self.web_world is not None and self.weave_cooldown <= 0.0):
+                and self.perception.has_web_world and self.weave_cooldown <= 0.0):
             # First, prefer mending a torn finished web -- a webber dislikes a
             # broken net and will go fix it.  Webbers travel anywhere for it;
             # other spiders only mend one that is reasonably close.
-            repairable = self.web_world.find_repairable_web(
-                self, max_dist=1e9 if webber else reaction * 1.5)
+            repairable = self.perception.repairable_web(max_dist=1e9 if webber else reaction * 1.5)
             if repairable is not None and self.rng.random() < (0.9 if webber else 0.25):
                 if self._begin_repair(repairable):
                     return True
             # Next, prefer finishing an abandoned, unfinished web -- even one
             # another spider began.  Webbers will travel anywhere to finish it;
             # other spiders only adopt one that is reasonably close.
-            adoptable = self.web_world.find_adoptable_web(
-                self, max_dist=1e9 if webber else reaction * 1.6)
+            adoptable = self.perception.adoptable_web(max_dist=1e9 if webber else reaction * 1.6)
             if adoptable is not None and self.rng.random() < (0.85 if webber else 0.22):
                 if self._begin_adopt(adoptable):
                     return True
@@ -1681,7 +1679,7 @@ class BehaviourMixin:
             # on screen reduces the urge to build another, so a webber stops once
             # it has spun a few; a torn web does not count, so damage keeps the
             # webber motivated (to repair, or to replace) until it is whole again.
-            intact = self.web_world.intact_complete_count()
+            intact = self.perception.intact_web_count()
             satiation = clamp(1.0 - intact * float(self.personality.get("web_satiation_per_web", 0.22)),
                               0.12, 1.0)
             start_chance = ((0.62 + m.curiosity * 0.28) if webber else 0.03) * satiation
@@ -1691,8 +1689,8 @@ class BehaviourMixin:
 
         # --- Walking onto a finished web to bounce-test it (any spider) ---
         if (self.has_skill("web_walk") and self.cage is None
-                and self.web_world is not None and self.web_walk_cooldown <= 0.0):
-            walkable = self.web_world.find_walkable_web(self, max_dist=reaction * 1.8)
+                and self.perception.has_web_world and self.web_walk_cooldown <= 0.0):
+            walkable = self.perception.walkable_web(max_dist=reaction * 1.8)
             if walkable is not None:
                 walk_chance = 0.45 if webber else 0.16 + m.curiosity * 0.2
                 if self.rng.random() < walk_chance:
@@ -2094,7 +2092,7 @@ class BehaviourMixin:
             # Firing at a fly goes through the fly world and never touches the
             # real pointer, so neither the cursor-capture toggle nor being held
             # by the mouse gates it: a spider you are carrying can still web a fly.
-            return self.fly_world is not None
+            return self.perception.can_shoot_prey_web()
         if self.dragging:
             return False
         world = self.mouse_web_world

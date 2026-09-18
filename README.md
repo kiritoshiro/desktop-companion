@@ -542,6 +542,7 @@ DesktopBugCompanion/
       mood.py
       mouse_webs.py
       overlay_win32.py
+      perception.py
       personality_profiles.py
       phase_scheduler.py
       preset_io.py
