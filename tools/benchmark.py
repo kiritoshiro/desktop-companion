@@ -44,6 +44,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from PyQt5.QtCore import QRect  # noqa: E402
 from PyQt5.QtGui import QGuiApplication, QPainter, QPixmap, QRegion  # noqa: E402
 
+from desktop_bug.dpi import enable_high_dpi_scaling  # noqa: E402
 from desktop_bug.manager import CreatureManager  # noqa: E402
 from desktop_bug.profiling import FrameProfiler, percentile, set_profiler, stop_profiling  # noqa: E402
 
@@ -311,6 +312,7 @@ def main(argv=None) -> int:
         print("no colony sizes were given")
         return 1
 
+    enable_high_dpi_scaling()
     app = QGuiApplication.instance() or QGuiApplication(sys.argv[:1])
     results = []
     for count in counts:

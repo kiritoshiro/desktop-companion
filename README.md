@@ -532,6 +532,7 @@ DesktopBugCompanion/
                               # kinematics.py, render_procedural.py, render_sprite.py
       desktop_environment.py
       discovery.py
+      dpi.py
       engine.py
       flies.py
       frame_policy.py

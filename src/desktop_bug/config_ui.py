@@ -38,6 +38,7 @@ from PyQt5.QtWidgets import (
 
 from . import __version__
 from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, migrate_legacy_state_dir, state_dir, user_presets_dir
+from .dpi import enable_high_dpi_scaling
 from .logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
 from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
@@ -1884,6 +1885,7 @@ def main(argv=None) -> int:
     if written_to is None:
         log.warning("No log file could be opened under %s", state_dir())
 
+    enable_high_dpi_scaling()
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = ConfigWindow()
     window.show()
