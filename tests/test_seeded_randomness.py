@@ -22,10 +22,12 @@ def run(seed: int) -> list[tuple]:
     """One state sequence: (x, y, heading, state) per spider, per frame."""
     manager = CreatureManager(PRESET, 1600, 900, seed=seed)
     manager.base_world.clear()
-    # Flies and webs are their own worlds with their own, still module-level
-    # randomness (DC-09 seeds Creature and CreatureManager, the two things the
-    # plan names); turning them off keeps this test inside what DC-09 actually
-    # promises instead of failing on a gap it did not create.
+    # Flies are seeded too since DC-40 (see tests/test_fly_world_seeded.py),
+    # but from their own `Random` instance, independent of this manager's
+    # `_rng` by design -- so a fly nest existing does not shift this trace.
+    # Webs are still unseeded (DC-09 named Creature/CreatureManager; DC-40
+    # named flies.py only), and turning flies off here as well keeps this
+    # test about exactly what it traces: creature state, not fly state.
     manager.set_flies_enabled(False)
     trace: list[tuple] = []
     for _ in range(FRAMES):
