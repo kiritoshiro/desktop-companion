@@ -886,10 +886,12 @@ class WebWorld:
         span = clamp(base_size * 6.0, 90.0, small * 0.34)
         return span
 
-    def _pick_pattern(self, spec: dict, weights: Optional[dict]) -> str:
+    def _pick_pattern(self, spec: dict, weights: Optional[dict],
+                       rng: Optional[random.Random] = None) -> str:
+        rng = rng or random
         if spec["kind"] == "edge":
             # Open span midway along an edge: a full orb fits naturally here.
-            return "orb" if random.random() < 0.7 else "corner_orb"
+            return "orb" if rng.random() < 0.7 else "corner_orb"
         w = {"corner_orb": 0.62, "funnel": 0.2, "tangle": 0.18}
         if weights:
             for k, v in weights.items():
@@ -900,7 +902,7 @@ class WebWorld:
                         pass
         keys = list(w.keys())
         total = sum(w[k] for k in keys) or 1.0
-        roll = random.random() * total
+        roll = rng.random() * total
         acc = 0.0
         for k in keys:
             acc += w[k]
@@ -908,13 +910,14 @@ class WebWorld:
                 return k
         return "corner_orb"
 
-    def _random_open_spec(self) -> dict:
+    def _random_open_spec(self, rng: Optional[random.Random] = None) -> dict:
         """A web site out in the open, away from the walls."""
+        rng = rng or random
         w, h = self.screen_w, self.screen_h
         mx = w * 0.16
         my = h * 0.16
-        vx = random.uniform(mx, w - mx)
-        vy = random.uniform(my, h - my)
+        vx = rng.uniform(mx, w - mx)
+        vy = rng.uniform(my, h - my)
         # Orient roughly toward screen centre so the static sag reads naturally.
         din = _unit((w * 0.5) - vx, (h * 0.5) - vy)
         return {"id": f"open_{vx:.0f}_{vy:.0f}", "kind": "open", "vertex": (vx, vy), "din": din}
@@ -927,15 +930,26 @@ class WebWorld:
 
     # -- weaver API -----------------------------------------------------
     def claim_site(self, creature, prefer_corner: bool = True,
-                   pattern_weights: Optional[dict] = None) -> Optional[Web]:
-        """Start a fresh web for ``creature`` at a free corner, edge, or open spot."""
+                   pattern_weights: Optional[dict] = None,
+                   rng: Optional[random.Random] = None) -> Optional[Web]:
+        """Start a fresh web for ``creature`` at a free corner, edge, or open spot.
+
+        ``rng`` is optional and defaults to the module-level ``random`` used
+        everywhere else in this file -- webs.py is a disclosed, out-of-scope
+        gap in DC-09/DC-40's seeding pass (see those packages' work-log
+        entries). A caller that already has a seeded stream to offer (DC-20's
+        job-driven Webber, via the creature's own ``rng``) can pass it so its
+        *own* replay stays reproducible; every other, unseeded caller is
+        unaffected.
+        """
+        rng = rng or random
         if len(self.webs) >= MAX_WEBS:
             return None
         specs = self._specs()
         # Offer a few open-space sites too, so webs can appear in random places
         # and not only hug the screen corners.
-        specs.extend(self._random_open_spec() for _ in range(4))
-        random.shuffle(specs)
+        specs.extend(self._random_open_spec(rng) for _ in range(4))
+        rng.shuffle(specs)
         if prefer_corner:
             specs.sort(key=lambda s: 0 if s["kind"] == "corner" else 1)
         base_size = float(getattr(creature, "size", 24.0))
@@ -952,7 +966,7 @@ class WebWorld:
                                               self.screen_w, self.screen_h)
                 pattern = "orb"
             else:
-                pattern = self._pick_pattern(spec, pattern_weights)
+                pattern = self._pick_pattern(spec, pattern_weights, rng)
                 planner = _PATTERN_PLANNERS.get(pattern, _plan_corner_orb)
                 if spec["kind"] == "edge" and pattern == "orb":
                     center = (spec["vertex"][0], spec["vertex"][1] + spec["din"][1] * span)

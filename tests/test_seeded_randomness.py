@@ -58,4 +58,4 @@ def test_an_unseeded_run_still_works():
     manager = CreatureManager(PRESET, 1600, 900)
     for _ in range(120):
         manager.update(DT, -5000.0, -5000.0)
-    assert len(manager.creatures) == 4
+    assert len(manager.creatures) == 5

@@ -8,7 +8,7 @@ tested headlessly and extended without growing the personality FSM.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 import math
 import random
 from typing import Iterable
@@ -50,6 +50,48 @@ BUILD_DUTY_ON = (7.0, 12.0)
 BUILD_DUTY_OFF = (4.0, 8.0)
 PATROL_DUTY_ON = (9.0, 16.0)
 PATROL_DUTY_OFF = (5.0, 9.0)
+
+# DC-20: Scout, Webber and Hunter get their own duty-cycle constants rather
+# than reusing Builder's/Guard's -- each shift feels distinct and none of the
+# three should silently drift if a future tuning pass changes BUILD_*/PATROL_*.
+# The on:off ratio for Scout/Webber runs noticeably longer-on than Builder's
+# or Guard's: `presets/colony.json` also runs a fly spawner, and any spider
+# with `chase`/`approach` skills gets pulled out of its job by the
+# pre-existing, disclosed hunt-vs-job priority (`_job_outranked_by_personality`
+# outranks every job mode but `guard_alert` whenever `_hunting_prey` is set --
+# see this package's PR notes and DC-18's work-log entry). A nominal on:off
+# ratio around 60/40, as Builder/Guard use, is not enough headroom to clear
+# DC-20's "no job idle more than 60% of frames" bar once that preemption
+# takes its share; this package was told not to retune the preemption itself,
+# so the duty cycle -- which the plan explicitly says is fair game to tune
+# per job -- carries the compensation instead.
+SCOUT_DUTY_ON = (9.0, 14.0)
+SCOUT_DUTY_OFF = (3.0, 5.0)
+WEBBER_DUTY_ON = (10.0, 15.0)
+WEBBER_DUTY_OFF = (3.0, 5.0)
+HUNTER_DUTY_ON = (8.0, 14.0)
+HUNTER_DUTY_OFF = (4.0, 7.0)
+
+# Scout: the screen is divided into a coarse grid of sectors it takes turns
+# visiting, oldest-covered first, so it eventually covers the whole desktop
+# rather than orbiting one corner.
+SCOUT_SECTOR_COLS = 4
+SCOUT_SECTOR_ROWS = 3
+SCOUT_ARRIVE_DIST = 42.0
+SCOUT_REPORT_DWELL = (1.0, 2.0)
+
+# Webber: how close a web must land to a team's base to count as "near it"
+# for repair/maintenance purposes, and how many intact webs within that ring
+# is "enough" before a webber goes looking for fresh silk to lay instead.
+WEBBER_ARRIVE_DIST = 26.0
+WEBBER_NEAR_BASE_PAD = 260.0
+WEBBER_TARGET_WEB_COUNT = 2
+WEBBER_WEAVE_SPEED = 42.0
+
+# Hunter: how far past the base radius its home patrol ring sits, and how
+# much a base's soft resource budget grows per delivered catch.
+HUNTER_PATROL_RADIUS_PAD = 70.0
+HUNTER_CARRY_FOOD_AMOUNT = 12.0
 
 # Below this fraction of maximum integrity a base is an emergency: its builder
 # goes back on duty immediately instead of waiting out an off-duty stretch.
@@ -96,6 +138,11 @@ class BaseSite:
     last_alert: float = 0.0
     patrol_angle: float = 0.0
     resources: float = 0.0
+    # DC-20: a small rolling log of what a Scout has reported nearby -- the
+    # team's shared "blackboard". Each entry is a plain dict so it round-trips
+    # through JSON without a schema bump; oldest entries drop once it grows
+    # past a handful.
+    points_of_interest: list = field(default_factory=list)
 
     @property
     def radius(self) -> float:
@@ -114,6 +161,7 @@ class BaseSite:
         data["last_alert"] = round(self.last_alert, 3)
         data["patrol_angle"] = round(self.patrol_angle, 5)
         data["resources"] = round(self.resources, 3)
+        data["points_of_interest"] = list(self.points_of_interest)
         return data
 
     @classmethod
@@ -135,6 +183,10 @@ class BaseSite:
                 last_alert=max(0.0, float(value.get("last_alert", 0.0))),
                 patrol_angle=float(value.get("patrol_angle", 0.0)),
                 resources=max(0.0, min(1000.0, float(value.get("resources", 0.0)))),
+                points_of_interest=[
+                    dict(poi) for poi in (value.get("points_of_interest") or ())
+                    if isinstance(poi, dict)
+                ][-8:],
             )
             site.x = float(site.x)
             site.y = float(site.y)
@@ -167,6 +219,15 @@ class BaseWorld:
         # Filled in by the manager: a base ring is drawn in its team's colour, so
         # two teams on one desktop can be told apart without opening anything.
         self.team_profiles: dict = {}
+        # DC-20 per-worker job state, keyed the same way as ``_duty``.
+        self._scout_targets: dict[str, int] = {}
+        self._scout_report_timers: dict[str, float] = {}
+        self._scout_coverage: dict[str, dict[int, float]] = {}
+        self._webber_claims: dict[str, dict] = {}
+        self._hunt_carry: dict[str, bool] = {}
+        self._hunt_fed_seen: dict[str, bool] = {}
+        self._hunt_patrol_angle: dict[str, float] = {}
+        self._hunt_home: dict[str, tuple[float, float]] = {}
         for raw in saved or ():
             site = BaseSite.from_dict(raw)
             if site is not None:
@@ -182,6 +243,14 @@ class BaseWorld:
     def clear(self) -> None:
         self.bases.clear()
         self._duty.clear()
+        self._scout_targets.clear()
+        self._scout_report_timers.clear()
+        self._scout_coverage.clear()
+        self._webber_claims.clear()
+        self._hunt_carry.clear()
+        self._hunt_fed_seen.clear()
+        self._hunt_patrol_angle.clear()
+        self._hunt_home.clear()
         self._clock = 0.0
 
     def _site_key(self, creature) -> str:
@@ -210,7 +279,14 @@ class BaseWorld:
         """Return whether a base still has building or repair work outstanding."""
         return site.build_progress < MAX_BUILD_PROGRESS or site.integrity < site.max_integrity
 
-    def _site_for_guard(self, creature) -> BaseSite | None:
+    def _site_for_team(self, creature) -> BaseSite | None:
+        """Nearest base belonging to ``creature``'s own team, if any exists yet.
+
+        Used by every job that works *around* a base without founding one
+        itself (Guard, and DC-20's Scout/Webber/Hunter): a team with no
+        builder, or whose builder has not founded a site yet, simply has
+        nothing for these jobs to do until one exists.
+        """
         team = str(getattr(creature.progression, "team_id", "neutral") or "neutral")
         candidates = [site for site in self.bases.values() if site.team_id == team]
         if not candidates:
@@ -259,6 +335,13 @@ class BaseWorld:
             return
         live = {self._creature_key(creature) for creature in creatures}
         self._duty = {key: duty for key, duty in self._duty.items() if key in live}
+        self._scout_targets = {k: v for k, v in self._scout_targets.items() if k in live}
+        self._scout_report_timers = {k: v for k, v in self._scout_report_timers.items() if k in live}
+        self._webber_claims = {k: v for k, v in self._webber_claims.items() if k in live}
+        self._hunt_carry = {k: v for k, v in self._hunt_carry.items() if k in live}
+        self._hunt_fed_seen = {k: v for k, v in self._hunt_fed_seen.items() if k in live}
+        self._hunt_patrol_angle = {k: v for k, v in self._hunt_patrol_angle.items() if k in live}
+        self._hunt_home = {k: v for k, v in self._hunt_home.items() if k in live}
 
     @staticmethod
     def _can_work(creature) -> bool:
@@ -282,7 +365,7 @@ class BaseWorld:
         creature.job_alert_target = alert_target
         creature.job_base_id = base_id
 
-    def update(self, dt: float, creatures: Iterable) -> None:
+    def update(self, dt: float, creatures: Iterable, web_world=None) -> None:
         creatures = list(creatures or ())
         self._clock += max(0.0, float(dt))
         self._prune_duty(creatures)
@@ -335,7 +418,7 @@ class BaseWorld:
                 self._set_intent(builder, "build", (site.x, site.y), base_id=site.id)
 
         for guard in (c for c in creatures if getattr(c, "job_id", "none") == "guard"):
-            site = self._site_for_guard(guard)
+            site = self._site_for_team(guard)
             if site is None:
                 continue
             guard.job_base_id = site.id
@@ -377,6 +460,283 @@ class BaseWorld:
                 site.y + math.sin(site.patrol_angle) * patrol_radius,
             )
             self._set_intent(guard, "patrol", target, base_id=site.id)
+
+        for scout in (c for c in creatures if getattr(c, "job_id", "none") == "scout"):
+            self._update_scout(dt, scout, creatures)
+
+        for webber in (c for c in creatures if getattr(c, "job_id", "none") == "webber"):
+            self._update_webber(dt, webber, web_world)
+
+        for hunter in (c for c in creatures if getattr(c, "job_id", "none") == "hunter"):
+            self._update_hunter(dt, hunter, creatures)
+
+    # -- Scout: sector coverage + a team blackboard ---------------------
+
+    def _sector_center(self, sector: int) -> tuple[float, float]:
+        col = sector % SCOUT_SECTOR_COLS
+        row = (sector // SCOUT_SECTOR_COLS) % SCOUT_SECTOR_ROWS
+        cell_w = self.screen_w / SCOUT_SECTOR_COLS
+        cell_h = self.screen_h / SCOUT_SECTOR_ROWS
+        return (cell_w * (col + 0.5), cell_h * (row + 0.5))
+
+    def _pick_scout_sector(self, team_id: str, exclude_key: str) -> int:
+        """Least-recently-covered sector for this team, with a little spread.
+
+        Ties among the stalest few sectors are broken randomly so two scouts
+        on the same team do not both beeline for the identical sector the
+        instant it goes stale.
+        """
+        total = SCOUT_SECTOR_COLS * SCOUT_SECTOR_ROWS
+        coverage = self._scout_coverage.setdefault(team_id, {})
+        taken = {v for k, v in self._scout_targets.items() if k != exclude_key}
+        candidates = [s for s in range(total) if s not in taken] or list(range(total))
+        candidates.sort(key=lambda s: coverage.get(s, -1.0))
+        pool = candidates[: max(1, len(candidates) // 3)]
+        return self._rng.choice(pool)
+
+    def _report_sector(self, site: BaseSite, scout, sector: int, creatures) -> None:
+        """Publish what a scout finds at a sector to its team's blackboard."""
+        cx, cy = self._sector_center(sector)
+        kind = "clear"
+        poi_x, poi_y = cx, cy
+        best_d = 150.0
+        for other in creatures:
+            if other is scout or getattr(other, "dragging", False):
+                continue
+            try:
+                hostile = scout.relation_to(other) == "foe"
+            except Exception:
+                hostile = False
+            if not hostile:
+                continue
+            d = math.hypot(other.x - cx, other.y - cy)
+            if d < best_d:
+                best_d = d
+                kind = "foe"
+                poi_x, poi_y = other.x, other.y
+        site.points_of_interest.append({
+            "sector": sector,
+            "x": round(poi_x, 1),
+            "y": round(poi_y, 1),
+            "kind": kind,
+            "reported_at": round(self._clock, 2),
+        })
+        # A rolling window: the blackboard is "what's out there lately", not
+        # an ever-growing log.
+        if len(site.points_of_interest) > 8:
+            del site.points_of_interest[: len(site.points_of_interest) - 8]
+
+    def _update_scout(self, dt: float, scout, creatures) -> None:
+        site = self._site_for_team(scout)
+        if site is None:
+            # Nothing to report to yet -- a scout with no team base just
+            # keeps wandering on temperament until one exists.
+            return
+        scout.job_base_id = site.id
+        can_work = self._can_work(scout)
+        key = self._creature_key(scout)
+        report_timer = self._scout_report_timers.get(key, 0.0)
+        reporting = report_timer > 0.0
+        on_duty = self._on_duty(
+            scout, dt, SCOUT_DUTY_ON, SCOUT_DUTY_OFF,
+            urgent=False, productive=can_work,
+        )
+        if not on_duty or not can_work:
+            return
+        if reporting:
+            report_timer = max(0.0, report_timer - dt)
+            self._scout_report_timers[key] = report_timer
+            target = self._sector_center(self._scout_targets.get(key, 0))
+            self._set_intent(scout, "scout_report", target, base_id=site.id)
+            if report_timer <= 0.0:
+                self._scout_targets.pop(key, None)
+            return
+        sector = self._scout_targets.get(key)
+        if sector is None:
+            sector = self._pick_scout_sector(site.team_id, key)
+            self._scout_targets[key] = sector
+        target = self._sector_center(sector)
+        if math.hypot(target[0] - scout.x, target[1] - scout.y) > SCOUT_ARRIVE_DIST:
+            self._set_intent(scout, "scout_travel", target, base_id=site.id)
+        else:
+            # Arrived: log coverage and whatever this sector currently holds
+            # to the team's shared blackboard, then hold for a beat so the
+            # report reads as a pause rather than a flicker between legs.
+            self._scout_coverage.setdefault(site.team_id, {})[sector] = self._clock
+            self._report_sector(site, scout, sector, creatures)
+            self._scout_report_timers[key] = self._rng.uniform(*SCOUT_REPORT_DWELL)
+            self._set_intent(scout, "scout_report", target, base_id=site.id)
+
+    # -- Webber: repair-and-maintain the team's silk near its base ------
+
+    def _find_webber_work(self, webber, site: BaseSite, web_world) -> dict | None:
+        """Find this webber a duty-cycled maintenance task, nearest first.
+
+        Mending a torn web always wins. Failing that, keep the team's web
+        count topped up so a colony whose silk never gets cut still has a
+        webber doing something -- this is the "maintain" half of the goal,
+        distinct from a personality-driven weaver's own dice roll.
+        ``WebWorld.claim_site`` has no notion of "near a point", only fixed
+        corner/edge/open-space specs, so "near the base" is honoured for
+        repair and adoption (the nearest torn/unfinished web to the site) but
+        not for brand-new silk -- a real placement bias would need a change
+        to ``webs.py`` this package does not make.
+        """
+        near = WEBBER_NEAR_BASE_PAD + site.radius
+        repairable = web_world.find_repairable_web(webber, max_dist=1e9)
+        if repairable is not None:
+            dist = math.hypot(repairable.hub[0] - site.x, repairable.hub[1] - site.y)
+            if dist <= near and web_world.claim_repair(repairable, webber):
+                return {"web": repairable, "mode": "repair"}
+        adoptable = web_world.find_adoptable_web(webber, max_dist=1e9)
+        if adoptable is not None:
+            dist = math.hypot(adoptable.hub[0] - site.x, adoptable.hub[1] - site.y)
+            if dist <= near and web_world.adopt(adoptable, webber):
+                return {"web": adoptable, "mode": "weave"}
+        team_webs = sum(
+            1 for w in web_world.webs
+            if w.is_complete() and not w.is_damaged()
+            and math.hypot(w.hub[0] - site.x, w.hub[1] - site.y) <= near
+        )
+        if team_webs < WEBBER_TARGET_WEB_COUNT:
+            # Pass the creature's own seeded stream, not this module's ``self._rng``:
+            # ``claim_site`` defaults to the unseeded module-level ``random`` when
+            # given none, which would make a seeded colony run pick a different new
+            # web site every replay -- exactly the DC-09/DC-40 seeding contract this
+            # package must not quietly break.
+            new_web = web_world.claim_site(
+                webber, prefer_corner=False, rng=getattr(webber, "rng", None),
+            )
+            if new_web is not None:
+                return {"web": new_web, "mode": "weave"}
+        return None
+
+    def _update_webber(self, dt: float, webber, web_world) -> None:
+        site = self._site_for_team(webber)
+        if site is None:
+            return
+        webber.job_base_id = site.id
+        can_work = self._can_work(webber)
+        key = self._creature_key(webber)
+        claim = self._webber_claims.get(key)
+        if claim is not None and (web_world is None or claim["web"] not in web_world.webs):
+            claim = None
+            self._webber_claims.pop(key, None)
+        if claim is None and web_world is not None:
+            claim = self._find_webber_work(webber, site, web_world)
+            if claim is not None:
+                self._webber_claims[key] = claim
+        productive = can_work and claim is not None
+        urgent = claim is not None and claim["mode"] == "repair"
+        on_duty = self._on_duty(
+            webber, dt, WEBBER_DUTY_ON, WEBBER_DUTY_OFF,
+            urgent=urgent, productive=productive,
+        )
+        if not on_duty or not can_work or claim is None:
+            return
+        web = claim["web"]
+        at_web = math.hypot(web.hub[0] - webber.x, web.hub[1] - webber.y) <= WEBBER_ARRIVE_DIST
+        if not at_web:
+            self._set_intent(webber, "web_travel", web.hub, base_id=site.id)
+            return
+        if claim["mode"] == "repair":
+            web.repair_near(webber.x, webber.y, dt)
+            self._set_intent(webber, "web_repair", web.hub, base_id=site.id)
+            if not web.is_damaged():
+                web_world.release_repair(web)
+                self._webber_claims.pop(key, None)
+        else:
+            tip, _drawing = web.working_point()
+            web.advance(dt, WEBBER_WEAVE_SPEED, tip)
+            self._set_intent(webber, "web_weave", web.hub, base_id=site.id)
+            if web.is_complete():
+                self._webber_claims.pop(key, None)
+
+    # -- Hunter: prey and intruders close to home, food carried back ----
+
+    def _update_hunter(self, dt: float, hunter, creatures) -> None:
+        key = self._creature_key(hunter)
+        site = self._site_for_team(hunter)
+        if site is not None:
+            home_x, home_y, home_radius, base_id = site.x, site.y, site.radius, site.id
+        else:
+            # This hunter's own team has founded no base -- either it has no
+            # builder yet, or (colony.json's actual arrangement) the hunter is
+            # deliberately on a base-less rival team, an intruder rather than
+            # a colonist. Either way "close to home" still needs a home: the
+            # spot this hunter was first seen at stands in for one, so the
+            # job produces its own states without a real ``BaseSite`` to
+            # patrol around or bank food in.
+            home_x, home_y = self._hunt_home.setdefault(key, (hunter.x, hunter.y))
+            home_radius, base_id = 60.0, None
+        hunter.job_base_id = base_id
+        can_work = self._can_work(hunter)
+        hunting_now = bool(getattr(hunter, "_hunting_prey", False))
+        fed_now = str(getattr(hunter, "state", "")) == "Feed"
+        if fed_now and not self._hunt_fed_seen.get(key, False):
+            self._hunt_carry[key] = True
+        self._hunt_fed_seen[key] = fed_now
+        carrying = self._hunt_carry.get(key, False)
+
+        if hunting_now and not carrying:
+            # A live hunt (personality-driven ``_pursue_prey``) already
+            # outranks job duty by design -- see
+            # ``BehaviourMixin._job_outranked_by_personality`` and this
+            # package's disclosed note on the hunt-vs-job priority dynamic,
+            # which is intentionally left untouched here. The job still
+            # marks itself on duty for the frame; it is just not the one
+            # steering.
+            self._set_intent(hunter, "hunting", base_id=base_id)
+            return
+
+        on_duty = self._on_duty(
+            hunter, dt, HUNTER_DUTY_ON, HUNTER_DUTY_OFF,
+            urgent=carrying, productive=can_work,
+        )
+        if not on_duty or not can_work:
+            return
+
+        if carrying:
+            dist = math.hypot(home_x - hunter.x, home_y - hunter.y)
+            if dist > 30.0:
+                self._set_intent(hunter, "hunt_return", (home_x, home_y), base_id=base_id)
+            else:
+                if site is not None:
+                    site.resources = min(1000.0, site.resources + HUNTER_CARRY_FOOD_AMOUNT)
+                self._hunt_carry[key] = False
+            return
+
+        # Nothing to deliver and nothing to chase: patrol a ring close to
+        # home so the next fly or foe this hunter meets is one near its base,
+        # per the plan's "close to home" preference. Target *selection*
+        # among flies stays entirely in ``CreatureManager._update_prey_targets``
+        # -- the same nearest-with-hysteresis scoring every hunter uses --
+        # since biasing it would touch the disclosed hunt-vs-job priority
+        # dynamic this package was told not to retune.
+        angle = self._hunt_patrol_angle.get(key)
+        if angle is None:
+            angle = self._rng.uniform(0.0, math.tau)
+        angle = (angle + dt * 0.6) % math.tau
+        self._hunt_patrol_angle[key] = angle
+        radius = max(50.0, home_radius + HUNTER_PATROL_RADIUS_PAD)
+        target = (home_x + math.cos(angle) * radius, home_y + math.sin(angle) * radius)
+        alert_target = None
+        best_d = radius + 40.0
+        for other in creatures:
+            if other is hunter or getattr(other, "dragging", False):
+                continue
+            try:
+                hostile = hunter.relation_to(other) == "foe"
+            except Exception:
+                hostile = False
+            if not hostile:
+                continue
+            d = math.hypot(other.x - home_x, other.y - home_y)
+            if d <= best_d:
+                best_d = d
+                alert_target = other
+                target = (other.x, other.y)
+        self._set_intent(hunter, "hunt_patrol", target, alert_target=alert_target, base_id=base_id)
 
     def to_dict(self) -> list[dict]:
         return [site.to_dict() for site in sorted(self.bases.values(), key=lambda item: item.id)]

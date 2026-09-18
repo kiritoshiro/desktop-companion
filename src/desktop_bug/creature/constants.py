@@ -15,7 +15,13 @@ def smootherstep(t: float) -> float:
 # States the job layer drives directly. They are not part of the personality
 # dispatch, so a spider left in one after its work intent clears would match no
 # branch and keep its last speed and pause flag forever.
-JOB_STATES = ("JobTravel", "JobBuild", "JobPatrol", "JobGuardAlert")
+JOB_STATES = (
+    "JobTravel", "JobBuild", "JobPatrol", "JobGuardAlert",
+    # DC-20: Scout, Webber and Hunter job states.
+    "JobScoutTravel", "JobScoutReport",
+    "JobWebTravel", "JobWebRepair", "JobWebWeave",
+    "JobHuntPatrol", "JobHuntReturn",
+)
 
 # Data-driven job-mode -> state mapping (DC-18, C6): the single place a new
 # job mode registers its state. ``_update_job_state`` used to gate itself on
@@ -35,6 +41,17 @@ JOB_MODE_STATES = {
     "build": "JobBuild",
     "patrol": "JobPatrol",
     "guard_alert": "JobGuardAlert",
+    # DC-20. "hunting" has no entry on purpose: a hunter mid-hunt is always
+    # outranked by personality (see ``_job_outranked_by_personality``), so
+    # that mode never needs a state of its own to move the creature -- see
+    # ``jobs.py::BaseWorld._update_hunter``.
+    "scout_travel": "JobScoutTravel",
+    "scout_report": "JobScoutReport",
+    "web_travel": "JobWebTravel",
+    "web_repair": "JobWebRepair",
+    "web_weave": "JobWebWeave",
+    "hunt_patrol": "JobHuntPatrol",
+    "hunt_return": "JobHuntReturn",
 }
 
 # Hunting: which states a locked-on spider must finish before joining/leaving

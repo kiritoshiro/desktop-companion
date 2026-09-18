@@ -280,6 +280,36 @@ class BehaviourMixin:
             self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
             self.speed = 72.0 * self._speed_mult()
             self.aim_intent = min(1.0, self.aim_intent + max(0.0, dt) * 2.0)
+        elif state_for_mode == "JobScoutTravel":
+            self.motion_paused = False
+            self.target_x, self.target_y = float(target[0]), float(target[1])
+            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            self.speed = 44.0 * self._speed_mult()
+        elif state_for_mode == "JobScoutReport":
+            self.motion_paused = True
+            self.speed = 0.0
+            self.target_x, self.target_y = self.x, self.y
+            self.aim_intent = min(1.0, self.aim_intent + max(0.0, dt) * 0.7)
+        elif state_for_mode == "JobWebTravel":
+            self.motion_paused = False
+            self.target_x, self.target_y = float(target[0]), float(target[1])
+            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            self.speed = 50.0 * self._speed_mult()
+        elif state_for_mode in ("JobWebRepair", "JobWebWeave"):
+            self.motion_paused = True
+            self.speed = 0.0
+            self.target_x, self.target_y = self.x, self.y
+            self.aim_intent = min(1.0, self.aim_intent + max(0.0, dt) * 0.9)
+        elif state_for_mode == "JobHuntPatrol":
+            self.motion_paused = False
+            self.target_x, self.target_y = float(target[0]), float(target[1])
+            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            self.speed = 60.0 * self._speed_mult()
+        elif state_for_mode == "JobHuntReturn":
+            self.motion_paused = False
+            self.target_x, self.target_y = float(target[0]), float(target[1])
+            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            self.speed = 85.0 * self._speed_mult()
         return True
 
     def _job_outranked_by_personality(self, mode: str) -> bool:
