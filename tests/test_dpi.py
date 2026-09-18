@@ -145,9 +145,11 @@ def test_cursor_trap_converts_logical_target_to_physical_pixels(monkeypatch):
     try:
         # Freeze the simulation for this tick so a deterministic desired
         # cursor position survives into the code under test instead of
-        # whatever the real (un-trapped) mouse-web world computes.
-        monkeypatch.setattr(window.manager, "update", lambda *a, **k: None)
-        window.manager._desired_cursor = (100.0, 50.0)
+        # whatever the real (un-trapped) mouse-web world computes. DC-16
+        # made manager.update()'s return value the source of truth (C9),
+        # so the mock returns it directly rather than setting the
+        # now-unread _desired_cursor attribute.
+        monkeypatch.setattr(window.manager, "update", lambda *a, **k: (100.0, 50.0))
 
         monkeypatch.setattr(engine, "screen_device_pixel_ratio_at", lambda x, y: 2.0)
         calls = []
@@ -170,8 +172,9 @@ def test_cursor_trap_is_a_no_op_conversion_at_ratio_one(monkeypatch):
 
     window = engine.OverlayWindow(ROOT / "presets" / "default.json")
     try:
-        monkeypatch.setattr(window.manager, "update", lambda *a, **k: None)
-        window.manager._desired_cursor = (7.0, 9.0)
+        # See the sibling test above: DC-16 made the return value of
+        # manager.update() the source of truth for the desired cursor (C9).
+        monkeypatch.setattr(window.manager, "update", lambda *a, **k: (7.0, 9.0))
 
         monkeypatch.setattr(engine, "screen_device_pixel_ratio_at", lambda x, y: 1.0)
         calls = []

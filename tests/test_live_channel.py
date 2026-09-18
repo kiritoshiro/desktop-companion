@@ -13,6 +13,7 @@ falls back to.
 from __future__ import annotations
 
 import json
+import tempfile
 import time
 from pathlib import Path
 
@@ -27,6 +28,19 @@ from desktop_bug.live_channel import (
     SettingsChannelClient,
     channel_name,
 )
+
+
+def _fresh_state_dir(monkeypatch) -> Path:
+    """A private state directory, without pytest's shared `tmp_path` root.
+
+    That root (`pytest-of-<user>`) has been intermittently PermissionError'd
+    by another process holding it (antivirus, or another worktree's pytest
+    run) on this machine before -- see tests/test_state_location.py and
+    tests/test_creature_render_golden.py for the same workaround.
+    """
+    folder = Path(tempfile.mkdtemp(prefix="desktop-bug-tests-"))
+    monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(folder))
+    return folder
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -50,8 +64,8 @@ def _pump(condition, timeout: float = 3.0) -> bool:
     return True
 
 
-def _write_preset(tmp_path: Path, name: str = "Channel") -> Path:
-    path = tmp_path / f"{name.lower()}.json"
+def _write_preset(directory: Path, name: str = "Channel") -> Path:
+    path = directory / f"{name.lower()}.json"
     path.write_text(
         json.dumps(
             {
@@ -67,8 +81,9 @@ def _write_preset(tmp_path: Path, name: str = "Channel") -> Path:
     return path
 
 
-def test_protocol_round_trip(state_dir) -> None:
+def test_protocol_round_trip(monkeypatch) -> None:
     """The building blocks: connect, send each direction, see the message."""
+    state_dir = _fresh_state_dir(monkeypatch)
     name = channel_name(state_dir)
     server = OverlayChannelServer(name)
     client = SettingsChannelClient(name)
@@ -103,8 +118,9 @@ def test_protocol_round_trip(state_dir) -> None:
         server.close()
 
 
-def test_protocol_version_mismatch_disconnects(state_dir) -> None:
+def test_protocol_version_mismatch_disconnects(monkeypatch) -> None:
     """An incompatible message closes the connection rather than being guessed at."""
+    state_dir = _fresh_state_dir(monkeypatch)
     name = channel_name(state_dir)
     server = OverlayChannelServer(name)
     client = SettingsChannelClient(name)
@@ -137,7 +153,7 @@ class _FakeRunningProcess:
         return None
 
 
-def test_dc16_acceptance(tmp_path, state_dir) -> None:
+def test_dc16_acceptance(monkeypatch) -> None:
     """The plan's own acceptance line, driven end to end.
 
     Two in-process endpoints: `OverlayWindow` plays the overlay, `ConfigWindow`
@@ -145,7 +161,9 @@ def test_dc16_acceptance(tmp_path, state_dir) -> None:
     the settings window's model, and a slot change from the settings side
     must reach the running overlay.
     """
-    preset_path = _write_preset(tmp_path)
+    _fresh_state_dir(monkeypatch)
+    preset_dir = Path(tempfile.mkdtemp(prefix="desktop-bug-tests-"))
+    preset_path = _write_preset(preset_dir)
     overlay = OverlayWindow(preset_path)
     settings = ConfigWindow()
     try:
@@ -190,7 +208,7 @@ def test_dc16_acceptance(tmp_path, state_dir) -> None:
         settings.deleteLater()
 
 
-def test_dc16_stop_request_over_channel_saves_state(tmp_path, state_dir) -> None:
+def test_dc16_stop_request_over_channel_saves_state(monkeypatch) -> None:
     """DC-04's guarantee must survive DC-16: a channel stop still saves first.
 
     Starts the engine in-process, dirties its runtime state, triggers the
@@ -199,11 +217,13 @@ def test_dc16_stop_request_over_channel_saves_state(tmp_path, state_dir) -> None
     `test_shutdown.py::test_overlay_saves_on_stop` uses for the file-based
     path, so neither path can regress without a test noticing.
     """
-    preset_path = _write_preset(tmp_path, "StopChannel")
+    _fresh_state_dir(monkeypatch)
+    preset_dir = Path(tempfile.mkdtemp(prefix="desktop-bug-tests-"))
+    preset_path = _write_preset(preset_dir, "StopChannel")
     overlay = OverlayWindow(preset_path)
     settings = ConfigWindow()
     try:
-        overlay.manager._progression_state_path = tmp_path / "creatures.json"
+        overlay.manager._progression_state_path = preset_dir / "creatures.json"
         state_path = overlay.manager._progression_state_path
         assert not state_path.exists()
 
