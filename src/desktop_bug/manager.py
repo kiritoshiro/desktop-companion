@@ -28,7 +28,7 @@ from .desktop_environment import DesktopSurface
 from .math_utils import distance
 from .progression import RELATIONS, normalize_team_stances
 from .teams import normalize_teams, teams_payload
-from .jobs import BaseWorld, job_ability_ids, normalize_job_id
+from .jobs import BaseWorld, FLY_CATCH_RESOURCE_AMOUNT, job_ability_ids, normalize_job_id
 from .personality_profiles import COMPACT_TEMPERAMENT_IDS
 from .profiling import get_profiler
 from .runtime_state import (
@@ -1290,6 +1290,19 @@ class CreatureManager:
                 # after the fly transitions to ``eaten`` so repeated collision
                 # checks cannot award duplicate XP.
                 self.award_feed_xp(best, FEED_XP_REWARD, "fly")
+                # DC-21: every eaten fly tops up its eater's team food a
+                # little, regardless of job -- except a Hunter's own catch,
+                # which already credits the larger, deliberate
+                # HUNTER_CARRY_FOOD_AMOUNT once it carries this same catch
+                # home (jobs.py::_update_hunter's fed-state rising edge).
+                # Crediting both here would double-count one catch: this
+                # incidental top-up is for every *other* job's catch, not an
+                # addition to the Hunter's.
+                base_world = getattr(self, "base_world", None)
+                if base_world is not None and getattr(best, "job_id", "none") != "hunter":
+                    base_world.credit_team_food(
+                        getattr(best.progression, "team_id", None), FLY_CATCH_RESOURCE_AMOUNT,
+                    )
                 # Free every hunter that was locked onto this fly.
                 for hunter in list(fly.hunters):
                     hunter._prey = None

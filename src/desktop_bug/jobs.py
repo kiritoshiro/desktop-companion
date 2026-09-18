@@ -93,9 +93,32 @@ WEBBER_WEAVE_SPEED = 42.0
 HUNTER_PATROL_RADIUS_PAD = 70.0
 HUNTER_CARRY_FOOD_AMOUNT = 12.0
 
+# DC-21: any team member eating a fly tops the team's food up a little too --
+# not just a dedicated Hunter's deliberate carry-home trip, which stays the
+# larger, more reliable source above. See ``BaseWorld.credit_team_food``,
+# called from ``CreatureManager._resolve_fly_catches`` for *every* catch
+# regardless of the eater's job.
+FLY_CATCH_RESOURCE_AMOUNT = 4.0
+
 # Below this fraction of maximum integrity a base is an emergency: its builder
 # goes back on duty immediately instead of waiting out an off-duty stretch.
 REPAIR_URGENT_INTEGRITY = 0.5
+
+# DC-21: closing the resource loop. Advancing ``build_progress`` now spends
+# ``site.resources`` (the team's food, banked by Hunters and incidental
+# catches) rather than the base being self-sufficient purely from builder
+# time. One point of progress costs this many banked resources; a base with
+# an empty larder still gets visited and held at its current progress, but
+# does not advance until food arrives.
+BUILD_RESOURCE_COST_PER_PROGRESS = 1.0
+
+# DC-21: a visible, on-screen benefit for a leveled-up base -- friendly
+# creatures within this much past the base's ring slowly regenerate hp, and
+# (below) a guard's threat-response ring grows with the base's level.
+BASE_REGEN_RADIUS_PAD = 90.0
+BASE_REGEN_HP_PER_LEVEL = 1.4
+GUARD_ALERT_RADIUS_PAD = 70.0
+GUARD_ALERT_RADIUS_PER_LEVEL = 15.0
 
 
 @dataclass
@@ -398,12 +421,19 @@ class BaseWorld:
                 # Building is intentionally slow and resource-shaped: a base
                 # must be revisited over time rather than appearing instantly.
                 rate = 6.0 + min(8.0, float(getattr(builder, "level", 1)) * 0.25)
-                # Resources are a soft maintenance budget for future crafting;
-                # the first version replenishes from the builder's work rather
-                # than making a new economy prerequisite block base creation.
-                site.resources = min(1000.0, site.resources + dt * 1.8)
-                if site.build_progress < MAX_BUILD_PROGRESS:
-                    site.build_progress = min(MAX_BUILD_PROGRESS, site.build_progress + dt * rate)
+                # DC-21: building now spends the team's banked food instead of
+                # replenishing itself from builder time -- a builder can be at
+                # the site, on duty and able to work, and still make no
+                # progress if ``site.resources`` is empty. The cap at
+                # ``resources / cost`` is what actually enforces that; a
+                # builder with unlimited time cannot outrun an empty larder.
+                if site.build_progress < MAX_BUILD_PROGRESS and site.resources > 0.0:
+                    progress_step = min(
+                        dt * rate, site.resources / BUILD_RESOURCE_COST_PER_PROGRESS,
+                    )
+                    if progress_step > 0.0:
+                        site.build_progress = min(MAX_BUILD_PROGRESS, site.build_progress + progress_step)
+                        site.resources = max(0.0, site.resources - progress_step * BUILD_RESOURCE_COST_PER_PROGRESS)
                 site.level = min(5, int(site.build_progress // 100.0))
                 site.max_integrity = 100.0 + site.level * 35.0
                 # Work repairs as well as builds. The floor keeps a newly
@@ -434,7 +464,12 @@ class BaseWorld:
                 if not hostile_relation:
                     continue
                 d = math.hypot(other.x - site.x, other.y - site.y)
-                if d <= site.radius + 70.0 and d < hostile_dist:
+                # DC-21: a higher-level base gives its guard a wider threat
+                # response ring -- the visible payoff for the base economy
+                # actually advancing, on top of the passive alert-ring redraw
+                # that already scales with level in ``render``.
+                alert_pad = GUARD_ALERT_RADIUS_PAD + site.level * GUARD_ALERT_RADIUS_PER_LEVEL
+                if d <= site.radius + alert_pad and d < hostile_dist:
                     hostile, hostile_dist = other, d
             # An intruder is the one thing that cancels a guard's break.
             on_duty = self._on_duty(
@@ -469,6 +504,48 @@ class BaseWorld:
 
         for hunter in (c for c in creatures if getattr(c, "job_id", "none") == "hunter"):
             self._update_hunter(dt, hunter, creatures)
+
+        self._apply_base_regen(dt, creatures)
+
+    def _apply_base_regen(self, dt: float, creatures) -> None:
+        """DC-21: heal creatures resting near their own team's leveled base.
+
+        Only a base at level 1+ (i.e. one the economy has actually funded
+        past its first structure tier) grants this -- a freshly founded,
+        unbuilt site gives no benefit yet, so the payoff reads as earned.
+        Every job (not just Guard/Builder) benefits, since this represents
+        the base itself, not any one worker's task.
+        """
+        for creature in creatures:
+            if getattr(creature, "dragging", False):
+                continue
+            heal = getattr(creature, "heal", None)
+            if not callable(heal):
+                continue
+            team = str(getattr(getattr(creature, "progression", None), "team_id", "neutral") or "neutral")
+            if team == "neutral":
+                continue
+            site = self.bases.get(f"team:{team}")
+            if site is None or site.level <= 0:
+                continue
+            if math.hypot(creature.x - site.x, creature.y - site.y) <= site.radius + BASE_REGEN_RADIUS_PAD:
+                heal(dt * BASE_REGEN_HP_PER_LEVEL * site.level)
+
+    def credit_team_food(self, team_id: str, amount: float) -> None:
+        """Credit a team's base with incidentally-gathered food.
+
+        Called for *every* fly caught by a team member, regardless of job --
+        see ``FLY_CATCH_RESOURCE_AMOUNT``'s comment for why this is a smaller
+        top-up alongside the Hunter's larger, deliberate carry-home amount.
+        A team with no base yet (or a solitary, base-less creature) simply
+        has nowhere to bank it.
+        """
+        team = str(team_id or "neutral")
+        if team == "neutral":
+            return
+        site = self.bases.get(f"team:{team}")
+        if site is not None:
+            site.resources = min(1000.0, site.resources + max(0.0, float(amount)))
 
     # -- Scout: sector coverage + a team blackboard ---------------------
 
@@ -689,14 +766,18 @@ class BaseWorld:
             self._set_intent(hunter, "hunting", base_id=base_id)
             return
 
-        on_duty = self._on_duty(
-            hunter, dt, HUNTER_DUTY_ON, HUNTER_DUTY_OFF,
-            urgent=carrying, productive=can_work,
-        )
-        if not on_duty or not can_work:
-            return
-
         if carrying:
+            # Deliberately not gated on ``can_work``/``_on_duty``: in a
+            # fly-rich scene a hunter re-locks onto its next target the
+            # instant Feed ends (``_hunting_prey`` goes back to True before
+            # this method's next call), which keeps ``job_busy`` -- and so
+            # ``can_work`` -- false almost continuously. Gating the carry
+            # step on it meant a catch was banked and then never actually
+            # delivered: confirmed empirically, resources stayed at 0.0
+            # through a whole 5-minute busy-colony run. Carrying already
+            # takes priority over a fresh hunt (the check above), so once
+            # committed it must not be re-blocked by the hunt that priority
+            # check just stepped around.
             dist = math.hypot(home_x - hunter.x, home_y - hunter.y)
             if dist > 30.0:
                 self._set_intent(hunter, "hunt_return", (home_x, home_y), base_id=base_id)
@@ -704,6 +785,13 @@ class BaseWorld:
                 if site is not None:
                     site.resources = min(1000.0, site.resources + HUNTER_CARRY_FOOD_AMOUNT)
                 self._hunt_carry[key] = False
+            return
+
+        on_duty = self._on_duty(
+            hunter, dt, HUNTER_DUTY_ON, HUNTER_DUTY_OFF,
+            urgent=False, productive=can_work,
+        )
+        if not on_duty or not can_work:
             return
 
         # Nothing to deliver and nothing to chase: patrol a ring close to
