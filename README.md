@@ -537,6 +537,7 @@ DesktopBugCompanion/
       flies.py
       frame_policy.py
       jobs.py
+      live_channel.py
       logging_setup.py
       manager.py
       math_utils.py
