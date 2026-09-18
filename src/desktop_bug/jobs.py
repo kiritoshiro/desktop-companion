@@ -766,14 +766,18 @@ class BaseWorld:
             self._set_intent(hunter, "hunting", base_id=base_id)
             return
 
-        on_duty = self._on_duty(
-            hunter, dt, HUNTER_DUTY_ON, HUNTER_DUTY_OFF,
-            urgent=carrying, productive=can_work,
-        )
-        if not on_duty or not can_work:
-            return
-
         if carrying:
+            # Deliberately not gated on ``can_work``/``_on_duty``: in a
+            # fly-rich scene a hunter re-locks onto its next target the
+            # instant Feed ends (``_hunting_prey`` goes back to True before
+            # this method's next call), which keeps ``job_busy`` -- and so
+            # ``can_work`` -- false almost continuously. Gating the carry
+            # step on it meant a catch was banked and then never actually
+            # delivered: confirmed empirically, resources stayed at 0.0
+            # through a whole 5-minute busy-colony run. Carrying already
+            # takes priority over a fresh hunt (the check above), so once
+            # committed it must not be re-blocked by the hunt that priority
+            # check just stepped around.
             dist = math.hypot(home_x - hunter.x, home_y - hunter.y)
             if dist > 30.0:
                 self._set_intent(hunter, "hunt_return", (home_x, home_y), base_id=base_id)
@@ -781,6 +785,13 @@ class BaseWorld:
                 if site is not None:
                     site.resources = min(1000.0, site.resources + HUNTER_CARRY_FOOD_AMOUNT)
                 self._hunt_carry[key] = False
+            return
+
+        on_duty = self._on_duty(
+            hunter, dt, HUNTER_DUTY_ON, HUNTER_DUTY_OFF,
+            urgent=False, productive=can_work,
+        )
+        if not on_duty or not can_work:
             return
 
         # Nothing to deliver and nothing to chase: patrol a ring close to

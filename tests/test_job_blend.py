@@ -9,6 +9,8 @@ of spiders rather than a set of workers.
 import collections
 import json
 import random
+import tempfile
+from pathlib import Path
 
 # Keep a test run from rewriting a real player's saved spiders.
 
@@ -96,7 +98,7 @@ def test_release() -> None:
         assert guard.motion_paused is False, state
 
 
-def test_colony_behaviour(monkeypatch, tmp_path) -> int:
+def test_colony_behaviour(monkeypatch) -> int:
     """A working colony must still behave like spiders over a long run."""
     # DC-21: build progress now depends on the team's banked food (state that
     # persists across runs, per ``BaseSite``), so this test must not read or
@@ -104,8 +106,12 @@ def test_colony_behaviour(monkeypatch, tmp_path) -> int:
     # ``DESKTOP_BUG_STATE_DIR`` -- a leftover base from an earlier real launch
     # (or an earlier test run) would make the ``build_progress`` assertion
     # below pass or fail depending on unrelated history instead of on this
-    # run. Giving it a private directory, like test_creature_render_golden.py
-    # already does for the same reason, makes it deterministic again.
+    # run. A private directory via tempfile.mkdtemp(), like
+    # test_creature_render_golden.py already does for the same reason
+    # (pytest's own tmp_path root has intermittently PermissionError'd on
+    # this machine when several worktrees run pytest concurrently), makes
+    # this deterministic and independent of that lock.
+    tmp_path = Path(tempfile.mkdtemp(prefix="desktop-bug-tests-"))
     monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(tmp_path / "state"))
     random.seed(5)
     manager = CreatureManager(ROOT / "presets" / "colony.json", 1600, 900)

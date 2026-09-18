@@ -1291,13 +1291,15 @@ class CreatureManager:
                 # checks cannot award duplicate XP.
                 self.award_feed_xp(best, FEED_XP_REWARD, "fly")
                 # DC-21: every eaten fly tops up its eater's team food a
-                # little, regardless of job -- the Hunter's own carry-home
-                # trip (``HUNTER_CARRY_FOOD_AMOUNT`` in jobs.py) stays the
-                # larger, deliberate source; this is the broader "any catch
-                # counts" top-up the plan's "eaten flies credit team food"
-                # asks for.
+                # little, regardless of job -- except a Hunter's own catch,
+                # which already credits the larger, deliberate
+                # HUNTER_CARRY_FOOD_AMOUNT once it carries this same catch
+                # home (jobs.py::_update_hunter's fed-state rising edge).
+                # Crediting both here would double-count one catch: this
+                # incidental top-up is for every *other* job's catch, not an
+                # addition to the Hunter's.
                 base_world = getattr(self, "base_world", None)
-                if base_world is not None:
+                if base_world is not None and getattr(best, "job_id", "none") != "hunter":
                     base_world.credit_team_food(
                         getattr(best.progression, "team_id", None), FLY_CATCH_RESOURCE_AMOUNT,
                     )

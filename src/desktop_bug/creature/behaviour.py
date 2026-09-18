@@ -318,7 +318,16 @@ class BehaviourMixin:
             return True
         # A guard answering an intruder at its own base outranks an ordinary
         # hunt, but nothing outranks fleeing or a jump already in the air.
-        if self._hunting_prey and mode != "guard_alert":
+        # A hunter walking already-caught food home (DC-21) gets the same
+        # exception: in a fly-rich scene it re-locks onto its next target
+        # (``_hunting_prey`` goes back to True) the instant it finishes
+        # eating, so without this a catch is banked as "carrying" and then
+        # never actually delivered -- confirmed empirically, resources
+        # stayed at zero through a whole busy-colony run. This is not a
+        # change to how a fresh hunt is prioritised against job duty in
+        # general (jobs.py already lets a fresh hunt win over starting a
+        # new delivery trip); it only protects a trip already committed to.
+        if self._hunting_prey and mode not in ("guard_alert", "hunt_return"):
             return True
         return False
 

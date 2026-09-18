@@ -19,7 +19,9 @@ own deliberate carry-home trip.
 from __future__ import annotations
 
 import json
+import os
 import random
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -218,12 +220,13 @@ def _write_preset(tmp_path: Path, slots: list[dict], flies: dict) -> Path:
     return path
 
 
-def test_a_non_hunter_job_eating_a_fly_still_credits_team_food(tmp_path, monkeypatch):
+def test_a_non_hunter_job_eating_a_fly_still_credits_team_food(monkeypatch):
     """DC-21 widens crediting past the Hunter's own carry-home mechanic:
     catch resolution is job-agnostic already (``CreatureManager._resolve_fly_catches``
     iterates every creature), so a plain "none"-job spider that happens to eat
     a fly must top the team's base up too -- just by the smaller incidental
     amount, not the Hunter's larger deliberate one."""
+    tmp_path = Path(tempfile.mkdtemp(prefix="desktop-bug-tests-"))
     monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(tmp_path / "state"))
     preset = _write_preset(
         tmp_path,
@@ -244,10 +247,41 @@ def test_a_non_hunter_job_eating_a_fly_still_credits_team_food(tmp_path, monkeyp
     assert FLY_CATCH_RESOURCE_AMOUNT < HUNTER_CARRY_FOOD_AMOUNT
 
 
+def test_a_hunters_own_catch_is_not_double_credited(monkeypatch):
+    """A Hunter-job creature's catch must credit HUNTER_CARRY_FOOD_AMOUNT once,
+    not that plus the incidental FLY_CATCH_RESOURCE_AMOUNT on top.
+
+    The universal "any catch counts" top-up above and the Hunter job's own
+    deliberate carry-home credit both key off the same event -- a catch
+    that puts the eater into ``Feed`` state -- so without an explicit
+    exclusion a Hunter's single catch nets both amounts instead of just its
+    own larger one."""
+    tmp_path = Path(tempfile.mkdtemp(prefix="desktop-bug-tests-"))
+    monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(tmp_path / "state"))
+    preset = _write_preset(
+        tmp_path,
+        [{"model": "spider", "personality": "hunter", "count": 1, "team": "pack_a", "job": "hunter"}],
+        {"enabled": False, "spawner": False},
+    )
+    manager = CreatureManager(preset, 800, 600, seed=1)
+    hunter = manager.creatures[0]
+    site = manager.base_world.ensure_site(hunter)
+    fly = Fly(hunter.x, hunter.y, 800, 600)
+    manager.fly_world.flies.append(fly)
+
+    manager._resolve_fly_catches()
+    assert site.resources == 0.0, "the incidental top-up must not fire for the Hunter's own catch"
+
+    for _ in range(600):
+        manager.update(1.0 / 60.0, -5000.0, -5000.0)
+
+    assert site.resources == pytest.approx(HUNTER_CARRY_FOOD_AMOUNT), site.resources
+
+
 # -- Acceptance: with flies off a base stalls, with flies on it advances --
 
 
-def _run_colony(tmp_path_factory, flies_enabled: bool, frames: int, seed: int) -> float:
+def _run_colony(flies_enabled: bool, frames: int, seed: int) -> float:
     """One full headless CreatureManager run; returns the team base's
     ``build_progress`` at the end.
 
@@ -263,8 +297,7 @@ def _run_colony(tmp_path_factory, flies_enabled: bool, frames: int, seed: int) -
     the actual thing DC-21 changed; a Builder that also personally hunts
     remains covered by the existing job_busy tests in test_jobs.py.
     """
-    tmp_path = tmp_path_factory.mktemp(f"econ-{flies_enabled}-{seed}")
-    import os
+    tmp_path = Path(tempfile.mkdtemp(prefix=f"desktop-bug-tests-econ-{flies_enabled}-{seed}-"))
     os.environ["DESKTOP_BUG_STATE_DIR"] = str(tmp_path / "state")
     preset = _write_preset(
         tmp_path,
@@ -286,11 +319,11 @@ def _run_colony(tmp_path_factory, flies_enabled: bool, frames: int, seed: int) -
 
 
 @pytest.mark.slow
-def test_a_colony_with_flies_disabled_stalls_below_a_colony_with_flies_enabled(tmp_path_factory):
+def test_a_colony_with_flies_disabled_stalls_below_a_colony_with_flies_enabled():
     frames = 60 * 300  # five minutes of simulated time
     seed = 3
-    disabled = _run_colony(tmp_path_factory, False, frames, seed)
-    enabled = _run_colony(tmp_path_factory, True, frames, seed)
+    disabled = _run_colony(False, frames, seed)
+    enabled = _run_colony(True, frames, seed)
 
     # Deterministic: with no food ever arriving, the base cannot advance at
     # all -- not merely "less than the other run".
