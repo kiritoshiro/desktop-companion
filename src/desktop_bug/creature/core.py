@@ -1003,6 +1003,11 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         dt = clamp(dt, 0.001, 0.05)
         self.resize_screen(sw, sh)
         self.perception = build_perception(self)
+        if self._hunting_prey:
+            # A spider locked onto a fly reacts to that candidate here, before
+            # the dragging branch below, so it can still fire silk at prey
+            # while held (DC-18, C1 -- see BehaviourMixin._pursue_prey).
+            self._pursue_prey(dt, mx, my)
 
         if self.prev_mx is None:
             cursor_vx = 0.0

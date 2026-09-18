@@ -20,6 +20,12 @@ from desktop_bug.perception import Perception, build_perception
 from support import load_pair, ROOT
 
 BEHAVIOUR_SRC = (ROOT / "src" / "desktop_bug" / "creature" / "behaviour.py").read_text(encoding="utf-8")
+# DC-18 moved the web-care *decision* reads (repairable/adoptable/walkable/
+# intact-count) out of behaviour.py's deleted `_consider_special_actions`
+# and into arbiter.py's scored candidates -- see that module's docstring.
+# `can_shoot_prey_web()` stays in behaviour.py because `_maybe_shoot_web_at_cursor`
+# (an executor, not a decision point) still reads it directly.
+ARBITER_SRC = (ROOT / "src" / "desktop_bug" / "arbiter.py").read_text(encoding="utf-8")
 
 
 @pytest.fixture(autouse=True, scope="module")
@@ -131,8 +137,12 @@ def test_behaviour_no_longer_makes_this_direct_world_query(needle):
 def test_behaviour_still_reads_perception_for_its_web_decisions():
     # The replacements exist -- this fails the same way the above would pass
     # for the wrong reason if the whole block had simply been deleted.
-    assert "self.perception.repairable_web(" in BEHAVIOUR_SRC
-    assert "self.perception.adoptable_web(" in BEHAVIOUR_SRC
-    assert "self.perception.walkable_web(" in BEHAVIOUR_SRC
-    assert "self.perception.intact_web_count()" in BEHAVIOUR_SRC
+    # DC-18 relocated the web-care decision candidates (repair/adopt/weave/
+    # web-walk) from behaviour.py's `_consider_special_actions` (now deleted)
+    # into arbiter.py's scored candidates, so those specific reads now live
+    # there instead -- see ARBITER_SRC's comment above.
+    assert "perception.repairable_web(" in ARBITER_SRC
+    assert "perception.adoptable_web(" in ARBITER_SRC
+    assert "perception.walkable_web(" in ARBITER_SRC
+    assert "perception.intact_web_count()" in ARBITER_SRC
     assert "self.perception.can_shoot_prey_web()" in BEHAVIOUR_SRC

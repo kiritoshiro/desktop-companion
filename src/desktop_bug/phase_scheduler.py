@@ -248,6 +248,30 @@ class BehaviourPhaseScheduler:
             self._refill_deck()
         return None
 
+    def peek_score(self, focus: str = "none") -> float:
+        """Preview the score ``choose(focus)`` would likely produce.
+
+        Non-mutating: it does not touch the deck or ``self.current``. Used by
+        ``arbiter.py`` (DC-18) to treat "the phase scheduler has something it
+        wants to do" as one scored candidate among many instead of a chooser
+        that runs first and wins outright, per that module's own docstring.
+        Returns 0.0 when nothing currently eligible in the deck has a usable
+        focus bias, matching ``choose()`` returning ``None`` in that case.
+        """
+        focus = normalize_focus(focus)
+        bias_map = FOCUS_PHASE_BIAS[focus]
+        best = 0.0
+        seen: set[str] = set()
+        for phase_id in self.deck:
+            if phase_id in seen or not self.is_allowed(phase_id):
+                continue
+            seen.add(phase_id)
+            bias = max(0.0, float(bias_map.get(phase_id, 0.25)))
+            if bias <= 0.0:
+                continue
+            best = max(best, float(self.scores[phase_id]) * bias)
+        return best
+
     def adopt(self, phase_id: str, focus: str = "none") -> float | None:
         """Adopt a phase entered by legacy FSM code and return its duration."""
         phase_id = str(phase_id).strip().lower()

@@ -82,6 +82,25 @@ class Perception:
         """Whether a fly world exists to fire a trapping shot through."""
         return self._fly_world is not None
 
+    def prey(self):
+        """The fly this creature is currently locked onto, if any (DC-18).
+
+        A reference, not a decision: ``CreatureManager._update_prey_targets``
+        still owns *which* fly (if any) a spider is locked onto -- that is
+        target selection among the manager's own flies, the same kind of
+        manager-injected state DC-17 already treated as acceptable. What
+        moved here is *acting* on that lock: ``BehaviourMixin._pursue_prey``
+        reads this candidate and decides how to close on it using the
+        creature's own rng, instead of ``CreatureManager._drive_hunt``
+        reaching in from outside and calling ``enter_approach``/``enter_chase``
+        or overwriting ``target_x``/``speed``/``motion_paused`` directly.
+        """
+        return getattr(self._creature, "_prey", None)
+
+    @property
+    def is_hunting_prey(self) -> bool:
+        return bool(getattr(self._creature, "_hunting_prey", False))
+
 
 def build_perception(creature) -> Perception:
     """Snapshot the world references ``creature`` can currently query.
