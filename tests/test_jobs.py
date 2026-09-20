@@ -50,8 +50,18 @@ def colony():
     guard = DummySpider("guard", "pack_a", 230, 200, 2)
     foe = DummySpider("none", "rivals", 246, 200, 3)
     world = BaseWorld(800, 600, rng=random.Random(4))
+    # DC-21: build progress now spends ``site.resources`` (see
+    # test_jobs_economy.py for that gating itself). This fixture is shared by
+    # duty-cycle/timing tests that predate the economy and are not about it,
+    # so the site is founded and seeded at the field's own cap (``BaseSite.from_dict``
+    # clamps to 1000.0 too, so the round-trip test stays exact) -- comfortably
+    # more than the 500 total a full build spends -- *before* the first
+    # ``update``, so their behaviour is exactly as it was before DC-21 from
+    # frame one.
+    site = world.ensure_site(builder)
+    site.resources = 1000.0
     world.update(DT, [builder, guard, foe])
-    return world, next(iter(world.bases.values())), builder, guard, foe
+    return world, site, builder, guard, foe
 
 
 def test_the_jobs_are_the_six_a_spider_can_hold():
