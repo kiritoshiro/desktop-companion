@@ -1143,6 +1143,36 @@ class FlyWorld:
             self._removed.append(sp.footprint())
         self.spawners = []
 
+    def spawners_to_dict(self) -> List[dict]:
+        """Serialise where the nests are for the runtime state file.
+
+        Only position and size are kept.  A nest's pulse phase and crawling
+        specks are decorative animation state that is re-rolled on load.
+        """
+        return [{"x": sp.x, "y": sp.y, "scale": sp.scale} for sp in self.spawners]
+
+    def restore_spawners(self, entries) -> int:
+        """Replace the nests with saved ones, returning how many came back.
+
+        Whether nests are used at all stays the caller's decision: the preset
+        owns that switch, and a nest saved from an earlier session must not
+        turn the mechanic back on behind the preset's back.
+        """
+        if not isinstance(entries, (list, tuple)):
+            return 0
+        self.clear_spawners()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            try:
+                sp = FlySpawner(float(entry["x"]), float(entry["y"]),
+                                scale=float(entry.get("scale", self.scale)))
+            except (TypeError, ValueError, KeyError):
+                continue
+            sp.clamp_to_screen(self.screen_w, self.screen_h)
+            self.spawners.append(sp)
+        return len(self.spawners)
+
     def reset_spawners(self) -> None:
         self.clear_spawners()
         self.use_spawner = True

@@ -161,7 +161,11 @@ def test_manager_round_trip() -> None:
         manager = CreatureManager(preset_path, 1280, 720)
         assert manager._progression_namespace == "default", manager._progression_namespace
         assert manager.creatures, "preset produced no creatures"
-        assert manager.creatures[0].progression_id == "default|slot-0:0"
+        # Identity is generated and owned by the spider, not derived from its
+        # place in the slot, so only the namespace is predictable here.
+        first_id = manager.creatures[0].progression_id
+        assert first_id.startswith("default|"), first_id
+        assert not first_id.endswith(":0"), f"{first_id} still encodes a member index"
 
         # Redirect persistence at a temporary file so the repository's own
         # state is never touched, and isolate it from the live spiders.
