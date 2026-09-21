@@ -152,7 +152,15 @@ class JobBehaviourMixin:
         elif state_for_mode == "JobPatrol":
             self.motion_paused = False
             self.target_x, self.target_y = float(target[0]), float(target[1])
-            self.target_heading = angle_to(self.x, self.y, self.target_x, self.target_y)
+            # DC-42: a guard on station looks outwards, across its own patrol
+            # line rather than along it. The job publishes that facing only
+            # once the guard has arrived; while it is still walking there,
+            # `job_facing` is None and it faces the way it is going.
+            facing = getattr(self, "job_facing", None)
+            self.target_heading = (
+                float(facing) if facing is not None
+                else angle_to(self.x, self.y, self.target_x, self.target_y)
+            )
             self.speed = 38.0 * self._speed_mult()
         elif state_for_mode == "JobGuardAlert":
             self.motion_paused = False

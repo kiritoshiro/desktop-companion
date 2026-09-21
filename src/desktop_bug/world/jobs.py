@@ -120,6 +120,24 @@ BASE_REGEN_HP_PER_LEVEL = 1.4
 GUARD_ALERT_RADIUS_PAD = 70.0
 GUARD_ALERT_RADIUS_PER_LEVEL = 15.0
 
+# DC-42: a guard holds a line at a standoff from what it guards instead of
+# hugging the base wall. Its post sits outside the base ring but inside its
+# own alert ring, so it already stands between the base and anything coming
+# in. It tracks a little way along that line and faces outwards, which is
+# what makes it read as watching an approach rather than pacing a boundary.
+GUARD_STANDOFF_PAD = 46.0
+# How far either side of its post a guard tracks, and how fast.
+GUARD_SWEEP_ARC = 0.34
+GUARD_SWEEP_HZ = 0.16
+# The whole patrol line turns this slowly, so no approach stays unwatched
+# forever, but a guard is never orbiting: a full turn takes about nine
+# minutes, against the roughly fifteen seconds the old ring took. Watch a
+# guard for a minute and it is holding a line, not going round.
+GUARD_POST_DRIFT = 0.012
+# Within this distance of its post a guard turns to face outwards; further
+# out it is still walking there, and faces the way it is going.
+GUARD_FACE_OUT_DIST = 34.0
+
 # DC-41: a base is a pile of dirt mounds that grows one mound at a time, not a
 # ring of nodes turning on the spot. A finished base is this many mounds; a
 # level-up enlarges them rather than adding more, because `BaseSite.radius`
@@ -318,6 +336,8 @@ class BaseWorld:
         self._hunt_fed_seen: dict[str, bool] = {}
         self._hunt_patrol_angle: dict[str, float] = {}
         self._hunt_home: dict[str, tuple[float, float]] = {}
+        # DC-42: where each guard is along its own stretch of the patrol line.
+        self._guard_sweep: dict[str, float] = {}
         for raw in saved or ():
             site = BaseSite.from_dict(raw)
             if site is not None:
@@ -341,6 +361,7 @@ class BaseWorld:
         self._hunt_fed_seen.clear()
         self._hunt_patrol_angle.clear()
         self._hunt_home.clear()
+        self._guard_sweep.clear()
         self._clock = 0.0
 
     def _site_key(self, creature) -> str:
@@ -432,6 +453,7 @@ class BaseWorld:
         self._hunt_fed_seen = {k: v for k, v in self._hunt_fed_seen.items() if k in live}
         self._hunt_patrol_angle = {k: v for k, v in self._hunt_patrol_angle.items() if k in live}
         self._hunt_home = {k: v for k, v in self._hunt_home.items() if k in live}
+        self._guard_sweep = {k: v for k, v in self._guard_sweep.items() if k in live}
 
     @staticmethod
     def _can_work(creature) -> bool:
@@ -449,11 +471,14 @@ class BaseWorld:
         )
 
     @staticmethod
-    def _set_intent(creature, mode: str, target: tuple[float, float] | None = None, alert_target=None, base_id: str | None = None) -> None:
+    def _set_intent(creature, mode: str, target: tuple[float, float] | None = None, alert_target=None, base_id: str | None = None, facing: float | None = None) -> None:
         creature.job_mode = mode
         creature.job_target = target
         creature.job_alert_target = alert_target
         creature.job_base_id = base_id
+        # None means "face the way you are walking", which is what every job
+        # but a guard holding its line wants.
+        creature.job_facing = facing
 
     def update(self, dt: float, creatures: Iterable, web_world=None) -> None:
         creatures = list(creatures or ())
@@ -514,54 +539,29 @@ class BaseWorld:
                 )
                 self._set_intent(builder, "build", (site.x, site.y), base_id=site.id)
 
+        # Guards are grouped by the base they answer to so their posts can be
+        # spread around it, and so the patrol line turns once per base rather
+        # than once per guard -- two guards on one site used to turn it twice
+        # as fast as one.
+        guard_posts: dict[str, list] = {}
+        guard_sites: dict[str, BaseSite] = {}
         for guard in (c for c in creatures if getattr(c, "job_id", "none") == "guard"):
             site = self._site_for_team(guard)
             if site is None:
                 continue
             guard.job_base_id = site.id
-            hostile = None
-            hostile_dist = float("inf")
-            for other in creatures:
-                if other is guard or getattr(other, "dragging", False):
-                    continue
-                try:
-                    hostile_relation = guard.relation_to(other) == "foe"
-                except Exception:
-                    hostile_relation = False
-                if not hostile_relation:
-                    continue
-                d = math.hypot(other.x - site.x, other.y - site.y)
-                # DC-21: a higher-level base gives its guard a wider threat
-                # response ring -- the visible payoff for the base economy
-                # actually advancing, on top of the passive alert-ring redraw
-                # that already scales with level in ``render``.
-                alert_pad = GUARD_ALERT_RADIUS_PAD + site.level * GUARD_ALERT_RADIUS_PER_LEVEL
-                if d <= site.radius + alert_pad and d < hostile_dist:
-                    hostile, hostile_dist = other, d
-            # An intruder is the one thing that cancels a guard's break.
-            on_duty = self._on_duty(
-                guard, dt, PATROL_DUTY_ON, PATROL_DUTY_OFF,
-                urgent=hostile is not None, productive=self._can_work(guard),
-            )
-            if hostile is not None:
-                site.alert = min(1.0, site.alert + dt * 1.8)
-                site.last_alert = self._clock
-                if self._can_work(guard):
-                    self._set_intent(guard, "guard_alert", (hostile.x, hostile.y), hostile, site.id)
-                continue
-            # The site's patrol ring keeps turning whether or not this guard is
-            # on shift, so a returning guard picks the route up where it is now
-            # instead of snapping back to where it left off.
-            site.alert = max(0.0, site.alert - dt * 0.22)
-            site.patrol_angle = (site.patrol_angle + dt * (0.42 + site.level * 0.03)) % math.tau
-            if not on_duty or not self._can_work(guard):
-                continue
-            patrol_radius = max(18.0, site.radius * 0.78)
-            target = (
-                site.x + math.cos(site.patrol_angle) * patrol_radius,
-                site.y + math.sin(site.patrol_angle) * patrol_radius,
-            )
-            self._set_intent(guard, "patrol", target, base_id=site.id)
+            guard_posts.setdefault(site.id, []).append(guard)
+            guard_sites[site.id] = site
+        for site_id, posted in guard_posts.items():
+            guard_sites[site_id].patrol_angle = (
+                guard_sites[site_id].patrol_angle + dt * GUARD_POST_DRIFT
+            ) % math.tau
+            posted.sort(key=lambda c: str(getattr(c, "progression_id", "")))
+
+        for site_id, posted in guard_posts.items():
+            site = guard_sites[site_id]
+            for slot, guard in enumerate(posted):
+                self._update_guard(dt, guard, site, slot, len(posted), creatures)
 
         for scout in (c for c in creatures if getattr(c, "job_id", "none") == "scout"):
             self._update_scout(dt, scout, creatures)
@@ -669,6 +669,71 @@ class BaseWorld:
         # an ever-growing log.
         if len(site.points_of_interest) > 8:
             del site.points_of_interest[: len(site.points_of_interest) - 8]
+
+    def _update_guard(self, dt: float, guard, site: BaseSite, slot: int, count: int, creatures) -> None:
+        """Hold a line at a standoff from the base, facing outwards (DC-42).
+
+        A guard used to orbit at 0.78 of the base radius -- inside its own
+        wall, circling continuously. It now takes a post on a ring *outside*
+        the base but inside its alert radius, so it already stands between
+        the base and anything approaching, and tracks only a little way along
+        that line rather than going round and round.
+        """
+        hostile = None
+        hostile_dist = float("inf")
+        for other in creatures:
+            if other is guard or getattr(other, "dragging", False):
+                continue
+            try:
+                hostile_relation = guard.relation_to(other) == "foe"
+            except Exception:
+                hostile_relation = False
+            if not hostile_relation:
+                continue
+            d = math.hypot(other.x - site.x, other.y - site.y)
+            # DC-21: a higher-level base gives its guard a wider threat
+            # response ring -- the visible payoff for the base economy
+            # actually advancing, on top of the passive alert-ring redraw
+            # that already scales with level in ``render``.
+            alert_pad = GUARD_ALERT_RADIUS_PAD + site.level * GUARD_ALERT_RADIUS_PER_LEVEL
+            if d <= site.radius + alert_pad and d < hostile_dist:
+                hostile, hostile_dist = other, d
+        # An intruder is the one thing that cancels a guard's break.
+        on_duty = self._on_duty(
+            guard, dt, PATROL_DUTY_ON, PATROL_DUTY_OFF,
+            urgent=hostile is not None, productive=self._can_work(guard),
+        )
+        if hostile is not None:
+            site.alert = min(1.0, site.alert + dt * 1.8)
+            site.last_alert = self._clock
+            if self._can_work(guard):
+                self._set_intent(guard, "guard_alert", (hostile.x, hostile.y), hostile, site.id)
+            return
+        site.alert = max(0.0, site.alert - dt * 0.22)
+        if not on_duty or not self._can_work(guard):
+            return
+
+        # Posts are spread around the base so two guards watch different
+        # approaches instead of trailing each other round one ring.
+        key = self._creature_key(guard)
+        phase = self._guard_sweep.get(key)
+        if phase is None:
+            phase = self._rng.uniform(0.0, math.tau)
+        phase = (phase + dt * GUARD_SWEEP_HZ * math.tau) % math.tau
+        self._guard_sweep[key] = phase
+
+        post = site.patrol_angle + (slot / max(1, count)) * math.tau
+        angle = post + math.sin(phase) * GUARD_SWEEP_ARC
+        standoff = site.radius + GUARD_STANDOFF_PAD
+        target = (site.x + math.cos(angle) * standoff, site.y + math.sin(angle) * standoff)
+
+        # Face outwards only once it is actually on station. Further out it is
+        # still walking to the post, and a spider striding along while facing
+        # square across its own path reads as broken rather than watchful.
+        facing = None
+        if math.hypot(target[0] - guard.x, target[1] - guard.y) <= GUARD_FACE_OUT_DIST:
+            facing = math.atan2(guard.y - site.y, guard.x - site.x)
+        self._set_intent(guard, "patrol", target, base_id=site.id, facing=facing)
 
     def _update_scout(self, dt: float, scout, creatures) -> None:
         site = self._site_for_team(scout)
