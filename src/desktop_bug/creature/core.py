@@ -42,6 +42,8 @@ from ..state.progression import (
 from ..content.skills import SkillSet, default_skills_for_personality
 from ..world.jobs import normalize_job_id
 from .constants import (
+    KNOCKOUT_RECOVERY_FRACTION,
+    KNOCKOUT_SECONDS,
     normalize_gait_style,
 )
 from .behaviour import BehaviourMixin
@@ -449,6 +451,17 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.energy = self.max_energy
         self.armor = 0.0
         self.damage = 8.0
+        # DC-22: conflict state. A knocked-out spider is out of the scene for
+        # a while -- untargetable, motionless, and skipped by every job -- but
+        # never removed, so a fight can cost a spell on the sidelines and
+        # nothing more.
+        self.knocked_out = False
+        self.knockout_timer = 0.0
+        self.last_attacker = None
+        # Fades after a hit, so the render layer can show one without needing
+        # to know anything about combat.
+        self.hurt_flash = 0.0
+        self.attack_cooldown = 0.0
         combat_cfg = model.get("combat", {})
         if not isinstance(combat_cfg, dict):
             combat_cfg = {}
@@ -660,13 +673,58 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         return self.progression.add_item(str(item_id).strip().lower())
 
     def take_damage(self, amount: float, source=None) -> float:
+        """Apply a hit against this spider's armour, returning what landed.
+
+        This and ``heal`` have existed since the progression work, but until
+        DC-22 nothing in the running application called them -- only a test
+        did. Conflict is what finally uses them, and what made a spider
+        running out of hp mean something: it is knocked out, never killed.
+        Whether a hit may be dealt at all is the manager's decision, gated on
+        the conflict setting; this method does not police its callers.
+        """
+        if self.knocked_out:
+            return 0.0
         try:
             incoming = max(0.0, float(amount))
         except (TypeError, ValueError):
             return 0.0
         dealt = max(0.1, incoming - self.armor) if incoming > 0.0 else 0.0
         self.hp = clamp(self.hp - dealt, 0.0, self.max_hp)
+        if dealt > 0.0:
+            self.last_attacker = source
+            self.hurt_flash = 1.0
+        if self.hp <= 0.0:
+            self._knock_out()
         return dealt
+
+    def _knock_out(self) -> None:
+        """Take this spider out of the scene for a while, without removing it."""
+        self.knocked_out = True
+        self.knockout_timer = KNOCKOUT_SECONDS
+        self.state = "Downed"
+        self.state_timer = KNOCKOUT_SECONDS
+        self.motion_paused = True
+        self.speed = 0.0
+        self.current_speed = 0.0
+        self.job_mode = "idle"
+        self.job_target = None
+        self.job_alert_target = None
+        self.job_facing = None
+        self._prey = None
+        self._hunting_prey = False
+
+    def revive(self, at=None) -> None:
+        """Bring a knocked-out spider back, partly healed, optionally elsewhere."""
+        self.knocked_out = False
+        self.knockout_timer = 0.0
+        self.hp = max(1.0, self.max_hp * KNOCKOUT_RECOVERY_FRACTION)
+        self.motion_paused = False
+        self.last_attacker = None
+        if at is not None:
+            self.x, self.y = float(at[0]), float(at[1])
+            self._initialize_legs()
+        self.state = "Idle"
+        self.state_timer = 0.6
 
     def heal(self, amount: float) -> float:
         before = self.hp
@@ -1006,6 +1064,22 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     def update(self, dt: float, mx: float, my: float, sw: int, sh: int) -> None:
         dt = clamp(dt, 0.001, 0.05)
         self.resize_screen(sw, sh)
+        self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
+        self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
+        if self.knocked_out:
+            # DC-22: out of the scene, but still drawn and still dragged if
+            # the user picks it up. Nothing else runs -- no perception, no
+            # arbiter, no job -- so a downed spider cannot decide anything.
+            # The manager owns reviving it, because only it knows where the
+            # spider's base is.
+            self.knockout_timer = max(0.0, self.knockout_timer - dt)
+            self.motion_paused = True
+            self.current_speed = 0.0
+            self._update_legs(dt)
+            self._update_mood(dt)
+            self._update_posture(dt)
+            self._update_antennae(dt)
+            return
         self.perception = build_perception(self)
         if self._hunting_prey:
             # A spider locked onto a fly reacts to that candidate here, before

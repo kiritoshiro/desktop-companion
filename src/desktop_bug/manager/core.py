@@ -34,6 +34,7 @@ from ..state.runtime_state import (
 
 from .persistence import RuntimeStateMixin
 from .cages import CageMixin
+from .combat import CombatMixin
 from .prey import PreyMixin
 from .hunting import HuntingMixin
 from .surfaces import DesktopSurfaceMixin
@@ -48,6 +49,7 @@ from .constants import (
 class CreatureManager(
     RuntimeStateMixin,
     CageMixin,
+    CombatMixin,
     PreyMixin,
     HuntingMixin,
     DesktopSurfaceMixin,
@@ -80,6 +82,12 @@ class CreatureManager(
         self.interferable = True
         self.mood_mode = "auto"
         self.social_play = False
+        # DC-22: conflict is on by default. The audience for it is the user
+        # who watches these spiders fight for their lands, so shipping it off
+        # would hide the thing it exists for -- see the decision record. The
+        # switch stays because turning it off must make damage impossible,
+        # not merely unlikely.
+        self.conflict_enabled = True
         self.gait_style = "classic"
         # Declared stances between teams, shared by every spider in the scene.
         self.team_stances: dict = {}
@@ -322,6 +330,7 @@ class CreatureManager(
             self.interferable = bool(settings.get("interferable", self.interferable))
             self.mood_mode = str(settings.get("mood_mode", self.mood_mode) or "auto").lower()
             self.social_play = bool(settings.get("social_play", self.social_play))
+            self.conflict_enabled = bool(settings.get("conflict", self.conflict_enabled))
             self.gait_style = normalize_gait_style(settings.get("gait_style", self.gait_style))
             self.team_stances = normalize_team_stances(settings.get("team_relations"))
             # Every team a slot refers to gets an identity, even in an older
@@ -544,6 +553,16 @@ class CreatureManager(
         state = "on" if self.social_play else "off"
         return f"Social play turned {state}."
 
+    def set_conflict_enabled(self, enabled: bool) -> str:
+        """Turn conflict on or off (DC-22).
+
+        Turning it off stops new fights immediately, but leaves anyone
+        currently knocked out to recover normally rather than stranding them.
+        """
+        self.conflict_enabled = bool(enabled)
+        state = "on" if self.conflict_enabled else "off"
+        return f"Conflict turned {state}."
+
     def set_team_stances(self, raw) -> str:
         """Replace the declared stances between teams and share them live."""
         self.team_stances = normalize_team_stances(raw)
@@ -702,6 +721,8 @@ class CreatureManager(
                 self.set_mood_mode(str(settings.get("mood_mode") or "auto"))
             if "social_play" in settings:
                 self.set_social_play(bool(settings.get("social_play")))
+            if "conflict" in settings:
+                self.set_conflict_enabled(bool(settings.get("conflict")))
             if "gait_style" in settings:
                 self.set_gait_style(str(settings.get("gait_style") or "classic"))
             if "allow_mouse_capture" in settings:
@@ -990,6 +1011,12 @@ class CreatureManager(
         with profiler.section("flies"):
             self.fly_world.update(dt, self.creatures, self.web_world)
             self._resolve_fly_catches()
+
+        # DC-22: foes that are touching trade blows, and anyone whose
+        # knock-out has run out gets back up. After movement, so contact is
+        # judged on where the spiders actually ended this frame.
+        with profiler.section("combat"):
+            self._resolve_combat(dt)
 
         # Resort enough to look correct when spiders cross, without paying the
         # sort/allocation cost every single frame. Dragging still updates quickly.
