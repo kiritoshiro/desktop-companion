@@ -128,6 +128,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.job_target = None
         self.job_alert_target = None
         self.job_base_id = None
+        # DC-42: a job may ask for a facing that is not the way the spider is
+        # walking -- a guard holding a line looks outwards, across its own
+        # path, rather than along it. None means "face where you are going".
+        self.job_facing = None
         # Published back to the job layer: True while a personality state
         # outranks this spider's work, so a base cannot make progress from a
         # worker that is busy fleeing or eating.
@@ -698,6 +702,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.job_target = None
         self.job_alert_target = None
         self.job_base_id = None
+        self.job_facing = None
 
     def job_label(self) -> str:
         from ..world.jobs import job_definition

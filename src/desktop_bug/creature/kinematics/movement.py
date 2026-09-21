@@ -134,7 +134,7 @@ class BodyMovementMixin:
         dy = self.target_y - self.y
         target_dist = math.hypot(dx, dy)
         move_heading = math.atan2(dy, dx) if target_dist > 2.0 else self.heading
-        strafe_observe = self.state == "Observe" and self._acts_as_observer()
+        strafe_observe = self._walks_while_facing_elsewhere()
         self.strafe_observe = strafe_observe
 
         if target_dist > 2.0 and not strafe_observe:

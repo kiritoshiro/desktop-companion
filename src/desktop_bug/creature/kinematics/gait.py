@@ -361,7 +361,7 @@ class GaitConfigMixin:
         dx = self.target_x - self.x
         dy = self.target_y - self.y
         target_dist = math.hypot(dx, dy)
-        strafe = self.state == "Observe" and self._acts_as_observer()
+        strafe = self._walks_while_facing_elsewhere()
         self.strafe_observe = strafe
         if target_dist > 2.0 and not strafe:
             raw_heading = math.atan2(dy, dx)

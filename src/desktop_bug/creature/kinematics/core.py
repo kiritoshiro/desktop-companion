@@ -33,6 +33,21 @@ class KinematicsMixin(
 ):
     """Leg IK, gait scheduling, and grounded-locomotion body solving."""
 
+    def _walks_while_facing_elsewhere(self) -> bool:
+        """Whether this spider is walking one way while looking another.
+
+        Both locomotion paths ordinarily overwrite ``target_heading`` with
+        the direction of travel and step along the body's facing.  Two states
+        need them not to: an Observer strafes to keep what it is watching in
+        view, and a guard on station (DC-42) holds its post facing outwards
+        while tracking a little way along its patrol line.  Sharing one
+        predicate keeps the legacy body path and the spider gait path from
+        disagreeing about which those are.
+        """
+        if self.state == "Observe" and self._acts_as_observer():
+            return True
+        return self.state == "JobPatrol" and getattr(self, "job_facing", None) is not None
+
     def _update_legs_lively(self, dt: float) -> None:
         """Visible alternating-tetrapod gait with lifted legs and object probing.
 
