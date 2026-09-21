@@ -526,7 +526,16 @@ DesktopBugCompanion/
   src/
     desktop_bug/
       __init__.py
-      manager.py             # the orchestrator: owns the creatures and the worlds
+
+      manager/               # the orchestrator: owns the creatures and the worlds
+        cages.py
+        constants.py
+        core.py
+        hunting.py
+        naming.py
+        persistence.py
+        prey.py
+        surfaces.py
 
       app/                   # entry points and windows
         config_ui.py
