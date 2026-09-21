@@ -529,6 +529,7 @@ DesktopBugCompanion/
 
       manager/               # the orchestrator: owns the creatures and the worlds
         cages.py
+        combat.py
         constants.py
         core.py
         hunting.py

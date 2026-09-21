@@ -15,6 +15,17 @@ def smootherstep(t: float) -> float:
 # States the job layer drives directly. They are not part of the personality
 # dispatch, so a spider left in one after its work intent clears would match no
 # branch and keep its last speed and pause flag forever.
+# DC-22: how a hit resolves, and what being knocked out costs.
+# Armour subtracts from a hit but never cancels it: a maxed-out defender
+# that a low-level attacker literally cannot scratch reads as a bug rather
+# than as toughness, so this fraction always lands.
+MIN_DAMAGE_FRACTION = 0.15
+# Long enough to be a real setback a watcher notices, short enough that a
+# spider is not missing from the desktop for an interesting stretch.
+KNOCKOUT_SECONDS = 12.0
+KNOCKOUT_RECOVERY_FRACTION = 0.45
+
+
 JOB_STATES = (
     "JobTravel", "JobBuild", "JobPatrol", "JobGuardAlert",
     # DC-20: Scout, Webber and Hunter job states.
