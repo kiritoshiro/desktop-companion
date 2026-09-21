@@ -20,10 +20,10 @@ def smootherstep(t: float) -> float:
 # that a low-level attacker literally cannot scratch reads as a bug rather
 # than as toughness, so this fraction always lands.
 MIN_DAMAGE_FRACTION = 0.15
-# Long enough to be a real setback a watcher notices, short enough that a
-# spider is not missing from the desktop for an interesting stretch.
-KNOCKOUT_SECONDS = 12.0
-KNOCKOUT_RECOVERY_FRACTION = 0.45
+# DC-47: a beaten spider dies rather than being knocked out. This replaces
+# the knock-out and respawn DC-22 shipped with -- see the decision record for
+# why the earlier "never permanent death" constraint was reversed. What is
+# left behind, and how long it lasts, belongs to `world/carcass.py`.
 
 
 JOB_STATES = (

@@ -88,6 +88,8 @@ class CreatureManager(
         # switch stays because turning it off must make damage impossible,
         # not merely unlikely.
         self.conflict_enabled = True
+        # DC-47: remains of spiders that lost, being eaten and on their way out.
+        self.carcasses: List = []
         self.gait_style = "classic"
         # Declared stances between teams, shared by every spider in the scene.
         self.team_stances: dict = {}
@@ -1059,6 +1061,8 @@ class CreatureManager(
             # Flies buzz above the silk but beneath the spiders, so a spider visibly
             # covers a fly as it lands on it to feed.
             self.fly_world.render(painter, clip)
+            # DC-47: remains lie on the ground, under everything living.
+            self.render_carcasses(painter)
         order = self._render_order if self._render_order else self.creatures
         render_span = profiler.section("render")
         for creature in order:

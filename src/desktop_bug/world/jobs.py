@@ -647,9 +647,9 @@ class BaseWorld:
         for other in creatures:
             if other is scout or getattr(other, "dragging", False):
                 continue
-            # DC-22: a knocked-out spider is out of the scene: not a
+            # DC-22/DC-47: a dead spider is out of the scene: not a
             # threat, not a target, not worth reporting.
-            if getattr(other, "knocked_out", False):
+            if getattr(other, "dead", False):
                 continue
             try:
                 hostile = scout.relation_to(other) == "foe"
@@ -688,9 +688,9 @@ class BaseWorld:
         for other in creatures:
             if other is guard or getattr(other, "dragging", False):
                 continue
-            # DC-22: a knocked-out spider is out of the scene: not a
+            # DC-22/DC-47: a dead spider is out of the scene: not a
             # threat, not a target, not worth reporting.
-            if getattr(other, "knocked_out", False):
+            if getattr(other, "dead", False):
                 continue
             try:
                 hostile_relation = guard.relation_to(other) == "foe"
@@ -953,9 +953,9 @@ class BaseWorld:
         for other in creatures:
             if other is hunter or getattr(other, "dragging", False):
                 continue
-            # DC-22: a knocked-out spider is out of the scene: not a
+            # DC-22/DC-47: a dead spider is out of the scene: not a
             # threat, not a target, not worth reporting.
-            if getattr(other, "knocked_out", False):
+            if getattr(other, "dead", False):
                 continue
             try:
                 hostile = hunter.relation_to(other) == "foe"
