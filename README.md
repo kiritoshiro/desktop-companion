@@ -563,7 +563,16 @@ DesktopBugCompanion/
         constants.py
         core.py
         expression.py
-        kinematics.py
+        kinematics/          # leg IK, gait scheduling, body solving
+          core.py
+          gait.py
+          geometry.py
+          legs.py
+          legstate.py
+          movement.py
+          roll.py
+          spider_gait.py
+          stepping.py
         mood.py
         perception.py
         phase_scheduler.py
