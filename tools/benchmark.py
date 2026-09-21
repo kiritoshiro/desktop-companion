@@ -44,9 +44,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from PyQt5.QtCore import QRect  # noqa: E402
 from PyQt5.QtGui import QGuiApplication, QPainter, QPixmap, QRegion  # noqa: E402
 
-from desktop_bug.dpi import enable_high_dpi_scaling  # noqa: E402
+from desktop_bug.support.dpi import enable_high_dpi_scaling  # noqa: E402
 from desktop_bug.manager import CreatureManager  # noqa: E402
-from desktop_bug.profiling import FrameProfiler, percentile, set_profiler, stop_profiling  # noqa: E402
+from desktop_bug.support.profiling import FrameProfiler, percentile, set_profiler, stop_profiling  # noqa: E402
 
 BASELINE_PATH = ROOT / "tools" / "benchmark_baseline.json"
 DEFAULT_COUNTS = (1, 5, 10, 20)

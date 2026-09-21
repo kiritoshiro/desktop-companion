@@ -12,14 +12,14 @@ import tempfile
 from pathlib import Path
 
 
-from desktop_bug.discovery import (
+from desktop_bug.content.discovery import (
     discover_presets,
     is_shipped_preset,
     resolve_preset_path,
     shipped_presets_dirs,
     user_presets_dir,
 )
-from desktop_bug.preset_io import load_preset, save_preset
+from desktop_bug.content.preset_io import load_preset, save_preset
 from support import ROOT
 
 SHIPPED = ROOT / "presets"

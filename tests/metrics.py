@@ -45,7 +45,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from desktop_bug.manager import CreatureManager  # noqa: E402
-from desktop_bug.profiling import FrameProfiler, set_profiler, stop_profiling  # noqa: E402
+from desktop_bug.support.profiling import FrameProfiler, set_profiler, stop_profiling  # noqa: E402
 
 SCREEN = (1600, 900)
 DT = 1.0 / 60.0

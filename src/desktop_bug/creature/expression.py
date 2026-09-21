@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import math
 
-from ..math_utils import (
+from ..support.math_utils import (
     clamp,
 )
-from ..mood import antenna_drive_from_mood
+from .mood import antenna_drive_from_mood
 
 class ExpressionMixin:
     """Mood-driven posture and antenna animation."""

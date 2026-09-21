@@ -10,10 +10,10 @@ import json
 import random
 
 
-from desktop_bug.jobs import BaseWorld
+from desktop_bug.world.jobs import BaseWorld
 from desktop_bug.manager import CreatureManager
-from desktop_bug.preset_io import validate_preset
-from desktop_bug.progression import (
+from desktop_bug.content.preset_io import validate_preset
+from desktop_bug.state.progression import (
     ProgressionState,
     normalize_team_id,
     normalize_team_stances,
@@ -167,7 +167,7 @@ def test_live_reload() -> None:
 
 def test_settings_round_trip() -> None:
     """The settings window must not drop a setting it has no widget for."""
-    from desktop_bug.config_ui import ConfigWindow
+    from desktop_bug.app.config_ui import ConfigWindow
 
     window = ConfigWindow()
     try:

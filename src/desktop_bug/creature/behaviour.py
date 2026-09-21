@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Tuple
 if TYPE_CHECKING:
     from .core import Creature
 
-from ..math_utils import (
+from ..support.math_utils import (
     angle_to,
     clamp,
     clamp_point,
@@ -20,8 +20,8 @@ from ..math_utils import (
     rand_range,
     smoothstep,
 )
-from ..personality_profiles import behaviour_modules_for
-from ..phase_scheduler import phase_id_for_state
+from ..content.personality_profiles import behaviour_modules_for
+from .phase_scheduler import phase_id_for_state
 from .constants import (
     HUNT_COMMITTED_STATES,
     JOB_MODE_STATES,
@@ -29,7 +29,7 @@ from .constants import (
     JOB_STATES,
     smootherstep,
 )
-from .. import arbiter
+from . import arbiter
 
 class BehaviourMixin:
     """State entry points and per-state updates."""

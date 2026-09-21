@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 from desktop_bug.manager import CreatureManager
-from desktop_bug.runtime_state import (
+from desktop_bug.state.runtime_state import (
     RETAIN_LAUNCHES,
     STATE_SCHEMA_VERSION,
     entry_rank,

@@ -10,9 +10,9 @@ from pathlib import Path
 
 
 
-from desktop_bug.discovery import state_dir
-from desktop_bug.engine import OverlayWindow
-from desktop_bug.session_control import (
+from desktop_bug.content.discovery import state_dir
+from desktop_bug.app.engine import OverlayWindow
+from desktop_bug.app.session_control import (
     clear_stop_request,
     consume_stop_request,
     request_stop,

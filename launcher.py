@@ -1,4 +1,4 @@
-from desktop_bug.config_ui import main
+from desktop_bug.app.config_ui import main
 
 
 if __name__ == "__main__":

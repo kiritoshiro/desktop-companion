@@ -84,7 +84,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from .personality_profiles import phase_scores_for
+from ..content.personality_profiles import phase_scores_for
 from .phase_scheduler import FOCUS_PHASE_BIAS, normalize_focus
 
 
@@ -172,7 +172,7 @@ def _hop_candidate(creature, state_timer_expired: bool) -> Optional[Candidate]:
         tx = creature.x + math.cos(creature.heading + creature.rng.uniform(-0.65, 0.65)) * creature.size * creature.rng.uniform(1.0, 2.0)
         ty = creature.y + math.sin(creature.heading + creature.rng.uniform(-0.65, 0.65)) * creature.size * creature.rng.uniform(1.0, 2.0)
         power = creature.personality.get("hop_power")
-        from .math_utils import rand_range
+        from ..support.math_utils import rand_range
         creature.enter_coil(after="wander", power=rand_range(power, 0.34, 0.58, rng=creature.rng), toward=(tx, ty))
 
     return Candidate("hop", score, execute)
@@ -335,7 +335,7 @@ def _cursor_expressive_candidates(creature, dist_to_cursor: float, mx: float, my
         weight = _phase_weight(creature.personality, "roll") + (m.valence + m.arousal) * 0.5
 
         def execute(mx=mx, my=my) -> None:
-            from .math_utils import angle_to
+            from ..support.math_utils import angle_to
             creature.enter_roll(direction=angle_to(creature.x, creature.y, mx, my) + math.pi)
 
         yield Candidate("cursor_roll", weight * _focus_bias(focus, "roll") * _noise(creature) * 0.5, execute)

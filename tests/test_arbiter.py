@@ -19,7 +19,7 @@ import random
 
 import pytest
 
-from desktop_bug import arbiter
+from desktop_bug.creature import arbiter
 from desktop_bug.creature import Creature, JOB_STATES
 from desktop_bug.creature.constants import JOB_MODE_STATES
 from desktop_bug.manager import CreatureManager

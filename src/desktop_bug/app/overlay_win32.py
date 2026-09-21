@@ -7,7 +7,7 @@ spider pixels can still be draggable.
 """
 import sys
 
-from .logging_setup import get_logger
+from ..support.logging_setup import get_logger
 
 log = get_logger("overlay")
 

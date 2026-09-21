@@ -6,7 +6,7 @@ import random
 import pytest
 
 
-from desktop_bug.jobs import (
+from desktop_bug.world.jobs import (
     BUILD_DUTY_OFF,
     BUILD_DUTY_ON,
     PATROL_DUTY_OFF,
@@ -16,7 +16,7 @@ from desktop_bug.jobs import (
     JOB_IDS,
     normalize_job_id,
 )
-from desktop_bug.webs import Web, WebWorld, _plan_orb
+from desktop_bug.world.webs import Web, WebWorld, _plan_orb
 
 
 class DummySpider:

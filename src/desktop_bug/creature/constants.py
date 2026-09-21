@@ -4,7 +4,7 @@ package: no method here touches `self`.
 
 from __future__ import annotations
 
-from ..math_utils import clamp
+from ..support.math_utils import clamp
 
 def smootherstep(t: float) -> float:
     t = clamp(t, 0.0, 1.0)

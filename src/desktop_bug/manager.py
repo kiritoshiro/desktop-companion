@@ -9,14 +9,14 @@ from typing import List, Optional, Tuple
 
 from .creature import Creature, GAIT_LABELS, normalize_gait_style
 from .creature.constants import HUNT_BUSY_STATES
-from .cage import Cage
-from .webs import WebWorld
-from .mouse_webs import MouseWebWorld
-from .flies import FlyWorld
-from .discovery import app_root, discover_models, discover_personalities, state_dir
-from .logging_setup import get_logger
-from .preset_io import load_preset
-from .skills import (
+from .world.cage import Cage
+from .world.webs import WebWorld
+from .world.mouse_webs import MouseWebWorld
+from .world.flies import FlyWorld
+from .content.discovery import app_root, discover_models, discover_personalities, state_dir
+from .support.logging_setup import get_logger
+from .content.preset_io import load_preset
+from .content.skills import (
     DEFAULT_SKILL_IDS,
     normalize_skill_ids,
     unknown_skill_ids,
@@ -24,14 +24,14 @@ from .skills import (
     skills_with_default_abilities,
     skills_with_selected_abilities,
 )
-from .desktop_environment import DesktopSurface
-from .math_utils import distance
-from .progression import RELATIONS, normalize_team_stances
-from .teams import normalize_teams, teams_payload
-from .jobs import BaseWorld, FLY_CATCH_RESOURCE_AMOUNT, job_ability_ids, normalize_job_id
-from .personality_profiles import COMPACT_TEMPERAMENT_IDS
-from .profiling import get_profiler
-from .runtime_state import (
+from .world.desktop_environment import DesktopSurface
+from .support.math_utils import distance
+from .state.progression import RELATIONS, normalize_team_stances
+from .state.teams import normalize_teams, teams_payload
+from .world.jobs import BaseWorld, FLY_CATCH_RESOURCE_AMOUNT, job_ability_ids, normalize_job_id
+from .content.personality_profiles import COMPACT_TEMPERAMENT_IDS
+from .support.profiling import get_profiler
+from .state.runtime_state import (
     build_payload,
     evict,
     load_payload,

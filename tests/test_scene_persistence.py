@@ -23,9 +23,9 @@ import json
 import tempfile
 from pathlib import Path
 
-from desktop_bug.cage import Cage
+from desktop_bug.world.cage import Cage
 from desktop_bug.manager import CreatureManager
-from desktop_bug.runtime_state import STATE_SCHEMA_VERSION
+from desktop_bug.state.runtime_state import STATE_SCHEMA_VERSION
 
 
 def _state_dir(monkeypatch) -> Path:

@@ -10,7 +10,7 @@ import math
 from dataclasses import dataclass, field
 from typing import List, Tuple
 
-from ..math_utils import (
+from ..support.math_utils import (
     angle_lerp,
     clamp,
     clamp_point,

@@ -5,14 +5,14 @@ from __future__ import annotations
 import json
 
 import pytest
-from desktop_bug.discovery import discover_personalities
-from desktop_bug.personality_profiles import (
+from desktop_bug.content.discovery import discover_personalities
+from desktop_bug.content.personality_profiles import (
     BEHAVIOUR_PHASE_IDS,
     COMPACT_TEMPERAMENT_IDS,
     MOVEMENT_PROFILES,
     TEMPERAMENT_TRAIT_IDS,
 )
-from desktop_bug.skills import (
+from desktop_bug.content.skills import (
     ABILITY_SKILL_IDS,
     COMMON_ABILITY_IDS,
     COMMON_BEHAVIOUR_IDS,

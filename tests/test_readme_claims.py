@@ -81,12 +81,18 @@ def test_structure_block_matches_source() -> None:
 
     # Only the src/desktop_bug portion lists modules; tools/ lists scripts, and
     # comparing one set against the other is meaningless.
+    # Since DC-43 the package listing is grouped into folders separated by
+    # blank lines, so it runs to the next top-level entry rather than to the
+    # first blank line.
     package = block[block.index("desktop_bug/"):]
-    package = package[:package.index("\n\n")]
+    package = package[:package.index("\n  models/")]
 
-    # Module names can carry digits, as overlay_win32.py does.
-    listed = set(re.findall(r"^\s+([a-z0-9_]+\.py)$", package, re.MULTILINE))
-    actual = {q.name for q in SRC.glob("*.py")}
+    # Module names can carry digits, as overlay_win32.py does. Since DC-43 the
+    # package is a tree of folders by concern, so every module counts wherever
+    # it sits -- a module moved between folders without the README following is
+    # exactly the drift this guards against.
+    listed = set(re.findall(r"^\s+([a-z0-9_]+\.py)(?:\s+#.*)?$", package, re.MULTILINE))
+    actual = {q.name for q in SRC.rglob("*.py")}
 
     missing = sorted(actual - listed)
     stale = sorted(listed - actual)
@@ -116,6 +122,8 @@ def test_module_references_exist() -> None:
     """Any src/desktop_bug/<module>.py the prose points at must exist."""
     missing = []
     for name in sorted(set(re.findall(r"src[\\/]desktop_bug[\\/]([a-z0-9_]+\.py)", TEXT))):
-        if not (SRC / name).is_file():
+        # The prose names a module, not its folder, so it counts as present
+        # wherever in the package tree it lives.
+        if not any(SRC.rglob(name)):
             missing.append(name)
     assert not missing, "the README references modules that do not exist:\n  " + "\n  ".join(missing)

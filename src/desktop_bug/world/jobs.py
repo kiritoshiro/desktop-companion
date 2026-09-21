@@ -835,7 +835,7 @@ class BaseWorld:
         from PyQt5.QtCore import QLineF, QRectF, Qt
         from PyQt5.QtGui import QColor, QPainter, QPen
 
-        from .teams import team_color
+        from ..state.teams import team_color
 
         for site in self.bases.values():
             if clip is not None and (site.x + site.radius < clip[0] or site.x - site.radius > clip[2] or site.y + site.radius < clip[1] or site.y - site.radius > clip[3]):

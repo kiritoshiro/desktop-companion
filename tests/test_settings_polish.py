@@ -17,7 +17,7 @@ import random
 import pytest
 from PyQt5.QtCore import QSize
 
-from desktop_bug.config_ui import ConfigWindow
+from desktop_bug.app.config_ui import ConfigWindow
 
 COLORS_COLUMN = 5
 REMOVE_COLUMN = 8

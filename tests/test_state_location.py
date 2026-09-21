@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from desktop_bug import discovery
+from desktop_bug.content import discovery
 
 
 @pytest.fixture

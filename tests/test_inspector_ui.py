@@ -7,8 +7,8 @@ import random
 from PyQt5.QtWidgets import QApplication, QWidget
 
 from desktop_bug.creature import Creature
-from desktop_bug.engine import CreatureInspectorDialog
-from desktop_bug.teams import normalize_teams
+from desktop_bug.app.engine import CreatureInspectorDialog
+from desktop_bug.state.teams import normalize_teams
 from support import ROOT
 import pytest
 
@@ -133,7 +133,7 @@ def test_typing_a_name_does_not_assign_every_prefix_along_the_way(inspector):
 def test_the_inspector_says_what_hostility_actually_does(inspector):
     """"Foe" and "rivals" promise a fight the overlay cannot have yet."""
     _app, _manager, dialog, _first, _second = inspector
-    from desktop_bug.teams import HOSTILITY_NOTE
+    from desktop_bug.state.teams import HOSTILITY_NOTE
 
     assert "no combat" in HOSTILITY_NOTE.lower()
     assert dialog.team_combo.toolTip() == HOSTILITY_NOTE

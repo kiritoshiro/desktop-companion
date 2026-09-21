@@ -6,7 +6,7 @@ import random
 
 import pytest
 from desktop_bug.creature import Creature
-from desktop_bug.progression import MAX_LEVEL, ProgressionState, xp_to_next_level
+from desktop_bug.state.progression import MAX_LEVEL, ProgressionState, xp_to_next_level
 from support import load_pair
 
 

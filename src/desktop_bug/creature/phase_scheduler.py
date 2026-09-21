@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import random
 from typing import Iterable
 
-from .personality_profiles import (
+from ..content.personality_profiles import (
     BEHAVIOUR_PHASE_IDS,
     phase_duration_multiplier_for,
     phase_scores_for,

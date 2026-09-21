@@ -19,7 +19,7 @@ import random
 
 
 from desktop_bug.creature import Creature
-from desktop_bug.progression import ProgressionState
+from desktop_bug.state.progression import ProgressionState
 from support import ROOT
 import pytest
 

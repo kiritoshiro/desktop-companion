@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 from PyQt5.QtWidgets import QApplication
 
-from desktop_bug.config_ui import ConfigWindow
-from desktop_bug.engine import OverlayWindow
-from desktop_bug.live_channel import (
+from desktop_bug.app.config_ui import ConfigWindow
+from desktop_bug.app.engine import OverlayWindow
+from desktop_bug.app.live_channel import (
     PROTOCOL_VERSION,
     OverlayChannelServer,
     SettingsChannelClient,

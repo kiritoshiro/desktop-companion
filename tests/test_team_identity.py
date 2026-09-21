@@ -16,9 +16,9 @@ import math
 import random
 
 
-from desktop_bug import teams
+from desktop_bug.state import teams
 from desktop_bug.manager import CreatureManager
-from desktop_bug.progression import normalize_team_stances, team_stance
+from desktop_bug.state.progression import normalize_team_stances, team_stance
 from support import ROOT
 import pytest
 
@@ -194,7 +194,7 @@ def test_team_color_reaches_the_screen() -> None:
 def test_base_ring_uses_the_team_color() -> None:
     from PyQt5.QtGui import QColor, QImage, QPainter
 
-    from desktop_bug.jobs import MAX_BUILD_PROGRESS, BaseSite, BaseWorld
+    from desktop_bug.world.jobs import MAX_BUILD_PROGRESS, BaseSite, BaseWorld
 
     qt_app()
     world = BaseWorld(600, 600)
@@ -241,7 +241,7 @@ def test_stances_round_trip_minimally() -> None:
 
 
 def test_settings_window_round_trips_names_and_colours() -> None:
-    from desktop_bug.config_ui import ConfigWindow
+    from desktop_bug.app.config_ui import ConfigWindow
 
     app = qt_app()
     assert app is not None
