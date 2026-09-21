@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import math
 import random
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
 
 from .math_utils import clamp, distance, lerp
 
@@ -829,6 +829,104 @@ class Web:
             painter.setBrush(QColor(240, 247, 255, 150))
             painter.drawEllipse(QPointF(hub[0], hub[1]), 1.6, 1.6)
 
+    # -- persistence ----------------------------------------------------
+    def to_dict(self) -> dict:
+        """Serialise this web, geometry included, for the runtime state file.
+
+        The silk is stored point by point rather than as the site and pattern
+        it was planned from, because the planners draw from the module-level
+        ``random`` (the disclosed DC-09/DC-40 gap): re-planning a saved web
+        would put a differently-shaped web in the right place, and the torn
+        segments in ``cut`` index into the exact strands it no longer had.  A
+        full screen of webs costs about 34 KB, which is worth paying to bring
+        a damaged web back as the one the player actually left behind.
+        """
+        return {
+            "pattern": self.pattern,
+            "spec_id": self.spec_id,
+            "hub": [float(self.hub[0]), float(self.hub[1])],
+            "wobble_dir": [float(self.wobble_dir[0]), float(self.wobble_dir[1])],
+            "reach_inset": float(self.reach_inset),
+            "built": int(self.built),
+            "active_t": float(self.active_t),
+            "state": str(self.state),
+            "cut": sorted([int(si), int(segi)] for si, segi in self.cut),
+            "strands": [
+                {
+                    "kind": strand.kind,
+                    "draw": bool(strand.draw),
+                    "temporary": bool(strand.temporary),
+                    "points": [[float(x), float(y)] for x, y in strand.points],
+                }
+                for strand in self.strands
+            ],
+        }
+
+
+def web_from_dict(data: Any, screen_w: float, screen_h: float) -> Optional["Web"]:
+    """Rebuild a saved web, or return ``None`` if the entry is unusable.
+
+    Anything malformed is dropped rather than raised on: a corrupt or
+    hand-edited state file should cost the player a web, not the launch.
+    """
+    if not isinstance(data, dict):
+        return None
+    strands: List[Strand] = []
+    for raw in data.get("strands") or []:
+        if not isinstance(raw, dict):
+            continue
+        points = []
+        for point in raw.get("points") or []:
+            try:
+                points.append((float(point[0]), float(point[1])))
+            except (TypeError, ValueError, IndexError, KeyError):
+                continue
+        if len(points) < 2:
+            continue
+        strands.append(Strand(points, draw=bool(raw.get("draw", True)),
+                              kind=str(raw.get("kind", "frame")),
+                              temporary=bool(raw.get("temporary", False))))
+    if not strands:
+        return None
+    try:
+        hub = (float(data["hub"][0]), float(data["hub"][1]))
+        wobble = (float(data["wobble_dir"][0]), float(data["wobble_dir"][1]))
+    except (TypeError, ValueError, IndexError, KeyError):
+        return None
+    if wobble == (0.0, 0.0):
+        wobble = (0.0, -1.0)
+    try:
+        reach_inset = float(data.get("reach_inset", 38.0))
+    except (TypeError, ValueError):
+        reach_inset = 38.0
+    web = Web(str(data.get("pattern", "orb")), strands, hub, wobble,
+              str(data.get("spec_id", "")), reach_inset, screen_w, screen_h)
+    try:
+        web.built = max(0, min(len(strands), int(data.get("built", 0))))
+    except (TypeError, ValueError):
+        web.built = 0
+    try:
+        web.active_t = clamp(float(data.get("active_t", 0.0)), 0.0, 1.0)
+    except (TypeError, ValueError):
+        web.active_t = 0.0
+    web.state = "complete" if str(data.get("state", "")) == "complete" else "building"
+    if web.state == "complete":
+        web.built = len(strands)
+    # Torn segments are only restored where they still address real silk, so a
+    # stale pair cannot make a web look damaged in a place it has no strand.
+    for pair in data.get("cut") or []:
+        try:
+            si, segi = int(pair[0]), int(pair[1])
+        except (TypeError, ValueError, IndexError, KeyError):
+            continue
+        if 0 <= si < len(strands) and 0 <= segi < strands[si].segment_count():
+            web.cut.add((si, segi))
+    # A weaver or mender is a live creature, never restored from disk: an
+    # unfinished web comes back adoptable so somebody can pick it up.
+    web.builder = None
+    web.repairer = None
+    return web
+
 
 # ======================================================================
 # WebWorld: the shared store the manager owns
@@ -862,6 +960,29 @@ class WebWorld:
         for web in self.webs:
             self._removed.append(web.footprint_xywh())
         self.webs = []
+
+    # -- persistence ----------------------------------------------------
+    def to_dict(self) -> List[dict]:
+        """Serialise every web on screen for the runtime state file."""
+        return [web.to_dict() for web in self.webs]
+
+    def restore(self, entries: Any) -> int:
+        """Replace the current webs with saved ones, returning how many came back.
+
+        Webs that no longer fit the screen are dropped, the same rule
+        :meth:`set_screen` applies when a monitor changes: a web anchored to a
+        corner that no longer exists would otherwise hang off the desktop.
+        """
+        if not isinstance(entries, (list, tuple)):
+            return 0
+        self.clear()
+        for entry in entries[:MAX_WEBS]:
+            web = web_from_dict(entry, self.screen_w, self.screen_h)
+            if web is None or not web.contains_region(self.screen_w, self.screen_h):
+                continue
+            self.webs.append(web)
+            self._dirty.append(web.footprint_xywh())
+        return len(self.webs)
 
     # -- anchor specs ---------------------------------------------------
     def _specs(self) -> List[dict]:

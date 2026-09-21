@@ -37,6 +37,24 @@ class Cage:
         self.h = max(self.MIN_H, float(h))
 
     # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+    def to_dict(self) -> dict:
+        """Serialise this cage for the runtime state file."""
+        return {"x": self.x, "y": self.y, "w": self.w, "h": self.h}
+
+    @classmethod
+    def from_dict(cls, data) -> Optional["Cage"]:
+        """Rebuild a saved cage, or return ``None`` if the entry is unusable."""
+        if not isinstance(data, dict):
+            return None
+        try:
+            return cls(float(data["x"]), float(data["y"]),
+                       float(data["w"]), float(data["h"]))
+        except (TypeError, ValueError, KeyError):
+            return None
+
+    # ------------------------------------------------------------------
     # Basic geometry
     # ------------------------------------------------------------------
     def right(self) -> float:

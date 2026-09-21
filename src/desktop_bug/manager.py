@@ -35,8 +35,12 @@ from .runtime_state import (
     build_payload,
     evict,
     load_payload,
+    load_scene,
+    new_creature_id,
+    next_birth_ordinal,
     next_launch,
     normalize_namespace,
+    slot_member_ids,
     stamp_seen,
 )
 
@@ -67,6 +71,12 @@ class CreatureManager:
         # unaffected.
         self.seed = seed
         self._rng = random if seed is None else random.Random(seed)
+        # Minting creature ids draws from its own stream, not the simulation's.
+        # Sharing one stream made a seeded run's scene depend on how many ids
+        # the save file left to mint, so the same seed laid spiders out
+        # differently on a second launch -- exactly what seeding exists to
+        # prevent. A string seed derives reproducibly across processes.
+        self._id_rng = None if seed is None else random.Random(f"{seed}:creature-ids")
         self.screen_w = screen_w
         self.screen_h = screen_h
         self.creatures: List[Creature] = []
@@ -157,16 +167,31 @@ class CreatureManager:
         self._progression_states = self._load_progression_states()
         self.base_world = BaseWorld(screen_w, screen_h, self._base_runtime_state, rng=self._rng)
         self.load_preset(preset_path)
+        # After the preset, never before: loading one clears the web world and
+        # the cage list that the saved scene is about to refill.
+        self._restore_scene()
 
-    def _runtime_progression_id(self, index: int) -> str:
-        """Return a preset-scoped id for a spider that has no saved slot.
+    def _mint_progression_id(self) -> str:
+        """Return a fresh preset-scoped id for a spider with no saved profile.
 
-        Bare ``runtime:<index>`` keys are shared by every preset, so a level 12
-        hunter in one preset would hand its progression to whatever spider
-        happened to land on the same index in another. Scoping the key to the
-        loaded preset keeps saved profiles separate.
+        Identity is generated once and then belongs to that spider. Deriving it
+        from a list position meant a spider inherited whatever progression the
+        previous occupant of that index had left behind, so raising a slot's
+        count or randomizing the colony reshuffled levels and names. Ids come
+        from the dedicated stream set up in ``__init__`` so a replayed run
+        mints the same ones without disturbing the simulation's own draws.
         """
-        return f"{self._progression_namespace}|runtime:{int(index)}"
+        return new_creature_id(self._progression_namespace, self._id_rng)
+
+    def _slot_member_ids(self, slot_id: str, count: int) -> list[str]:
+        """Return stable ids for one preset slot, reusing saved spiders first."""
+        return slot_member_ids(
+            self._progression_states,
+            self._progression_namespace,
+            slot_id,
+            count,
+            self._mint_progression_id,
+        )
 
     def _load_progression_states(self) -> dict:
         """Load per-creature runtime state, migrating old files and bad ones.
@@ -184,25 +209,81 @@ class CreatureManager:
         self._state_launch = next_launch(data)
         states, bases = load_payload(data, self._state_launch)
         self._base_runtime_state = bases
+        self._scene_runtime_state = load_scene(data)
         return states
+
+    def _scene_to_dict(self) -> dict:
+        """Serialise the things the player arranged: cages, webs and nests."""
+        fly_world = getattr(self, "fly_world", None)
+        web_world = getattr(self, "web_world", None)
+        return {
+            "cages": [cage.to_dict() for cage in self.cages],
+            "webs": web_world.to_dict() if web_world is not None else [],
+            "nests": fly_world.spawners_to_dict() if fly_world is not None else [],
+        }
+
+    def _restore_scene(self) -> None:
+        """Put back the cages, webs and nests the last session left behind.
+
+        Called once the preset has built the colony, because loading a preset
+        clears both worlds.  A preset describes which spiders exist; the scene
+        is what the player then did with the desktop, and only the state file
+        knows that.
+        """
+        scene = getattr(self, "_scene_runtime_state", None)
+        if not isinstance(scene, dict):
+            return
+        for entry in scene.get("cages") or []:
+            cage = Cage.from_dict(entry)
+            if cage is None:
+                continue
+            cage.clamp_to_screen(self.screen_w, self.screen_h)
+            self.cages.append(cage)
+        if self.cages:
+            # Membership is geometric, the same rule a reshuffle already uses:
+            # a spider standing inside a restored cage is back in that cage.
+            for creature in self.creatures:
+                self._settle_creature_membership(creature)
+        if getattr(self, "web_world", None) is not None:
+            self.web_world.restore(scene.get("webs"))
+        # Only where the preset actually uses nests: the preset owns that
+        # switch, and a saved nest must not turn the mechanic back on.
+        nests = scene.get("nests") or []
+        if nests and self.flies_spawner and getattr(self, "fly_world", None) is not None:
+            self.fly_world.restore_spawners(nests)
 
     def save_runtime_state(self) -> None:
         """Persist meaningful creature state atomically beside the project/exe."""
         states = dict(self._progression_states)
         launch = int(getattr(self, "_state_launch", 1))
+        # Spiders saved for the first time are numbered in the order they were
+        # created, which is the order their slot will hand them back in.
+        ordinal = next_birth_ordinal(states)
         for creature in self.creatures:
-            key = str(getattr(creature, "progression_id", self._runtime_progression_id(creature.index)))
+            key = str(getattr(creature, "progression_id", "") or self._mint_progression_id())
+            previous = states.get(key)
+            born = None
+            if isinstance(previous, dict):
+                try:
+                    born = int(previous["born"])
+                except (TypeError, ValueError, KeyError):
+                    born = None
+            if born is None:
+                born = ordinal
+                ordinal += 1
             states[key] = stamp_seen({
                 "name": creature.name,
                 "model": creature.model.get("id"),
                 "personality": creature.personality.get("id"),
                 "progression": creature.progression.to_dict(),
+                "slot_id": str(getattr(creature, "progression_slot_id", "") or ""),
+                "born": born,
             }, launch)
         # Retire entries for spiders that have not appeared for a long time, so
         # the file does not grow without bound across presets and slot edits.
         states = evict(states, launch)
         bases = self.base_world.to_dict() if getattr(self, "base_world", None) is not None else []
-        payload = build_payload(states, bases, launch)
+        payload = build_payload(states, bases, launch, self._scene_to_dict())
         try:
             self._progression_state_path.parent.mkdir(parents=True, exist_ok=True)
             temp_path = self._progression_state_path.with_suffix(".tmp")
@@ -246,8 +327,9 @@ class CreatureManager:
         progression_id: str | None = None,
         team_id: str | None = None,
         job_id: str | None = None,
+        slot_id: str | None = None,
     ) -> Creature:
-        state_key = str(progression_id or self._runtime_progression_id(index))
+        state_key = str(progression_id or self._mint_progression_id())
         stored = self._progression_states.get(state_key, {})
         if progression_state is None and isinstance(stored, dict):
             progression_state = stored.get("progression", stored)
@@ -265,6 +347,11 @@ class CreatureManager:
             progression_id=state_key,
             job_id=normalize_job_id(job_id),
             seed=self.seed,
+        )
+        # Remembered so a save can record which slot this spider belongs to,
+        # which is what lets the next launch hand it back its own profile.
+        creature.progression_slot_id = str(
+            slot_id if slot_id is not None else (stored.get("slot_id", "") if isinstance(stored, dict) else "")
         )
         if isinstance(stored, dict) and isinstance(stored.get("name"), str):
             creature.set_name(stored["name"])
@@ -440,6 +527,10 @@ class CreatureManager:
                 count = self._rng.randint(1, 10)
             else:
                 count = max(1, min(50, int(slot.get("count", 1))))
+            # Saved spiders for this slot come back in the order they were
+            # born, so changing a slot's count appends or drops at the tail
+            # instead of reshuffling everyone's level and name.
+            member_ids = self._slot_member_ids(slot_id, count)
             for member_index in range(count):
                 creature = self._create_creature(
                     model,
@@ -447,9 +538,10 @@ class CreatureManager:
                     index,
                     skills=skills,
                     color_overrides=slot.get("colors"),
-                    progression_id=f"{self._progression_namespace}|{slot_id}:{member_index}",
+                    progression_id=member_ids[member_index],
                     team_id=slot.get("team_id", slot.get("team", "neutral")),
                     job_id=job_id,
+                    slot_id=slot_id,
                 )
                 # Avoid all creatures spawning directly on top of each other.
                 creature.x += self._rng.uniform(-80.0, 80.0)
@@ -463,7 +555,8 @@ class CreatureManager:
             personality = self.personalities.get(model.get("default_personality")) or next(iter(self.personalities.values()))
             self.creatures.append(self._create_creature(
                 model, personality, 0, skills=list(DEFAULT_SKILL_IDS),
-                progression_id=f"{self._progression_namespace}|fallback:0",
+                progression_id=self._slot_member_ids("fallback", 1)[0],
+                slot_id="fallback",
             ))
         self._refresh_neighbor_links()
         self._refresh_render_order()
@@ -906,10 +999,8 @@ class CreatureManager:
         old_positions = [(c.x, c.y) for c in self.creatures]
         old_names = [c.name for c in self.creatures]
         old_progression = [c.progression.to_dict() for c in self.creatures]
-        old_progression_ids = [
-            getattr(c, "progression_id", self._runtime_progression_id(i))
-            for i, c in enumerate(self.creatures)
-        ]
+        old_progression_ids = [getattr(c, "progression_id", "") for c in self.creatures]
+        old_slot_ids = [str(getattr(c, "progression_slot_id", "") or "") for c in self.creatures]
         self.creatures.clear()
         if getattr(self, "web_world", None) is not None:
             self.web_world.clear()
@@ -930,11 +1021,11 @@ class CreatureManager:
                 continue
             pos = old_positions[index] if keep_positions and index < len(old_positions) else None
             color_overrides = trait[3] if len(trait) > 3 else None
-            progression_id = (
-                old_progression_ids[index]
-                if keep_positions and index < len(old_progression_ids)
-                else self._runtime_progression_id(index)
-            )
+            # A spider kept in place keeps its own identity; anything beyond
+            # the previous colony is genuinely new and is minted one.
+            reuse = keep_positions and index < len(old_progression_ids) and old_progression_ids[index]
+            progression_id = old_progression_ids[index] if reuse else self._mint_progression_id()
+            slot_id = old_slot_ids[index] if reuse else ""
             progression_state = old_progression[index] if keep_positions and index < len(old_progression) else None
             team_id = trait[4] if len(trait) > 4 else None
             job_id = normalize_job_id(trait[5] if len(trait) > 5 else "none")
@@ -949,6 +1040,7 @@ class CreatureManager:
                 progression_id=progression_id,
                 team_id=team_id,
                 job_id=job_id,
+                slot_id=slot_id,
             )
             # Names follow the slot index when positions are preserved so a
             # casual "randomize models" does not silently wipe pet names.
@@ -962,7 +1054,8 @@ class CreatureManager:
             if model and personality:
                 self.creatures.append(self._create_creature(
                     model, personality, 0, skills=list(DEFAULT_SKILL_IDS),
-                    progression_id=f"{self._progression_namespace}|fallback:0",
+                    progression_id=self._slot_member_ids("fallback", 1)[0],
+                    slot_id="fallback",
                 ))
         # Re-home cage membership from geometry. Enclosed spiders stay enclosed.
         if keep_positions and self.cages:

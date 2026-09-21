@@ -241,7 +241,8 @@ def test_dc16_stop_request_over_channel_saves_state(monkeypatch) -> None:
         assert state_path.is_file(), "the channel-based stop did not save runtime state"
 
         saved = json.loads(state_path.read_text(encoding="utf-8"))
-        entry = saved["creatures"]["stopchannel|slot-0:0"]
+        # Keyed by the spider's own generated id, not by its slot position.
+        entry = saved["creatures"][spider.progression_id]
         assert entry["name"] == "Shelob", entry
         assert entry["progression"]["total_xp"] >= 250, entry
     finally:
