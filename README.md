@@ -552,7 +552,14 @@ DesktopBugCompanion/
 
       creature/              # one spider: its body, its senses and its mind
         arbiter.py
-        behaviour.py
+        behaviour/           # the personality state machine, split by concern
+          actions.py
+          core.py
+          jobs.py
+          phases.py
+          temperament.py
+          updates.py
+          webs.py
         constants.py
         core.py
         expression.py

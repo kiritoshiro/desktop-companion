@@ -25,7 +25,11 @@ from desktop_bug.creature.constants import JOB_MODE_STATES
 from desktop_bug.manager import CreatureManager
 from support import ROOT
 
-BEHAVIOUR_SRC = (ROOT / "src" / "desktop_bug" / "creature" / "behaviour.py").read_text(encoding="utf-8")
+# Behaviour is a package of mixins since DC-43.
+BEHAVIOUR_SRC = "\n".join(
+    path.read_text(encoding="utf-8")
+    for path in sorted((ROOT / "src" / "desktop_bug" / "creature" / "behaviour").glob("*.py"))
+)
 # The manager is a package of mixins since DC-43, so "not in the manager"
 # means not in any of its modules.
 MANAGER_SRC = "\n".join(
