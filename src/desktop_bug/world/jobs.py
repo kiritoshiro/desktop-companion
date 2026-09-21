@@ -120,6 +120,49 @@ BASE_REGEN_HP_PER_LEVEL = 1.4
 GUARD_ALERT_RADIUS_PAD = 70.0
 GUARD_ALERT_RADIUS_PER_LEVEL = 15.0
 
+# DC-41: a base is a pile of dirt mounds that grows one mound at a time, not a
+# ring of nodes turning on the spot. A finished base is this many mounds; a
+# level-up enlarges them rather than adding more, because `BaseSite.radius`
+# already grows with level and re-placing mounds on level-up would move earth
+# that the player watched being piled up.
+MOUNDS_PER_BASE = 12
+
+
+def _plan_mounds(site_id: str, radius: float) -> list[tuple[float, float, float, float]]:
+    """Lay out every mound of a finished base, centre outwards.
+
+    Seeded from the site's id so the same base piles its earth in the same
+    places on every frame and after a restart.  A string seed is used rather
+    than a hash, because `hash()` of a string is salted per process and the
+    layout has to survive the application being closed and reopened.
+
+    Offsets are returned relative to the site centre, as
+    ``(dx, dy, size, aspect)`` -- ``aspect`` widening or narrowing the dome so
+    a finished pile is not a dozen identical domes.
+    """
+    rng = random.Random(f"{site_id}:mounds")
+    placed: list[tuple[float, float, float, float]] = []
+    for index in range(MOUNDS_PER_BASE):
+        # Rings fill from the middle out, so the first mounds read as the
+        # start of a pile instead of the faint outline of a finished one.
+        ring = (index / max(1, MOUNDS_PER_BASE - 1)) ** 0.62
+        distance = radius * 0.62 * ring
+        # The golden angle spreads successive mounds apart instead of stacking
+        # them, the way seeds pack in a seed head.
+        angle = index * 2.39996 + rng.uniform(-0.28, 0.28)
+        jitter = radius * 0.05
+        placed.append((
+            math.cos(angle) * distance + rng.uniform(-jitter, jitter),
+            math.sin(angle) * distance * 0.66 + rng.uniform(-jitter, jitter) * 0.66,
+            radius * rng.uniform(0.15, 0.21),
+            rng.uniform(0.85, 1.35),
+        ))
+    # Deliberately left in build order, not sorted for painting: the caller
+    # decides which mounds exist yet from their position in this list, so
+    # reordering here would change which mound appears next. `render` sorts a
+    # copy back-to-front at draw time.
+    return placed
+
 
 @dataclass
 class DutyCycle:
@@ -175,6 +218,30 @@ class BaseSite:
     def completion(self) -> float:
         """Fraction of the *whole* base that is built, not of its first level."""
         return max(0.0, min(1.0, self.build_progress / MAX_BUILD_PROGRESS))
+
+    def mounds(self) -> list[tuple[float, float, float, float, float]]:
+        """Where this base's dirt mounds sit, as ``(x, y, size, aspect, built)``.
+
+        Placement is derived from the site's own id, so a mound is in the same
+        spot on every frame, in every process and after a restart, without
+        needing to be saved.  ``built`` runs 0..1: finished mounds are 1.0 and
+        at most one is part-way, which is the mound the builder is piling up
+        now.  Positions are laid out from the centre outwards so the pile
+        grows from a first heap rather than sketching a whole outline faintly.
+        """
+        key = (self.id, round(self.radius, 3))
+        layout = getattr(self, "_mound_layout", None)
+        if layout is None or layout[0] != key:
+            layout = (key, _plan_mounds(self.id, self.radius))
+            self._mound_layout = layout
+        filled = self.completion * MOUNDS_PER_BASE
+        placed = []
+        for index, (mx, my, size, aspect) in enumerate(layout[1]):
+            built = max(0.0, min(1.0, filled - index))
+            if built <= 0.0:
+                continue
+            placed.append((self.x + mx, self.y + my, size, aspect, built))
+        return placed
 
     def to_dict(self) -> dict:
         data = asdict(self)
@@ -832,7 +899,7 @@ class BaseWorld:
     def render(self, painter, clip=None) -> None:
         if not self.bases:
             return
-        from PyQt5.QtCore import QLineF, QRectF, Qt
+        from PyQt5.QtCore import QRectF, Qt
         from PyQt5.QtGui import QColor, QPainter, QPen
 
         from ..state.teams import team_color
@@ -850,21 +917,31 @@ class BaseWorld:
             painter.setBrush(QColor(25, 30, 38, 30))
             painter.drawEllipse(QRectF(site.x - site.radius, site.y - site.radius, site.radius * 2.0, site.radius * 2.0))
             if completion > 0.01:
-                painter.setPen(QPen(accent, 1.6, Qt.SolidLine))
-                nodes = max(4, min(10, 4 + site.level))
-                points = []
-                for idx in range(nodes):
-                    angle = site.patrol_angle + idx * math.tau / nodes
-                    radius = site.radius * (0.82 + 0.05 * (idx % 2))
-                    points.append((site.x + math.cos(angle) * radius, site.y + math.sin(angle) * radius))
-                for idx, (px, py) in enumerate(points):
-                    qx, qy = points[(idx + 1) % len(points)]
-                    if completion >= (idx + 1) / len(points) * 0.92:
-                        painter.drawLine(QLineF(px, py, qx, qy))
-                    painter.setBrush(accent)
-                    painter.drawEllipse(QRectF(px - 2.5, py - 2.5, 5.0, 5.0))
-                painter.setBrush(QColor(accent.red(), accent.green(), accent.blue(), 55))
-                painter.drawEllipse(QRectF(site.x - 7.0, site.y - 7.0, 14.0, 14.0))
+                # DC-41: a pile of dirt mounds, each one finished before the
+                # next is started, drawn back to front so the cluster reads
+                # as a heap rather than a flat pattern. Nothing here turns.
+                for mx, my, size, aspect, built in sorted(site.mounds(), key=lambda m: m[1]):
+                    grown = size * (0.35 + 0.65 * built)
+                    half = grown * aspect
+                    painter.setPen(Qt.NoPen)
+                    # The damp earth the mound sits on, slightly wider than
+                    # the mound itself so the pile has a footprint.
+                    painter.setBrush(QColor(38, 28, 20, int(70 * built)))
+                    painter.drawEllipse(QRectF(mx - half * 1.15, my - grown * 0.34,
+                                               half * 2.3, grown * 0.68))
+                    painter.setBrush(QColor(92, 66, 44, int(120 + 110 * built)))
+                    painter.drawChord(QRectF(mx - half, my - grown * 0.9,
+                                             half * 2.0, grown * 1.8), 0, 180 * 16)
+                    # A lit crest, and a team-coloured rim once it is finished,
+                    # so whose base this is still reads at a glance (DC-33).
+                    painter.setBrush(QColor(126, 96, 66, int(90 + 90 * built)))
+                    painter.drawChord(QRectF(mx - half * 0.58, my - grown * 0.78,
+                                             half * 1.16, grown * 1.2), 0, 180 * 16)
+                    if built >= 1.0:
+                        painter.setPen(QPen(accent, 1.1, Qt.SolidLine))
+                        painter.setBrush(Qt.NoBrush)
+                        painter.drawChord(QRectF(mx - half, my - grown * 0.9,
+                                                 half * 2.0, grown * 1.8), 0, 180 * 16)
             if site.alert > 0.01:
                 painter.setPen(QPen(QColor(245, 92, 72, int(90 + site.alert * 130)), 2.0, Qt.SolidLine))
                 painter.setBrush(Qt.NoBrush)
