@@ -7,7 +7,7 @@ import json
 
 import pytest
 from desktop_bug.creature import Creature
-from desktop_bug.preset_io import validate_preset
+from desktop_bug.content.preset_io import validate_preset
 from support import ROOT
 
 PALETTE = {"body": [220, 40, 80], "leg_band": [40, 200, 160]}

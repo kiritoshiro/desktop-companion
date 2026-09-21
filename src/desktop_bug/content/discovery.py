@@ -26,7 +26,11 @@ def app_root() -> Path:
     """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
-    return Path(__file__).resolve().parents[2]
+    # content/discovery.py -> content -> desktop_bug -> src -> the project.
+    # Counted from this file, so moving this module changes it: DC-43 moved
+    # discovery.py one level deeper and every preset and model path silently
+    # resolved inside src/ until this was corrected.
+    return Path(__file__).resolve().parents[3]
 
 
 def _unique_paths(paths: List[Path]) -> List[Path]:
@@ -246,7 +250,7 @@ def migrate_legacy_state_dir() -> None:
         return
     if (new_dir / "creatures.json").exists():
         return
-    from .logging_setup import get_logger
+    from ..support.logging_setup import get_logger
 
     log = get_logger("discovery")
     try:

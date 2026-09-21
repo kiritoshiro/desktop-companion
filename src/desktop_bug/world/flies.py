@@ -22,7 +22,7 @@ from typing import List, Optional, Sequence, Tuple
 from PyQt5.QtCore import QPointF, Qt
 from PyQt5.QtGui import QBrush, QColor, QPainterPath, QPen
 
-from .math_utils import angle_lerp, clamp, distance, normalize_angle
+from ..support.math_utils import angle_lerp, clamp, distance, normalize_angle
 
 Point = Tuple[float, float]
 

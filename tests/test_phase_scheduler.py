@@ -7,9 +7,9 @@ from collections import Counter
 
 import pytest
 from desktop_bug.creature import Creature
-from desktop_bug.discovery import validate_personality
-from desktop_bug.personality_profiles import BEHAVIOUR_PHASE_IDS, phase_scores_for
-from desktop_bug.phase_scheduler import (
+from desktop_bug.content.discovery import validate_personality
+from desktop_bug.content.personality_profiles import BEHAVIOUR_PHASE_IDS, phase_scores_for
+from desktop_bug.creature.phase_scheduler import (
     PHASE_DURATION_RANGES,
     BehaviourPhaseScheduler,
     normalize_focus,

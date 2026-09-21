@@ -21,8 +21,8 @@ import json
 
 import pytest
 from desktop_bug.creature import Creature
-from desktop_bug.discovery import discover_personalities
-from desktop_bug.personality_profiles import (
+from desktop_bug.content.discovery import discover_personalities
+from desktop_bug.content.personality_profiles import (
     BEHAVIOUR_MODULE_IDS,
     behaviour_modules_for,
     selectable_personality_ids,

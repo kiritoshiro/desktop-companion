@@ -17,7 +17,7 @@ import math
 import random
 from typing import List, Tuple
 
-from ..math_utils import (
+from ..support.math_utils import (
     angle_lerp,
     angle_to,
     clamp,
@@ -25,10 +25,10 @@ from ..math_utils import (
     cursor_is_threatening,
     rand_range,
 )
-from ..mood import Mood
-from ..perception import build_perception
-from ..phase_scheduler import BehaviourPhaseScheduler
-from ..progression import (
+from .mood import Mood
+from .perception import build_perception
+from .phase_scheduler import BehaviourPhaseScheduler
+from ..state.progression import (
     ABILITY_BY_ID,
     ARMOR_BY_ID,
     MAX_LEVEL,
@@ -39,8 +39,8 @@ from ..progression import (
     relation_between,
     xp_to_next_level,
 )
-from ..skills import SkillSet, default_skills_for_personality
-from ..jobs import normalize_job_id
+from ..content.skills import SkillSet, default_skills_for_personality
+from ..world.jobs import normalize_job_id
 from .constants import (
     normalize_gait_style,
 )
@@ -700,7 +700,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.job_base_id = None
 
     def job_label(self) -> str:
-        from ..jobs import job_definition
+        from ..world.jobs import job_definition
         return job_definition(self.job_id).display_name
 
     def relation_to(self, other: "Creature") -> str:
@@ -1237,7 +1237,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         team_id = str(getattr(self.progression, "team_id", "neutral") or "neutral")
         if team_id.strip().lower() in ("", "neutral"):
             return QColor(255, 255, 255, 60)
-        from ..teams import team_color
+        from ..state.teams import team_color
 
         red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
         return QColor(red, green, blue, 200)
@@ -1324,7 +1324,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         if team_id.strip().lower() in ("", "neutral"):
             return
 
-        from ..teams import team_color
+        from ..state.teams import team_color
 
         red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
         width = self.size * 1.35

@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug.discovery import validate_model  # noqa: E402
+from desktop_bug.content.discovery import validate_model  # noqa: E402
 
 
 def main() -> int:

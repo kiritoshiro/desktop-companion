@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from desktop_bug.discovery import discover_models
+from desktop_bug.content.discovery import discover_models
 from support import ROOT
 
 EXPECTED = {

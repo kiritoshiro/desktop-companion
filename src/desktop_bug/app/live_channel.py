@@ -59,7 +59,7 @@ from typing import Iterator
 from PyQt5.QtCore import QObject, pyqtSignal
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 
-from .logging_setup import get_logger
+from ..support.logging_setup import get_logger
 
 log = get_logger("live_channel")
 

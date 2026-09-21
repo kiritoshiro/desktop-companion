@@ -13,7 +13,7 @@ from pathlib import Path
 
 
 from desktop_bug import __version__
-from desktop_bug.logging_setup import (
+from desktop_bug.support.logging_setup import (
     BACKUP_COUNT,
     MAX_BYTES,
     configure_logging,
@@ -171,8 +171,8 @@ def test_no_prints_left() -> None:
 
 
 def test_version_is_surfaced() -> None:
-    engine_src = (SRC / "engine.py").read_text(encoding="utf-8")
-    config_src = (SRC / "config_ui.py").read_text(encoding="utf-8")
+    engine_src = (SRC / "app" / "engine.py").read_text(encoding="utf-8")
+    config_src = (SRC / "app" / "config_ui.py").read_text(encoding="utf-8")
     assert "__version__" in engine_src, "the overlay does not log its version"
     assert "setWindowTitle(f\"Desktop Bug Companion {__version__}\")" in config_src, (
         "the settings window does not show its version"

@@ -31,22 +31,22 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from . import __version__
-from .discovery import migrate_legacy_state_dir, resolve_preset_path, state_dir
-from .dpi import enable_high_dpi_scaling, logical_to_physical, screen_device_pixel_ratio_at
-from .logging_setup import configure_logging, get_logger, install_excepthook, log_path
+from .. import __version__
+from ..content.discovery import migrate_legacy_state_dir, resolve_preset_path, state_dir
+from ..support.dpi import enable_high_dpi_scaling, logical_to_physical, screen_device_pixel_ratio_at
+from ..support.logging_setup import configure_logging, get_logger, install_excepthook, log_path
 from .session_control import clear_stop_request, consume_stop_request
 from .live_channel import OverlayChannelServer, channel_name
-from .manager import CreatureManager
-from .preset_io import load_preset
+from ..manager import CreatureManager
+from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos
-from .desktop_environment import snapshot_desktop_surfaces
-from .frame_policy import FramePolicy
-from .profiling import hud_requested, profiler_from_env
-from .skills import SKILLS
-from .progression import ABILITY_TREE, ARMOR_CATALOG, normalize_team_id, xp_to_next_level
-from .teams import HOSTILITY_NOTE, team_label
-from .jobs import job_definition
+from ..world.desktop_environment import snapshot_desktop_surfaces
+from ..support.frame_policy import FramePolicy
+from ..support.profiling import hud_requested, profiler_from_env
+from ..content.skills import SKILLS
+from ..state.progression import ABILITY_TREE, ARMOR_CATALOG, normalize_team_id, xp_to_next_level
+from ..state.teams import HOSTILITY_NOTE, team_label
+from ..world.jobs import job_definition
 
 
 log = get_logger("engine")

@@ -12,7 +12,7 @@ from PyQt5.QtGui import QBrush, QPainter, QPen
 import math
 import os
 
-from ..math_utils import (
+from ..support.math_utils import (
     clamp,
 )
 

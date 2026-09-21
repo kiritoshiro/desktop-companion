@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from desktop_bug.preset_io import validate_preset  # noqa: E402
+from desktop_bug.content.preset_io import validate_preset  # noqa: E402
 
 
 def main() -> int:

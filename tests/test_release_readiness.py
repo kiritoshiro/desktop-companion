@@ -30,7 +30,7 @@ def test_one_build_definition() -> None:
     # One-file and windowed live in the spec: no COLLECT step, console off.
     assert "COLLECT" not in spec, "the spec builds one-folder; the README and docs say one-file"
     assert "console=False" in spec, "the spec no longer builds a windowed executable"
-    assert "desktop_bug.engine" in spec, "the spec lost the hidden import the overlay needs"
+    assert "desktop_bug.app.engine" in spec, "the spec lost the hidden import the overlay needs"
     for data in ("models", "personalities", "presets"):
         assert f"'{data}'" in spec, f"the spec no longer bundles {data}"
 

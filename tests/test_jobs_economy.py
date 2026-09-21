@@ -27,8 +27,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from desktop_bug.flies import Fly
-from desktop_bug.jobs import (
+from desktop_bug.world.flies import Fly
+from desktop_bug.world.jobs import (
     BASE_REGEN_HP_PER_LEVEL,
     BUILD_RESOURCE_COST_PER_PROGRESS,
     GUARD_ALERT_RADIUS_PAD,

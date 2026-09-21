@@ -36,7 +36,7 @@ if str(SRC) not in sys.path:
 # ignores a later change, so this has to run here -- before any test module
 # gets a chance to construct one some other way -- rather than inside the
 # `qapp` fixture below, which only runs on the first test that requests it.
-from desktop_bug.dpi import enable_high_dpi_scaling  # noqa: E402
+from desktop_bug.support.dpi import enable_high_dpi_scaling  # noqa: E402
 
 enable_high_dpi_scaling()
 

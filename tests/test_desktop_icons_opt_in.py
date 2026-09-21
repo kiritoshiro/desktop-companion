@@ -12,7 +12,7 @@ import ctypes
 from unittest.mock import patch
 
 import pytest
-from desktop_bug.desktop_environment import snapshot_desktop_surfaces
+from desktop_bug.world.desktop_environment import snapshot_desktop_surfaces
 from desktop_bug.manager import CreatureManager
 from support import ROOT
 

@@ -12,7 +12,7 @@ import tempfile
 from pathlib import Path
 
 
-from desktop_bug.discovery import resolve_preset_path
+from desktop_bug.content.discovery import resolve_preset_path
 from support import ROOT
 
 
@@ -123,7 +123,7 @@ def test_frozen_build() -> None:
 def test_engine_uses_it() -> None:
     # Guard against the engine quietly going back to resolving against the
     # writable root only, which is what produced the crash.
-    engine_src = (ROOT / "src" / "desktop_bug" / "engine.py").read_text(encoding="utf-8")
+    engine_src = (ROOT / "src" / "desktop_bug" / "app" / "engine.py").read_text(encoding="utf-8")
     assert "resolve_preset_path(args.preset)" in engine_src, "engine no longer resolves via discovery"
     assert "app_root() / preset" not in engine_src, "engine resolves a preset against the writable root again"
 
@@ -131,6 +131,6 @@ def test_engine_uses_it() -> None:
     # the extraction directory, which is temporary and discarded on exit. Since
     # DC-36 that destination is the user's own preset folder rather than the
     # application root, because writing beside the app overwrote shipped data.
-    preset_io_src = (ROOT / "src" / "desktop_bug" / "preset_io.py").read_text(encoding="utf-8")
+    preset_io_src = (ROOT / "src" / "desktop_bug" / "content" / "preset_io.py").read_text(encoding="utf-8")
     assert "user_presets_dir()" in preset_io_src, "saving no longer targets a writable user folder"
     assert "is_shipped_preset(path)" in preset_io_src, "saving no longer refuses shipped presets"

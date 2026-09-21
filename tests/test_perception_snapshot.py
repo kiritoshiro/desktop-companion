@@ -16,16 +16,20 @@ from __future__ import annotations
 import pytest
 
 from desktop_bug.creature import Creature
-from desktop_bug.perception import Perception, build_perception
+from desktop_bug.creature.perception import Perception, build_perception
 from support import load_pair, ROOT
 
-BEHAVIOUR_SRC = (ROOT / "src" / "desktop_bug" / "creature" / "behaviour.py").read_text(encoding="utf-8")
+# Behaviour is a package of mixins since DC-43.
+BEHAVIOUR_SRC = "\n".join(
+    path.read_text(encoding="utf-8")
+    for path in sorted((ROOT / "src" / "desktop_bug" / "creature" / "behaviour").glob("*.py"))
+)
 # DC-18 moved the web-care *decision* reads (repairable/adoptable/walkable/
 # intact-count) out of behaviour.py's deleted `_consider_special_actions`
 # and into arbiter.py's scored candidates -- see that module's docstring.
 # `can_shoot_prey_web()` stays in behaviour.py because `_maybe_shoot_web_at_cursor`
 # (an executor, not a decision point) still reads it directly.
-ARBITER_SRC = (ROOT / "src" / "desktop_bug" / "arbiter.py").read_text(encoding="utf-8")
+ARBITER_SRC = (ROOT / "src" / "desktop_bug" / "creature" / "arbiter.py").read_text(encoding="utf-8")
 
 
 @pytest.fixture(autouse=True, scope="module")

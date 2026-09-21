@@ -20,7 +20,7 @@ import sys
 from contextlib import redirect_stdout
 from support import ROOT
 import pytest
-from desktop_bug import frame_policy, profiling
+from desktop_bug.support import frame_policy, profiling
 from desktop_bug.manager import CreatureManager
 
 
@@ -226,7 +226,7 @@ def test_overlay_times_its_frames_and_draws_the_hud() -> None:
     os.environ["DESKTOP_BUG_PROFILE_HUD"] = "1"
     try:
         app = QApplication.instance()
-        from desktop_bug.engine import OverlayWindow
+        from desktop_bug.app.engine import OverlayWindow
 
         random.seed(7)
         window = OverlayWindow(ROOT / "presets" / "colony.json")
@@ -312,7 +312,7 @@ def test_benchmark_pads_match_the_engine() -> None:
     sys.path.insert(0, str(ROOT / "tools"))
     import benchmark
 
-    from desktop_bug import engine
+    from desktop_bug.app import engine
     assert benchmark.REPAINT_PAD_PX == engine.CREATURE_REPAINT_EXTRA_PAD_PX
     assert benchmark.REPAINT_PAD_SIZE_MULT == engine.CREATURE_REPAINT_EXTRA_PAD_SIZE_MULT
 

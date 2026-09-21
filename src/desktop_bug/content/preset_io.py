@@ -5,7 +5,7 @@ from typing import Dict
 
 from .discovery import is_shipped_preset, user_presets_dir
 from .skills import SKILL_BY_ID
-from .jobs import JOB_BY_ID
+from ..world.jobs import JOB_BY_ID
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_. -]+")
 
@@ -78,7 +78,7 @@ def validate_preset(data: dict) -> None:
                 if "name" in entry and not isinstance(entry["name"], str):
                     raise ValueError(f"Preset settings.teams.{team_id}.name must be text")
                 if "color" in entry and entry["color"] is not None:
-                    from .teams import parse_color
+                    from ..state.teams import parse_color
                     if parse_color(entry["color"]) is None:
                         raise ValueError(
                             f"Preset settings.teams.{team_id}.color must be #rrggbb or [r, g, b]"

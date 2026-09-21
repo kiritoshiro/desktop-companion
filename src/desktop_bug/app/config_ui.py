@@ -36,17 +36,17 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from . import __version__
-from .discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, migrate_legacy_state_dir, state_dir, user_presets_dir
-from .dpi import enable_high_dpi_scaling
-from .logging_setup import configure_logging, get_logger
+from .. import __version__
+from ..content.discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, migrate_legacy_state_dir, state_dir, user_presets_dir
+from ..support.dpi import enable_high_dpi_scaling
+from ..support.logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
 from .live_channel import SettingsChannelClient, channel_name
-from .preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
-from .jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
-from .personality_profiles import selectable_personality_ids
-from .progression import normalize_team_id, normalize_team_stances
-from .teams import (
+from ..content.preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
+from ..world.jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
+from ..content.personality_profiles import selectable_personality_ids
+from ..state.progression import normalize_team_id, normalize_team_stances
+from ..state.teams import (
     HOSTILITY_NOTE,
     STANCE_LABELS,
     TeamProfile,
@@ -59,7 +59,7 @@ from .teams import (
     team_label,
     teams_payload,
 )
-from .skills import (
+from ..content.skills import (
     SKILLS,
     compact_ability_summary,
     normalize_ability_ids,

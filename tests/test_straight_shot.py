@@ -12,9 +12,9 @@ from types import SimpleNamespace
 
 
 
-from desktop_bug.flies import WebShotProjectile
-from desktop_bug.mouse_webs import MouseWebWorld, _Projectile
-from desktop_bug.progression import ABILITY_BY_ID, ProgressionState
+from desktop_bug.world.flies import WebShotProjectile
+from desktop_bug.world.mouse_webs import MouseWebWorld, _Projectile
+from desktop_bug.state.progression import ABILITY_BY_ID, ProgressionState
 
 DT = 1.0 / 120.0
 

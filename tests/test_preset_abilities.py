@@ -10,14 +10,14 @@ import json
 import random
 
 from desktop_bug.manager import CreatureManager
-from desktop_bug.skills import (
+from desktop_bug.content.skills import (
     ABILITY_SKILL_IDS,
     COMMON_ABILITY_IDS,
     default_ability_ids,
     skills_with_default_abilities,
     skills_with_selected_abilities,
 )
-from desktop_bug.discovery import discover_personalities
+from desktop_bug.content.discovery import discover_personalities
 from support import ROOT
 import pytest
 

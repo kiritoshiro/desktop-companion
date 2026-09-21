@@ -29,7 +29,7 @@ import math
 import random
 from typing import Any, List, Optional, Sequence, Tuple
 
-from .math_utils import clamp, distance, lerp
+from ..support.math_utils import clamp, distance, lerp
 
 Point = Tuple[float, float]
 

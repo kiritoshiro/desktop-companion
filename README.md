@@ -212,7 +212,7 @@ or run manually:
 
 ```bat
 set PYTHONPATH=%CD%\src
-python -m desktop_bug.config_ui
+python -m desktop_bug.app.config_ui
 ```
 
 The settings UI opens first. Choose model, personality, count, save/load a preset, then click **Save and launch overlay**. The main settings window includes the same launch-time options shown before launch:
@@ -425,7 +425,7 @@ You can also launch the overlay engine directly with a preset:
 
 ```bat
 set PYTHONPATH=%CD%\src
-python -m desktop_bug.engine --preset presets\default.json
+python -m desktop_bug.app.engine --preset presets\default.json
 ```
 
 The packaged executable takes the same arguments:
@@ -472,7 +472,8 @@ copies.
 One command runs everything CI runs:
 
 ```bat
-python toolsun_all_checks.py
+python tools
+un_all_checks.py
 ```
 
 That compiles every source file, validates every model and preset, runs the
@@ -525,37 +526,78 @@ DesktopBugCompanion/
   src/
     desktop_bug/
       __init__.py
-      arbiter.py
-      cage.py
-      config_ui.py
-      creature/              # Creature, split into a package by concern (DC-11):
-                              # behaviour.py, constants.py, core.py, expression.py,
-                              # kinematics.py, render_procedural.py, render_sprite.py
-      desktop_environment.py
-      discovery.py
-      dpi.py
-      engine.py
-      flies.py
-      frame_policy.py
-      jobs.py
-      live_channel.py
-      logging_setup.py
-      manager.py
-      math_utils.py
-      mood.py
-      mouse_webs.py
-      overlay_win32.py
-      perception.py
-      personality_profiles.py
-      phase_scheduler.py
-      preset_io.py
-      profiling.py
-      progression.py
-      runtime_state.py
-      session_control.py
-      skills.py
-      teams.py
-      webs.py
+
+      manager/               # the orchestrator: owns the creatures and the worlds
+        cages.py
+        constants.py
+        core.py
+        hunting.py
+        naming.py
+        persistence.py
+        prey.py
+        surfaces.py
+
+      app/                   # entry points and windows
+        config_ui.py
+        engine.py
+        live_channel.py
+        overlay_win32.py
+        session_control.py
+
+      content/               # what ships as data, and how it is loaded and validated
+        discovery.py
+        personality_profiles.py
+        preset_io.py
+        skills.py
+
+      creature/              # one spider: its body, its senses and its mind
+        arbiter.py
+        behaviour/           # the personality state machine, split by concern
+          actions.py
+          core.py
+          jobs.py
+          phases.py
+          temperament.py
+          updates.py
+          webs.py
+        constants.py
+        core.py
+        expression.py
+        kinematics/          # leg IK, gait scheduling, body solving
+          core.py
+          gait.py
+          geometry.py
+          legs.py
+          legstate.py
+          movement.py
+          roll.py
+          spider_gait.py
+          stepping.py
+        mood.py
+        perception.py
+        phase_scheduler.py
+        render_procedural.py
+        render_sprite.py
+
+      state/                 # what outlives a session
+        progression.py
+        runtime_state.py
+        teams.py
+
+      support/               # cross-cutting helpers with no domain of their own
+        dpi.py
+        frame_policy.py
+        logging_setup.py
+        math_utils.py
+        profiling.py
+
+      world/                 # everything on the desktop that is not a spider
+        cage.py
+        desktop_environment.py
+        flies.py
+        jobs.py
+        mouse_webs.py
+        webs.py
 
   models/
     <model id>/

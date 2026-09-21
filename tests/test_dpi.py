@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from desktop_bug import dpi
+from desktop_bug.support import dpi
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -100,8 +100,8 @@ def test_enable_high_dpi_scaling_sets_the_qt_attributes():
 # ----------------------------------------------------------------------
 
 _ENTRY_POINTS = {
-    "src/desktop_bug/engine.py": "QApplication.instance() or QApplication(sys.argv[:1])",
-    "src/desktop_bug/config_ui.py": "QApplication.instance() or QApplication(sys.argv[:1])",
+    "src/desktop_bug/app/engine.py": "QApplication.instance() or QApplication(sys.argv[:1])",
+    "src/desktop_bug/app/config_ui.py": "QApplication.instance() or QApplication(sys.argv[:1])",
     "tools/benchmark.py": "QGuiApplication.instance() or QGuiApplication(sys.argv[:1])",
 }
 
@@ -139,7 +139,7 @@ def test_cursor_trap_converts_logical_target_to_physical_pixels(monkeypatch):
     `set_cursor_pos(origin.x() + desired[0], origin.y() + desired[1])`
     (no DPR conversion) and this fails for every ratio other than 1.0.
     """
-    from desktop_bug import engine
+    from desktop_bug.app import engine
 
     window = engine.OverlayWindow(ROOT / "presets" / "default.json")
     try:
@@ -168,7 +168,7 @@ def test_cursor_trap_converts_logical_target_to_physical_pixels(monkeypatch):
 
 def test_cursor_trap_is_a_no_op_conversion_at_ratio_one(monkeypatch):
     """At the common 100% scale, physical and logical pixels coincide."""
-    from desktop_bug import engine
+    from desktop_bug.app import engine
 
     window = engine.OverlayWindow(ROOT / "presets" / "default.json")
     try:
@@ -197,8 +197,8 @@ def test_desktop_surface_refresh_converts_between_physical_and_logical(monkeypat
     manager and every creature position use. Revert either half of that
     conversion in `_refresh_desktop_surfaces` and this fails for ratio 2.0.
     """
-    from desktop_bug import engine
-    from desktop_bug.desktop_environment import DesktopSurface
+    from desktop_bug.app import engine
+    from desktop_bug.world.desktop_environment import DesktopSurface
 
     window = engine.OverlayWindow(ROOT / "presets" / "default.json")
     try:
@@ -242,8 +242,8 @@ def test_desktop_surface_refresh_converts_between_physical_and_logical(monkeypat
 
 
 def test_desktop_surface_refresh_is_a_no_op_conversion_at_ratio_one(monkeypatch):
-    from desktop_bug import engine
-    from desktop_bug.desktop_environment import DesktopSurface
+    from desktop_bug.app import engine
+    from desktop_bug.world.desktop_environment import DesktopSurface
 
     window = engine.OverlayWindow(ROOT / "presets" / "default.json")
     try:
