@@ -162,3 +162,53 @@ def test_only_the_tarantula_is_affected(content):
         if spider._sprite_leg_chain_config()["elevated_arc"] > 0.0:
             arced.append(model_id)
     assert arced == ["tarantula"], arced
+
+
+# ------------------------------------------- DC-69: and not splayed flat
+
+def test_the_bow_is_a_knee_fold_not_a_splay(content):
+    """DC-67 fixed the symmetry and then kept pushing.
+
+    It replaced a screen-space lift with a bow along the body's own outward
+    axis *of the same magnitude*, which made the first joint bow 0.45
+    body-widths at every heading where the original managed 0.15 at the
+    vertical ones -- three times wider. Watched on a real desktop the
+    spiders read as splayed flat, and the owner's verdict was "thats not how
+    they supposed to lok like".
+
+    The knee fold comes from `bend`, which is body-relative and was always
+    symmetric. The screen-space term is gone (DC-69), so this is what is
+    left, and it is the same number the original produced at the headings it
+    drew correctly.
+    """
+    for heading in HEADINGS:
+        spider = _standing(content, heading_deg=heading)
+        for leg in spider.legs:
+            bow = _outboard(spider, leg)
+            assert 0.05 < bow < 0.30, (
+                f"{leg.definition['name']} at heading {heading} bows {bow:.3f}")
+
+
+def test_the_pose_does_not_know_which_way_it_is_walking(content):
+    """The property that was wrong underneath both bugs.
+
+    A screen-space offset gives a leg a pose that depends on the compass.
+    Nothing in a spider's anatomy does, so every joint of every leg must land
+    in the same body-local place whichever way it faces.
+    """
+    reference = None
+    for heading in HEADINGS:
+        spider = _standing(content, heading_deg=heading)
+        chain = spider._sprite_leg_chain_config()
+        pose = []
+        for leg in spider.legs:
+            ax, ay = spider._leg_attach(leg)
+            points = spider._sprite_leg_chain_points(
+                leg, ax, ay, leg.foot_x, leg.foot_y, chain)
+            for px, py in points:
+                f, s = spider._world_to_body_local(px, py)
+                pose.append((round(f / spider.size, 4), round(s / spider.size, 4)))
+        if reference is None:
+            reference = pose
+        else:
+            assert pose == pytest.approx(reference, abs=0.01), heading

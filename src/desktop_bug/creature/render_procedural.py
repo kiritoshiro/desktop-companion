@@ -331,8 +331,14 @@ class RenderProceduralMixin:
         # tapers toward the tarsus so a cursor target cannot make a straight,
         # rubbery front limb.
         catch_bend_profile = [0.55, 1.00, 0.72, 0.34]
-        elevated_arc = chain_config["elevated_arc"]
-        proximal_lift = chain_config["proximal_lift"]
+        # Parsed and kept for the models that declare them, but since DC-69
+        # nothing displaces the seed pose by them: they only ever fed a
+        # screen-space offset, and a screen-space offset is what made a leg's
+        # pose depend on which way its owner happened to be facing. Left in
+        # the config rather than stripped from eight model files, and read
+        # here so the unused-name check stays honest about it.
+        _elevated_arc_unused = chain_config["elevated_arc"]
+        _proximal_lift_unused = chain_config["proximal_lift"]
         if self.dragging:
             # _leg_draw_points has already tucked and lowered the endpoint. Do
             # not add the walking rig's high proximal arc on top of that pose.
@@ -349,8 +355,6 @@ class RenderProceduralMixin:
             # is the ratio the suspended-knee helper below already uses.
             bend_base *= 3.40 + held_response * 0.90 + held_speed01 * 0.45
             forward_bias *= 0.35
-            elevated_arc = 0.0
-            proximal_lift = 1.0
             carry_wave_amount = clamp(
                 float(chain_config.get("carry_joint_wave", 0.42)), 0.0, 0.65
             )
@@ -428,16 +432,6 @@ class RenderProceduralMixin:
                 local_f = a_f + (f_f - a_f) * fraction + forward_bias * profiles[index]
                 local_s = a_s + (f_s - a_s) * fraction + side * bend
                 point_x, point_y = self._body_local_to_world(local_f, local_s)
-                # A tarantula carries its joints high and lets the distal leg
-                # descend to the floor. This is visual elevation only: the
-                # foot contact and support solver remain on the ground plane.
-                # The proximal limb rises first. Every later joint is lower
-                # than the previous one, producing a tarantula knee arc rather
-                # than a symmetric wing-like bow.
-                rise = (self.size * elevated_arc * max(0.0, 1.0 - fraction)
-                        * (1.0 + 0.18 * leg.lift) * bend_scale)
-                if index == 0:
-                    rise *= proximal_lift
                 if self.dragging:
                     # Screen-down gravity acts on every suspended joint.  The
                     # sag follows each leg's own lane; it is not a pull toward
@@ -474,8 +468,34 @@ class RenderProceduralMixin:
                 # Bowing along the body's own outward axis gives every leg the
                 # same arc at every heading, and keeps the knee-high tarantula
                 # silhouette the arc was added for.
-                seed_points.append((point_x + rx * side * rise,
-                                    point_y + ry * side * rise))
+                # DC-69: the seed joint carries no screen-space offset.
+                #
+                # There used to be a `rise` here, subtracted from point_y so a
+                # joint read as carried high off the floor. Up the screen is
+                # not a direction the body knows about, so what that actually
+                # did depended on which way the spider was walking: outward
+                # for one flank and straight across the shell for the other,
+                # which is how four of the eight legs came to be drawn
+                # underneath the body (DC-67).
+                #
+                # DC-67 replaced it with a bow along the body's own outward
+                # axis. That fixed the symmetry and then kept going: the first
+                # joint bowed 0.45 body-widths at *every* heading, where the
+                # original managed 0.15 at the vertical ones. Three times
+                # wider, and the owner's verdict on seeing it walk was "thats
+                # not how they supposed to lok like".
+                #
+                # Measured at heading 0 / 90, first-joint bow in body-widths:
+                #
+                #   original   0.43 one flank, -0.12 the other (tucked) / 0.15
+                #   DC-67      0.43..0.46 / 0.43..0.46
+                #   DC-69      0.15..0.19 / 0.15..0.19
+                #
+                # The bend below is body-relative and already gives the knee
+                # its fold. Dropping the screen-space term is what finally
+                # makes the pose the same whatever the compass says, which is
+                # the property that was wrong underneath both bugs.
+                seed_points.append((point_x, point_y))
             seed_points.append((fx, fy))
             points = constrain_to_segment_limits(seed_points)
             path_len = sum(math.hypot(points[i + 1][0] - points[i][0],
