@@ -47,6 +47,9 @@ from .constants import (
     WEBBED_HOLD_SECONDS,
     WEBBED_SECONDS,
     WEBBED_SPEED_MULT,
+    CURSOR_PRESSURE_PER_GRAB,
+    CURSOR_WARY_THRESHOLD,
+    GAIT_SPELL_GAP,
     normalize_gait_style,
 )
 from .behaviour import BehaviourMixin
@@ -295,6 +298,18 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # based on lively but runs in quick burst-burst-stop successions, like
         # a small jumping spider in a macro video.
         self.gait_style = normalize_gait_style(gait_style)
+        # DC-63: the current spell, and how long until it changes.
+        #
+        # Its own random stream, not `self.rng`. Drawing from the shared one
+        # -- even once, in __init__ -- shifts every later value in it, and a
+        # seeded run is supposed to replay exactly (DC-09). Caught by
+        # `test_tarantula.py::test_a_walk_stays_inside_its_limits`, which
+        # started failing a leg-geometry invariant purely because the walk
+        # now began from a different phase seed. Same reasoning, and the same
+        # fix, as the `_id_rng` split in the manager.
+        self._gait_rng = random.Random(f"{self.progression_id}:gait-spell")
+        self.gait_spell = None
+        self.gait_spell_timer = self._gait_rng.uniform(*GAIT_SPELL_GAP)
         self._lively_gait_phase = self.rng.random()
         self._skitter_burst_timer = self.rng.uniform(0.14, 0.34)
         self._skitter_pause_timer = 0.0
@@ -352,6 +367,8 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # line to that foe -- positive for a blow thrown, negative for one
         # taken. Both are pure animation: nothing here changes a number that
         # decides a fight.
+        # DC-62: how wary of the pointer this spider has become.
+        self.cursor_pressure = 0.0
         self.combat_stance = 0.0
         self.lunge = 0.0
         self.combat_face_x = 0.0
@@ -996,7 +1013,20 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self._initialize_legs()
         self.startled_timer = max(self.startled_timer, 0.45)
 
+    @property
+    def wary_of_cursor(self) -> bool:
+        """Has this spider been caught often enough to mind the pointer?
+
+        A threshold rather than a gradient, because the behaviour model it
+        feeds is a table of per-situation multipliers: a wary spider is in a
+        different situation, not in the same one by a smaller amount.
+        """
+        return self.cursor_pressure >= CURSOR_WARY_THRESHOLD
+
     def start_drag(self, mx: float, my: float) -> None:
+        # DC-62: remember it. Bumped here rather than on release, so a grab
+        # counts even if the spider is put straight back down.
+        self.cursor_pressure = min(1.0, self.cursor_pressure + CURSOR_PRESSURE_PER_GRAB)
         self.dragging = True
         self.phase_scheduler.cancel()
         self.state = "Dragged"

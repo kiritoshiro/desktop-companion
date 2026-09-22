@@ -72,17 +72,51 @@ FOCUS_PHASE_BIAS = {
         "prepare_jump_attack": 1.9, "inspect": 1.25, "cuddle": 0.75,
         "social_play": 0.20, "run_away": 0.65,
     },
+    # DC-62: the same pointer, to a spider that has been caught a few times.
+    # Approach and chase drop away, run_away climbs, and observing it from a
+    # distance goes up -- wary, not panicked.
+    "cursor_wary": {
+        "wander": 0.90, "jump": 0.55, "roll": 0.40, "zoomies": 0.55,
+        "approach": 0.20, "chase": 0.15, "observe": 1.9,
+        "prepare_jump_attack": 0.15, "inspect": 0.35, "cuddle": 0.10,
+        "social_play": 0.30, "run_away": 2.6,
+    },
     "prey": {
         "wander": 0.20, "jump": 1.0, "roll": 0.10, "zoomies": 0.65,
         "approach": 1.8, "chase": 2.8, "observe": 1.45,
         "prepare_jump_attack": 2.5, "inspect": 0.70, "cuddle": 0.05,
         "social_play": 0.05, "run_away": 0.10,
     },
+    # Another spider, with nothing declared between them. Sociable by
+    # default, which is what "creature" has always meant here.
     "creature": {
         "wander": 0.25, "jump": 1.0, "roll": 0.75, "zoomies": 0.75,
         "approach": 1.4, "chase": 0.65, "observe": 1.6,
         "prepare_jump_attack": 1.0, "inspect": 1.9, "cuddle": 2.3,
         "social_play": 2.8, "run_away": 0.20,
+    },
+    # DC-61: a declared ally, and a declared enemy. Both used to be
+    # "creature", so a spider facing something that wanted to kill it was
+    # weighing up a cuddle.
+    #
+    # These **tilt the odds; they do not override.** The owner chose that
+    # deliberately: a cautious spider should still mostly back off and a bold
+    # one should still mostly close, or every temperament looks the same in a
+    # fight and the whole point of having temperaments goes. The numbers are
+    # multipliers on a personality's own phase score, so a `hunter` profile
+    # (chase 10, run_away 1) and an `escape` profile (chase 0, run_away 10)
+    # come out of the same row facing opposite directions.
+    "friend": {
+        "wander": 0.30, "jump": 1.0, "roll": 0.85, "zoomies": 0.85,
+        "approach": 1.6, "chase": 0.70, "observe": 1.3,
+        "prepare_jump_attack": 0.55, "inspect": 1.5, "cuddle": 2.6,
+        "social_play": 3.0, "run_away": 0.10,
+    },
+    "foe": {
+        "wander": 0.10, "jump": 0.85, "roll": 0.20, "zoomies": 0.35,
+        "approach": 1.5, "chase": 2.6, "observe": 1.2,
+        "prepare_jump_attack": 2.4, "inspect": 0.25, "cuddle": 0.0,
+        "social_play": 0.0, "run_away": 2.0,
     },
     "web": {
         "wander": 0.75, "jump": 0.15, "roll": 0.05, "zoomies": 0.10,
@@ -114,6 +148,9 @@ def normalize_focus(value: str | None) -> str:
         "target": "cursor",
         "spider": "creature",
         "mate": "creature",
+        "ally": "friend",
+        "teammate": "friend",
+        "enemy": "foe",
         "silk": "web",
     }
     value = aliases.get(value, value)

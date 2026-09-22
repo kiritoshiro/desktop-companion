@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 
 from .constants import (
+    CURSOR_PRESSURE_DECAY_PER_SECOND,
     LUNGE_REACH,
     LUNGE_DECAY_PER_SECOND,
     RECOIL_REACH,
@@ -126,6 +127,13 @@ class ExpressionMixin:
         if self.state not in ("Cuddle", "Aim"):
             self.rear = max(0.0, self.rear - dt * 3.5)
         self._update_combat_pose(dt)
+        self._update_gait_spell(dt)
+        if not self.dragging:
+            # Forgives over about two minutes of being left alone. It does
+            # not decay while actually held, or a long drag would end with
+            # the spider less bothered than when it was picked up.
+            self.cursor_pressure = max(
+                0.0, self.cursor_pressure - dt * CURSOR_PRESSURE_DECAY_PER_SECOND)
         # Landing squash recovers smoothly back to neutral.
         self.squash += (1.0 - self.squash) * (1.0 - math.exp(-dt * 10.0))
         if self.land_recover > 0.0:

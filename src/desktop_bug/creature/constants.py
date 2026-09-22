@@ -194,6 +194,39 @@ LUNGE_REACH = 0.42
 RECOIL_REACH = 0.26
 LUNGE_DECAY_PER_SECOND = 4.2
 
+# DC-62: how much a spider minds being picked up.
+#
+# The owner: *"mouse trying to catch it repeatedly would make him run away
+# from mouse more often."* Being grabbed was entirely without consequence --
+# a spider was startled for a second and then walked back into the pointer as
+# happily as before, however many times it had been caught.
+#
+# `cursor_pressure` runs 0..1, rises on each grab, and bleeds away over about
+# two minutes of being left alone, so a spider that was pestered and then
+# ignored forgives.
+CURSOR_PRESSURE_PER_GRAB = 0.34
+CURSOR_PRESSURE_DECAY_PER_SECOND = 1.0 / 120.0
+# Above this, the spider treats the pointer as a threat rather than as
+# something interesting. Deliberately a threshold rather than a gradient: the
+# whole behaviour model here is a table of per-situation multipliers, and a
+# spider that is wary of the pointer is in a different situation, not in the
+# same one by a smaller amount.
+CURSOR_WARY_THRESHOLD = 0.5
+
+# DC-63: an occasional change of step, so walking is not monotonous.
+#
+# The owner: *"to make more varied movements make them in pipline of common
+# spider movement so that they could be changed randomly or based on activity
+# they do."* DC-56 did the activity half. This is the random half: now and
+# then a spider adopts the other gait for a few seconds.
+#
+# It applies **only where no activity has an opinion** -- a spider running
+# from something does not stop to try a different walk. That ordering is the
+# pipeline, and it is what keeps "random variety" from undoing "the way it
+# moves means something".
+GAIT_SPELL_GAP = (9.0, 26.0)
+GAIT_SPELL_LENGTH = (1.8, 4.5)
+
 VALID_GAIT_STYLES = ("classic", "lively", "skitter")
 GAIT_LABELS = {
     "classic": "Classic",

@@ -31,17 +31,41 @@ class PhaseMixin:
             or self.repairing_web is not None
         ):
             return "web"
+        # DC-61: a published foe outranks everything social. It does not
+        # outrank prey or silk above -- a spider already committed to a hunt
+        # or halfway through a web finishes that first, the same way the job
+        # layer treats those as committed states.
+        foe = getattr(self, "_foe", None)
+        if foe is not None and not getattr(foe, "dead", False):
+            return "foe"
         if self.social_target is not None and not getattr(self.social_target, "dragging", False):
-            return "creature"
+            return self._social_focus_for(self.social_target)
         reaction = float(self.personality.get("reaction_radius", 360.0))
         social_range = max(self.size * 12.0, reaction * 0.85)
         mate = self._find_social_target(social_range) if self.allow_social else None
         cursor_distance = distance(self.x, self.y, mx, my)
         if mate is not None and (cursor_distance > reaction * 0.85 or distance(self.x, self.y, mate.x, mate.y) < cursor_distance * 1.15):
-            return "creature"
+            return self._social_focus_for(mate)
         if cursor_distance < reaction:
-            return "cursor"
+            return "cursor_wary" if self.wary_of_cursor else "cursor"
         return "none"
+
+    def _social_focus_for(self, other) -> str:
+        """Ally, enemy, or just another spider.
+
+        Read from the declared stance rather than from team equality, because
+        two teams can be declared allies and a spider can carry its own
+        per-creature override (DC-33).
+        """
+        try:
+            relation = self.relation_to(other)
+        except Exception:
+            return "creature"
+        if relation == "foe":
+            return "foe"
+        if relation == "friend":
+            return "friend"
+        return "creature"
 
     def _phase_target(self, focus: str, mx: float, my: float) -> Tuple[float, float, "Creature" | None]:
         """Resolve a phase focus to coordinates and, when applicable, a mate."""
@@ -49,7 +73,13 @@ class PhaseMixin:
             prey = self._prey
             if prey is not None and getattr(prey, "alive", False) and not getattr(prey, "eaten", False):
                 return prey.x, prey.y, None
-        if focus == "creature":
+        if focus == "foe":
+            foe = getattr(self, "_foe", None)
+            if foe is not None and not getattr(foe, "dead", False):
+                # No mate handed back: a foe is not someone to cuddle, and
+                # returning one here is how a fight became a cuddle before.
+                return foe.x, foe.y, None
+        if focus in ("creature", "friend"):
             mate = self.social_target
             if mate is None or getattr(mate, "dragging", False) or getattr(mate, "airborne", False):
                 mate = self._find_social_target(max(self.size * 12.0, float(self.personality.get("reaction_radius", 360.0))))
