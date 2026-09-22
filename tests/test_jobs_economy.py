@@ -345,24 +345,30 @@ def test_a_colony_with_flies_disabled_stalls_below_a_colony_with_flies_enabled()
     # Deterministic: with no food ever arriving, the base cannot advance at
     # all -- not merely "less than the other run".
     assert disabled == 0.0, disabled
-    # The fly world's own timers use the module-level ``random`` (DC-09's
-    # disclosed gap), so the exact number here is not reproducible run to
-    # run; the meaningful, reliably-true claim is a solid margin over zero.
+    # This number used to be irreproducible, and the comment here used to
+    # say so at length: same seed, same code, varying only the module-level
+    # random state the run happened to inherit gave 12, 48, 60, 60, 60, 72,
+    # 84. A floor of 50 sat in the middle of that band, so the test was one
+    # unlucky ordering away from failing, and the floor was dropped to 6.0 as
+    # the only honest bound "until flies.py is seeded".
     #
-    # How far from reproducible got measured when DC-52 changed the default
-    # gait and this started failing at 47.999 against a floor of 50. Same
-    # seed, same code, same order, varying only the module-level random
-    # state this run happens to inherit: 12, 48, 60, 60, 60, 72, 84. The old
-    # floor of 50 sat in the middle of that band, so this test was already
-    # one unlucky ordering away from failing; running the whole suite ahead
-    # of it produced the 12. A floor that survives the band is the only
-    # honest one until flies.py is seeded, and until then the strong claim
-    # here is the exact zero above.
+    # DC-68 seeded it. Measured afterwards, four runs at this seed with
+    # deliberately different inherited module state: 108.0, 108.0, 108.0,
+    # 108.0. The floor can mean something again.
+    assert enabled == pytest.approx(108.0), enabled
+
+    # And the "14% gait cost" recorded here did not survive the fix either.
     #
-    # Separately, and genuinely: the gait change *is* worth about 14% of
-    # this number. Paired over six random pre-states, classic gave
-    # 60/70.6/60/60/72/84 and the temperament-driven gait gave
-    # 48/72/48/48/60/72 -- lower in five of the six pairs. Energetic
-    # temperaments now skitter, and a spider that moves in bursts banks less
-    # food. That is a balance call, recorded rather than tuned away.
-    assert enabled > 6.0, enabled
+    # It was measured by varying the module-random pre-state and pairing
+    # classic against the temperament gait within each -- but the pre-state
+    # was also changing the flies, which is the thing that feeds the base, so
+    # the pairing was never comparing what it claimed to. Re-measured over
+    # twelve *seeded* pairs, five minutes of simulated time each:
+    #
+    #   classic mean      98.6
+    #   temperament mean 100.6   (+2.1%, spread -46 to +36, four exact ties)
+    #
+    # There is no detectable cost. It is the sixth measurement in this
+    # project invalidated by unseeded randomness, and the only one that had
+    # been put to the owner as a decision to make.
+

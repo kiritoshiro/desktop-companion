@@ -197,7 +197,7 @@ def _sag_points(points: Sequence[Point], anchors: Sequence[Point], droop: float)
 # Pattern planners -- each returns (strands, hub, wobble_dir)
 # ======================================================================
 def _plan_corner_orb(vertex: Point, din: Point, span: float,
-                     reach_inset: float, screen_w: float, screen_h: float) -> Tuple[List[Strand], Point, Point]:
+                     reach_inset: float, screen_w: float, screen_h: float, rng=None) -> Tuple[List[Strand], Point, Point]:
     """Sector orb tucked into a 90 degree screen corner -- the signature web.
 
     The hub sits a little way out from the corner along the diagonal.  Radii fan
@@ -207,13 +207,14 @@ def _plan_corner_orb(vertex: Point, din: Point, span: float,
     temporary auxiliary spiral spun outward, then the sticky capture spiral spun
     inward while the auxiliary spiral is removed.
     """
+    rng = rng if rng is not None else random
     vx, vy = vertex
     hub_off = clamp(span * 0.20, 38.0, 80.0)
     hub = (vx + din[0] * hub_off, vy + din[1] * hub_off)
     r = span
     base = math.atan2(din[1], din[0])
     sector = 1.55  # ~89 deg either side of the diagonal -> radii reach the walls
-    nr = random.randint(9, 13)
+    nr = rng.randint(9, 13)
 
     tips: List[Point] = []
     for i in range(nr):
@@ -254,12 +255,13 @@ def _plan_corner_orb(vertex: Point, din: Point, span: float,
     return strands, hub, din
 
 
-def _plan_orb(center: Point, span: float, screen_w: float, screen_h: float) -> Tuple[List[Strand], Point, Point]:
+def _plan_orb(center: Point, span: float, screen_w: float, screen_h: float, rng=None) -> Tuple[List[Strand], Point, Point]:
     """A full circular orb spun in the open, hub lifted for gravity."""
+    rng = rng if rng is not None else random
     cx, cy = center
     hub = (cx, cy - span * 0.12)  # hub sits above centre, as on a vertical orb
     r = span
-    nr = random.randint(11, 15)
+    nr = rng.randint(11, 15)
     tips: List[Point] = []
     for i in range(nr):
         a = -math.pi + (2.0 * math.pi) * (i / nr)
@@ -288,13 +290,14 @@ def _plan_orb(center: Point, span: float, screen_w: float, screen_h: float) -> T
 
 
 def _plan_funnel(vertex: Point, din: Point, span: float,
-                 screen_w: float, screen_h: float) -> Tuple[List[Strand], Point, Point]:
+                 screen_w: float, screen_h: float, rng=None) -> Tuple[List[Strand], Point, Point]:
     """Funnel-weaver style: a dense sheet over the corner with a retreat tunnel.
 
     Funnel-weavers lay a flat sheet leading back to a tubular retreat.  Here the
     sheet fills the corner triangle in overlapping passes and the funnel throat
     converges at the corner where the spider would wait.
     """
+    rng = rng if rng is not None else random
     vx, vy = vertex
     base = math.atan2(din[1], din[0])
     r = span
@@ -319,8 +322,8 @@ def _plan_funnel(vertex: Point, din: Point, span: float,
     for i in range(fan):
         f = i / (fan - 1)
         a = lerp(a0, a1, f)
-        far = (vx + math.cos(a) * r * random.uniform(0.9, 1.0),
-               vy + math.sin(a) * r * random.uniform(0.9, 1.0))
+        far = (vx + math.cos(a) * r * rng.uniform(0.9, 1.0),
+               vy + math.sin(a) * r * rng.uniform(0.9, 1.0))
         far = (clamp(far[0], 2.0, screen_w - 2.0), clamp(far[1], 2.0, screen_h - 2.0))
         strands.append(Strand([mouth, far], kind="sheet"))
     # A few cross threads tie the fan together into a sheet.
@@ -344,7 +347,7 @@ def _plan_funnel(vertex: Point, din: Point, span: float,
 
 
 def _plan_tangle(vertex: Point, din: Point, span: float,
-                 screen_w: float, screen_h: float) -> Tuple[List[Strand], Point, Point]:
+                 screen_w: float, screen_h: float, rng=None) -> Tuple[List[Strand], Point, Point]:
     """Cobweb / tangle (Theridiidae): an irregular 3D mesh with gumfoot lines.
 
     Cobweb spiders build a loose three-dimensional tangle anchored by a few taut
@@ -352,6 +355,7 @@ def _plan_tangle(vertex: Point, din: Point, span: float,
     floor.  Flattened to the overlay it is a scruffy corner mesh with a couple of
     weighted drop-lines.
     """
+    rng = rng if rng is not None else random
     vx, vy = vertex
     base = math.atan2(din[1], din[0])
     r = span
@@ -360,29 +364,29 @@ def _plan_tangle(vertex: Point, din: Point, span: float,
     # Scaffold: a handful of long taut anchor lines bridging the corner gap.
     scaffold_ends: List[Point] = []
     strands: List[Strand] = []
-    n_scaffold = random.randint(4, 5)
+    n_scaffold = rng.randint(4, 5)
     for i in range(n_scaffold):
         a = lerp(base - 1.45, base + 1.45, i / (n_scaffold - 1))
-        end = (vx + math.cos(a) * r * random.uniform(0.82, 1.0),
-               vy + math.sin(a) * r * random.uniform(0.82, 1.0))
+        end = (vx + math.cos(a) * r * rng.uniform(0.82, 1.0),
+               vy + math.sin(a) * r * rng.uniform(0.82, 1.0))
         end = (clamp(end[0], 2.0, screen_w - 2.0), clamp(end[1], 2.0, screen_h - 2.0))
         scaffold_ends.append(end)
         strands.append(Strand([vertex, end], kind="scaffold"))
 
     # Tangle infill: short irregular threads tying random scaffold points together.
     def on_scaffold() -> Point:
-        end = random.choice(scaffold_ends)
-        t = random.uniform(0.25, 0.95)
+        end = rng.choice(scaffold_ends)
+        t = rng.uniform(0.25, 0.95)
         return (lerp(vx, end[0], t), lerp(vy, end[1], t))
 
-    for _ in range(random.randint(14, 20)):
+    for _ in range(rng.randint(14, 20)):
         strands.append(Strand([on_scaffold(), on_scaffold()], kind="tangle"))
 
     # Gumfoot lines: a couple of near-vertical drop-lines to a little anchor blob.
-    for _ in range(random.randint(2, 3)):
+    for _ in range(rng.randint(2, 3)):
         top = on_scaffold()
-        drop = r * random.uniform(0.35, 0.6)
-        foot = (top[0] + random.uniform(-6.0, 6.0), top[1] + down * drop)
+        drop = r * rng.uniform(0.35, 0.6)
+        foot = (top[0] + rng.uniform(-6.0, 6.0), top[1] + down * drop)
         foot = (clamp(foot[0], 2.0, screen_w - 2.0), clamp(foot[1], 2.0, screen_h - 2.0))
         strands.append(Strand([top, foot], kind="gumfoot"))
 
@@ -441,7 +445,10 @@ class Web:
 
     def __init__(self, pattern: str, strands: List[Strand], hub: Point,
                  wobble_dir: Point, spec_id: str, reach_inset: float,
-                 screen_w: float = 1e9, screen_h: float = 1e9) -> None:
+                 screen_w: float = 1e9, screen_h: float = 1e9, rng=None) -> None:
+        # DC-68: where a spider steps onto this silk is a roll, and a roll
+        # that decides behaviour has to be replayable.
+        self.rng = rng if rng is not None else random
         self.pattern = pattern
         self.strands = strands
         self.hub = hub
@@ -706,8 +713,8 @@ class Web:
                       ("capture", "radius", "frame", "sheet", "scaffold", "aux")]
         ins = self.reach_inset
         if candidates:
-            s = random.choice(candidates)
-            p = s.point_at(random.uniform(0.3, 0.8))
+            s = self.rng.choice(candidates)
+            p = s.point_at(self.rng.uniform(0.3, 0.8))
         else:
             p = self.hub
         return (clamp(p[0], ins, screen_w - ins), clamp(p[1], ins, screen_h - ins))
@@ -863,7 +870,8 @@ class Web:
         }
 
 
-def web_from_dict(data: Any, screen_w: float, screen_h: float) -> Optional["Web"]:
+def web_from_dict(data: Any, screen_w: float, screen_h: float,
+                  rng=None) -> Optional["Web"]:
     """Rebuild a saved web, or return ``None`` if the entry is unusable.
 
     Anything malformed is dropped rather than raised on: a corrupt or
@@ -900,7 +908,8 @@ def web_from_dict(data: Any, screen_w: float, screen_h: float) -> Optional["Web"
     except (TypeError, ValueError):
         reach_inset = 38.0
     web = Web(str(data.get("pattern", "orb")), strands, hub, wobble,
-              str(data.get("spec_id", "")), reach_inset, screen_w, screen_h)
+              str(data.get("spec_id", "")), reach_inset, screen_w, screen_h,
+              rng=rng)
     try:
         web.built = max(0, min(len(strands), int(data.get("built", 0))))
     except (TypeError, ValueError):
@@ -934,7 +943,13 @@ def web_from_dict(data: Any, screen_w: float, screen_h: float) -> Optional["Web"
 class WebWorld:
     """Holds every web; hands corners to weavers; finds webs to finish/walk on."""
 
-    def __init__(self, screen_w: float, screen_h: float) -> None:
+    def __init__(self, screen_w: float, screen_h: float, rng=None) -> None:
+        # DC-68. `claim_site` and `_pick_pattern` already took an rng from the
+        # weaving spider -- which site, which pattern. What did not was the
+        # silk geometry itself, and `Web.walkable_point`, which decides where
+        # a spider steps onto a web. With no seed this is `random`, exactly
+        # what the file used before.
+        self.rng = rng if rng is not None else random
         self.screen_w = float(screen_w)
         self.screen_h = float(screen_h)
         self.webs: List[Web] = []
@@ -977,7 +992,7 @@ class WebWorld:
             return 0
         self.clear()
         for entry in entries[:MAX_WEBS]:
-            web = web_from_dict(entry, self.screen_w, self.screen_h)
+            web = web_from_dict(entry, self.screen_w, self.screen_h, rng=self.rng)
             if web is None or not web.contains_region(self.screen_w, self.screen_h):
                 continue
             self.webs.append(web)
@@ -1055,9 +1070,11 @@ class WebWorld:
                    rng: Optional[random.Random] = None) -> Optional[Web]:
         """Start a fresh web for ``creature`` at a free corner, edge, or open spot.
 
-        ``rng`` is optional and defaults to the module-level ``random`` used
-        everywhere else in this file -- webs.py is a disclosed, out-of-scope
-        gap in DC-09/DC-40's seeding pass (see those packages' work-log
+        ``rng`` chooses the site and the pattern. Since DC-68 the world
+        carries its own stream for the silk geometry as well, so this file is
+        no longer the disclosed gap in DC-09/DC-40's seeding pass it used to
+        be; an unseeded world still gets ``random`` itself (see those
+        packages' work-log
         entries). A caller that already has a seeded stream to offer (DC-20's
         job-driven Webber, via the creature's own ``rng``) can pass it so its
         *own* replay stays reproducible; every other, unseeded caller is
@@ -1084,27 +1101,32 @@ class WebWorld:
                 if self._too_close_to_existing(spec["vertex"], span * 1.25):
                     continue
                 strands, hub, wob = _plan_orb(spec["vertex"], span * 0.8,
-                                              self.screen_w, self.screen_h)
+                                              self.screen_w, self.screen_h,
+                                              rng=self.rng)
                 pattern = "orb"
             else:
                 pattern = self._pick_pattern(spec, pattern_weights, rng)
                 planner = _PATTERN_PLANNERS.get(pattern, _plan_corner_orb)
                 if spec["kind"] == "edge" and pattern == "orb":
                     center = (spec["vertex"][0], spec["vertex"][1] + spec["din"][1] * span)
-                    strands, hub, wob = planner(center, span, self.screen_w, self.screen_h)
+                    strands, hub, wob = planner(center, span, self.screen_w,
+                                                self.screen_h, rng=self.rng)
                 elif pattern == "orb":
                     # A corner site asked for an orb: centre it out along the diagonal.
                     center = (spec["vertex"][0] + spec["din"][0] * span,
                               spec["vertex"][1] + spec["din"][1] * span)
-                    strands, hub, wob = _plan_orb(center, span * 0.8, self.screen_w, self.screen_h)
+                    strands, hub, wob = _plan_orb(center, span * 0.8, self.screen_w,
+                                                  self.screen_h, rng=self.rng)
                 elif pattern == "corner_orb":
                     strands, hub, wob = planner(spec["vertex"], spec["din"], span,
-                                                reach_inset, self.screen_w, self.screen_h)
+                                                reach_inset, self.screen_w,
+                                                self.screen_h, rng=self.rng)
                 else:
                     strands, hub, wob = planner(spec["vertex"], spec["din"], span,
-                                                self.screen_w, self.screen_h)
+                                                self.screen_w, self.screen_h,
+                                                rng=self.rng)
             web = Web(pattern, strands, hub, wob, spec["id"], reach_inset,
-                      self.screen_w, self.screen_h)
+                      self.screen_w, self.screen_h, rng=self.rng)
             web.builder = creature
             self.webs.append(web)
             return web
