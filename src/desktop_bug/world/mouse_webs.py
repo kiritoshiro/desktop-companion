@@ -112,7 +112,8 @@ class _StickyHold:
     """
 
     def __init__(self, anchor: Point, leash: float, escape: float,
-                 max_hold: float, pegs: int = 9) -> None:
+                 max_hold: float, pegs: int = 9, rng=None) -> None:
+        self.rng = rng if rng is not None else random
         self.anchor = (float(anchor[0]), float(anchor[1]))
         self.leash = float(leash)
         self.escape = float(escape)
@@ -124,14 +125,14 @@ class _StickyHold:
         # the silk looks stretched), plus a wobble that grows with struggle.
         self.strain = self.anchor
         self.wobble = 0.0
-        self.wob_phase = random.uniform(0.0, math.tau)
+        self.wob_phase = self.rng.uniform(0.0, math.tau)
         # Fixed anchor pegs so the splat looks like real radiating silk.
         self.pegs: List[Tuple[Point, float]] = []
         for i in range(pegs):
-            a = (i / pegs) * math.tau + random.uniform(-0.18, 0.18)
-            r = leash * random.uniform(2.4, 4.2)
+            a = (i / pegs) * math.tau + self.rng.uniform(-0.18, 0.18)
+            r = leash * self.rng.uniform(2.4, 4.2)
             self.pegs.append(((math.cos(a) * r, math.sin(a) * r),
-                              random.uniform(0.8, 1.0)))
+                              self.rng.uniform(0.8, 1.0)))
 
     def progress(self) -> float:
         return clamp(self.struggle / max(1.0, self.escape), 0.0, 1.0)
@@ -266,8 +267,9 @@ class TrapCapture(_Capture):
 
     kind = "trap"
 
-    def __init__(self, anchor: Point) -> None:
-        self.hold = _StickyHold(anchor, TRAP_LEASH, TRAP_ESCAPE, TRAP_MAX_HOLD)
+    def __init__(self, anchor: Point, rng=None) -> None:
+        self.rng = rng if rng is not None else random
+        self.hold = _StickyHold(anchor, TRAP_LEASH, TRAP_ESCAPE, TRAP_MAX_HOLD, rng=self.rng)
 
     def update(self, dt, mx, my, can_control):
         return self.hold.update(dt, mx, my, can_control)
@@ -288,7 +290,8 @@ class ShoveCapture(_Capture):
     kind = "wall"
 
     def __init__(self, hit: Point, fire_dir: Point,
-                 screen_w: float, screen_h: float) -> None:
+                 screen_w: float, screen_h: float, rng=None) -> None:
+        self.rng = rng if rng is not None else random
         self.start = (float(hit[0]), float(hit[1]))
         self.screen_w = float(screen_w)
         self.screen_h = float(screen_h)
@@ -344,7 +347,7 @@ class ShoveCapture(_Capture):
             if self.t >= SHOVE_DURATION:
                 self.phase = "pin"
                 self.hold = _StickyHold(self.wall, TRAP_LEASH * 0.9,
-                                        WALL_ESCAPE, WALL_MAX_HOLD)
+                                        WALL_ESCAPE, WALL_MAX_HOLD, rng=self.rng)
             return self.wall if self.t >= SHOVE_DURATION else self.cur, False
 
         # Pinned against the wall.
@@ -508,13 +511,14 @@ class _Projectile:
 class _SpentSplat:
     """A short-lived torn-silk splat left where a capture released."""
 
-    def __init__(self, at: Point) -> None:
+    def __init__(self, at: Point, rng=None) -> None:
+        self.rng = rng if rng is not None else random
         self.at = (float(at[0]), float(at[1]))
         self.t = 0.0
         self.spokes = []
         for _ in range(7):
-            a = random.uniform(0.0, math.tau)
-            r = random.uniform(8.0, 22.0)
+            a = self.rng.uniform(0.0, math.tau)
+            r = self.rng.uniform(8.0, 22.0)
             self.spokes.append((math.cos(a) * r, math.sin(a) * r))
 
     def update(self, dt: float) -> bool:
@@ -555,7 +559,9 @@ class MouseWebWorld:
     """
 
     def __init__(self, screen_w: float, screen_h: float,
-                 can_control: bool = True) -> None:
+                 can_control: bool = True, rng=None) -> None:
+        # DC-68: its own stream, so a seeded run replays the silk too.
+        self.rng = rng if rng is not None else random
         self.screen_w = float(screen_w)
         self.screen_h = float(screen_h)
         self.enabled = True
@@ -633,19 +639,20 @@ class MouseWebWorld:
                 if self.projectile.kind == "wall":
                     fire = (hit[0] - self.projectile.origin[0],
                             hit[1] - self.projectile.origin[1])
-                    self.capture = ShoveCapture(hit, fire, self.screen_w, self.screen_h)
+                    self.capture = ShoveCapture(hit, fire, self.screen_w, self.screen_h,
+                                                rng=self.rng)
                 else:
                     # Anchor the trap on the live pointer for a clean grab.
-                    self.capture = TrapCapture((mx, my))
+                    self.capture = TrapCapture((mx, my), rng=self.rng)
                 self.projectile = None
             elif result == "miss":
-                self.spent.append(_SpentSplat(self.projectile.pos))
+                self.spent.append(_SpentSplat(self.projectile.pos, rng=self.rng))
                 self.projectile = None
 
         if self.capture is not None:
             desired, done = self.capture.update(dt, mx, my, self.can_control)
             if done:
-                self.spent.append(_SpentSplat(self.capture.release_point()))
+                self.spent.append(_SpentSplat(self.capture.release_point(), rng=self.rng))
                 self.capture = None
                 desired = None
 

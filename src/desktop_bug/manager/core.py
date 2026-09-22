@@ -75,6 +75,16 @@ class CreatureManager(
         # differently on a second launch -- exactly what seeding exists to
         # prevent. A string seed derives reproducibly across processes.
         self._id_rng = None if seed is None else random.Random(f"{seed}:creature-ids")
+
+        # DC-68: the worlds get their own streams for the same reason. Each is
+        # derived from the run seed by name, so adding a world later cannot
+        # shift the numbers an existing one draws -- the trap DC-09 recorded
+        # after one extra draw in a constructor moved every later value.
+        # With no seed they are handed `random` itself, which is exactly what
+        # they used before, so an unseeded launch is untouched.
+        def _world_rng(name: str):
+            return random if seed is None else random.Random(f"{seed}:{name}")
+
         self.screen_w = screen_w
         self.screen_h = screen_h
         # DC-65: which parts of the overlay are actually on a monitor. Empty
@@ -125,7 +135,7 @@ class CreatureManager(
         self._cage_drag = None  # dict: {cage, mode, corner, off_x, off_y}
         # Shared web world: all spiders read and write the same set of webs, so
         # one can build a web and another can walk it or finish it when left.
-        self.web_world = WebWorld(screen_w, screen_h)
+        self.web_world = WebWorld(screen_w, screen_h, rng=_world_rng("webs"))
         # Colony structures are shared by team jobs and persisted separately
         # from the launch preset.  Presets choose jobs; runtime state remembers
         # the progress of the bases they built.
@@ -136,7 +146,8 @@ class CreatureManager(
         # the OS pointer, so this just computes the desired position each frame.
         self.allow_mouse_capture = True
         self.mouse_web_world = MouseWebWorld(
-            screen_w, screen_h, can_control=sys.platform.startswith("win")
+            screen_w, screen_h, can_control=sys.platform.startswith("win"),
+            rng=_world_rng("mouse-webs"),
         )
         self._desired_cursor: Optional[Tuple[float, float]] = None
         # Flies are autonomous prey: they buzz around, flee spiders, and stick to
@@ -154,6 +165,7 @@ class CreatureManager(
             max_interval=self.fly_max_interval,
             max_flies=self.fly_max,
             scale=self.size_scale,
+            rng=_world_rng("flies"),
         )
         self._dragged_fly = None
         self._dragged_spawner = None
