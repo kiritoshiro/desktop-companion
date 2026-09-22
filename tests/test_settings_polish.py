@@ -17,10 +17,13 @@ import random
 import pytest
 from PyQt5.QtCore import QSize
 
-from desktop_bug.app.config_ui import ConfigWindow
+from desktop_bug.app.config_ui import COL_COLORS, COL_MODEL, COL_REMOVE, ConfigWindow
 
-COLORS_COLUMN = 5
-REMOVE_COLUMN = 8
+# Imported rather than restated: these were hardcoded 5 and 8, and removing
+# the "Pick 1-10" column shifted both. A test that hardcodes a column index
+# fails for the renumbering rather than for the thing it is checking.
+COLORS_COLUMN = COL_COLORS
+REMOVE_COLUMN = COL_REMOVE
 
 
 def icon_colors(button, size: int = 34) -> list:
@@ -69,7 +72,7 @@ def test_color_swatch_shows_the_slot_palette(window) -> None:
 
     # Nothing overridden: the swatch shows the model's own palette, because that
     # is what this slot will actually produce.
-    model_box = window.table.cellWidget(0, 0)
+    model_box = window.table.cellWidget(0, COL_MODEL)
     defaults = window._model_color_defaults(model_box)
     painted = icon_colors(button)
     if defaults:
@@ -129,7 +132,7 @@ def test_swatch_follows_the_model(window) -> None:
     """A slot with no overrides shows its model's colours, so changing the model
     has to change the swatch."""
     button = window.table.cellWidget(0, COLORS_COLUMN)
-    model_box = window.table.cellWidget(0, 0)
+    model_box = window.table.cellWidget(0, COL_MODEL)
     button.setProperty("color_overrides", {})
 
     seen = []

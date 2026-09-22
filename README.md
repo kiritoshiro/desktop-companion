@@ -252,7 +252,7 @@ The settings UI opens first. Choose model, personality, count, save/load a prese
 - **Abilities** opens a per-slot checklist of true capabilities. A fresh slot starts with the temperament's common abilities plus any job capability, and changing temperament/job updates those defaults unless you have edited the list yourself.
 - **Colors** is a swatch of the colours that slot will actually produce -- the model's own palette until you override it, and your palette once you have, outlined brightly so an edited row stands out. Click it for the per-slot RGB editor: body, leg, highlight, eye, band, shadow, and tip colours, with a reset to the selected model's defaults. The override is saved in the preset and applies to every creature spawned from that slot.
 - The **colour swatch** and the **remove** cross at the end of each row are icons rather than words, because in a row that already carries a model, a temperament, a count, abilities, a team and a job, those two labels were the least informative things in it. Both keep a tooltip and an accessible name, so a screen reader still announces them.
-- **Team** assigns a launch-time team to the whole slot, chosen by the name you gave it. Spiders sharing a team are friends by default, and the **Teams** panel below the table is where teams are named, coloured, and given a stance towards each other. Specific friend/neutral/foe overrides remain available in the right-click inspector after launch. Marking teams as foes does not create combat: a Guard alerts and intercepts, and nothing takes damage.
+- **Team** assigns a launch-time team to the whole slot, chosen by the name you gave it. Spiders sharing a team are friends by default, and the **Teams** panel below the table is where teams are named, coloured, and given a stance towards each other. Specific friend/neutral/foe overrides remain available in the right-click inspector after launch. Marking teams as foes means they will fight: see [Foes fight, and losing is permanent](#foes-fight-and-losing-is-permanent).
 - **Size** offers Tiny, Small, Normal, Large, and Huge launch sizes.
 - **Draggable / interferable** toggles whether spiders can be grabbed. When unchecked, clicks pass through spider pixels too.
 
@@ -290,13 +290,24 @@ until a future combat mode explicitly consumes them, so nothing a spider does
 can cause damage. A Guard does read them: it raises an alert when a spider it
 considers a foe enters its base perimeter, and moves to intercept it.
 
-### There is no combat yet, and "foes" does not create one
+### Foes fight, and losing is permanent
 
-This is worth stating plainly, because the words invite the wrong expectation.
-Marking two teams as foes means **a Guard notices an intruder near its base,
-raises an alert and moves to intercept**. Nothing takes damage, no spider can be
-hurt, and no fight can start. Health, armour and damage exist as numbers on the
-inspector and are not consumed by anything. Combat is a later piece of work.
+Marking two teams as foes now means exactly what it sounds like. Two hostile
+spiders that meet will attack each other, spending the health, armour and damage
+the inspector shows. A Guard still notices an intruder near its base, raises an
+alert and moves to intercept — that part is unchanged.
+
+A fight uses each spider's **own abilities**: a web-shooter pins its enemy with
+silk first, a jumper pounces to close, and one with neither simply chases. A
+pinned spider moves at a third speed and takes a harder hit, which is the payoff
+for spending a shot.
+
+**A beaten spider dies.** It leaves a carcass that is eaten away over a few
+seconds and then is gone, and it does not come back — a colony only shrinks
+within a session, and a preset's slot counts refill it at the next launch.
+
+Conflict is **on by default**. Turn it off in the settings window to go back to
+alerts and interception with nothing taking damage.
 
 ### Naming your own teams
 
