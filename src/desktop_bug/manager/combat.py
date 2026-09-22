@@ -14,6 +14,12 @@ from __future__ import annotations
 
 import math
 
+from ..creature.constants import (
+    FLEE_HEALTH_FRACTION,
+    OUTNUMBERED_RATIO,
+    RALLY_HEALTH_FRACTION,
+    THREAT_SCAN_RADIUS,
+)
 from ..world.carcass import CARCASS_FOOD_AMOUNT, carcass_for, eaters_near
 from .constants import log
 
@@ -29,6 +35,15 @@ ATTACK_INTERVAL = 0.85
 # reaction radius. Short enough that foes have to come near each other
 # rather than charging across the desktop on sight.
 ENGAGE_RADIUS_MULT = 0.62
+# DC-50: once engaged, a spider holds on well past the range at which it would
+# have started. Without this a fight lasted a second or two and then both
+# sides wandered off -- the owner watched a colony and reported that fights
+# did not last, that spiders "just move their own ways". The gap between
+# starting and giving up is what makes an encounter read as a fight.
+DISENGAGE_RADIUS_MULT = 1.9
+# And it will not drop a foe it has only just taken, however the distance
+# looks on any one frame.
+ENGAGEMENT_COMMITMENT = 2.5
 # A pinned spider is easier to land a hit on -- the payoff for spending a
 # web shot instead of just walking up and biting.
 WEBBED_DAMAGE_BONUS = 1.6
@@ -46,6 +61,7 @@ class CombatMixin:
         """
         self._update_carcasses(dt)
         self._bury_the_dead()
+        self._update_nerve(dt)
         if not self.conflict_enabled:
             self._clear_foes()
             return
@@ -89,7 +105,24 @@ class CombatMixin:
             if not self._may_pick_a_fight(creature):
                 creature._foe = None
                 continue
-            reach = float(creature.personality.get("reaction_radius", 360)) * ENGAGE_RADIUS_MULT
+            reaction = float(creature.personality.get("reaction_radius", 360))
+
+            # Hold the fight already in progress. A foe is only dropped when
+            # it is genuinely out of reach, or when the commitment has run
+            # out and something nearer has appeared -- not because it stepped
+            # a little past the radius that started the fight.
+            current = getattr(creature, "_foe", None)
+            if current is not None and (current.dead or current not in live):
+                current = None
+            if current is not None:
+                gap = math.hypot(current.x - creature.x, current.y - creature.y)
+                if gap > reaction * DISENGAGE_RADIUS_MULT:
+                    current = None
+            if current is not None and creature.engagement_timer > 0.0:
+                creature._foe = current
+                continue
+
+            reach = reaction * ENGAGE_RADIUS_MULT
             best, best_d = None, reach
             for other in live:
                 if other is creature:
@@ -102,7 +135,79 @@ class CombatMixin:
                 d = math.hypot(other.x - creature.x, other.y - creature.y)
                 if d < best_d:
                     best, best_d = other, d
+            if best is None:
+                best = current
+            if best is not None and best is not current:
+                creature.engagement_timer = ENGAGEMENT_COMMITMENT
             creature._foe = best
+
+    def _update_nerve(self, dt: float) -> None:
+        """Decide who is running, and from what (DC-50).
+
+        Three things the owner asked for after watching a colony, and they
+        are one mechanism: a spider that is badly hurt, or plainly
+        outnumbered, should break off and run rather than trade blows until
+        it dies. A colony without this grinds itself to nothing in a few
+        minutes and every fight looks the same.
+
+        Deciding it here rather than in the creature is the same split the
+        rest of combat uses: who is in danger is a fact about the colony,
+        what to do about it is the spider's own (``_flee_from_danger``).
+        """
+        live = [c for c in self.creatures if not c.dead]
+        for creature in live:
+            creature.engagement_timer = max(0.0, creature.engagement_timer - dt)
+
+            if getattr(creature, "dragging", False):
+                creature.flee_timer = 0.0
+                continue
+
+            hurt = creature.health_fraction() < FLEE_HEALTH_FRACTION
+            recovered = creature.health_fraction() >= RALLY_HEALTH_FRACTION
+            threat, friends, nearest = self._threat_around(creature, live)
+            outnumbered = threat > 0 and threat > (friends + 1) * OUTNUMBERED_RATIO
+
+            if creature.fleeing:
+                # Keep running until patched up and no longer swamped. The
+                # rally threshold is well above the flee one on purpose, so a
+                # spider does not bounce in and out of a fight on one hit.
+                if (recovered or not hurt) and not outnumbered:
+                    creature.flee_timer = 0.0
+                    creature.flee_from = None
+                else:
+                    creature.flee_timer = max(creature.flee_timer, 0.6)
+                    creature.flee_from = nearest or creature.flee_from
+                continue
+
+            if (hurt or outnumbered) and nearest is not None:
+                creature.flee_timer = 1.4
+                creature.flee_from = nearest
+                creature._foe = None
+
+    @staticmethod
+    def _threat_around(creature, live):
+        """(hostile count, friendly count, nearest hostile) within scan range."""
+        threat = 0
+        friends = 0
+        nearest = None
+        nearest_d = THREAT_SCAN_RADIUS
+        for other in live:
+            if other is creature:
+                continue
+            d = math.hypot(other.x - creature.x, other.y - creature.y)
+            if d > THREAT_SCAN_RADIUS:
+                continue
+            try:
+                relation = creature.relation_to(other)
+            except Exception:
+                continue
+            if relation == "foe":
+                threat += 1
+                if d < nearest_d:
+                    nearest, nearest_d = other, d
+            elif relation == "friend":
+                friends += 1
+        return threat, friends, nearest
 
     @staticmethod
     def _may_pick_a_fight(creature) -> bool:
@@ -123,7 +228,15 @@ class CombatMixin:
           doing. Being attacked while working and ignoring it would read as
           broken, not as diligent.
         """
-        if getattr(creature, "job_id", "none") == "guard":
+        # DC-50: a spider that is running is not picking anything.
+        if creature.fleeing:
+            return False
+        # A Guard's job is fighting, and so, the owner pointed out, is a
+        # Hunter's: "as a hunter i would expect him to explore more and fight
+        # agressively with enemy teams". Before this a Hunter was on duty
+        # almost continuously and so was gated out of every fight, which is
+        # why it looked like it only ever circled its own base.
+        if getattr(creature, "job_id", "none") in ("guard", "hunter"):
             return True
         if creature.last_attacker is not None and creature.hurt_flash > 0.0:
             return True

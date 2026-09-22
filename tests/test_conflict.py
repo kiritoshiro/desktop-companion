@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pytest
 from desktop_bug.manager import CreatureManager
-from desktop_bug.world.carcass import CARCASS_LIFETIME, Carcass
+from desktop_bug.world.carcass import CARCASS_LIFETIME, CARCASS_SETTLE_SECONDS, Carcass
 from support import ROOT
 
 DT = 1.0 / 60.0
@@ -167,11 +167,40 @@ def test_being_eaten_is_faster_than_being_left():
     """
     eaten = Carcass(100.0, 100.0, 18.0, "pack_a")
     ignored = Carcass(300.0, 300.0, 18.0, "pack_a")
-    for _ in range(60):
+    # Past the settle phase DC-50 added, or the untouched one has not begun
+    # decaying at all and there is nothing to compare.
+    for _ in range(int((CARCASS_SETTLE_SECONDS + 1.0) * 60)):
         eaten.update(DT, eaters=1)
         ignored.update(DT, eaters=0)
     assert eaten.spent > ignored.spent * 2.0, (eaten.spent, ignored.spent)
     assert ignored.spent > 0.0, "a carcass nobody touches must still be going"
+
+
+def test_a_body_lies_there_before_it_starts_going(monkeypatch):
+    """The owner asked for the moment of death to register.
+
+    "once dead he disapears too quikcly let it sit there upside down for a
+    few seconds before vanishing." Until the settle phase runs out, an
+    untouched carcass does not decay at all.
+    """
+    body = Carcass(100.0, 100.0, 18.0, "pack_a")
+    for _ in range(int((CARCASS_SETTLE_SECONDS - 0.5) * 60)):
+        assert body.update(DT, eaters=0) is False
+    assert body.settling, "the body started decaying during its own wake"
+    assert body.spent == 0.0
+
+    for _ in range(int(1.0 * 60)):
+        body.update(DT, eaters=0)
+    assert not body.settling
+    assert body.spent > 0.0, "the body never started going after settling"
+
+
+def test_a_scavenger_does_not_have_to_wait_out_the_wake():
+    """Arriving during the settle phase starts the clock rather than idling."""
+    body = Carcass(100.0, 100.0, 18.0, "pack_a")
+    for _ in range(30):
+        body.update(DT, eaters=1)
+    assert body.spent > 0.0
 
 
 def test_a_crowd_does_not_make_a_carcass_vanish_instantly():

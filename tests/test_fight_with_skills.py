@@ -23,7 +23,11 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from desktop_bug.creature.constants import WEBBED_SECONDS, WEBBED_SPEED_MULT
+from desktop_bug.creature.constants import (
+    WEBBED_HOLD_SECONDS,
+    WEBBED_SECONDS,
+    WEBBED_SPEED_MULT,
+)
 from desktop_bug.manager import CreatureManager
 from desktop_bug.manager.combat import WEBBED_DAMAGE_BONUS
 
@@ -166,8 +170,16 @@ def test_a_spider_with_no_silk_never_fires_any(monkeypatch):
         assert manager.fly_world.projectiles == []
 
 
-def test_being_webbed_slows_a_spider_down():
-    """Silk has to cost the thing it lands on something."""
+def test_being_webbed_holds_a_spider_then_slows_it():
+    """Silk has to cost the thing it lands on something.
+
+    DC-45 only slowed a webbed spider, to WEBBED_SPEED_MULT. Watching a
+    colony, the owner reported that webbing another spider "does not
+    imobalise him like the mouse" -- and they were right: a spider at a
+    third speed still walks off looking unbothered, so the skill read as
+    nothing at all. DC-50 holds it outright for the front of the pin and
+    only slows it once it has worked partly free.
+    """
     from desktop_bug.creature.core import Creature
     import json as _json
     root = Path(__file__).resolve().parents[1]
@@ -176,6 +188,13 @@ def test_being_webbed_slows_a_spider_down():
     spider = Creature(model, traits, *SCREEN, index=0)
     free = spider._speed_mult()
     spider.web_pinned("trap")
+    assert spider.webbed
+    assert spider.webbed_held, "fresh silk should hold, not merely slow"
+    assert spider._speed_mult() == 0.0
+
+    # Worked partly free: still hampered, but moving again.
+    spider.webbed_timer = WEBBED_SECONDS - WEBBED_HOLD_SECONDS - 0.01
+    assert not spider.webbed_held
     assert spider.webbed
     assert spider._speed_mult() == pytest.approx(free * WEBBED_SPEED_MULT)
 

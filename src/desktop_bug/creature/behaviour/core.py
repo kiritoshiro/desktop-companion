@@ -162,6 +162,12 @@ class BehaviourMixin(
         observer = self._acts_as_observer()
         cursor_still = hunter and self._cursor_is_still_for_observe()
         hunt_catch_distance = self.size * float(self.personality.get("hunt_catch_distance_mult", 2.25))
+        # DC-50: running outranks everything, including a job. It has to take
+        # the tick the way a job does -- set early in Creature.update instead,
+        # the arbiter simply put the spider back to Idle on the same frame and
+        # it stood still while its "flee target" was recomputed behind it.
+        if self.fleeing and self._flee_from_danger(dt):
+            return
         if self._update_job_state(dt, mx, my):
             # Jobs own their work target, while temperament still drives the
             # leg solver, posture, and animation style underneath it.

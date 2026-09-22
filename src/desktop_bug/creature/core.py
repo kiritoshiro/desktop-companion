@@ -42,6 +42,8 @@ from ..state.progression import (
 from ..content.skills import SkillSet, default_skills_for_personality
 from ..world.jobs import normalize_job_id
 from .constants import (
+    FLEE_SPEED_MULT,
+    WEBBED_HOLD_SECONDS,
     WEBBED_SECONDS,
     WEBBED_SPEED_MULT,
     normalize_gait_style,
@@ -260,6 +262,14 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # than discovered by getattr, per DC-10.
         self.force_show_level = False
         self.force_show_health = False
+        # DC-50: nerve. Counts down while this spider is running from a fight;
+        # the manager sets it, the behaviour acts on it, and _speed_mult reads
+        # it so every state it could be in runs at the same panicked pace.
+        self.flee_timer = 0.0
+        self.flee_from = None
+        # Counts down the minimum time a fight is held for; see
+        # manager/combat.py::ENGAGEMENT_COMMITMENT.
+        self.engagement_timer = 0.0
         self.color_overrides = {}
         if isinstance(color_overrides, dict):
             for key, raw in color_overrides.items():
@@ -553,6 +563,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # The fly world (set by the manager) plus the fly a web shot is aimed at,
         # so the spider can fling its trapping silk at prey, not just the cursor.
         self.fly_world = None
+        # DC-50: read only to find the way home when fleeing. DC-17 noted that
+        # Creature never read base_world at all; a hurt spider running for the
+        # one place that heals it is the first thing that needs to.
+        self.base_world = None
         self._web_shot_prey = None
         self._web_shot_foe = None
 
@@ -570,10 +584,20 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # each assignment so every state a pinned spider could be in -- fleeing,
         # chasing, working a job -- is slowed by it without each one
         # remembering to ask.
-        webbed = WEBBED_SPEED_MULT if self.webbed else 1.0
+        # DC-50: the first WEBBED_HOLD_SECONDS of a pin hold the spider in
+        # place rather than merely slowing it, which is what the owner
+        # expected from watching silk land on the pointer. After that it
+        # works free and is only slowed for the remainder.
+        if self.webbed_held:
+            webbed = 0.0
+        elif self.webbed:
+            webbed = WEBBED_SPEED_MULT
+        else:
+            webbed = 1.0
+        fleeing = FLEE_SPEED_MULT if self.fleeing else 1.0
         return float(self.personality.get("speed_multiplier", 1.0)) * float(
             self._progression_speed_multiplier
-        ) * webbed
+        ) * webbed * fleeing
 
     @property
     def level(self) -> int:
@@ -720,6 +744,20 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     def webbed(self) -> bool:
         """Whether this spider is currently pinned by another's silk."""
         return self.webbed_timer > 0.0
+
+    @property
+    def webbed_held(self) -> bool:
+        """Whether the silk is still holding it outright, not just slowing it.
+
+        The hold is the front of the pin, so a spider works free gradually:
+        stuck fast, then labouring, then loose.
+        """
+        return self.webbed_timer > (WEBBED_SECONDS - WEBBED_HOLD_SECONDS)
+
+    @property
+    def fleeing(self) -> bool:
+        """Whether this spider has broken off and is running (DC-50)."""
+        return self.flee_timer > 0.0
 
     def web_pinned(self, kind: str, by=None) -> None:
         """Take a hit of trapping silk from another spider (DC-45)."""
@@ -1091,6 +1129,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
         self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
         self.webbed_timer = max(0.0, self.webbed_timer - dt)
+        self.flee_timer = max(0.0, self.flee_timer - dt)
+        if self.flee_timer <= 0.0:
+            self.flee_from = None
         if not self.webbed:
             self.webbed_by = None
         if self.dead:
