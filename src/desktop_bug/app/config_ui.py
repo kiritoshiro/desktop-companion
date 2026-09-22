@@ -23,7 +23,9 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QFrame,
     QLabel,
+    QScrollArea,
     QLineEdit,
     QMainWindow,
     QInputDialog,
@@ -75,8 +77,17 @@ log = get_logger("config_ui")
 
 RANDOM_MODEL_ID = "__random_model__"
 RANDOM_PERSONALITY_ID = "__random_personality__"
-MODEL_ICON_SIZE = 56
+# A row is as tall as its thumbnail, so this sets the height of the whole
+# table: at 56 the five-slot default needed 340px before the header, which
+# is most of why the window demanded 1016px of height and overlapped itself
+# on anything smaller. 34 still reads as a spider at a glance.
+MODEL_ICON_SIZE = 34
 MODEL_ICON_CANVAS = 96
+# The colour swatch, and the button it has to fit inside.
+SWATCH_ICON_SIZE = 20
+# How many characters a dropdown asks to show. Anything longer is elided in
+# the closed box and shown in full when it is opened.
+COMBO_VISIBLE_CHARS = 12
 SIZE_OPTIONS = [
     ("Tiny (60%)", 0.60),
     ("Small (80%)", 0.80),
@@ -106,6 +117,16 @@ COLOR_KEYS = (
     ("leg_dark", "Leg shadows"),
     ("leg_tip", "Leg tips"),
 )
+
+
+def _short_ability_label(ids, summary: str) -> str:
+    """A label narrow enough for a table cell; the tooltip carries the rest."""
+    count = len(ids)
+    if summary in ("All abilities", "No optional abilities"):
+        return "All" if count else "None"
+    if count == 1:
+        return summary
+    return f"{count} abilities"
 
 
 def _normalize_color_overrides(value):
@@ -138,6 +159,15 @@ class NoScrollComboBox(QComboBox):
         super().__init__(*args, **kwargs)
         # Drop WheelFocus so hovering + scrolling never grabs focus either.
         self.setFocusPolicy(Qt.StrongFocus)
+        # A QComboBox asks for the width of its widest *item*, not of what it
+        # is showing, and these hold things like "Skitter - rapid bursts +
+        # tiny stops" and "Coppercurl Soft Tarantula". Measured, that made
+        # single combos demand 522, 424 and 420 pixels and pushed the whole
+        # window's minimum width to 1241 -- which is what made everything
+        # overlap as soon as it was made narrower. The popup list is still
+        # sized to its contents, so nothing becomes unreadable when opened.
+        self.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.setMinimumContentsLength(COMBO_VISIBLE_CHARS)
 
     def wheelEvent(self, event):  # noqa: N802 - Qt API name
         event.ignore()
@@ -174,14 +204,35 @@ class NoScrollDoubleSpinBox(QDoubleSpinBox):
 # splits into Category (the body plan, four choices) and Skin (the models
 # built on it), with the colour swatch beside them, so those three columns
 # together are the whole appearance of a slot.
-SLOT_HEADERS = ["Category", "Skin", "Colors", "Temperament", "How many",
-                "Abilities", "Team", "Job", ""]
+# Short headers on purpose. QHeaderView.ResizeToContents sizes a column to
+# the wider of its header and its contents, so "How many" and "Abilities"
+# were claiming 129 and 192 pixels for a spin box and a short label -- and
+# between them the fixed columns took 980 of 1022, collapsing Skin and
+# Temperament, the two that matter most, to 18px each.
+# The colour column's header is blank on purpose, like the remove column's:
+# the control is a swatch 34px wide and any word for it is wider than the
+# thing it labels. Both carry a tooltip instead.
+SLOT_HEADERS = ["Category", "Skin", "", "Temperament", "Count",
+                "Skills", "Team", "Job", ""]
 SLOT_COLUMNS = len(SLOT_HEADERS)
 (COL_CATEGORY, COL_SKIN, COL_COLORS, COL_TEMPERAMENT, COL_COUNT,
  COL_ABILITIES, COL_TEAM, COL_JOB, COL_REMOVE) = range(SLOT_COLUMNS)
 # The skin dropdown is the one that still carries a model id, so everything
 # that used to read the model column reads this one.
 COL_MODEL = COL_SKIN
+# Widths for the columns that do not stretch. Sized to their widest real
+# content -- a spin box, an icon button, a team name -- rather than to a
+# header, so the two stretching columns actually get the remainder.
+FIXED_COLUMN_WIDTHS = {
+    COL_CATEGORY: 96,
+    COL_COLORS: 46,
+    COL_COUNT: 62,
+    COL_ABILITIES: 96,
+    COL_TEAM: 116,
+    COL_JOB: 100,
+    COL_TEMPERAMENT: 150,
+    COL_REMOVE: 28,
+}
 RANDOM_CATEGORY_ID = "__random_category__"
 BODY_PLAN_LABELS = {
     "bug": "Bug",
@@ -198,13 +249,24 @@ class SlotTable(QTableWidget):
         # The last two columns hold icon-only controls; the header text would be
         # wider than the button underneath it.
         self.horizontalHeaderItem(SLOT_COLUMNS - 1).setToolTip("Remove a creature slot")
+        self.horizontalHeaderItem(COL_COLORS).setToolTip(
+            "The colours this slot will produce. Click a swatch to change them.")
         self.horizontalHeader().setStretchLastSection(False)
         # Skin and Temperament carry the long names, so they take the slack.
-        self.horizontalHeader().setSectionResizeMode(COL_SKIN, QHeaderView.Stretch)
-        self.horizontalHeader().setSectionResizeMode(COL_TEMPERAMENT, QHeaderView.Stretch)
-        for col in (COL_CATEGORY, COL_COLORS, COL_COUNT, COL_ABILITIES,
-                    COL_TEAM, COL_JOB, COL_REMOVE):
-            self.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        # Everything else gets an explicit width rather than ResizeToContents,
+        # which sizes to the header text and left nothing for the two that
+        # need it.
+        header = self.horizontalHeader()
+        # Only Skin stretches. Sharing the slack with Temperament gave both
+        # 239px, which was more than "Balanced" or "Legacy: Curious" needs and
+        # not enough for "Coppercurl Soft Tarantula", so the skin names -- the
+        # one column a person actually reads -- were the ones being elided.
+        header.setSectionResizeMode(COL_SKIN, QHeaderView.Stretch)
+        for col, width in FIXED_COLUMN_WIDTHS.items():
+            header.setSectionResizeMode(col, QHeaderView.Interactive)
+            self.setColumnWidth(col, width)
+        header.setSectionResizeMode(COL_REMOVE, QHeaderView.Fixed)
+        header.setMinimumSectionSize(24)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(self.SelectRows)
@@ -213,7 +275,13 @@ class SlotTable(QTableWidget):
         self.setShowGrid(False)
         # Taller by default so several creature rows are visible at once and the
         # model thumbnails are not crowded by their labels.
-        self.setMinimumHeight(240)
+        # Two rows. The table is the one thing in the window that grows (its
+        # group has the only stretch factor), so it should claim as little as
+        # possible and take the slack instead. At 150 the Creatures group's
+        # minimum was 250 while the layout could only give it 238, and Qt
+        # resolves that by letting children overlap -- which is how the "Add
+        # slot" button came to be drawn across the third table row.
+        self.setMinimumHeight(92)
 
 
 class ConfigWindow(QMainWindow):
@@ -266,13 +334,19 @@ class ConfigWindow(QMainWindow):
             """
             QWidget { font-size: 10pt; color: #1f2430; }
             QMainWindow, QMainWindow > QWidget { background: #eef1f8; }
+            /* The panels live inside a scroll area, so they are no longer
+               direct children of the window and the rule above misses them.
+               Without these two the whole background reverted to the default
+               grey. */
+            QScrollArea { background: #eef1f8; border: none; }
+            QScrollArea > QWidget > QWidget { background: #eef1f8; }
 
             QGroupBox {
                 font-weight: 600;
                 border: 1px solid #cdd5e3;
                 border-radius: 10px;
-                margin-top: 13px;
-                padding: 11px 10px 9px 10px;
+                margin-top: 12px;
+                padding: 8px 8px 6px 8px;
                 background: #ffffff;
             }
             QGroupBox::title {
@@ -380,11 +454,28 @@ class ConfigWindow(QMainWindow):
             """
         )
 
-        root_widget = QWidget(self)
-        self.setCentralWidget(root_widget)
+        # The panels scroll rather than compress. A settings window with six
+        # stacked groups will always be taller than some screen, and the
+        # failure mode when it does not fit is the bad one: the layout hands a
+        # group less than its minimum and Qt resolves the shortfall by letting
+        # that group's children overlap, which is how the "Add slot" button
+        # came to be drawn across the creature table.
+        #
+        # Clamping the window's minimum instead was tried first and does not
+        # hold: a QMainWindow does not propagate its central widget's minimum
+        # height, so the window still shrank and still overlapped. A scroll
+        # area cannot overlap at any size.
+        root_widget = QWidget()
+        scroller = QScrollArea(self)
+        scroller.setWidget(root_widget)
+        scroller.setWidgetResizable(True)
+        scroller.setFrameShape(QFrame.NoFrame)
+        scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setCentralWidget(scroller)
+        self._root_widget = root_widget
         layout = QVBoxLayout(root_widget)
-        layout.setContentsMargins(12, 10, 12, 8)
-        layout.setSpacing(6)
+        layout.setContentsMargins(10, 8, 10, 6)
+        layout.setSpacing(5)
 
         title = QLabel("Desktop Bug Companion")
         title.setObjectName("pageTitle")
@@ -422,15 +513,15 @@ class ConfigWindow(QMainWindow):
             "Each row is one creature group. Temperament is stable personality, Job is a separate profession, and Abilities are true capabilities."
         )
         creatures_layout = QVBoxLayout(self.creatures_group)
-        creatures_layout.setContentsMargins(8, 8, 8, 8)
-        creatures_layout.setSpacing(6)
+        creatures_layout.setContentsMargins(6, 6, 6, 6)
+        creatures_layout.setSpacing(4)
 
         quick_row = QHBoxLayout()
-        self.random_model_btn = QPushButton("Random models")
-        self.random_personality_btn = QPushButton("Random personalities")
-        self.random_count_btn = QPushButton("Random counts")
+        self.random_model_btn = QPushButton("Models")
+        self.random_personality_btn = QPushButton("Temperaments")
+        self.random_count_btn = QPushButton("Counts")
         self.random_all_btn = QPushButton("Surprise me")
-        quick_row.addWidget(QLabel("Quick set:"))
+        quick_row.addWidget(QLabel("Randomize:"))
         quick_row.addWidget(self.random_model_btn)
         quick_row.addWidget(self.random_personality_btn)
         quick_row.addWidget(self.random_count_btn)
@@ -442,7 +533,8 @@ class ConfigWindow(QMainWindow):
         creatures_layout.addWidget(self.table, 1)
 
         slot_buttons = QHBoxLayout()
-        self.add_slot_btn = QPushButton("Add creature slot")
+        self.add_slot_btn = QPushButton("Add slot")
+        self.add_slot_btn.setToolTip("Add another creature slot to the table.")
         self.clear_slots_btn = QPushButton("Clear slots")
         slot_buttons.addWidget(self.add_slot_btn)
         slot_buttons.addWidget(self.clear_slots_btn)
@@ -453,8 +545,8 @@ class ConfigWindow(QMainWindow):
         self.teams_group = QGroupBox("Teams")
         self.teams_group.setObjectName("teamsGroup")
         teams_outer = QVBoxLayout(self.teams_group)
-        teams_outer.setContentsMargins(8, 8, 8, 8)
-        teams_outer.setSpacing(6)
+        teams_outer.setContentsMargins(6, 6, 6, 6)
+        teams_outer.setSpacing(4)
         # The honest description of what a team does, in the one place a person
         # picking teams will read it. It comes from the teams module so the
         # window, the tooltips and the README cannot drift apart.
@@ -484,9 +576,13 @@ class ConfigWindow(QMainWindow):
         for label, style in MOVEMENT_OPTIONS:
             self.movement_combo.addItem(label, style)
         self.movement_combo.setCurrentIndex(0)
-        self.interferable_check = QCheckBox("Allow dragging spiders")
+        self.interferable_check = QCheckBox("Draggable")
+        self.interferable_check.setToolTip(
+            "Allow dragging spiders. When off, clicks pass through spider pixels too.")
         self.interferable_check.setChecked(True)
-        self.social_play_check = QCheckBox("Allow spiders to play together")
+        self.social_play_check = QCheckBox("Social play")
+        self.social_play_check.setToolTip(
+            "Allow spiders to seek each other out to chase and tumble together.")
         self.social_play_check.setChecked(True)
         behavior_layout.addWidget(QLabel("Size:"), 0, 0)
         behavior_layout.addWidget(self.size_combo, 0, 1)
@@ -494,9 +590,15 @@ class ConfigWindow(QMainWindow):
         behavior_layout.addWidget(self.mood_combo, 0, 3)
         behavior_layout.addWidget(QLabel("Movement:"), 1, 0)
         behavior_layout.addWidget(self.movement_combo, 1, 1)
-        movement_hint = QLabel("Lively lifts and probes. Skitter uses lively legs but moves in quick burst-burst-stop successions like the reference gif.")
+        # Short, because a word-wrapped QLabel still reports the width of its
+        # longest unbroken run as its minimum, and this one alone was asking
+        # for 1217px -- wider than the creature table and the real reason the
+        # whole window could not be made narrow without overlapping itself.
+        # The full description is already on the combo's tooltip.
+        movement_hint = QLabel("Lively lifts and probes; Skitter runs in bursts.")
         movement_hint.setObjectName("hintLabel")
         movement_hint.setWordWrap(True)
+        movement_hint.setMinimumWidth(1)
         behavior_layout.addWidget(movement_hint, 1, 2, 1, 2)
         behavior_layout.addWidget(self.interferable_check, 2, 1)
         behavior_layout.addWidget(self.social_play_check, 2, 3)
@@ -507,8 +609,8 @@ class ConfigWindow(QMainWindow):
         self.flies_group = QGroupBox("Flies")
         self.flies_group.setObjectName("fliesGroup")
         flies_outer = QVBoxLayout(self.flies_group)
-        flies_outer.setContentsMargins(8, 8, 8, 8)
-        flies_outer.setSpacing(6)
+        flies_outer.setContentsMargins(6, 6, 6, 6)
+        flies_outer.setSpacing(4)
 
         self.flies_enabled_check = QCheckBox("Spawn flies for the spiders to hunt")
         self.flies_enabled_check.setObjectName("fliesToggle")
@@ -557,8 +659,8 @@ class ConfigWindow(QMainWindow):
         self.launch_group = QGroupBox("Launch")
         self.launch_group.setObjectName("launchGroup")
         launch_layout = QVBoxLayout(self.launch_group)
-        launch_layout.setContentsMargins(8, 8, 8, 8)
-        launch_layout.setSpacing(6)
+        launch_layout.setContentsMargins(6, 6, 6, 6)
+        launch_layout.setSpacing(4)
         self.summary = QLabel("")
         self.summary.setVisible(False)
 
@@ -580,6 +682,7 @@ class ConfigWindow(QMainWindow):
         self.status = QLabel("")
         self.status.setWordWrap(False)
         self.statusBar().addPermanentWidget(self.status, 1)
+
 
         self.add_slot_btn.clicked.connect(self.add_slot)
         self.clear_slots_btn.clicked.connect(self.clear_slots)
@@ -712,10 +815,10 @@ class ConfigWindow(QMainWindow):
     def add_slot(self, model_id=None, personality_id=None, count=1, count_random=False, skills=None, abilities=None, colors=None, slot_id=None, team_id="neutral", job_id="none"):
         row = self.table.rowCount()
         self.table.insertRow(row)
-        self.table.setRowHeight(row, max(64, MODEL_ICON_SIZE + 12))
+        self.table.setRowHeight(row, max(34, MODEL_ICON_SIZE + 6))
 
         category_box = NoScrollComboBox()
-        category_box.setMinimumWidth(120)
+        category_box.setMinimumWidth(84)
         category_box.addItem("Any kind", RANDOM_CATEGORY_ID)
         for plan in BODY_PLAN_IDS:
             category_box.addItem(BODY_PLAN_LABELS.get(plan, plan.title()), plan)
@@ -729,7 +832,7 @@ class ConfigWindow(QMainWindow):
         model_box = NoScrollComboBox()
         model_box.setProperty("slot_id", str(slot_id or f"slot-{uuid.uuid4().hex[:12]}"))
         model_box.setIconSize(QSize(MODEL_ICON_SIZE, MODEL_ICON_SIZE))
-        model_box.setMinimumWidth(250)
+        model_box.setMinimumWidth(140)
         model_box.setToolTip(
             "Which artwork this slot uses. Skins with their own PNG art keep "
             "it; every skin can still be recoloured with the swatch beside it."
@@ -820,7 +923,8 @@ class ConfigWindow(QMainWindow):
         skills_btn.clicked.connect(lambda _checked=False, button=skills_btn: self.edit_skills_for_button(button))
 
         colors_btn = QPushButton()
-        colors_btn.setFixedSize(QSize(46, 26))
+        colors_btn.setFixedSize(QSize(34, 24))
+        colors_btn.setIconSize(QSize(SWATCH_ICON_SIZE, SWATCH_ICON_SIZE))
         colors_btn.setProperty("color_overrides", _normalize_color_overrides(colors))
         # The swatch shows *this slot's* colours, which means the model's own
         # palette when nothing has been overridden, so the model box is passed in.
@@ -830,7 +934,7 @@ class ConfigWindow(QMainWindow):
         )
 
         team_box = NoScrollComboBox()
-        team_box.setMinimumWidth(110)
+        team_box.setMinimumWidth(88)
         self._populate_team_box(team_box, team_id)
         team_box.setToolTip(
             "Which group this slot belongs to. Name your teams and set what "
@@ -839,7 +943,7 @@ class ConfigWindow(QMainWindow):
         )
 
         job_box = NoScrollComboBox()
-        job_box.setMinimumWidth(104)
+        job_box.setMinimumWidth(84)
         for label, value in JOB_OPTIONS:
             job_box.addItem(label, value)
         job_value = normalize_job_id(job_id)
@@ -1051,8 +1155,15 @@ class ConfigWindow(QMainWindow):
     def _refresh_skills_button(self, button: QPushButton) -> None:
         ids = normalize_skill_ids(button.property("skill_ids"))
         button.setProperty("skill_ids", ids)
-        button.setText(compact_ability_summary(ids))
-        button.setToolTip("Choose which abilities this creature slot can use at launch.")
+        # The full list goes in the tooltip and the short form on the button.
+        # Spelled out, "web walk, web trap" made this the widest column in the
+        # table for information that is one hover away.
+        summary = compact_ability_summary(ids)
+        button.setText(_short_ability_label(ids, summary))
+        button.setToolTip(
+            f"{summary}.\nClick to choose which abilities this creature slot "
+            "can use at launch."
+        )
 
     # The order colours are shown in, widest part of the creature first, so the
     # swatch reads like the creature rather than like an arbitrary set.
@@ -1069,7 +1180,10 @@ class ConfigWindow(QMainWindow):
 
     def _swatch_icon(self, colors: list, custom: bool) -> QIcon:
         """A filled swatch of the slot's colours, or a hint when there are none."""
-        size = 34
+        # Matches the button it sits in. It used to be 34 inside a 26px-tall
+        # button, so the icon overflowed and painted across the skin name in
+        # the column to its left.
+        size = SWATCH_ICON_SIZE
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
@@ -1104,7 +1218,9 @@ class ConfigWindow(QMainWindow):
         button.setText("")
         button.setStyleSheet("")
         button.setIcon(self._swatch_icon(colors, bool(overrides)))
-        button.setIconSize(QSize(34, 34))
+        # Was a hardcoded 34 inside a button that is now 24 tall, which is
+        # what painted the swatch across the skin name beside it.
+        button.setIconSize(QSize(SWATCH_ICON_SIZE, SWATCH_ICON_SIZE))
         button.setProperty("swatch_colors", colors)
         if overrides:
             description = "Custom palette: " + ", ".join(sorted(overrides)) + ". Click to edit."
