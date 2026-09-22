@@ -42,8 +42,6 @@ from ..state.progression import (
 from ..content.skills import SkillSet, default_skills_for_personality
 from ..world.jobs import normalize_job_id
 from .constants import (
-    KNOCKOUT_RECOVERY_FRACTION,
-    KNOCKOUT_SECONDS,
     normalize_gait_style,
 )
 from .behaviour import BehaviourMixin
@@ -451,12 +449,12 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.energy = self.max_energy
         self.armor = 0.0
         self.damage = 8.0
-        # DC-22: conflict state. A knocked-out spider is out of the scene for
-        # a while -- untargetable, motionless, and skipped by every job -- but
-        # never removed, so a fight can cost a spell on the sidelines and
-        # nothing more.
-        self.knocked_out = False
-        self.knockout_timer = 0.0
+        # DC-22/DC-47: conflict state. A spider that loses a fight dies --
+        # it stops being part of the scene and leaves a carcass, which is
+        # eaten and gone shortly after. The manager owns removing it; this
+        # flag is what it reads, and what keeps a dead spider from being
+        # hunted, guarded against or played with in the frame before that.
+        self.dead = False
         self.last_attacker = None
         # Fades after a hit, so the render layer can show one without needing
         # to know anything about combat.
@@ -682,7 +680,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         Whether a hit may be dealt at all is the manager's decision, gated on
         the conflict setting; this method does not police its callers.
         """
-        if self.knocked_out:
+        if self.dead:
             return 0.0
         try:
             incoming = max(0.0, float(amount))
@@ -694,15 +692,20 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.last_attacker = source
             self.hurt_flash = 1.0
         if self.hp <= 0.0:
-            self._knock_out()
+            self._die()
         return dealt
 
-    def _knock_out(self) -> None:
-        """Take this spider out of the scene for a while, without removing it."""
-        self.knocked_out = True
-        self.knockout_timer = KNOCKOUT_SECONDS
+    def _die(self) -> None:
+        """Mark this spider beaten. The manager removes it and leaves remains.
+
+        Nothing is torn down here: the creature object stays intact for the
+        rest of the frame so whatever is mid-iteration over the colony does
+        not trip over it, and `CreatureManager` clears it out at the end of
+        the tick.
+        """
+        self.dead = True
+        self.hp = 0.0
         self.state = "Downed"
-        self.state_timer = KNOCKOUT_SECONDS
         self.motion_paused = True
         self.speed = 0.0
         self.current_speed = 0.0
@@ -712,19 +715,6 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.job_facing = None
         self._prey = None
         self._hunting_prey = False
-
-    def revive(self, at=None) -> None:
-        """Bring a knocked-out spider back, partly healed, optionally elsewhere."""
-        self.knocked_out = False
-        self.knockout_timer = 0.0
-        self.hp = max(1.0, self.max_hp * KNOCKOUT_RECOVERY_FRACTION)
-        self.motion_paused = False
-        self.last_attacker = None
-        if at is not None:
-            self.x, self.y = float(at[0]), float(at[1])
-            self._initialize_legs()
-        self.state = "Idle"
-        self.state_timer = 0.6
 
     def heal(self, amount: float) -> float:
         before = self.hp
@@ -1066,19 +1056,12 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.resize_screen(sw, sh)
         self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
         self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
-        if self.knocked_out:
-            # DC-22: out of the scene, but still drawn and still dragged if
-            # the user picks it up. Nothing else runs -- no perception, no
-            # arbiter, no job -- so a downed spider cannot decide anything.
-            # The manager owns reviving it, because only it knows where the
-            # spider's base is.
-            self.knockout_timer = max(0.0, self.knockout_timer - dt)
+        if self.dead:
+            # Beaten. Nothing decides anything from here; the manager sweeps
+            # it out of the colony at the end of this tick and leaves a
+            # carcass where it fell.
             self.motion_paused = True
             self.current_speed = 0.0
-            self._update_legs(dt)
-            self._update_mood(dt)
-            self._update_posture(dt)
-            self._update_antennae(dt)
             return
         self.perception = build_perception(self)
         if self._hunting_prey:

@@ -1,17 +1,20 @@
-"""Conflict: a fight can hurt, end, and be recovered from (DC-22).
+"""Conflict: a fight can hurt, and losing it is fatal (DC-22, DC-47).
 
 `hp`, `armor` and `damage` have been level-scaled stats on a spider since the
-progression work, and `take_damage`/`heal` have existed alongside them -- but
-until this package nothing in the running application ever called them. Only
-a test did. Conflict is what finally uses them.
+progression work, and `take_damage`/`heal` have existed beside them -- but
+until DC-22 nothing in the running application ever called them. Only a test
+did. Conflict is what finally uses them.
 
-The safety property matters more than the feature: with conflict off, nothing
-anywhere may reduce a creature's hp. That is asserted two ways here, by
+DC-47 then reversed what losing costs. A beaten spider used to be knocked out
+and recover; it now dies, leaves a carcass, and the carcass is eaten and gone
+shortly after. These tests were rewritten for that rather than replaced,
+because what most of them guard -- that the gate is the only damage path,
+that friends never fight, that a fight reads as exchanges -- did not change.
+
+The safety property still matters more than the feature: with conflict off,
+nothing anywhere may reduce a creature's hp. That is asserted two ways, by
 simulation and against the source, because a future package adding a second
 damage path would otherwise silently escape the switch.
-
-Pet tone is a constraint, not a preference: a spider that loses is knocked
-out and comes back. Nothing removes a spider permanently, and a test says so.
 """
 
 from __future__ import annotations
@@ -23,8 +26,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from desktop_bug.creature.constants import KNOCKOUT_RECOVERY_FRACTION, KNOCKOUT_SECONDS
 from desktop_bug.manager import CreatureManager
+from desktop_bug.world.carcass import CARCASS_LIFETIME, Carcass
 from support import ROOT
 
 DT = 1.0 / 60.0
@@ -65,7 +68,9 @@ def _brawl(monkeypatch, conflict=None):
 
 def _press_together(manager):
     """Hold the two spiders in contact, whatever their behaviour wants."""
-    first, second = manager.creatures
+    if len(manager.creatures) < 2:
+        return
+    first, second = manager.creatures[0], manager.creatures[1]
     first.x, first.y = 500.0, 350.0
     second.x, second.y = 500.0 + first.size * 0.4, 350.0
 
@@ -106,39 +111,99 @@ def test_friends_standing_together_never_fight(monkeypatch):
     manager = CreatureManager(preset, *SCREEN, seed=6)
     _run(manager, 4.0)
     assert all(c.hp == c.max_hp for c in manager.creatures)
-    assert not any(c.knocked_out for c in manager.creatures)
+    assert not any(c.dead for c in manager.creatures)
+    assert manager.carcasses == []
 
 
-def test_a_loser_is_knocked_out_and_comes_back(monkeypatch):
-    """The pet tone: no spider is ever removed, only sidelined."""
+def test_a_loser_dies_and_leaves_a_carcass(monkeypatch):
+    """DC-47: being beaten is fatal, and leaves something behind."""
     manager = _brawl(monkeypatch)
-    first, second = manager.creatures
+    second = manager.creatures[1]
+    where = (second.x, second.y)
     second.hp = 1.0
     _run(manager, 2.0)
-    assert second.knocked_out, second.hp
-    assert len(manager.creatures) == 2, "a spider was removed from the scene"
 
-    # Downed: still present, but doing nothing and decided about by nobody.
-    assert second.state == "Downed"
-    assert second.motion_paused
-    assert first.relation_to(second) == "foe"
-
-    _run(manager, KNOCKOUT_SECONDS + 1.5, keep_together=False)
-    assert not second.knocked_out, "it never got back up"
-    assert second.hp == pytest.approx(second.max_hp * KNOCKOUT_RECOVERY_FRACTION, rel=0.02)
-    assert len(manager.creatures) == 2
+    assert second.dead, second.hp
+    assert second not in manager.creatures, "the beaten spider is still in the colony"
+    assert len(manager.creatures) == 1
+    assert len(manager.carcasses) == 1
+    remains = manager.carcasses[0]
+    assert math.hypot(remains.x - second.x, remains.y - second.y) < 1.0, (
+        f"remains at {(remains.x, remains.y)}, spider fell at {(second.x, second.y)} "
+        f"(started {where})"
+    )
 
 
-def test_a_downed_spider_is_not_a_target(monkeypatch):
-    """Nothing should keep attacking, hunting or reporting something face-down."""
+def test_a_carcass_is_eaten_and_gone(monkeypatch):
+    """"Soon disappears, as it is being eaten" -- so it must actually go."""
     manager = _brawl(monkeypatch)
-    first, second = manager.creatures
+    manager.creatures[1].hp = 1.0
+    _run(manager, 2.0)
+    assert manager.carcasses
+
+    _run(manager, CARCASS_LIFETIME + 1.0, keep_together=False)
+    assert manager.carcasses == [], "the remains are still lying there"
+
+
+def test_a_carcass_nobody_touches_still_goes(monkeypatch):
+    """Nothing may litter the desktop permanently, eaten or not."""
+    manager = _brawl(monkeypatch)
+    manager.creatures[1].hp = 1.0
+    _run(manager, 2.0)
+    assert manager.carcasses
+    survivor = manager.creatures[0]
+    survivor.x, survivor.y = 60.0, 60.0
+    manager.carcasses[0].x, manager.carcasses[0].y = 900.0, 620.0
+    _run(manager, CARCASS_LIFETIME + 1.0, keep_together=False)
+    assert manager.carcasses == []
+
+
+def test_being_eaten_is_faster_than_being_left():
+    """Otherwise "as it is being eaten" is just a word for a fade-out.
+
+    Tested on the carcass itself rather than through a brawl: in a real
+    fight the winner is standing on the body it just made, so it starts
+    being eaten immediately and both cases finish at the same time.
+    """
+    eaten = Carcass(100.0, 100.0, 18.0, "pack_a")
+    ignored = Carcass(300.0, 300.0, 18.0, "pack_a")
+    for _ in range(60):
+        eaten.update(DT, eaters=1)
+        ignored.update(DT, eaters=0)
+    assert eaten.spent > ignored.spent * 2.0, (eaten.spent, ignored.spent)
+    assert ignored.spent > 0.0, "a carcass nobody touches must still be going"
+
+
+def test_a_crowd_does_not_make_a_carcass_vanish_instantly():
+    """Feeding does not stack; the whole colony arriving is still a moment."""
+    one = Carcass(0.0, 0.0, 18.0, "pack_a")
+    many = Carcass(0.0, 0.0, 18.0, "pack_a")
+    for _ in range(30):
+        one.update(DT, eaters=1)
+        many.update(DT, eaters=6)
+    assert many.spent == pytest.approx(one.spent)
+
+
+def test_death_takes_the_saved_profile_with_it(monkeypatch):
+    """Otherwise dying costs nothing that survives a restart."""
+    manager = _brawl(monkeypatch)
+    second = manager.creatures[1]
+    key = second.progression_id
+    manager._progression_states[key] = {"name": "Doomed", "progression": {"level": 9}}
     second.hp = 1.0
     _run(manager, 2.0)
-    assert second.knocked_out
-    floor = second.hp
-    _run(manager, 3.0)
-    assert second.hp == floor, "a knocked-out spider kept taking hits"
+    assert second.dead
+    assert key not in manager._progression_states, (
+        "a dead spider's level would be inherited by whoever fills its slot"
+    )
+
+
+def test_a_dying_spider_is_not_a_target_in_its_last_frame(monkeypatch):
+    """It is swept out at the end of the tick, not the instant hp hits zero."""
+    manager = _brawl(monkeypatch)
+    second = manager.creatures[1]
+    second._die()
+    assert second.dead
     assert not manager._creature_can_hunt(second)
 
 
@@ -147,7 +212,8 @@ def test_with_conflict_off_nothing_loses_hp(monkeypatch):
     assert manager.conflict_enabled is False
     _run(manager, 6.0)
     assert all(c.hp == c.max_hp for c in manager.creatures)
-    assert not any(c.knocked_out for c in manager.creatures)
+    assert not any(c.dead for c in manager.creatures)
+    assert manager.carcasses == []
 
 
 def test_the_switch_is_the_only_thing_standing_between_off_and_damage():
@@ -161,8 +227,7 @@ def test_the_switch_is_the_only_thing_standing_between_off_and_damage():
     src = ROOT / "src" / "desktop_bug"
     callers = []
     for path in src.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        for line in text.splitlines():
+        for line in path.read_text(encoding="utf-8").splitlines():
             if re.search(r"\.take_damage\(", line) and "def take_damage" not in line:
                 callers.append(path.relative_to(src).as_posix())
     assert set(callers) == {"manager/combat.py"}, (
@@ -173,23 +238,22 @@ def test_the_switch_is_the_only_thing_standing_between_off_and_damage():
     assert "if not self.conflict_enabled:" in gate
 
 
-def test_turning_conflict_off_still_lets_the_downed_recover(monkeypatch):
-    """Switching it off must not strand someone face-down forever."""
+def test_turning_conflict_off_still_clears_away_remains(monkeypatch):
+    """Switching it off must not strand bodies on the desktop."""
     manager = _brawl(monkeypatch)
-    first, second = manager.creatures
-    second.hp = 1.0
+    manager.creatures[1].hp = 1.0
     _run(manager, 2.0)
-    assert second.knocked_out
+    assert manager.carcasses
 
     manager.set_conflict_enabled(False)
-    _run(manager, KNOCKOUT_SECONDS + 1.5, keep_together=False)
-    assert not second.knocked_out, "it was stranded when conflict was switched off"
+    _run(manager, CARCASS_LIFETIME + 1.0, keep_together=False)
+    assert manager.carcasses == [], "remains stranded when conflict was switched off"
 
 
 def test_a_fight_is_exchanges_rather_than_a_drain(monkeypatch):
     """Hits land on a cooldown, so a brawl is legible rather than instant."""
     manager = _brawl(monkeypatch)
-    first, second = manager.creatures
+    second = manager.creatures[1]
     start = second.hp
     _run(manager, 1.0)
     lost_in_one_second = start - second.hp
@@ -199,22 +263,21 @@ def test_a_fight_is_exchanges_rather_than_a_drain(monkeypatch):
     assert lost_in_one_second < second.max_hp * 0.5, lost_in_one_second
 
 
-def test_a_spider_recovers_at_its_own_base_when_its_team_holds_one(monkeypatch):
+def test_eating_a_carcass_feeds_the_eaters_colony(monkeypatch):
+    """A dead spider is food, in the same banked resource DC-21 spends."""
     manager = _brawl(monkeypatch)
-    first, second = manager.creatures
-    site = manager.base_world.ensure_site(second)
-    site.x, site.y = 120.0, 120.0
-    second.hp = 1.0
+    survivor = manager.creatures[0]
+    site = manager.base_world.ensure_site(survivor)
+    site.resources = 0.0
+    manager.creatures[1].hp = 1.0
     _run(manager, 2.0)
-    assert second.knocked_out
-    # Measured on the frame it comes back, not later: once up it wanders off
-    # like any other spider, which says nothing about where it reappeared.
-    came_back_at = None
-    for _ in range(int((KNOCKOUT_SECONDS + 3.0) * 60)):
+    assert manager.carcasses
+
+    remains = manager.carcasses[0]
+    for _ in range(int((CARCASS_LIFETIME + 1.0) * 60)):
+        survivor.x, survivor.y = remains.x, remains.y
         manager.update(DT, *AWAY)
-        if not second.knocked_out:
-            came_back_at = (second.x, second.y)
+        if not manager.carcasses:
             break
-    assert came_back_at is not None, "it never got back up"
-    home = math.hypot(came_back_at[0] - site.x, came_back_at[1] - site.y)
-    assert home < site.radius + 60.0, f"came back {home:.0f}px from its base"
+    assert manager.carcasses == []
+    assert site.resources > 0.0, "eating a whole spider fed its eater's team nothing"

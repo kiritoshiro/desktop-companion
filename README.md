@@ -594,6 +594,7 @@ DesktopBugCompanion/
 
       world/                 # everything on the desktop that is not a spider
         cage.py
+        carcass.py
         desktop_environment.py
         flies.py
         jobs.py

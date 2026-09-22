@@ -45,8 +45,8 @@ class HuntingMixin:
             return False
         # A spider being carried can still lock onto a fly it spots and web it,
         # it just cannot run it down; so dragging does not block acquisition.
-        # DC-22: being knocked out does block it, unlike being carried.
-        if creature.knocked_out:
+        # DC-22/DC-47: being dead does block it, unlike being carried.
+        if creature.dead:
             return False
         if creature.dragging or creature is self.dragged_creature:
             return True

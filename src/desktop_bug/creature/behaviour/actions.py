@@ -539,8 +539,8 @@ class ActionMixin:
         target = self.social_target
         target_gone = False
         if target is not None:
-            # DC-22: a knocked-out neighbour is not someone to play with.
-            if (target.dragging or getattr(target, "knocked_out", False)
+            # DC-47: a dead neighbour is not someone to play with.
+            if (target.dragging or getattr(target, "dead", False)
                     or target not in self.neighbors):
                 target_gone = True
             else:
