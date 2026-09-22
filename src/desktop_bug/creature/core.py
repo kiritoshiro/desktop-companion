@@ -42,6 +42,8 @@ from ..state.progression import (
 from ..content.skills import SkillSet, default_skills_for_personality
 from ..world.jobs import normalize_job_id
 from .constants import (
+    WEBBED_SECONDS,
+    WEBBED_SPEED_MULT,
     normalize_gait_style,
 )
 from .behaviour import BehaviourMixin
@@ -456,6 +458,14 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # hunted, guarded against or played with in the frame before that.
         self.dead = False
         self.last_attacker = None
+        # DC-45: silk that another spider has pinned this one with. It slows
+        # a fight down and makes the pinned spider easier to land a hit on,
+        # which is what makes trapping worth a web-shooter's time.
+        self.webbed_timer = 0.0
+        self.webbed_by = None
+        # Which foe this spider is currently fighting, published by the
+        # manager the same way `_prey` is for a fly.
+        self._foe = None
         # Fades after a hit, so the render layer can show one without needing
         # to know anything about combat.
         self.hurt_flash = 0.0
@@ -539,6 +549,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # so the spider can fling its trapping silk at prey, not just the cursor.
         self.fly_world = None
         self._web_shot_prey = None
+        self._web_shot_foe = None
 
         # A read-only snapshot of what this spider can currently query about the
         # shared world (DC-17); rebuilt at the top of every update() tick so
@@ -550,9 +561,14 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self._initialize_legs()
 
     def _speed_mult(self) -> float:
+        # DC-45: silk slows whatever it lands on. Applied here rather than at
+        # each assignment so every state a pinned spider could be in -- fleeing,
+        # chasing, working a job -- is slowed by it without each one
+        # remembering to ask.
+        webbed = WEBBED_SPEED_MULT if self.webbed else 1.0
         return float(self.personality.get("speed_multiplier", 1.0)) * float(
             self._progression_speed_multiplier
-        )
+        ) * webbed
 
     @property
     def level(self) -> int:
@@ -694,6 +710,19 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         if self.hp <= 0.0:
             self._die()
         return dealt
+
+    @property
+    def webbed(self) -> bool:
+        """Whether this spider is currently pinned by another's silk."""
+        return self.webbed_timer > 0.0
+
+    def web_pinned(self, kind: str, by=None) -> None:
+        """Take a hit of trapping silk from another spider (DC-45)."""
+        if self.dead:
+            return
+        self.webbed_timer = max(self.webbed_timer, WEBBED_SECONDS)
+        self.webbed_by = by
+        self.mood.bump(arousal=0.3, valence=-0.25)
 
     def _die(self) -> None:
         """Mark this spider beaten. The manager removes it and leaves remains.
@@ -1056,6 +1085,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.resize_screen(sw, sh)
         self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
         self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
+        self.webbed_timer = max(0.0, self.webbed_timer - dt)
+        if not self.webbed:
+            self.webbed_by = None
         if self.dead:
             # Beaten. Nothing decides anything from here; the manager sweeps
             # it out of the colony at the end of this tick and leaves a
@@ -1069,6 +1101,12 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             # the dragging branch below, so it can still fire silk at prey
             # while held (DC-18, C1 -- see BehaviourMixin._pursue_prey).
             self._pursue_prey(dt, mx, my)
+        elif self._foe is not None:
+            # DC-45: a fight is execution of a standing commitment, like a
+            # hunt, so it runs every frame here rather than through the
+            # arbiter's throttle. Hunting wins the tick when both are live:
+            # a fly is food and a foe will still be there in a moment.
+            self._pursue_foe(dt)
 
         if self.prev_mx is None:
             cursor_vx = 0.0
