@@ -194,26 +194,51 @@ Because they are sprite_rig models, their look lives in `models/<id>/assets/*.pn
 - Python 3.10+ for development mode.
 - `PyQt5` and `pyinstaller` from `requirements.txt`.
 
-Install dependencies:
+## First-time setup
 
-```bat
+Every command below assumes you are **in the repository root**. The overlay is
+not pip-installed: it runs from `src/` on the path and loads `models/`,
+`personalities/` and `presets/` relative to the checkout, so running from
+anywhere else fails with `No module named 'desktop_bug'`.
+
+```powershell
+cd C:\Users\win\Documents\Workspace\projects\desktop-companion
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 ```
 
+Create the virtual environment **inside the repository**. One created in a home
+directory will not have this project's dependencies, and activating it is enough
+to break `run_dev.bat`.
+
 ## Run in development mode
 
-Double-click:
+Double-click `run_dev.bat`, or from a terminal in the repository root:
 
-```bat
-run_dev.bat
+```powershell
+.\run_dev.bat
 ```
 
-or run manually:
+`run_dev.bat` sets `PYTHONPATH` and uses `.venv\Scripts\python.exe` when that
+exists, so it works whether or not a virtual environment is activated.
+
+To run the module yourself, PowerShell:
+
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+.\.venv\Scripts\python.exe -m desktop_bug.app.config_ui
+```
+
+or `cmd`:
 
 ```bat
 set PYTHONPATH=%CD%\src
-python -m desktop_bug.app.config_ui
+.venv\Scripts\python.exe -m desktop_bug.app.config_ui
 ```
+
+The module path is `desktop_bug.app.config_ui`. It was `desktop_bug.config_ui`
+before the DC-43 package split; the old path no longer exists.
 
 The settings UI opens first. Choose model, personality, count, save/load a preset, then click **Save and launch overlay**. The main settings window includes the same launch-time options shown before launch:
 
@@ -421,11 +446,12 @@ While the overlay is running, you can also right-click the system-tray icon for 
 
 Right-click an individual spider in the overlay to name it and to open **Skills for this spider**, where each skill can be toggled live for that one spider.
 
-You can also launch the overlay engine directly with a preset:
+You can also launch the overlay engine directly with a preset, skipping the
+settings UI (from the repository root, PowerShell):
 
-```bat
-set PYTHONPATH=%CD%\src
-python -m desktop_bug.app.engine --preset presets\default.json
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+.\.venv\Scripts\python.exe -m desktop_bug.app.engine --preset presets\default.json
 ```
 
 The packaged executable takes the same arguments:
