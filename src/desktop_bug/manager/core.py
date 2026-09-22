@@ -151,6 +151,11 @@ class CreatureManager(
         )
         self._dragged_fly = None
         self._dragged_spawner = None
+        # The base being carried by the pointer, and where on it the pointer
+        # took hold. DC-53: a base can be dragged as well as moved through
+        # the right-click menu.
+        self._dragged_base = None
+        self._base_drag_offset = (0.0, 0.0)
         self._render_order: List[Creature] = []
         self._render_sort_accum = 0.0
         self._neighbor_refresh_accum = 0.0
@@ -337,6 +342,7 @@ class CreatureManager(
         if getattr(self, "fly_world", None) is not None:
             self.fly_world.clear()
         self.dragged_creature = None
+        self._dragged_base = None
         self.models, model_warnings = discover_models(self.root)
         self.personalities, personality_warnings = discover_personalities(self.root)
         self.warnings = model_warnings + personality_warnings
@@ -502,11 +508,17 @@ class CreatureManager(
             return True
         if self._dragged_fly is not None or self._dragged_spawner is not None:
             return True
+        if self._dragged_base is not None:
+            return True
         if (self.interferable or self.naming_enabled) and self.creature_at(mx, my) is not None:
             return True
         # Flies and the movable nest are grabbable when interaction is enabled.
         if self.interferable and (self.fly_world.hit_fly_at(mx, my) is not None
                                   or self.fly_world.hit_spawner_at(mx, my) is not None):
+            return True
+        # The dug earth of a base, so it can be picked up and carried. Only
+        # the earth: see `base_grab_at` for why this is not the site radius.
+        if self.base_grab_at(mx, my) is not None:
             return True
         return False
 
@@ -946,7 +958,12 @@ class CreatureManager(
                     handled = True
             # 3) Otherwise grab the cage frame to move the whole enclosure.
             if not handled and hit is not None and hit[1] is None:
-                self._start_cage_drag(mx, my)
+                handled = self._start_cage_drag(mx, my)
+            # 4) A base is last, because it is the largest thing on screen and
+            #    spiders stand on top of their own: grabbing the earth must
+            #    never take priority over grabbing the spider standing on it.
+            if not handled and self.interferable:
+                handled = self.start_base_drag(mx, my)
 
         if mouse_down and self._cage_drag is not None:
             self._drag_cage(mx, my)
@@ -956,6 +973,8 @@ class CreatureManager(
             self._dragged_fly.drag_to(mx, my)
         elif mouse_down and self._dragged_spawner is not None:
             self._dragged_spawner.drag_to(mx, my, self.screen_w, self.screen_h)
+        elif mouse_down and self._dragged_base is not None:
+            self.drag_base_to(mx, my)
 
         if mouse_released and self._cage_drag is not None:
             self._cage_drag = None
@@ -966,6 +985,8 @@ class CreatureManager(
         if mouse_released and self._dragged_spawner is not None:
             self._dragged_spawner.release_drag()
             self._dragged_spawner = None
+        if (mouse_released or not self.interferable) and self._dragged_base is not None:
+            self.release_base_drag()
 
         if (mouse_released or not self.interferable) and self.dragged_creature is not None:
             self.dragged_creature.release_drag(mx, my)

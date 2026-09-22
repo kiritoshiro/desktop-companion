@@ -341,3 +341,169 @@ def test_the_overlay_menu_offers_both_moving_and_clearing():
     assert "Move the {team_name} base" in source
     assert "Put the {carried_name} base down here" in source
     assert "Remove every base" in source
+
+
+# ------------------------------------------------------------ dragging one
+#
+# "make it possible to right clich the base and move it. drag or remove it."
+# The right-click route shipped first; this is the direct one. A base is the
+# largest thing drawn on the overlay and spiders stand on top of their own, so
+# most of what can go wrong here is about priority and about how much desktop
+# the overlay is allowed to claim.
+
+def _press(manager, x, y):
+    manager.update(1.0 / 60.0, x, y, mouse_down=True, mouse_pressed=True)
+
+
+def _drag(manager, x, y):
+    manager.update(1.0 / 60.0, x, y, mouse_down=True)
+
+
+def _release(manager, x, y):
+    manager.update(1.0 / 60.0, x, y, mouse_released=True)
+
+
+def _ready_to_grab(manager):
+    """A finished base with nobody standing on it.
+
+    Spiders win the grab over the earth they are standing on, which is the
+    point of the ordering and is checked on its own below. Every test that
+    wants to grab the *base* has to get the builder out of the way first --
+    the fixture puts it exactly on its own base, because that is where a
+    builder spends its life.
+    """
+    site = _site(manager)
+    site.build_progress = MAX_BUILD_PROGRESS
+    for creature in manager.creatures:
+        creature.x, creature.y = 50.0, 850.0
+        creature._initialize_legs()
+    return site
+
+
+def test_a_base_can_be_dragged(colony):
+    site = _ready_to_grab(colony)
+    start = (site.x, site.y)
+
+    _press(colony, site.x, site.y)
+    assert colony._dragged_base is site
+    _drag(colony, start[0] + 200.0, start[1] + 120.0)
+    _release(colony, start[0] + 200.0, start[1] + 120.0)
+
+    assert colony._dragged_base is None
+    assert site.x == pytest.approx(start[0] + 200.0)
+    assert site.y == pytest.approx(start[1] + 120.0)
+
+
+def test_the_base_does_not_jump_to_the_cursor(colony):
+    """Grabbed by its edge, it has to stay grabbed by its edge."""
+    site = _ready_to_grab(colony)
+    grab_x, grab_y = site.x + 18.0, site.y + 6.0
+    offset = (site.x - grab_x, site.y - grab_y)
+
+    _press(colony, grab_x, grab_y)
+    _drag(colony, 900.0, 500.0)
+    assert (site.x - 900.0, site.y - 500.0) == pytest.approx(offset)
+
+
+def test_dragging_a_base_carries_its_earth_unchanged(colony):
+    """The shapes are seeded per patch. Seeded from world position they were
+    re-rolled on every frame of a drag, which shimmered and grew the cache
+    without bound; they are seeded from the offset within the base instead."""
+    site = _ready_to_grab(colony)
+    before = [patch_recipe(f"{site.id}:patch:{mx - site.x:.2f}:{my - site.y:.2f}")["body"]
+              for mx, my, *_rest in site.mounds()]
+
+    _press(colony, site.x, site.y)
+    _drag(colony, 1000.0, 600.0)
+    _release(colony, 1000.0, 600.0)
+
+    after = [patch_recipe(f"{site.id}:patch:{mx - site.x:.2f}:{my - site.y:.2f}")["body"]
+             for mx, my, *_rest in site.mounds()]
+    assert after == before
+
+
+def test_a_spider_standing_on_its_base_is_still_grabbable(colony):
+    """The failure this ordering exists to prevent. A builder spends most of
+    its life inside its own base's footprint."""
+    site = _site(colony)
+    site.build_progress = MAX_BUILD_PROGRESS
+    creature = colony.creatures[0]
+    creature.x, creature.y = site.x, site.y
+    creature._initialize_legs()
+
+    _press(colony, site.x, site.y)
+    assert colony.dragged_creature is creature
+    assert colony._dragged_base is None
+
+
+def test_a_base_is_not_grabbable_when_dragging_is_off(colony):
+    site = _ready_to_grab(colony)
+    colony.set_interferable(False)
+    assert colony.base_grab_at(site.x, site.y) is None
+    _press(colony, site.x, site.y)
+    assert colony._dragged_base is None
+
+
+def test_letting_go_of_the_base_when_dragging_is_switched_off(colony):
+    """Mid-drag, the same way a held spider is released."""
+    site = _ready_to_grab(colony)
+    _press(colony, site.x, site.y)
+    assert colony._dragged_base is site
+    colony.set_interferable(False)
+    colony.update(1.0 / 60.0, site.x, site.y, mouse_down=True)
+    assert colony._dragged_base is None
+
+
+def test_the_grab_area_follows_the_earth_not_the_site(colony):
+    """`base_at` reaches the whole site radius so a right-click is
+    forgiving. The grab follows the dug soil instead, which matters most
+    while a base is being built: a level-5 site barely started is 80px of
+    radius with almost no earth in it, and claiming all of that from the
+    mouse would put a large invisible dead zone on the desktop.
+
+    Once a base is finished the two are close, by design -- at that point
+    there really is earth all the way out."""
+    site = _site(colony)
+    site.level = 5
+    site.build_progress = MAX_BUILD_PROGRESS * 0.3
+    edge_x = site.x + site.radius - 2.0
+    assert colony.base_at(edge_x, site.y) is site
+    assert colony.base_grab_at(edge_x, site.y) is None
+    assert colony.base_grab_at(site.x, site.y) is site
+
+
+def test_a_barely_started_base_can_still_be_picked_up(colony):
+    """Otherwise the one you most want to move is the one you cannot."""
+    site = _site(colony)
+    site.level = 0
+    site.build_progress = 0.0
+    assert colony.base_grab_at(site.x + 10.0, site.y) is site
+
+
+def test_the_overlay_claims_the_mouse_over_the_earth_and_not_beside_it(colony):
+    site = _ready_to_grab(colony)
+    assert colony.wants_mouse(site.x, site.y) is True
+    assert colony.wants_mouse(site.x + 400.0, site.y + 300.0) is False
+
+
+def test_a_drag_does_not_write_the_save_file_every_frame(colony, monkeypatch):
+    """Sixty saves a second, otherwise. It saves once, on release."""
+    saves = []
+    site = _ready_to_grab(colony)
+    monkeypatch.setattr(type(colony), "save_runtime_state",
+                        lambda self: saves.append(1))
+    _press(colony, site.x, site.y)
+    for step in range(30):
+        _drag(colony, site.x + step * 4.0, site.y)
+    assert saves == []
+    _release(colony, site.x + 120.0, site.y)
+    assert len(saves) == 1
+
+
+def test_a_base_cannot_be_dragged_off_the_desktop(colony):
+    site = _ready_to_grab(colony)
+    _press(colony, site.x, site.y)
+    _drag(colony, -800.0, -800.0)
+    _release(colony, -800.0, -800.0)
+    assert 0.0 < site.x < SCREEN[0]
+    assert 0.0 < site.y < SCREEN[1]

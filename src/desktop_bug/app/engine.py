@@ -1078,7 +1078,9 @@ class OverlayWindow(QWidget):
                 move_base = menu.addAction(f"Move the {team_name} base…")
                 move_base.setToolTip(
                     "Pick this base up, then right-click where it should go. "
-                    "It keeps its level, its food and the earth already dug."
+                    "It keeps its level, its food and the earth already dug. "
+                    "You can also just drag the earth with the left button, "
+                    "when dragging is switched on."
                 )
                 move_base.triggered.connect(
                     lambda _checked=False, site=base: self._pick_up_base(site))

@@ -480,11 +480,10 @@ class BaseWorld:
     def move_base(self, site_id: str, x: float, y: float) -> bool:
         """Pick a base up and put it down somewhere else. True if it moved.
 
-        The earth moves with it: `BaseSite.mounds()` returns offsets from the
-        site centre, so the pile that was dug keeps its shape and its build
-        progress rather than starting again. The individual patch *shapes* are
-        seeded from world position and so are re-rolled by a move, which is
-        the one visible difference and a fair one -- the soil was carried.
+        The earth moves with it, unchanged: `BaseSite.mounds()` returns
+        offsets from the site centre, and each patch's shape is seeded from
+        its offset rather than its world position, so the pile that was dug
+        keeps its shape, its arrangement and its build progress.
 
         Clamped the same way `resize` clamps, so a base cannot be dropped off
         the edge of the desktop where nothing could ever reach it.
@@ -1208,11 +1207,16 @@ class BaseWorld:
                 for mx, my, size, aspect, built in sorted(site.mounds(), key=lambda m: m[1]):
                     grown = size * (0.35 + 0.65 * built)
                     half = grown * aspect
-                    # Seeded from where the mound sits, so the same patch is
-                    # the same shape in the next process. `mounds()` returns
-                    # its entries in build order without an index, and the
-                    # position is the part of it that never moves.
-                    recipe = patch_recipe(f"{site.id}:patch:{mx:.2f}:{my:.2f}")
+                    # Seeded from where the mound sits *within* the base, so
+                    # the same patch is the same shape in the next process --
+                    # and so that carrying a base somewhere else carries its
+                    # earth unchanged instead of re-rolling every shape on
+                    # every frame of the drag (which shimmered, and grew the
+                    # cache without bound). `mounds()` returns its entries in
+                    # build order without an index, and the offset from the
+                    # centre is the part of one that never changes.
+                    recipe = patch_recipe(
+                        f"{site.id}:patch:{mx - site.x:.2f}:{my - site.y:.2f}")
                     # Deliberately wider than the mound's own footprint: at
                     # 1.1x each patch sat alone with a visible edge and the
                     # cluster read as a handful of pebbles. Overlapping them
