@@ -18,6 +18,7 @@ from ..support.math_utils import (
     clamp,
 )
 from .mood import antenna_drive_from_mood, build_antenna_points
+from .sprite_tint import palette_signature, tint_assets
 from ..state.progression import (
     equipped_items,
 )
@@ -107,7 +108,12 @@ class RenderProceduralMixin:
         if not folder:
             return {}
         assets_dir = Path(folder) / "assets"
-        cache_key = str(assets_dir.resolve())
+        # DC-48: the cache is keyed on the palette as well as the folder, so
+        # two spiders from one model in different colours each get their own
+        # tinted set instead of the first one winning. An untinted spider has
+        # an empty signature and shares the pixmaps straight off disk.
+        signature = palette_signature(getattr(self, "color_overrides", None))
+        cache_key = (str(assets_dir.resolve()), signature)
         if cache_key in self.SPRITE_CACHE:
             return self.SPRITE_CACHE[cache_key]
 
@@ -119,6 +125,9 @@ class RenderProceduralMixin:
                 pixmap = QPixmap(str(candidate))
                 if not pixmap.isNull():
                     loaded[name] = pixmap
+        # Tinting is the expensive part, so it happens here -- once per model
+        # per palette, on first render -- and never per frame.
+        loaded = tint_assets(loaded, getattr(self, "color_overrides", None))
         self.SPRITE_CACHE[cache_key] = loaded
         return loaded
 
