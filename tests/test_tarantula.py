@@ -427,9 +427,25 @@ def test_the_palps_feelers_and_leg_release_hold_together(tarantula):
             leg, *probe._leg_attach(leg), *probe._visual_foot_for_render(leg), preview_chain
         )
         assert len(points) == 6
-        # At the neutral heading the proximal segment must lift from the body;
-        # the remaining chain then descends toward the planted foot.
-        assert points[1][1] <= points[0][1] + 0.25
+        # The proximal segment must lift away from the body; the remaining
+        # chain then descends toward the planted foot.
+        #
+        # This used to be written as `points[1].y <= points[0].y`, i.e. the
+        # joint must sit higher up the *screen*. That is the same thing as
+        # "away from the body" only for the legs on one side: screen-up is
+        # outward for one flank and straight across the shell for the other,
+        # so the assertion held while four of the eight legs tucked their
+        # first joint under the carapace and vanished (DC-67).
+        #
+        # Stated in the body's own frame it is the property that was always
+        # meant, and it now holds for all eight legs at every heading rather
+        # than only at the two where the screen happens to agree.
+        root_f, root_s = probe._world_to_body_local(*points[0])
+        joint_f, joint_s = probe._world_to_body_local(*points[1])
+        side = probe._side_sign(leg.definition.get("side", "right"))
+        assert joint_s * side >= root_s * side - 0.25, (
+            f"{leg.definition['name']} folds its first joint inboard of its "
+            f"own socket: {root_s:.1f} -> {joint_s:.1f}")
 
 @pytest.mark.parametrize(
     "speed,turn_rate",

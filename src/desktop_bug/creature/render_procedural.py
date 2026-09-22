@@ -449,7 +449,33 @@ class RenderProceduralMixin:
                     # A relaxed suspended leg folds slightly back toward its
                     # own body lane before the distal links fall away again.
                     local_s -= side * self.size * (0.055 + held_response * 0.025) * math.sin(math.pi * fraction)
-                seed_points.append((point_x, point_y - rise))
+                # DC-67: the knee arc bows *outward from the body*, not up
+                # the screen.
+                #
+                # `rise` used to be subtracted from point_y directly, which is
+                # a lift in screen space. Screen-up is not away from the body:
+                # for a spider walking horizontally it is outward for the four
+                # legs on one side and straight across the shell for the four
+                # on the other. Measured on a neutral stance with the heading
+                # set by hand, so there is no randomness in it at all:
+                #
+                #   heading   0 deg : left legs +0.43..+0.46 outboard,
+                #                     right legs -0.09..-0.12 -- i.e. inboard,
+                #                     the first joint tucked under the shell
+                #   heading  90 deg : both sides +0.14..+0.19, symmetric
+                #   heading 180 deg : the same fault, mirrored onto the left
+                #
+                # Legs are drawn beneath the body, so a tucked proximal joint
+                # is simply not visible: the spider looked like it had legs
+                # coming out from under itself, which is what the owner saw.
+                # Only a spider walking straight up or down the screen was
+                # ever drawn correctly.
+                #
+                # Bowing along the body's own outward axis gives every leg the
+                # same arc at every heading, and keeps the knee-high tarantula
+                # silhouette the arc was added for.
+                seed_points.append((point_x + rx * side * rise,
+                                    point_y + ry * side * rise))
             seed_points.append((fx, fy))
             points = constrain_to_segment_limits(seed_points)
             path_len = sum(math.hypot(points[i + 1][0] - points[i][0],
