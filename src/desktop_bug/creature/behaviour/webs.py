@@ -330,10 +330,17 @@ class WebBehaviourMixin:
         self.motion_paused = False
         self.enter_idle()
 
-    def _can_shoot_web(self, kind: str, prey=None) -> bool:
+    def _can_shoot_web(self, kind: str, prey=None, foe=None) -> bool:
         skill = "wall_web" if kind == "wall" else "shoot_web"
         if not self.has_skill(skill) or self.airborne:
             return False
+        if foe is not None:
+            # DC-45: silk thrown at another spider goes through the same
+            # projectile a fly shot uses and never touches the real pointer,
+            # so the cursor-capture toggle has no say in it. Gating this on
+            # the cursor rules is what stopped web-shooters ever pinning a
+            # foe when mouse capture was off.
+            return True
         if prey is not None:
             # Firing at a fly goes through the fly world and never touches the
             # real pointer, so neither the cursor-capture toggle nor being held
@@ -424,12 +431,19 @@ class WebBehaviourMixin:
         self.enter_web_aim(prey.x, prey.y, kind, prey=prey)
         return True
 
-    def enter_web_aim(self, mx: float, my: float, kind: str = "trap", prey=None) -> None:
-        """Crouch and range the target, then fire a glob of sticky silk."""
-        if not self._can_shoot_web(kind, prey=prey):
+    def enter_web_aim(self, mx: float, my: float, kind: str = "trap", prey=None,
+                      foe=None) -> None:
+        """Crouch and range the target, then fire a glob of sticky silk.
+
+        DC-45: ``foe`` is a spider rather than a fly. It goes through the
+        same aim-then-fire states so a shot at an enemy looks like every
+        other shot this spider takes.
+        """
+        if not self._can_shoot_web(kind, prey=prey, foe=foe):
             self._end_web_state()
             return
         self._web_shot_prey = prey
+        self._web_shot_foe = foe
         self.state = "WebAim"
         self.motion_paused = True
         self.speed = 0.0
@@ -445,7 +459,18 @@ class WebBehaviourMixin:
 
     def _update_web_aim(self, dt: float, mx: float, my: float) -> None:
         prey = self._web_shot_prey
-        if prey is not None:
+        foe = getattr(self, "_web_shot_foe", None)
+        if foe is not None:
+            # DC-45: aiming at a foe spider. Like the fly case and unlike the
+            # cursor case, the pointer-silk switch has no say here -- this
+            # branch is what the cursor one below would otherwise swallow,
+            # cancelling every shot at an enemy whenever mouse trapping was
+            # off.
+            if foe.dead or foe.webbed or getattr(foe, "dragging", False):
+                self._finish_web_shot(fired=False)
+                return
+            mx, my = foe.x, foe.y
+        elif prey is not None:
             # Aiming at a fly: bail if it got caught/eaten/grabbed first, and
             # keep tracking its live position as it tries to flee the aim.
             if not prey.alive or prey.eaten or prey.dragging or prey.trapped:
@@ -480,11 +505,18 @@ class WebBehaviourMixin:
     def _fire_web_shot(self, mx: float, my: float) -> None:
         kind = self._web_shot_kind
         prey = self._web_shot_prey
+        foe = getattr(self, "_web_shot_foe", None)
         # Launch from a little ahead of the body, where the spinnerets/front are.
         fx, fy, _rx, _ry = self._basis()
         origin = (self.x + fx * self.size * 0.6, self.y + fy * self.size * 0.6)
         launched = False
-        if prey is not None:
+        if foe is not None:
+            # DC-45: silk at an enemy spider. The fly world owns every glob
+            # of silk in flight, so this one lives there too rather than in
+            # a second, near-identical projectile somewhere else.
+            if self.fly_world is not None and self._can_shoot_web(kind, foe=foe):
+                launched = self.fly_world.launch_web_shot_at_creature(self, foe, kind=kind)
+        elif prey is not None:
             if self.fly_world is not None and self._can_shoot_web(kind, prey=prey):
                 launched = self.fly_world.launch_web_shot(self, prey, kind=kind)
         else:
@@ -527,8 +559,9 @@ class WebBehaviourMixin:
 
     def _finish_web_shot(self, fired: bool) -> None:
         web_shooter = self._acts_as_web_shooter()
-        prey_shot = self._web_shot_prey is not None
+        prey_shot = self._web_shot_prey is not None or self._web_shot_foe is not None
         self._web_shot_prey = None
+        self._web_shot_foe = None
         if fired:
             base = rand_range(self.personality.get("web_shot_cooldown"), 8.0, 18.0, rng=self.rng)
         else:

@@ -25,6 +25,14 @@ ATTACK_INTERVAL = 0.85
 # DC-47: a beaten spider dies. What it leaves behind, and for how long,
 # lives in `world/carcass.py`.
 
+# DC-45: how far a spider will look for a fight, as a multiple of its own
+# reaction radius. Short enough that foes have to come near each other
+# rather than charging across the desktop on sight.
+ENGAGE_RADIUS_MULT = 0.62
+# A pinned spider is easier to land a hit on -- the payoff for spending a
+# web shot instead of just walking up and biting.
+WEBBED_DAMAGE_BONUS = 1.6
+
 
 class CombatMixin:
     """Contact damage between declared foes, and knock-out recovery."""
@@ -39,7 +47,9 @@ class CombatMixin:
         self._update_carcasses(dt)
         self._bury_the_dead()
         if not self.conflict_enabled:
+            self._clear_foes()
             return
+        self._choose_foes()
 
         live = [
             creature for creature in self.creatures
@@ -62,6 +72,63 @@ class CombatMixin:
                 self._trade_blow(attacker, defender)
                 break
 
+    def _clear_foes(self) -> None:
+        for creature in self.creatures:
+            creature._foe = None
+
+    def _choose_foes(self) -> None:
+        """Publish the foe each spider is fighting, if any (DC-45).
+
+        Target selection lives with the manager for the same reason prey
+        selection does: it is a choice among the colony it owns, not a
+        decision about one creature's own behaviour. What a spider *does*
+        about the foe is its own, in ``_pursue_foe``.
+        """
+        live = [c for c in self.creatures if not c.dead and not getattr(c, "dragging", False)]
+        for creature in live:
+            if not self._may_pick_a_fight(creature):
+                creature._foe = None
+                continue
+            reach = float(creature.personality.get("reaction_radius", 360)) * ENGAGE_RADIUS_MULT
+            best, best_d = None, reach
+            for other in live:
+                if other is creature:
+                    continue
+                try:
+                    if creature.relation_to(other) != "foe":
+                        continue
+                except Exception:
+                    continue
+                d = math.hypot(other.x - creature.x, other.y - creature.y)
+                if d < best_d:
+                    best, best_d = other, d
+            creature._foe = best
+
+    @staticmethod
+    def _may_pick_a_fight(creature) -> bool:
+        """Whether this spider is free to go looking for a fight (DC-45).
+
+        Work comes first. Measured on `colony.json` before this gate existed:
+        on one seed the builder spent 12% of four minutes on its job and the
+        base finished with 84 banked food and *zero* build progress, because
+        every spider kept breaking off to brawl. A colony that cannot build
+        cannot level up, which is the thing conflict is supposed to feed.
+
+        Two exceptions, and they are the ones that matter:
+
+        - A guard's job *is* fighting. It already answers intruders through
+          `guard_alert`, and gating it here as well would make the one
+          profession built for this the only one that never does it.
+        - Anyone who has just been hit fights back regardless of what it was
+          doing. Being attacked while working and ignoring it would read as
+          broken, not as diligent.
+        """
+        if getattr(creature, "job_id", "none") == "guard":
+            return True
+        if creature.last_attacker is not None and creature.hurt_flash > 0.0:
+            return True
+        return str(getattr(creature, "job_mode", "idle") or "idle") == "idle"
+
     def _trade_blow(self, attacker, defender) -> None:
         """One exchange: the aggressor hits, and is hit back if still standing.
 
@@ -70,7 +137,10 @@ class CombatMixin:
         overlap and flatten one another in well under a second.
         """
         attacker.attack_cooldown = ATTACK_INTERVAL
-        landed = defender.take_damage(attacker.damage, attacker)
+        # DC-45: a pinned defender cannot dodge, so the hit tells. This is
+        # what a web shot buys the shooter.
+        blow = attacker.damage * (WEBBED_DAMAGE_BONUS if defender.webbed else 1.0)
+        landed = defender.take_damage(blow, attacker)
         if landed <= 0.0:
             return
         if defender.dead:

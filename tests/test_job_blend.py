@@ -114,7 +114,10 @@ def test_colony_behaviour(monkeypatch) -> int:
     tmp_path = Path(tempfile.mkdtemp(prefix="desktop-bug-tests-"))
     monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(tmp_path / "state"))
     random.seed(5)
-    manager = CreatureManager(ROOT / "presets" / "colony.json", 1600, 900)
+    # Seeded: without this the manager draws from the module-level
+    # `random`, so what this measures depends on which tests ran before
+    # it. It was seen to fail in a full-suite run and pass alone.
+    manager = CreatureManager(ROOT / "presets" / "colony.json", 1600, 900, seed=5)
     manager.base_world.clear()
     watched = {creature.job_id: creature for creature in manager.creatures}
     assert "builder" in watched and "guard" in watched, sorted(watched)

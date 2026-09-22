@@ -26,6 +26,13 @@ MIN_DAMAGE_FRACTION = 0.15
 # left behind, and how long it lasts, belongs to `world/carcass.py`.
 
 
+# DC-45: silk landed on a spider by another spider. Long enough that
+# trapping is worth a shot and the shooter can close, short enough that
+# being pinned is a setback rather than a sentence.
+WEBBED_SECONDS = 3.4
+WEBBED_SPEED_MULT = 0.35
+
+
 JOB_STATES = (
     "JobTravel", "JobBuild", "JobPatrol", "JobGuardAlert",
     # DC-20: Scout, Webber and Hunter job states.

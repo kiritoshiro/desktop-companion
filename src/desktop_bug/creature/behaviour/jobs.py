@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 from ...support.math_utils import (
     angle_to,
+    clamp,
     distance,
 )
 from ..constants import (
@@ -110,6 +111,97 @@ class JobBehaviourMixin:
                 self.enter_chase(mx, my)
         elif self.has_skill("approach") and self.state != "Approach":
             self.enter_approach(mx, my)
+
+    def _pursue_foe(self, dt: float) -> bool:
+        """Fight the foe the manager has published, with this spider's own kit.
+
+        DC-45. Before this, conflict was contact damage and nothing else:
+        spiders hurt each other only by happening to collide while doing
+        something unrelated. A fight now uses the skills the spider actually
+        has -- silk to pin from range, a pounce to close, a chase or an
+        approach otherwise -- so two spiders with different kits fight
+        visibly differently without a single personality-id branch. Which
+        skills a spider has is already data (DC-19).
+
+        Returns True when it has taken the tick, so the caller leaves the
+        ordinary personality FSM alone. Structured like ``_pursue_prey``,
+        which does the same job for a fly, and for the same reason: closing
+        on something that is moving needs every-frame reactivity rather than
+        the arbiter's 5-10 Hz throttle.
+        """
+        foe = self._foe
+        if foe is None or getattr(foe, "dead", False) or self.dead:
+            return False
+        if self.dragging or self.airborne or self.state in HUNT_COMMITTED_STATES:
+            return False
+
+        fx, fy = foe.x, foe.y
+        d = distance(self.x, self.y, fx, fy)
+
+        # Pin it from range first, if this spider throws silk at all. A foe
+        # that is already webbed is left alone -- a second glob buys nothing
+        # and the shooter should be closing in instead.
+        if not foe.webbed and (self.has_skill("shoot_web") or self.has_skill("wall_web")):
+            if self._maybe_shoot_web_at_foe(foe, d):
+                return True
+
+        # A pinned foe cannot dodge, so a pounce onto it is worth the
+        # commitment; a loose one is pounced at less eagerly.
+        strike = self.size * 4.5 + foe.size
+        if (d <= strike and self.has_skill("jump") and self.has_skill("prepare_jump_attack")
+                and getattr(self, "_pounce_cooldown", 0.0) <= 0.0
+                and self.rng.random() < (0.65 if foe.webbed else 0.32)):
+            self._pounce_cooldown = self.rng.uniform(0.9, 1.6)
+            self.enter_aim(fx, fy, target=None, after="outcome",
+                           ranging=(0.4, 0.85), abort_chance=0.05)
+            return True
+
+        if self.has_skill("chase"):
+            if self.state != "Chase":
+                self.enter_chase(fx, fy)
+            else:
+                self.target_x, self.target_y = fx, fy
+            return True
+        if self.has_skill("approach"):
+            if self.state != "Approach":
+                self.enter_approach(fx, fy)
+            else:
+                self.target_x, self.target_y = fx, fy
+            return True
+        # No way to close and nothing to throw: stand its ground rather than
+        # pretending to fight.
+        return False
+
+    def _maybe_shoot_web_at_foe(self, foe, d: float) -> bool:
+        """Roll to fling trapping silk at a foe spider. True if it committed.
+
+        The same shot, the same cooldown and the same range rules the spider
+        already uses on prey and on the cursor -- a web-shooter does it
+        eagerly, anyone else with the skill does it sometimes.
+        """
+        if self.web_shot_cooldown > 0.0 or self.fly_world is None:
+            return False
+        can_trap = self.has_skill("shoot_web")
+        can_wall = self.has_skill("wall_web")
+        if not (can_trap or can_wall):
+            return False
+        reaction = float(self.personality.get("reaction_radius", 360))
+        web_shooter = self._acts_as_web_shooter()
+        range_mult = float(self.personality.get("web_shot_range_mult",
+                                                0.85 if web_shooter else 0.5))
+        shot_range = max(self.size * 4.0, reaction * range_mult)
+        if d > shot_range or d < self.size * 1.5:
+            return False
+        chance = float(self.personality.get("web_shot_chance", 0.6 if web_shooter else 0.12))
+        chance = clamp(chance + self.mood.arousal * 0.15, 0.0, 0.97)
+        if self.rng.random() >= chance:
+            return False
+        kind = "trap"
+        if can_wall and (not can_trap or
+                         self.rng.random() < float(self.personality.get("wall_web_bias", 0.3))):
+            kind = "wall"
+        self.enter_web_aim(foe.x, foe.y, kind, prey=None, foe=foe)
+        return True
 
     def _update_job_state(self, dt: float, mx: float, my: float) -> bool:
         """Apply a job's work intent before ordinary personality FSM logic.

@@ -780,6 +780,16 @@ WEB_SHOT_SPEED = 1500.0
 WEB_SHOT_HIT_RADIUS = 16.0
 
 
+def _fly_shot_target_gone(fly) -> bool:
+    """A fly stops being worth hitting once it is caught, held or dead."""
+    return not fly.alive or fly.eaten or fly.dragging or fly.trapped
+
+
+def _pin_fly_with_shot(fly, origin, kind, shooter) -> None:
+    fly.pin_with_web_shot(origin, kind)
+    fly._trapper = shooter
+
+
 class WebShotProjectile:
     """A glob of silk a spider flings at a fly: thrown, not guided.
 
@@ -790,10 +800,17 @@ class WebShotProjectile:
     is what the Silk tracking ability restores.
     """
 
-    def __init__(self, shooter, fly, kind: str = "trap", homing: float = 0.0) -> None:
+    def __init__(self, shooter, fly, kind: str = "trap", homing: float = 0.0,
+                 is_gone=None, on_hit=None) -> None:
         self.shooter = shooter
         self.fly = fly
         self.kind = kind
+        # DC-45: the same glob is now also thrown at a foe spider, which is
+        # not a fly and must not be made to pretend it is one. What counts as
+        # "the target is gone" and what happens on impact are the only two
+        # fly-specific parts, so they are the two the caller can replace.
+        self._is_gone = is_gone or _fly_shot_target_gone
+        self._on_hit = on_hit or _pin_fly_with_shot
         self.homing = max(0.0, float(homing))
         fx, fy = math.cos(shooter.heading), math.sin(shooter.heading)
         ox = shooter.x + fx * shooter.size * 0.6
@@ -822,8 +839,8 @@ class WebShotProjectile:
 
     def update(self, dt: float) -> None:
         fly = self.fly
-        # If the prey is gone or already caught, the glob just fizzles.
-        if fly is None or not fly.alive or fly.eaten or fly.dragging or fly.trapped:
+        # If the target is gone or already caught, the glob just fizzles.
+        if fly is None or self._is_gone(fly):
             self.done = True
             return
         tx, ty = fly.x, fly.y
@@ -843,13 +860,16 @@ class WebShotProjectile:
         self.trail.append(self.pos)
         if len(self.trail) > 9:
             self.trail = self.trail[-9:]
-        if distance(nx, ny, tx, ty) <= WEB_SHOT_HIT_RADIUS:
-            fly.pin_with_web_shot(self.origin, self.kind)
-            fly._trapper = self.shooter
+        if distance(nx, ny, tx, ty) <= self._hit_radius():
+            self._on_hit(fly, self.origin, self.kind, self.shooter)
             self.hit = True
             self.done = True
         elif self.travelled >= self.max_travel:
             self.done = True
+
+    def _hit_radius(self) -> float:
+        """A spider is a much bigger thing to hit than a fly."""
+        return max(WEB_SHOT_HIT_RADIUS, float(getattr(self.fly, "size", 0.0)) * 0.55)
 
     def footprint(self) -> Tuple[float, float, float, float]:
         xs = [p[0] for p in self.trail]
@@ -1198,11 +1218,30 @@ class FlyWorld:
     def launch_web_shot(self, shooter, fly, kind: str = "trap") -> bool:
         if fly is None or not fly.alive or fly.trapped or fly.dragging:
             return False
+        return self._launch(shooter, fly, kind)
+
+    def launch_web_shot_at_creature(self, shooter, target, kind: str = "trap") -> bool:
+        """Fling the same silk at a foe spider (DC-45).
+
+        The projectile is silk in flight and this world already owns, updates
+        and draws every glob of it, so a shot at a spider lives here too
+        rather than in a second, near-identical projectile elsewhere.
+        """
+        if target is None or getattr(target, "dead", False) or target.webbed:
+            return False
+        return self._launch(
+            shooter, target, kind,
+            is_gone=lambda t: t.dead or t.dragging or t.webbed,
+            on_hit=lambda t, origin, k, by: t.web_pinned(k, by),
+        )
+
+    def _launch(self, shooter, target, kind, is_gone=None, on_hit=None) -> bool:
         homing = 0.0
         tracking = getattr(shooter, "_progression_effect", None)
         if callable(tracking):
             homing = tracking("web_homing")
-        self.projectiles.append(WebShotProjectile(shooter, fly, kind, homing=homing))
+        self.projectiles.append(WebShotProjectile(
+            shooter, target, kind, homing=homing, is_gone=is_gone, on_hit=on_hit))
         return True
 
     def add_remains(self, at: Point, scale: float = 1.0) -> None:

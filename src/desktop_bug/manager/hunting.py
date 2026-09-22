@@ -136,10 +136,23 @@ class HuntingMixin:
                 creature._prey = best
 
     def _creature_focus(self, creature: Creature, mx: float, my: float):
-        """Return (focus_x, focus_y, hunting) for this spider's update call."""
+        """Return (focus_x, focus_y, hunting) for this spider's update call.
+
+        Substituting the target's position for the cursor is what lets the
+        ordinary Chase and Approach states track something that is not the
+        pointer: they steer at ``(mx, my)`` and neither needs to know what it
+        is chasing. DC-45 gives a foe the same treatment a fly already had,
+        rather than teaching those states about a second kind of target.
+
+        A fly still wins when a spider has both -- it is food and it will
+        leave, and the foe will still be there in a moment.
+        """
         prey = getattr(creature, "_prey", None)
         if prey is not None and prey.alive and not prey.eaten:
             return prey.x, prey.y, True
+        foe = getattr(creature, "_foe", None)
+        if foe is not None and not foe.dead:
+            return foe.x, foe.y, False
         return mx, my, False
 
     def _resolve_fly_catches(self) -> None:
