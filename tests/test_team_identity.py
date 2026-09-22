@@ -298,19 +298,36 @@ def test_settings_window_round_trips_names_and_colours() -> None:
 
 
 def test_the_interface_says_what_hostility_does() -> None:
-    """The one sentence that stops the words over-promising."""
+    """The one sentence that has to keep matching the overlay.
+
+    Written when "foe" over-promised a fight that could not happen, so it
+    asserted the note said "no combat". DC-22, DC-45 and DC-47 made the fight
+    real and fatal, and this assertion then held the false sentence in place:
+    correcting the note would have failed the suite, and leaving it passed.
+    A test that pins a claim has to be revisited when the claim's subject
+    changes, which is why the checks below are written as "does not deny
+    combat, and does say what now happens".
+    """
     note = teams.HOSTILITY_NOTE.lower()
-    assert "no combat" in note, teams.HOSTILITY_NOTE
+    assert "no combat" not in note, teams.HOSTILITY_NOTE
+    assert "nothing takes damage" not in note, teams.HOSTILITY_NOTE
+    assert "fight" in note, teams.HOSTILITY_NOTE
     assert "guard" in note and "intercept" in note, teams.HOSTILITY_NOTE
-    assert "damage" in note, teams.HOSTILITY_NOTE
+    assert "dies" in note or "death" in note, teams.HOSTILITY_NOTE
 
     sentence = teams.describe_stance("pack_a", "rivals", "foe")
     assert "damage" in sentence.lower(), sentence
+    assert "nothing takes damage" not in sentence.lower(), sentence
+    assert "dies" in sentence.lower(), sentence
     assert "Pack A" in sentence and "Rivals" in sentence, sentence
     assert teams.describe_stance("a", "b", "friend").endswith("company.")
 
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    assert "There is no combat yet" in readme, "the README does not say combat is absent"
-    assert "Nothing takes damage" in readme, readme[:0]
+    assert "There is no combat yet" not in readme, (
+        "the README still says combat is absent"
+    )
+    assert "Foes fight, and losing is permanent" in readme, (
+        "the README does not describe what hostility now does"
+    )
     # And it documents the block a person would otherwise have to guess at.
     assert '"teams": {' in readme, "the README does not document the teams block"

@@ -164,23 +164,27 @@ class NoScrollDoubleSpinBox(QDoubleSpinBox):
         event.ignore()
 
 
+# The slot table's columns, in order. Spelled out once because the row builder,
+# collect_slots and update_summary all index into them by number, and the
+# "Pick 1-10" removal had to renumber every one of those call sites.
+SLOT_HEADERS = ["Creature model", "Temperament", "How many", "Abilities", "Colors", "Team", "Job", ""]
+SLOT_COLUMNS = len(SLOT_HEADERS)
+(COL_MODEL, COL_TEMPERAMENT, COL_COUNT, COL_ABILITIES,
+ COL_COLORS, COL_TEAM, COL_JOB, COL_REMOVE) = range(SLOT_COLUMNS)
+
+
 class SlotTable(QTableWidget):
     def __init__(self, parent=None):
-        super().__init__(0, 9, parent)
-        self.setHorizontalHeaderLabels(["Creature model", "Temperament", "How many", "Pick 1-10", "Abilities", "Colors", "Team", "Job", ""])
+        super().__init__(0, SLOT_COLUMNS, parent)
+        self.setHorizontalHeaderLabels(SLOT_HEADERS)
         # The last two columns hold icon-only controls; the header text would be
         # wider than the button underneath it.
-        self.horizontalHeaderItem(8).setToolTip("Remove a creature slot")
+        self.horizontalHeaderItem(SLOT_COLUMNS - 1).setToolTip("Remove a creature slot")
         self.horizontalHeader().setStretchLastSection(False)
         self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        self.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeToContents)
-        self.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        for col in range(2, SLOT_COLUMNS):
+            self.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(self.SelectRows)
@@ -623,7 +627,7 @@ class ConfigWindow(QMainWindow):
         self.refresh_btn.setToolTip("Reload models, personalities, and presets from disk.")
         self.random_model_btn.setToolTip("Set every slot to choose a random creature model when launched.")
         self.random_personality_btn.setToolTip("Set every slot to choose a random personality when launched.")
-        self.random_count_btn.setToolTip("Set every slot to spawn a random count from 1 to 10 when launched.")
+        self.random_count_btn.setToolTip("Roll a new count from 1 to 10 into every slot now.")
         self.random_all_btn.setToolTip("Randomize model, personality, and count for every slot.")
         self.size_combo.setToolTip("Scale all creatures in the overlay.")
         self.mood_combo.setToolTip("Override moods, or leave Auto to use personality defaults.")
@@ -753,10 +757,15 @@ class ConfigWindow(QMainWindow):
         count_spin.setMaximum(50)
         count_spin.setValue(max(1, min(50, int(count))))
 
-        count_random_check = QCheckBox("Random")
-        count_random_check.setChecked(bool(count_random))
-        count_spin.setEnabled(not count_random_check.isChecked())
-        count_random_check.toggled.connect(lambda enabled, spin=count_spin: spin.setEnabled(not enabled))
+        # The per-slot "Pick 1-10" checkbox was removed from the table: in a row
+        # that already carries a model, a temperament, a count, abilities,
+        # colours, a team and a job, it was the least-used control and the one
+        # most often mistaken for part of "How many". The preset field still
+        # round-trips, so a preset that has it keeps it and the overlay's own
+        # right-click "Randomize count (1-10)" is unaffected; it is carried on
+        # the spin box rather than shown as a column, and update_summary says so
+        # when a loaded preset actually uses it.
+        count_spin.setProperty("count_random", bool(count_random))
 
         skills_btn = QPushButton()
         # A slot with no explicit skills follows its personality's default
@@ -840,13 +849,12 @@ class ConfigWindow(QMainWindow):
         self.table.setCellWidget(row, 0, model_box)
         self.table.setCellWidget(row, 1, personality_box)
         self.table.setCellWidget(row, 2, count_spin)
-        self.table.setCellWidget(row, 3, count_random_check)
-        self.table.setCellWidget(row, 4, skills_btn)
-        self.table.setCellWidget(row, 5, colors_btn)
-        self.table.setCellWidget(row, 6, team_box)
-        self.table.setCellWidget(row, 7, job_box)
-        self.table.setCellWidget(row, 8, remove_btn)
-        for col in range(9):
+        self.table.setCellWidget(row, 3, skills_btn)
+        self.table.setCellWidget(row, 4, colors_btn)
+        self.table.setCellWidget(row, 5, team_box)
+        self.table.setCellWidget(row, 6, job_box)
+        self.table.setCellWidget(row, 7, remove_btn)
+        for col in range(SLOT_COLUMNS):
             self.table.setItem(row, col, QTableWidgetItem(""))
 
         model_box.currentIndexChanged.connect(self.update_summary)
@@ -855,7 +863,6 @@ class ConfigWindow(QMainWindow):
         personality_box.currentIndexChanged.connect(
             lambda _i=0, pb=personality_box, jb=job_box, sb=skills_btn: self._on_personality_changed(pb, jb, sb))
         count_spin.valueChanged.connect(self.update_summary)
-        count_random_check.toggled.connect(self.update_summary)
         team_box.currentIndexChanged.connect(
             lambda _i=0, box=team_box: self._on_team_box_changed(box))
         job_box.currentIndexChanged.connect(self.update_summary)
@@ -917,7 +924,11 @@ class ConfigWindow(QMainWindow):
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
         try:
-            from .creature import Creature
+            # DC-43 moved this module down into app/, which turned `.creature`
+            # into the non-existent desktop_bug.app.creature. The ImportError
+            # was swallowed by the except below, so every model silently drew
+            # its legless fallback icon instead of a spider.
+            from ..creature import Creature
 
             preview_personality = {
                 "id": "preview",
@@ -946,6 +957,14 @@ class ConfigWindow(QMainWindow):
             creature._initialize_legs()
             creature.render(painter)
         except Exception:
+            # The fallback exists for a model whose own data will not render.
+            # It is not meant to absorb a broken import, which is what it did
+            # silently for two days after DC-43: the icons looked plausible
+            # enough that nobody read them as an error. Log it.
+            log.exception(
+                "Model preview failed for %s; drawing the fallback icon",
+                model.get("id") or model.get("_folder") or "<unknown>",
+            )
             self._draw_fallback_model_icon(painter, model)
         painter.end()
 
@@ -1206,7 +1225,7 @@ class ConfigWindow(QMainWindow):
 
     def remove_slot_by_button(self, button):
         for row in range(self.table.rowCount()):
-            if self.table.cellWidget(row, 8) is button:
+            if self.table.cellWidget(row, COL_REMOVE) is button:
                 self.table.removeRow(row)
                 break
         self.update_summary()
@@ -1214,17 +1233,18 @@ class ConfigWindow(QMainWindow):
     def collect_slots(self, silent=False):
         slots = []
         for row in range(self.table.rowCount()):
-            model_box = self.table.cellWidget(row, 0)
-            personality_box = self.table.cellWidget(row, 1)
-            count_spin = self.table.cellWidget(row, 2)
-            count_random_check = self.table.cellWidget(row, 3)
-            skills_btn = self.table.cellWidget(row, 4)
-            colors_btn = self.table.cellWidget(row, 5)
-            team_box = self.table.cellWidget(row, 6)
-            job_box = self.table.cellWidget(row, 7)
+            model_box = self.table.cellWidget(row, COL_MODEL)
+            personality_box = self.table.cellWidget(row, COL_TEMPERAMENT)
+            count_spin = self.table.cellWidget(row, COL_COUNT)
+            skills_btn = self.table.cellWidget(row, COL_ABILITIES)
+            colors_btn = self.table.cellWidget(row, COL_COLORS)
+            team_box = self.table.cellWidget(row, COL_TEAM)
+            job_box = self.table.cellWidget(row, COL_JOB)
             if not model_box or not personality_box or model_box.currentData() is None or personality_box.currentData() is None:
                 continue
-            count_random = bool(count_random_check.isChecked()) if count_random_check else False
+            # Carried on the spin box since the column went away, so a preset
+            # that uses count_random still round-trips through a save.
+            count_random = bool(count_spin.property("count_random")) if count_spin else False
             slot = {
                 "model": model_box.currentData(),
                 "personality": personality_box.currentData(),
@@ -1349,11 +1369,10 @@ class ConfigWindow(QMainWindow):
     def _iter_row_widgets(self):
         for row in range(self.table.rowCount()):
             yield (
-                self.table.cellWidget(row, 0),
-                self.table.cellWidget(row, 1),
-                self.table.cellWidget(row, 2),
-                self.table.cellWidget(row, 3),
-                self.table.cellWidget(row, 4),
+                self.table.cellWidget(row, COL_MODEL),
+                self.table.cellWidget(row, COL_TEMPERAMENT),
+                self.table.cellWidget(row, COL_COUNT),
+                self.table.cellWidget(row, COL_ABILITIES),
             )
 
     # ------------------------------------------------------------------
@@ -1365,7 +1384,7 @@ class ConfigWindow(QMainWindow):
         """Every non-neutral team id a slot currently points at, in row order."""
         ids = []
         for row in range(self.table.rowCount()):
-            box = self.table.cellWidget(row, 6)
+            box = self.table.cellWidget(row, COL_TEAM)
             if box is None:
                 continue
             team_id = normalize_team_id(box.currentData() or "neutral")
@@ -1416,7 +1435,7 @@ class ConfigWindow(QMainWindow):
 
     def _repopulate_team_boxes(self) -> None:
         for row in range(self.table.rowCount()):
-            box = self.table.cellWidget(row, 6)
+            box = self.table.cellWidget(row, COL_TEAM)
             if box is not None:
                 self._populate_team_box(box, box.currentData())
 
@@ -1491,8 +1510,8 @@ class ConfigWindow(QMainWindow):
 
         counts = {}
         for row in range(self.table.rowCount()):
-            box = self.table.cellWidget(row, 6)
-            spin = self.table.cellWidget(row, 2)
+            box = self.table.cellWidget(row, COL_TEAM)
+            spin = self.table.cellWidget(row, COL_COUNT)
             if box is None:
                 continue
             team_id = normalize_team_id(box.currentData() or "neutral")
@@ -1600,12 +1619,12 @@ class ConfigWindow(QMainWindow):
         random_models = 0
         random_personalities = 0
         custom_skill_rows = 0
-        for model_box, personality_box, count_spin, count_random_check, skills_btn in self._iter_row_widgets():
+        for model_box, personality_box, count_spin, skills_btn in self._iter_row_widgets():
             if model_box and model_box.currentData() == RANDOM_MODEL_ID:
                 random_models += 1
             if personality_box and personality_box.currentData() == RANDOM_PERSONALITY_ID:
                 random_personalities += 1
-            if count_random_check and count_random_check.isChecked():
+            if count_spin and bool(count_spin.property("count_random")):
                 random_count_rows += 1
             elif count_spin:
                 fixed_count += int(count_spin.value())
@@ -1616,15 +1635,15 @@ class ConfigWindow(QMainWindow):
         team_counts = {}
         job_counts = {}
         for row in range(self.table.rowCount()):
-            colors_btn = self.table.cellWidget(row, 5)
+            colors_btn = self.table.cellWidget(row, COL_COLORS)
             if colors_btn is not None and _normalize_color_overrides(colors_btn.property("color_overrides")):
                 custom_color_rows += 1
-            team_box = self.table.cellWidget(row, 6)
+            team_box = self.table.cellWidget(row, COL_TEAM)
             if team_box is not None:
                 team_id = str(team_box.currentData() or "neutral")
                 if team_id != "neutral":
                     team_counts[team_id] = team_counts.get(team_id, 0) + 1
-            job_box = self.table.cellWidget(row, 7)
+            job_box = self.table.cellWidget(row, COL_JOB)
             if job_box is not None:
                 job_id = str(job_box.currentData() or "none")
                 if job_id != "none":
@@ -1668,7 +1687,7 @@ class ConfigWindow(QMainWindow):
     def set_random_model_options(self):
         if self.table.rowCount() == 0:
             self.add_slot(RANDOM_MODEL_ID, None, 1, False)
-        for model_box, _personality_box, _count_spin, _count_random_check, _skills_btn in self._iter_row_widgets():
+        for model_box, _personality_box, _count_spin, _skills_btn in self._iter_row_widgets():
             if model_box:
                 self._combo_set_data(model_box, RANDOM_MODEL_ID)
         self.status.setText("Every slot will choose a random model when the overlay launches.")
@@ -1677,35 +1696,40 @@ class ConfigWindow(QMainWindow):
     def set_random_personality_options(self):
         if self.table.rowCount() == 0:
             self.add_slot(None, RANDOM_PERSONALITY_ID, 1, False)
-        for _model_box, personality_box, _count_spin, _count_random_check, _skills_btn in self._iter_row_widgets():
+        for _model_box, personality_box, _count_spin, _skills_btn in self._iter_row_widgets():
             if personality_box:
                 self._combo_set_data(personality_box, RANDOM_PERSONALITY_ID)
         self.status.setText("Every slot will choose a random personality when the overlay launches.")
         self.update_summary()
 
     def set_random_count_options(self):
+        """Roll each slot's count now, rather than deferring it to launch.
+
+        This used to tick the per-slot "Pick 1-10" box, which deferred the roll
+        to launch time and left the visible number lying. With that column gone
+        the button rolls a real number into the spin box, so the table shows
+        what will actually spawn.
+        """
         if self.table.rowCount() == 0:
-            self.add_slot(None, None, 1, True)
-        for _model_box, _personality_box, count_spin, count_random_check, _skills_btn in self._iter_row_widgets():
+            self.add_slot(None, None, random.randint(1, 10), False)
+        for _model_box, _personality_box, count_spin, _skills_btn in self._iter_row_widgets():
             if count_spin:
+                count_spin.setProperty("count_random", False)
                 count_spin.setValue(random.randint(1, 10))
-            if count_random_check:
-                count_random_check.setChecked(True)
-        self.status.setText("Every slot will spawn a random count from 1 to 10 when the overlay launches.")
+        self.status.setText("Rolled a new count from 1 to 10 for every slot.")
         self.update_summary()
 
     def set_random_all_options(self):
         if self.table.rowCount() == 0:
-            self.add_slot(RANDOM_MODEL_ID, RANDOM_PERSONALITY_ID, 1, True)
-        for model_box, personality_box, count_spin, count_random_check, _skills_btn in self._iter_row_widgets():
+            self.add_slot(RANDOM_MODEL_ID, RANDOM_PERSONALITY_ID, random.randint(1, 10), False)
+        for model_box, personality_box, count_spin, _skills_btn in self._iter_row_widgets():
             if model_box:
                 self._combo_set_data(model_box, RANDOM_MODEL_ID)
             if personality_box:
                 self._combo_set_data(personality_box, RANDOM_PERSONALITY_ID)
             if count_spin:
+                count_spin.setProperty("count_random", False)
                 count_spin.setValue(random.randint(1, 10))
-            if count_random_check:
-                count_random_check.setChecked(True)
         self.status.setText("Surprise mode set: random model, personality, and count for each slot.")
         self.update_summary()
 
@@ -1866,7 +1890,12 @@ class ConfigWindow(QMainWindow):
             env = None
             cwd = str(self.root)
         else:
-            cmd = [sys.executable, "-m", "desktop_bug.engine", "--preset", str(preset_path)]
+            # DC-43 moved this module to desktop_bug.app.engine and missed this
+            # string, so every launch from a source checkout died in the child
+            # with "No module named desktop_bug.engine". A module path in a
+            # string is invisible to both the import machinery and ruff;
+            # tests/test_module_paths.py now resolves these.
+            cmd = [sys.executable, "-m", "desktop_bug.app.engine", "--preset", str(preset_path)]
             env = os.environ.copy()
             existing = env.get("PYTHONPATH", "")
             src_path = str(self.root / "src")
@@ -1877,10 +1906,31 @@ class ConfigWindow(QMainWindow):
             # overlay the moment it finished loading.
             clear_stop_request(state_dir())
             self.overlay_process = subprocess.Popen(cmd, cwd=cwd, env=env)
-            self.launched_preset_path = str(preset_path)
-            self.status.setText("Overlay launched. Edit and press Save to apply changes live, or Stop overlay to close it.")
         except Exception as exc:
             QMessageBox.critical(self, "Could not launch overlay", str(exc))
+            return
+
+        # Popen succeeds as long as the interpreter starts; the overlay failing
+        # a moment later is the child's exit code, not an exception here. That
+        # is why the DC-43 module-path miss reported "Overlay launched." while
+        # nothing had launched. Give it a moment and check it is still alive.
+        self._wait_tick(0.6)
+        code = self.overlay_process.poll()
+        if code is not None:
+            self.overlay_process = None
+            log.error("Overlay exited immediately with code %s; command was %s", code, cmd)
+            QMessageBox.critical(
+                self,
+                "Overlay stopped immediately",
+                f"The overlay process exited with code {code} right after starting.\n\n"
+                f"Command: {' '.join(cmd)}\n\n"
+                "The log file has the details.",
+            )
+            self.status.setText(f"Overlay failed to start (exit code {code}). See the log.")
+            return
+
+        self.launched_preset_path = str(preset_path)
+        self.status.setText("Overlay launched. Edit and press Save to apply changes live, or Stop overlay to close it.")
 
     def _wait_tick(self, seconds: float) -> None:
         """Sleep without freezing the settings window while the overlay saves."""

@@ -1,0 +1,157 @@
+"""The settings window's creature table, and the column that came out of it.
+
+The project owner asked for the "Pick 1-10" column to go. It was a per-slot
+checkbox that deferred the count roll to launch time, which meant the number
+shown in "How many" beside it was not the number that would spawn -- in a row
+that already carries a model, a temperament, a count, abilities, colours, a
+team and a job, it was both the least-used control and the most misleading.
+
+Removing a column renumbers every widget lookup in the table, so most of
+what is checked here is that the remaining controls still land in the right
+place. The preset field itself is untouched: the overlay still honours
+``count_random`` and still offers "Randomize count (1-10)" on right-click, so
+a preset that uses it has to survive a load-and-save through a window that no
+longer shows it.
+"""
+
+from __future__ import annotations
+
+import json
+import tempfile
+from pathlib import Path
+
+import pytest
+from desktop_bug.app.config_ui import (
+    COL_ABILITIES,
+    COL_COLORS,
+    COL_COUNT,
+    COL_JOB,
+    COL_MODEL,
+    COL_REMOVE,
+    COL_TEAM,
+    COL_TEMPERAMENT,
+    SLOT_COLUMNS,
+    SLOT_HEADERS,
+    ConfigWindow,
+)
+from PyQt5.QtWidgets import QCheckBox, QComboBox, QPushButton, QSpinBox
+
+
+@pytest.fixture
+def scratch():
+    """mkdtemp rather than tmp_path: the shared pytest-of-win root on this
+    machine is intermittently locked, which fails the fixture before a test
+    body ever runs. Established convention in this suite."""
+    return Path(tempfile.mkdtemp(prefix="dc-settings-"))
+
+
+@pytest.fixture
+def window(qapp, monkeypatch, scratch):
+    monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(scratch / "state"))
+    win = ConfigWindow()
+    yield win
+    win.close()
+
+
+def test_the_table_has_no_pick_1_10_column(window):
+    headers = [window.table.horizontalHeaderItem(i).text()
+               for i in range(window.table.columnCount())]
+    assert headers == SLOT_HEADERS
+    assert "Pick 1-10" not in headers
+    assert window.table.columnCount() == SLOT_COLUMNS == 8
+
+
+def test_no_row_still_carries_the_checkbox(window):
+    """The widget is gone, not merely hidden behind a removed header."""
+    window.add_slot(None, None, 3, False)
+    row = window.table.rowCount() - 1
+    for col in range(SLOT_COLUMNS):
+        assert not isinstance(window.table.cellWidget(row, col), QCheckBox)
+
+
+def test_every_remaining_control_is_in_its_named_column(window):
+    """Removing a column renumbers the lookups; this is what that breaks."""
+    window.add_slot(None, None, 2, False)
+    row = window.table.rowCount() - 1
+    assert isinstance(window.table.cellWidget(row, COL_MODEL), QComboBox)
+    assert isinstance(window.table.cellWidget(row, COL_TEMPERAMENT), QComboBox)
+    assert isinstance(window.table.cellWidget(row, COL_COUNT), QSpinBox)
+    assert isinstance(window.table.cellWidget(row, COL_ABILITIES), QPushButton)
+    assert isinstance(window.table.cellWidget(row, COL_COLORS), QPushButton)
+    assert isinstance(window.table.cellWidget(row, COL_TEAM), QComboBox)
+    assert isinstance(window.table.cellWidget(row, COL_JOB), QComboBox)
+    assert isinstance(window.table.cellWidget(row, COL_REMOVE), QPushButton)
+
+
+def test_a_slot_still_collects_its_count_and_job(window):
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 4, False, job_id="builder")
+    slots = window.collect_slots(silent=True)
+    assert len(slots) == 1
+    assert slots[0]["count"] == 4
+    assert slots[0]["job"] == "builder"
+
+
+def test_count_random_survives_a_load_and_save(window):
+    """The column is gone; the preset field it wrote is not.
+
+    A preset built elsewhere -- or by an older build -- can still set this,
+    and the overlay still acts on it. Dropping it on save would silently
+    rewrite the owner's file.
+    """
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 5, True)
+    slots = window.collect_slots(silent=True)
+    assert slots[0]["count_random"] is True
+    assert slots[0]["count"] == 5
+
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 5, False)
+    assert window.collect_slots(silent=True)[0]["count_random"] is False
+
+
+def test_a_random_count_slot_is_still_announced_in_the_summary(window):
+    """With no column to show it, the summary line is the only place left."""
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 5, True)
+    window.update_summary()
+    assert "random-count" in window.summary.text()
+
+
+def test_random_counts_now_rolls_a_real_number(window):
+    """It used to tick the box and leave the visible count lying.
+
+    With the box gone the button has to put a number the table actually shows
+    into the spin box, and must not leave the deferred flag set.
+    """
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 1, False)
+    window.add_slot(None, None, 1, False)
+    window.set_random_count_options()
+
+    slots = window.collect_slots(silent=True)
+    assert len(slots) == 2
+    for slot in slots:
+        assert slot["count_random"] is False
+        assert 1 <= slot["count"] <= 10
+    spins = [window.table.cellWidget(r, COL_COUNT) for r in range(window.table.rowCount())]
+    assert [s.value() for s in spins] == [s["count"] for s in slots]
+
+
+def test_a_saved_preset_still_loads_every_slot_field(window, scratch):
+    """End to end through the file, since the table indices moved."""
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 3, False, team_id="hunters", job_id="guard")
+    slots = window.collect_slots(silent=True)
+    preset = scratch / "roundtrip.json"
+    preset.write_text(json.dumps({"name": "roundtrip", "slots": slots, "settings": {}}),
+                      encoding="utf-8")
+
+    window.table.setRowCount(0)
+    window.load_preset_path(preset)
+
+    reloaded = window.collect_slots(silent=True)
+    assert len(reloaded) == 1
+    assert reloaded[0]["count"] == 3
+    assert reloaded[0]["team"] == "hunters"
+    assert reloaded[0]["job"] == "guard"

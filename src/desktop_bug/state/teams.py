@@ -1,10 +1,13 @@
 """Teams a person can name, colour, and understand.
 
 A team used to be an id out of a fixed list: `pack_a`, `pack_b`, `hunters`,
-`rivals`. Those names say nothing about what the group is for, and two of them
-promise a fight that cannot happen, because there is no combat in the overlay at
-all. Worse, nothing on screen distinguished one team from another, so a preset
-with two teams looked exactly like a preset with one.
+`rivals`. Those names say nothing about what the group is for, and when this
+module was written two of them promised a fight that could not happen, because
+there was no combat in the overlay at all. DC-22, DC-45 and DC-47 have since
+made that fight real and fatal, so `HOSTILITY_NOTE` below now describes a
+consequence rather than warning against expecting one. Worse, nothing on screen
+distinguished one team from another, so a preset with two teams looked exactly
+like a preset with one.
 
 This module holds what a team *is*: a stable id, a name its owner chose, and a
 colour used for its base ring and a small marker on its members. It is
@@ -29,10 +32,15 @@ NEUTRAL = "neutral"
 # What hostility actually does today. The settings window, the inspector and the
 # README all say this, and they say it from here so they cannot drift apart or
 # quietly start over-promising.
+# DC-22, DC-45 and DC-47 made every sentence of the old note false -- it still
+# read "There is no combat yet ... nothing takes damage" while a losing spider
+# was dying permanently. Kept in one place for the same reason as before.
 HOSTILITY_NOTE = (
-    "There is no combat yet. Marking two teams as foes means a Guard notices an "
-    "intruder near its base, raises an alert and moves to intercept; nothing "
-    "takes damage."
+    "Foes fight. Two hostile spiders that meet will attack, using whatever "
+    "skills they have -- silk to pin, a pounce to close -- and a Guard still "
+    "raises an alert and intercepts. A beaten spider dies and leaves a carcass "
+    "that is eaten away; it does not come back. Turn Conflict off to go back to "
+    "alerts without damage."
 )
 
 STANCE_LABELS = {
@@ -260,8 +268,9 @@ def describe_stance(left_id, right_id, relation,
                     profiles: Mapping[str, TeamProfile] | None = None) -> str:
     """One sentence a person can read, naming both teams and what follows.
 
-    Says what hostility does rather than implying a fight, because it does not
-    cause one.
+    Says what hostility does. It used to end "Nothing takes damage yet",
+    which stopped being true at DC-22 and became badly misleading at DC-47,
+    when losing a fight started killing the spider for good.
     """
     left = team_label(left_id, profiles)
     right = team_label(right_id, profiles)
@@ -269,8 +278,9 @@ def describe_stance(left_id, right_id, relation,
     if relation == "friend":
         return f"{left} and {right} are allies and keep each other company."
     if relation == "foe":
-        return (f"{left} and {right} are foes: a Guard of either team intercepts "
-                f"the other near its base. Nothing takes damage yet.")
+        return (f"{left} and {right} are foes: they fight on sight and a Guard of "
+                f"either team intercepts the other near its base. Damage is real "
+                f"and the loser dies.")
     return f"{left} and {right} ignore each other."
 
 

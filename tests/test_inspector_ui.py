@@ -131,9 +131,24 @@ def test_typing_a_name_does_not_assign_every_prefix_along_the_way(inspector):
 
 
 def test_the_inspector_says_what_hostility_actually_does(inspector):
-    """"Foe" and "rivals" promise a fight the overlay cannot have yet."""
+    """The note has to track the overlay, in whichever direction it moved.
+
+    This check used to assert the opposite -- that the note said "no combat" --
+    because for a long time marking teams as foes really did nothing but raise
+    an alert, and the risk was over-promising a fight. DC-22, DC-45 and DC-47
+    reversed that: foes fight, they use their skills, and a loser dies for
+    good. The note went on saying "nothing takes damage" the whole time, so the
+    assertion that was guarding against over-promising was quietly guarding a
+    lie instead. Under-promising a permanent death is the worse of the two.
+    """
     _app, _manager, dialog, _first, _second = inspector
     from desktop_bug.state.teams import HOSTILITY_NOTE
 
-    assert "no combat" in HOSTILITY_NOTE.lower()
+    lowered = HOSTILITY_NOTE.lower()
+    assert "no combat" not in lowered, HOSTILITY_NOTE
+    assert "nothing takes damage" not in lowered, HOSTILITY_NOTE
+    assert "fight" in lowered, HOSTILITY_NOTE
+    assert "dies" in lowered or "death" in lowered, (
+        "a spider now dies permanently; the note has to say so", HOSTILITY_NOTE,
+    )
     assert dialog.team_combo.toolTip() == HOSTILITY_NOTE
