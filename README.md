@@ -186,7 +186,7 @@ A second pack uses the **sprite_rig** renderer (the same "hybrid 2D" system as t
 - **Snowpuff** — cream-white and downy with big eyes and blush. Defaults to Cuddly.
 - **Berry Knee** — near-black body with warm berry-orange foot "socks," red-knee inspired. Defaults to Grumpy.
 
-Because they are sprite_rig models, their look lives in `models/<id>/assets/*.png` and is fully editable or replaceable; the `colors` block still drives the procedural bits (leg joints, feet, pedipalps, antennae, eyes, and blush), so keep it in step with the art. Thickness, eye size, blush, and body proportions are tuned per model through the `appearance` block (`leg_segment_thickness`, `leg_tip_thickness`, `foot_bulb`, `eye_scale`, `eye_count`, `cute_blush`, `abdomen_scale`, `cephalothorax_scale`).
+Because they are sprite_rig models, their look lives in `models/<id>/assets/*.png` and is fully editable or replaceable. **The `colors` block now recolours that art too.** Setting `body`, `legs` or `leg_tip` -- in the model file or as a per-slot override in the settings window -- swaps the hue of the matching PNGs while keeping their shading, fur texture and highlights exactly as drawn, so one piece of art gives you the whole palette. The art is single-hue, which is why this reads as painted rather than tinted. Near-white pixels are left alone so pale fluff stays pale, the shadow is never coloured, and a model with no override renders byte-identical to the art it shipped with. The same block also drives the procedural bits (leg joints, feet, pedipalps, antennae, eyes, and blush), which now follow the body instead of drifting away from it. Thickness, eye size, blush, and body proportions are tuned per model through the `appearance` block (`leg_segment_thickness`, `leg_tip_thickness`, `foot_bulb`, `eye_scale`, `eye_count`, `cute_blush`, `abdomen_scale`, `cephalothorax_scale`).
 
 ## Requirements
 
@@ -616,6 +616,7 @@ DesktopBugCompanion/
         phase_scheduler.py
         render_procedural.py
         render_sprite.py
+        sprite_tint.py         # recolours PNG art by hue, keeping its shading
 
       state/                 # what outlives a session
         progression.py
