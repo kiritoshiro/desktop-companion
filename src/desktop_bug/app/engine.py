@@ -1050,6 +1050,20 @@ class OverlayWindow(QWidget):
                 )
             menu.addSeparator()
 
+        # A base under the cursor gets its own entry, above the cage ones, so
+        # the nearest thing to what was actually right-clicked comes first.
+        base = self.manager.base_at(mx, my)
+        if base is not None:
+            team_name = team_label(base.team_id, self.manager.team_profiles)
+            remove_base = menu.addAction(f"Remove the {team_name} base here")
+            remove_base.setToolTip(
+                "Delete this base. Its team keeps its spiders and its food; a "
+                "Builder will found a new one."
+            )
+            remove_base.triggered.connect(
+                lambda _checked=False, site=base: self._announce(self.manager.remove_base(site)))
+            menu.addSeparator()
+
         add_cage = menu.addAction("Add a cage here")
         add_cage.triggered.connect(lambda: self._announce(self.manager.add_cage(mx, my)))
         if self.manager.cages:
@@ -1057,10 +1071,7 @@ class OverlayWindow(QWidget):
             remove_cage.triggered.connect(lambda: self._announce(self.manager.remove_cages()))
 
         menu.addSeparator()
-        show_names = menu.addAction("Always show names")
-        show_names.setCheckable(True)
-        show_names.setChecked(self.manager.always_show_names)
-        show_names.toggled.connect(lambda on: self._announce(self.manager.set_always_show_names(on)))
+        _add_label_switches(menu, self.manager, self._announce)
 
         # Keep the overlay above other windows and force a clean full repaint
         # after the menu closes so new labels/cages appear immediately.
@@ -1306,6 +1317,30 @@ def _fallback_tray_icon() -> QIcon:
     return QIcon(pixmap)
 
 
+
+def _add_label_switches(parent, manager, announce) -> None:
+    """The three "always show" switches, in one place.
+
+    They appear in the overlay's right-click menu and in the tray menu, and
+    having built them twice once already, the second copy is where the two
+    drifted apart.
+    """
+    entries = (
+        ("Always show names", "always_show_names", manager.set_always_show_names,
+         "Show every spider's name without having to hover it."),
+        ("Always show levels", "always_show_levels", manager.set_always_show_levels,
+         "Show every spider's level beside its name."),
+        ("Always show health bars", "always_show_health", manager.set_always_show_health,
+         "Show every spider's health bar, not just ones pinned individually."),
+    )
+    for text, attribute, setter, tip in entries:
+        action = parent.addAction(text)
+        action.setCheckable(True)
+        action.setChecked(bool(getattr(manager, attribute, False)))
+        action.setToolTip(tip)
+        action.toggled.connect(lambda on, fn=setter: announce(fn(on)))
+
+
 def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     icon = QIcon.fromTheme("applications-games")
     if icon.isNull():
@@ -1446,13 +1481,16 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     naming_action.setToolTip("Lets you right-click a spider to give it a name. Disable to make spiders click-through when dragging is also off.")
     naming_action.toggled.connect(lambda enabled: announce(window.manager.set_naming_enabled(enabled)))
 
-    names_action = interaction_menu.addAction("Always show spider names")
-    names_action.setCheckable(True)
-    names_action.setChecked(window.manager.always_show_names)
-    names_action.setToolTip("Show every named spider's label all the time instead of only on hover.")
-    names_action.toggled.connect(
-        lambda enabled: (window._request_full_repaint(), announce(window.manager.set_always_show_names(enabled)))
-    )
+    # Names, levels and health bars, from the one place that builds them, so
+    # this menu and the overlay's right-click menu cannot drift apart. The
+    # repaint matters here: a label appearing or vanishing changes each
+    # spider's bounding box, and partial repaints would leave the old one
+    # behind on the desktop.
+    def _announce_and_repaint(message):
+        window._request_full_repaint()
+        return announce(message)
+
+    _add_label_switches(interaction_menu, window.manager, _announce_and_repaint)
 
     flies_menu = menu.addMenu("Flies")
     add_note(flies_menu, "Flies buzz around for the spiders to hunt, trap, and eat.")

@@ -457,6 +457,16 @@ While the overlay is running, you can also right-click the system-tray icon for 
 
 Right-click an individual spider in the overlay to name it and to open **Skills for this spider**, where each skill can be toggled live for that one spider.
 
+Right-click a **base** to remove it. The entry names the team it belongs to, and appears only when a base is actually under the cursor. Removing one is a scene edit rather than a defeat: the team keeps its spiders and its banked food, and a Builder will found a new base in due course. This exists because a base is placed wherever its Builder happened to settle, and until now a colony that built in an awkward corner of the desktop was stuck with it.
+
+Three **Always show** switches appear both in that right-click menu and under **Interaction** in the tray menu:
+
+- **Always show names** -- every named spider's label, without hovering.
+- **Always show levels** -- every spider's level beside its name.
+- **Always show health bars** -- every spider's health bar.
+
+They apply to the whole scene at once, which the inspector's per-spider pins do not. They are not saved into a spider's progression, so turning one off again leaves any pin you set deliberately on an individual spider exactly as it was.
+
 You can also launch the overlay engine directly with a preset, skipping the
 settings UI (from the repository root, PowerShell):
 

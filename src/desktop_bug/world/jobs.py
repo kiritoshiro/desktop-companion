@@ -365,6 +365,20 @@ class BaseWorld:
             site.x = max(32.0, min(self.screen_w - 32.0, site.x))
             site.y = max(32.0, min(self.screen_h - 32.0, site.y))
 
+    def remove_base(self, site_id: str) -> bool:
+        """Delete one base. True if there was one to delete.
+
+        Only the `bases` entry has to go: every other cache here is keyed by
+        creature rather than by site, and the jobs look their site up by team
+        each frame, so a worker whose base has gone simply finds nothing to do
+        rather than walking to a place that no longer exists.
+        """
+        for key, site in list(self.bases.items()):
+            if site.id == site_id:
+                del self.bases[key]
+                return True
+        return False
+
     def clear(self) -> None:
         self.bases.clear()
         self._duty.clear()

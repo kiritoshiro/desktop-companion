@@ -5,6 +5,7 @@ Split out of the single ``manager.py`` by DC-43; a pure move.
 
 from __future__ import annotations
 
+import math
 from typing import List, Optional, Tuple
 
 from ..creature import Creature
@@ -132,3 +133,59 @@ class CageMixin:
         return rects
 
 
+
+    # ------------------------------------------------------------------
+    # Bases
+    #
+    # A base is placed by a Builder wherever it happens to settle, and until
+    # now nothing could move or clear one -- a colony that had built in an
+    # awkward corner of the desktop was stuck with it for the life of the
+    # save. Right-clicking one and removing it is the counterpart to "Add a
+    # cage here": a direct edit of the scene, not a game action.
+    # ------------------------------------------------------------------
+
+    def base_at(self, x: float, y: float):
+        """The base site under a point, or None.
+
+        Picks the nearest when rings overlap, so clicking where two teams'
+        territory meets removes the one actually under the cursor rather than
+        whichever happens to be first in the dictionary.
+        """
+        base_world = getattr(self, "base_world", None)
+        if base_world is None:
+            return None
+        best = None
+        best_distance = 0.0
+        for site in base_world.bases.values():
+            dx = float(x) - site.x
+            dy = float(y) - site.y
+            distance = math.hypot(dx, dy)
+            # A young base is a small ring but still wants a clickable target.
+            reach = max(float(site.radius), 26.0)
+            if distance <= reach and (best is None or distance < best_distance):
+                best = site
+                best_distance = distance
+        return best
+
+    def remove_base(self, site) -> str:
+        """Delete one base and release everything that was pointing at it."""
+        base_world = getattr(self, "base_world", None)
+        if base_world is None or site is None:
+            return "There is no base there to remove."
+        if not base_world.remove_base(site.id):
+            return "There is no base there to remove."
+        # Nothing else to unpick: every job looks its site up by team each
+        # frame, so the workers simply find there is none rather than holding
+        # a stale reference. A Builder will found a fresh one in due course.
+        team_label = site.team_id or "neutral"
+        self.save_runtime_state()
+        return f"Removed the {team_label} base."
+
+    def remove_bases(self) -> str:
+        base_world = getattr(self, "base_world", None)
+        if base_world is None or not base_world.bases:
+            return "There are no bases to remove."
+        count = len(base_world.bases)
+        for site in list(base_world.bases.values()):
+            self.remove_base(site)
+        return f"Removed {count} base(s)."

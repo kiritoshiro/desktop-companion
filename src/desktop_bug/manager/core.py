@@ -99,6 +99,11 @@ class CreatureManager(
         # Right-click naming and the hover/always-on name label.
         self.naming_enabled = True
         self.always_show_names = False
+        # Scene-wide "show everyone's level / health" switches, pushed onto
+        # each creature by _apply_label_overrides. Not saved per spider, so a
+        # deliberate per-spider pin survives these being switched off.
+        self.always_show_levels = False
+        self.always_show_health = False
         # Containment cages and the in-progress direct-manipulation of one.
         self.cages: List[Cage] = []
         self._cage_drag = None  # dict: {cage, mode, corner, off_x, off_y}
@@ -222,6 +227,10 @@ class CreatureManager(
             creature.set_team(team_id)
         creature.team_stances = self.team_stances
         creature.team_profiles = self.team_profiles
+        # A spider born into a scene that is already showing every level or
+        # health bar has to join it, rather than being the one that is missing.
+        creature.force_show_level = getattr(self, "always_show_levels", False)
+        creature.force_show_health = getattr(self, "always_show_health", False)
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
