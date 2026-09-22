@@ -30,6 +30,7 @@ from .perception import build_perception
 from .phase_scheduler import BehaviourPhaseScheduler
 from ..state.progression import (
     ABILITY_BY_ID,
+    ABILITY_TREE,
     ARMOR_BY_ID,
     MAX_LEVEL,
     ProgressionState,
@@ -346,6 +347,15 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.abdomen_wag = 0.0          # extra abdomen sway (radians)
         self.crouch = 0.0               # 0 upright .. 1 coiled/low (jump prep, play bow)
         self.rear = 0.0                 # 0 flat .. 1 reared front (alert/excited)
+        # DC-59: the fighting pose. `combat_stance` is 0..1, how squared-up
+        # this spider is at a foe; `lunge` is a signed 0..1 impulse along the
+        # line to that foe -- positive for a blow thrown, negative for one
+        # taken. Both are pure animation: nothing here changes a number that
+        # decides a fight.
+        self.combat_stance = 0.0
+        self.lunge = 0.0
+        self.combat_face_x = 0.0
+        self.combat_face_y = 0.0
         self.squash = 1.0               # landing squash-and-stretch (1 = neutral)
         self.wiggle_phase = self.rng.random() * math.tau
         self.wiggle_amp = 0.0           # target amplitude driven by mood/intent
@@ -669,11 +679,40 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.progression.skill_points += 1
             self._apply_progression_stats(reset_resources=True)
             events.append(f"reached level {self.progression.level}")
+            events.extend(self._spend_skill_points())
         if self.progression.level >= MAX_LEVEL:
             # One large award can carry a remainder past the last threshold.
             # Leaving it unclamped overfills the inspector's XP bar.
             self.progression.xp = xp_to_next_level(MAX_LEVEL)
         return events
+
+    def _spend_skill_points(self) -> list[str]:
+        """Unlock whatever this level just made available (DC-57).
+
+        The owner: *"and the skills unlocks as they level up."* The tree, the
+        level gates and the prerequisites all already existed; what did not
+        was anyone to spend the points. A skill point was awarded on every
+        level and then sat there unless a person opened the inspector and
+        clicked, which no spider in a colony of five was ever going to get.
+
+        Cheapest-first by level requirement, then in tree order, so a spider
+        walks up the tree the way its author laid it out rather than taking
+        whichever node a set happened to yield first. `can_unlock` is the same
+        gate the inspector uses, so the two cannot drift.
+        """
+        unlocked = []
+        while self.progression.skill_points > 0:
+            available = [node for node in ABILITY_TREE
+                         if self.progression.can_unlock(node.id)]
+            if not available:
+                break
+            node = min(available, key=lambda n: (n.level_required, ABILITY_TREE.index(n)))
+            self.progression.skill_points -= node.cost
+            self.progression.unlocked_abilities.append(node.id)
+            unlocked.append(f"learned {node.name}")
+        if unlocked:
+            self._apply_progression_stats()
+        return unlocked
 
     def unlock_progression_ability(self, ability_id: str) -> tuple[bool, str]:
         ability_id = str(ability_id).strip().lower()

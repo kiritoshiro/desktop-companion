@@ -12,17 +12,39 @@ from ...support.math_utils import (
     clamp_point,
 )
 
+from ..constants import GAIT_BY_STATE
 from .legstate import LegState
 
 
 class GaitConfigMixin:
     """Gait configuration and grounded-locomotion body solving."""
 
+    def effective_gait_style(self) -> str:
+        """The gait this spider is walking with *right now* (DC-56).
+
+        `self.gait_style` is the baseline its temperament gave it (DC-52);
+        this is that, overridden by what the spider is currently doing. A
+        curious spider darts, a running one runs, and a spider doing neither
+        walks the way its temperament walks.
+
+        `classic` opts out entirely. It is the original pre-DC-16 gait, kept
+        so a preset that names it still behaves exactly as its author left
+        it, and phasing it would quietly break that promise.
+        """
+        baseline = getattr(self, "gait_style", "classic")
+        if baseline == "classic":
+            return baseline
+        if getattr(self, "fleeing", False):
+            # DC-50's retreat can run under several states; whichever one it
+            # is, a frightened spider is running.
+            return "lively"
+        return GAIT_BY_STATE.get(getattr(self, "state", ""), baseline)
+
     def _uses_lively_gait(self) -> bool:
-        return getattr(self, "gait_style", "classic") in ("lively", "skitter")
+        return self.effective_gait_style() in ("lively", "skitter")
 
     def _uses_skitter_gait(self) -> bool:
-        return getattr(self, "gait_style", "classic") == "skitter"
+        return self.effective_gait_style() == "skitter"
 
     def _spider_gait_config(self):
         """Return bounded tuning for models that opt into an insect-like gait.

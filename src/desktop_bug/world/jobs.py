@@ -54,7 +54,14 @@ JOB_OPTIONS = tuple((job.display_name, job.id) for job in JOB_DEFINITIONS)
 # A base is finished at this much accumulated build progress: five structure
 # levels of 100 each.  Named so the build loop, the completion readout, and the
 # "is there work left" check cannot drift apart.
-MAX_BUILD_PROGRESS = 500.0
+# DC-55 cut this from 500. At 1.0 food per point a base cost 500 food, and a
+# working colony earns about 14 a minute, so a base took roughly forty
+# minutes of running time to finish -- which is why the owner has twice
+# reported never seeing a finished one, and why nothing could ever be left
+# over to raise a spider with. At 120 a base finishes in about ten minutes of
+# headless time, and the real overlay builds faster than the headless harness
+# predicts. A balance number, and an easy one to move.
+MAX_BUILD_PROGRESS = 120.0
 
 # A job is a shift, not a personality transplant.  Work claims a spider for one
 # stretch, then lets go for a shorter one so its temperament -- wandering,
@@ -137,6 +144,9 @@ REPAIR_URGENT_INTEGRITY = 0.5
 # an empty larder still gets visited and held at its current progress, but
 # does not advance until food arrives.
 BUILD_RESOURCE_COST_PER_PROGRESS = 1.0
+# How much of everything a base is fed is set aside for raising spiders
+# (DC-55). The rest is what building spends.
+GROWTH_FOOD_SHARE = 0.30
 
 # DC-21: a visible, on-screen benefit for a leveled-up base -- friendly
 # creatures within this much past the base's ring slowly regenerate hp, and
@@ -335,6 +345,12 @@ class BaseSite:
     last_alert: float = 0.0
     patrol_angle: float = 0.0
     resources: float = 0.0
+    # DC-55: food set aside for raising spiders, which building may not spend.
+    # Without a second pool a base consumes every scrap it is fed until it is
+    # finished, and a colony would never raise anything: a full base costs
+    # MAX_BUILD_PROGRESS in food and a working colony earns roughly 14 a
+    # minute.
+    larder: float = 0.0
     # DC-20: a small rolling log of what a Scout has reported nearby -- the
     # team's shared "blackboard". Each entry is a plain dict so it round-trips
     # through JSON without a schema bump; oldest entries drop once it grows
@@ -382,6 +398,7 @@ class BaseSite:
         data["last_alert"] = round(self.last_alert, 3)
         data["patrol_angle"] = round(self.patrol_angle, 5)
         data["resources"] = round(self.resources, 3)
+        data["larder"] = round(self.larder, 3)
         data["points_of_interest"] = list(self.points_of_interest)
         return data
 
@@ -404,6 +421,7 @@ class BaseSite:
                 last_alert=max(0.0, float(value.get("last_alert", 0.0))),
                 patrol_angle=float(value.get("patrol_angle", 0.0)),
                 resources=max(0.0, min(1000.0, float(value.get("resources", 0.0)))),
+                larder=max(0.0, min(1000.0, float(value.get("larder", 0.0)))),
                 points_of_interest=[
                     dict(poi) for poi in (value.get("points_of_interest") or ())
                     if isinstance(poi, dict)
@@ -626,9 +644,51 @@ class BaseWorld:
         # but a guard holding its line wants.
         creature.job_facing = facing
 
+    def ensure_team_sites(self, creatures: Iterable) -> None:
+        """Every named team on the desktop owns exactly one base.
+
+        The owner: *"as many teams there are that many bases supposed to be."*
+        Until now a base only existed where a **Builder** happened to settle,
+        so a team with no builder had nowhere to heal, nowhere to bank food
+        and nothing for its Guards, Scouts or Web tenders to do -- and the
+        Teams panel would show two teams with one base between them.
+
+        Founded at the team's centre of mass rather than on one member, so a
+        team that starts spread out does not have its base parked on whichever
+        spider the list happened to hold first.
+
+        Neutral is deliberately left out. "Neutral / solo" is the absence of a
+        team, and giving it a base would either found one shared base for
+        every unaffiliated spider on the desktop or one base each.
+        """
+        by_team: dict[str, list] = {}
+        for creature in creatures:
+            if getattr(creature, "dead", False):
+                continue
+            team = str(getattr(creature.progression, "team_id", "neutral") or "neutral")
+            if team == "neutral":
+                continue
+            by_team.setdefault(team, []).append(creature)
+
+        for team, members in by_team.items():
+            key = f"team:{team}"
+            if key in self.bases:
+                continue
+            self.bases[key] = BaseSite(
+                id=key,
+                owner_id=str(getattr(members[0], "progression_id", members[0].index)),
+                team_id=team,
+                x=max(42.0, min(self.screen_w - 42.0,
+                                sum(c.x for c in members) / len(members))),
+                y=max(42.0, min(self.screen_h - 42.0,
+                                sum(c.y for c in members) / len(members))),
+                patrol_angle=(getattr(members[0], "index", 0) * 0.83) % math.tau,
+            )
+
     def update(self, dt: float, creatures: Iterable, web_world=None) -> None:
         creatures = list(creatures or ())
         self._clock += max(0.0, float(dt))
+        self.ensure_team_sites(creatures)
         self._prune_duty(creatures)
         builders = [c for c in creatures if getattr(c, "job_id", "none") == "builder"]
         for creature in creatures:
@@ -757,8 +817,16 @@ class BaseWorld:
         if team == "neutral":
             return
         site = self.bases.get(f"team:{team}")
-        if site is not None:
-            site.resources = min(1000.0, site.resources + max(0.0, float(amount)))
+        if site is None:
+            return
+        amount = max(0.0, float(amount))
+        # DC-55: a share goes into a larder building cannot touch. Building
+        # spends continuously until a base is finished, so with one pool a
+        # colony's whole income went into the ground and there was never
+        # anything left to raise a spider with.
+        growth = amount * GROWTH_FOOD_SHARE
+        site.larder = min(1000.0, site.larder + growth)
+        site.resources = min(1000.0, site.resources + amount - growth)
 
     # -- Scout: sector coverage + a team blackboard ---------------------
 

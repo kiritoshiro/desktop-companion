@@ -732,7 +732,12 @@ class RenderProceduralMixin:
 
         crouch_drop = self.crouch * self.size * 0.06
         painter.save()
-        painter.translate(self.x + tremble_x, self.y + self.body_bob + tremble_y - self.jump_z + crouch_drop)
+        # DC-59: a landed blow throws the body over its planted feet, so the
+        # legs stretch behind it. The feet are solved in world space and are
+        # not moved, which is the whole effect.
+        lunge_x, lunge_y = self.combat_body_offset()
+        painter.translate(self.x + tremble_x + lunge_x,
+                          self.y + self.body_bob + tremble_y - self.jump_z + crouch_drop + lunge_y)
         painter.rotate(math.degrees(self.heading))
         # Snowpuff-2's stance solver owns the body pose; a second cosmetic
         # rotation here would rotate the shell away from the leg roots.
@@ -766,6 +771,15 @@ class RenderProceduralMixin:
         ceph_w *= (1.0 + self.rear * 0.12)
         ceph_h *= (1.0 + self.rear * 0.12)
         ceph_offset_x += self.rear * self.size * 0.05
+        # Squared up, the front half rises and the abdomen drops behind it.
+        # `rear` on its own only scaled the cephalothorax by 12%, which is
+        # invisible at spider size -- rendered and looked at.
+        stance = getattr(self, "combat_stance", 0.0)
+        if stance > 0.01:
+            ceph_offset_x += stance * self.size * 0.16
+            ceph_w *= (1.0 + stance * 0.10)
+            ceph_h *= (1.0 + stance * 0.10)
+            abdomen_offset_x -= stance * self.size * 0.10
         abdo_wag = self.abdomen_wag * self.size * 0.45
 
         pedicel_enabled = isinstance(pedicel_cfg, dict) and bool(pedicel_cfg.get("enabled", True))
@@ -1114,6 +1128,7 @@ class RenderProceduralMixin:
             foot_x += -uy * amp * 0.5 * knead
             foot_y += ux * amp * 0.5 * knead
         foot_x, foot_y = self._front_leg_feeler_pose(leg, ax, ay, foot_x, foot_y, front)
+        foot_x, foot_y = self._combat_leg_pose(leg, ax, ay, foot_x, foot_y, front)
         if self.airborne and self.jump_peak > 1e-3:
             tuck = clamp(self.jump_z / self.jump_peak, 0.0, 1.0) * 0.8
             foot_x += (ax - foot_x) * tuck
@@ -1128,6 +1143,35 @@ class RenderProceduralMixin:
             foot_x += (ax - foot_x) * t
             foot_y += (ay - foot_y) * t
         return ax, ay, foot_x, foot_y
+
+    def _combat_leg_pose(self, leg: LegState, ax: float, ay: float,
+                         foot_x: float, foot_y: float, front: float) -> Tuple[float, float]:
+        """Raise and spread the front legs of a spider squared up at a foe.
+
+        The threat posture of a real tarantula, and the reason this touches
+        the *rendered* foot rather than the planted one: the back legs stay
+        exactly where they are, so the spider holds its ground while its front
+        half rises. Moving the planted foot would make it walk backwards.
+
+        Only the front pairs, weighted by `_leg_front_factor`, so a spider
+        does not levitate.
+        """
+        stance = getattr(self, "combat_stance", 0.0)
+        if stance <= 0.01 or front <= 0.15:
+            return foot_x, foot_y
+        weight = stance * clamp((front - 0.15) / 0.85, 0.0, 1.0)
+        face_x = getattr(self, "combat_face_x", 0.0)
+        face_y = getattr(self, "combat_face_y", 0.0)
+        # Up, out to the side, and a little towards the foe: raised and
+        # spread rather than raised and pressed together.
+        lateral_x, lateral_y = -face_y, face_x
+        side = self._side_sign(leg.definition.get("side", "right"))
+        foot_x += face_x * self.size * 0.30 * weight
+        foot_y += face_y * self.size * 0.30 * weight
+        foot_x += lateral_x * side * self.size * 0.34 * weight
+        foot_y += lateral_y * side * self.size * 0.34 * weight
+        foot_y -= self.size * 0.52 * weight
+        return foot_x, foot_y
 
     def _draw_leg_connections(self, painter, chain_config: Optional[dict]) -> None:
         """Paint the short coxa/trochanter bridges that seat legs in the body.

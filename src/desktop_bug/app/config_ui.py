@@ -63,6 +63,7 @@ from ..state.teams import (
     teams_payload,
 )
 from ..content.body_plans import BODY_PLAN_IDS
+from ..content.palettes import NAMED_PALETTES, PALETTE_BY_ID, random_palette
 from ..content.skills import (
     ABILITY_SKILL_IDS,
     SKILLS,
@@ -226,6 +227,7 @@ FIXED_COLUMN_WIDTHS = {
     COL_TEMPERAMENT: 150,
     COL_REMOVE: 28,
 }
+RANDOM_PALETTE_ID = "__random_palette__"
 RANDOM_CATEGORY_ID = "__random_category__"
 # What a brand-new slot starts as. DC-52: "lets focus mainly on the tarantula
 # model from now on. others can live for now, but not our main objective." A
@@ -1220,6 +1222,21 @@ class ConfigWindow(QMainWindow):
         painter.end()
         return QIcon(pixmap)
 
+    @staticmethod
+    def _palette_icon(colors: dict) -> QIcon:
+        """Three bands -- body, legs, band -- so a palette is recognisable in
+        the list without having to open it."""
+        pixmap = QPixmap(SWATCH_ICON_SIZE, SWATCH_ICON_SIZE)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setPen(Qt.NoPen)
+        height = SWATCH_ICON_SIZE / 3.0
+        for index, key in enumerate(("legs", "body", "leg_band")):
+            painter.setBrush(QColor(*colors[key]))
+            painter.drawRect(QRectF(0.0, index * height, float(SWATCH_ICON_SIZE), height + 1.0))
+        painter.end()
+        return QIcon(pixmap)
+
     def _refresh_colors_button(self, button: QPushButton, model_box: QComboBox | None = None) -> None:
         overrides = _normalize_color_overrides(button.property("color_overrides"))
         button.setProperty("color_overrides", overrides)
@@ -1327,6 +1344,25 @@ class ConfigWindow(QMainWindow):
         layout.addWidget(QLabel("Choose colors for this creature slot. Unchanged fields use the selected model's defaults."))
         swatches = {}
 
+        # DC-58: presets, because seven separate colour pickers is a way to
+        # produce a spider with a green body, pink legs and orange feet. A
+        # palette is derived from one hue with the proportions the shipped
+        # models use, so every entry here still looks like an animal. The same
+        # catalogue is what a base draws from when it raises a spider.
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Preset:"))
+        preset_box = NoScrollComboBox()
+        preset_box.setToolTip(
+            "Fill every colour below from a ready-made palette. You can still "
+            "change any single colour afterwards."
+        )
+        preset_box.addItem("Pick a palette…", None)
+        for palette in NAMED_PALETTES:
+            preset_box.addItem(self._palette_icon(palette.colors), palette.name, palette.id)
+        preset_box.addItem("Surprise me", RANDOM_PALETTE_ID)
+        preset_row.addWidget(preset_box, 1)
+        layout.addLayout(preset_row)
+
         def display_color(key: str):
             return current.get(key) or defaults.get(key) or [80, 70, 70]
 
@@ -1338,6 +1374,18 @@ class ConfigWindow(QMainWindow):
             swatch.setStyleSheet(
                 f"QPushButton {{ background: rgb({rgb[0]}, {rgb[1]}, {rgb[2]}); color: {text_color}; }}"
             )
+
+        def apply_palette(_index=0):
+            palette_id = preset_box.currentData()
+            if palette_id is None:
+                return
+            chosen = (random_palette() if palette_id == RANDOM_PALETTE_ID
+                      else PALETTE_BY_ID[palette_id].as_overrides())
+            current.update(_normalize_color_overrides(chosen))
+            for swatch_key, swatch_button in swatches.items():
+                refresh_swatch(swatch_key, swatch_button)
+
+        preset_box.currentIndexChanged.connect(apply_palette)
 
         for key, label in keys:
             row = QHBoxLayout()
@@ -1362,6 +1410,9 @@ class ConfigWindow(QMainWindow):
         reset_btn = buttons.addButton("Reset to model defaults", QDialogButtonBox.ResetRole)
         reset_btn.clicked.connect(lambda: [current.pop(key, None) for key, _label in keys])
         reset_btn.clicked.connect(lambda: [refresh_swatch(key, swatches[key]) for key, _label in keys])
+        # Otherwise the picker still names the palette that was just cleared,
+        # and choosing it again does nothing because the index has not moved.
+        reset_btn.clicked.connect(lambda: preset_box.setCurrentIndex(0))
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)

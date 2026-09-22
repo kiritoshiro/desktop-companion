@@ -29,7 +29,17 @@ from ..world.carcass import (
 from .constants import log
 
 # How close two foes must be, relative to their combined size, to trade hits.
-CONTACT_REACH = 0.85
+#
+# DC-59 raised this from 0.85. Two spiders now hold each other at
+# `COMBAT_SPACING` -- 1.35 of their combined size, up to 1.65 with the
+# hysteresis -- instead of walking into one another, and a reach of 0.85
+# would have meant two spiders squared up at exactly the right distance
+# could never land a blow. It has to sit above the far edge of that band.
+#
+# Read as: a spider strikes with its front legs out, so its reach is most of
+# its leg span rather than the width of its body. The one balance effect is
+# that fewer swings miss while both are circling.
+CONTACT_REACH = 1.75
 # A spider lands at most one hit this often, so a brawl reads as exchanges
 # rather than as hp draining smoothly to zero.
 ATTACK_INTERVAL = 0.85
@@ -255,6 +265,11 @@ class CombatMixin:
         overlap and flatten one another in well under a second.
         """
         attacker.attack_cooldown = ATTACK_INTERVAL
+        # DC-59: the animation of the blow. Set here because this is the one
+        # place that knows a blow happened; it changes nothing about the
+        # outcome, which is deliberate -- see `_update_combat_pose`.
+        attacker.strike_landed(defender)
+        defender.blow_taken(attacker)
         # DC-45: a pinned defender cannot dodge, so the hit tells. This is
         # what a web shot buys the shooter.
         blow = attacker.damage * (WEBBED_DAMAGE_BONUS if defender.webbed else 1.0)

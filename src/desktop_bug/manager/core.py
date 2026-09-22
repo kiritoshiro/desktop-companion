@@ -35,6 +35,7 @@ from ..state.runtime_state import (
 
 from .persistence import RuntimeStateMixin
 from .cages import CageMixin
+from .colony import ColonyGrowthMixin
 from .combat import CombatMixin
 from .prey import PreyMixin
 from .hunting import HuntingMixin
@@ -50,6 +51,7 @@ from .constants import (
 class CreatureManager(
     RuntimeStateMixin,
     CageMixin,
+    ColonyGrowthMixin,
     CombatMixin,
     PreyMixin,
     HuntingMixin,
@@ -156,6 +158,10 @@ class CreatureManager(
         # the right-click menu.
         self._dragged_base = None
         self._base_drag_offset = (0.0, 0.0)
+        # DC-55: how long each base has been raising its next spider.
+        # Transient by design -- a reload starts the wait again, and the food
+        # has not been spent yet, so nothing is lost.
+        self._raise_timers: dict = {}
         self._render_order: List[Creature] = []
         self._render_sort_accum = 0.0
         self._neighbor_refresh_accum = 0.0
@@ -1016,6 +1022,7 @@ class CreatureManager(
         # remains free to describe *how* that work looks.
         with profiler.section("jobs"):
             self.base_world.update(dt, self.creatures, self.web_world)
+            self._update_colony_growth(dt)
         # Base construction advances continuously, so it uses the same debounced
         # save as feeding instead of only being persisted on quit.
         if any(getattr(creature, "job_mode", "idle") == "build" for creature in self.creatures):

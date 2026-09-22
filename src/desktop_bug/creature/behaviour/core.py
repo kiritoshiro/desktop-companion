@@ -426,7 +426,13 @@ class BehaviourMixin(
             self.speed = 0.0
             if self.state_timer <= 0.0:
                 after = getattr(self, "land_after", "idle")
-                if after == "outcome":
+                if after == "strike":
+                    # DC-59: a pounce onto a foe. No social roll -- it ends
+                    # the moment it lands and `_pursue_foe` picks the fight
+                    # back up on the next frame, which is what keeps the two
+                    # spiders spaced instead of ending up in a cuddle.
+                    self.enter_idle()
+                elif after == "outcome":
                     self._resolve_pounce_outcome()
                 elif after == "nope":
                     if self.nope_repeats > 0 and self.has_skill("jump") and self.has_skill("run_away"):

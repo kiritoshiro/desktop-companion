@@ -16,6 +16,8 @@ from ...support.math_utils import (
     distance,
 )
 from ..constants import (
+    COMBAT_SPACING,
+    COMBAT_SPACING_SLACK,
     HUNT_COMMITTED_STATES,
     JOB_MODE_STATES,
     JOB_PREEMPTING_STATES,
@@ -215,31 +217,97 @@ class JobBehaviourMixin:
             if self._maybe_shoot_web_at_foe(foe, d):
                 return True
 
+        standoff = (self.size + foe.size) * COMBAT_SPACING
         # A pinned foe cannot dodge, so a pounce onto it is worth the
         # commitment; a loose one is pounced at less eagerly.
+        #
+        # Only ever launched from *outside* arm's length, because a pounce is
+        # how a spider closes. Without the lower bound the two spent the
+        # whole brawl nose to nose re-aiming at each other: measured, 234 of
+        # 364 frames overlapping and 99 of them with both spiders in `Aim`,
+        # which pauses motion and is a committed state, so no spacing rule
+        # could ever reach them.
         strike = self.size * 4.5 + foe.size
-        if (d <= strike and self.has_skill("jump") and self.has_skill("prepare_jump_attack")
+        if (standoff * 0.95 <= d <= strike
+                and self.has_skill("jump") and self.has_skill("prepare_jump_attack")
                 and getattr(self, "_pounce_cooldown", 0.0) <= 0.0
                 and self.rng.random() < (0.65 if foe.webbed else 0.32)):
             self._pounce_cooldown = self.rng.uniform(0.9, 1.6)
-            self.enter_aim(fx, fy, target=None, after="outcome",
+            # "strike", not "outcome". `_resolve_pounce_outcome` is the
+            # *social* resolution -- catch, cuddle or flee -- written for
+            # pouncing on a friend, and a pounce on an enemy went through it
+            # too. Measured over a 364-frame brawl: 170 frames in Cuddle,
+            # both spiders glued together and unable to be spaced by anything
+            # `_pursue_foe` did, because `Cuddle` is a committed state and
+            # this method hands the tick back whenever it is in one. That is
+            # the whole of the "a fight is one clump of overlapping bodies"
+            # report, and it was never a spacing problem.
+            self.enter_aim(fx, fy, target=None, after="strike",
                            ranging=(0.4, 0.85), abort_chance=0.05)
             return True
 
-        if self.has_skill("chase"):
-            if self.state != "Chase":
-                self.enter_chase(fx, fy)
-            else:
-                self.target_x, self.target_y = fx, fy
+        # DC-59: close to arm's length and hold there, rather than walking
+        # into the foe. The first real-hardware session reported that a fight
+        # reads as one clump of overlapping bodies, and this is why: both
+        # spiders aimed at each other's centre, so both kept walking until
+        # they were on top of each other and stayed there for the rest of the
+        # brawl. `CONTACT_REACH` in manager/combat.py decides whether a blow
+        # connects and was raised to sit above this band, so holding at the
+        # standoff distance does not stop the fight -- a spider strikes with
+        # its front legs out, not with the width of its body.
+        span = max(1e-4, d)
+        # Unit vector from the foe towards this spider, so the same two
+        # numbers serve closing in and backing off.
+        away_x, away_y = (self.x - fx) / span, (self.y - fy) / span
+        if d < standoff * (1.0 - COMBAT_SPACING_SLACK):
+            # Too close. Holding still here is not enough: a pounce, a shove
+            # or the foe's own approach puts them on top of each other, and
+            # measured over a 364-frame brawl they spent 171 frames closer
+            # than one combined size -- the "fight is one clump" complaint,
+            # still true with a hold-only rule. Back out to the ring.
+            # Walked to, not fled to. `enter_retreat` flees 220-380px from
+            # the threat, which would end the fight rather than space it.
+            stop_x = fx + away_x * standoff
+            stop_y = fy + away_y * standoff
+            self._walk_towards_in_fight(stop_x, stop_y)
+            self.focus_x, self.focus_y = fx, fy
             return True
-        if self.has_skill("approach"):
-            if self.state != "Approach":
-                self.enter_approach(fx, fy)
-            else:
-                self.target_x, self.target_y = fx, fy
+        if d <= standoff * (1.0 + COMBAT_SPACING_SLACK):
+            # At the right distance: hold the ground and face it. The stance,
+            # the strikes and the silk all still run -- this only stops the
+            # walking.
+            self.target_x, self.target_y = self.x, self.y
+            self.focus_x, self.focus_y = fx, fy
+            return True
+        # Aim at the near edge of the foe rather than at its middle.
+        stop_x = fx + away_x * standoff
+        stop_y = fy + away_y * standoff
+        self.focus_x, self.focus_y = fx, fy
+        if self._walk_towards_in_fight(stop_x, stop_y):
             return True
         # No way to close and nothing to throw: stand its ground rather than
         # pretending to fight.
+        return False
+
+    def _walk_towards_in_fight(self, x: float, y: float) -> bool:
+        """Move to a point during a fight, with whatever this spider has.
+
+        One path for closing in and for backing off, because they are the
+        same act: a fighting spider is always walking to a spot on a ring
+        around its foe, and only the side of the ring changes.
+        """
+        if self.has_skill("chase"):
+            if self.state != "Chase":
+                self.enter_chase(x, y)
+            else:
+                self.target_x, self.target_y = x, y
+            return True
+        if self.has_skill("approach"):
+            if self.state != "Approach":
+                self.enter_approach(x, y)
+            else:
+                self.target_x, self.target_y = x, y
+            return True
         return False
 
     def _maybe_shoot_web_at_foe(self, foe, d: float) -> bool:

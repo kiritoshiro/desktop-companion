@@ -122,6 +122,78 @@ JOB_PREEMPTING_STATES = frozenset({
 })
 
 
+# DC-56: a gait is a phase, not a fixed trait.
+#
+# The owner: *"it seems that now they inherit only one of those movement
+# modes right? ... i think they should be a phases also the way they move, not
+# just strickly one way so to make it more interesting they should choose one
+# based on their goals to acheive it quicker. if curious then skittle, if
+# runing or chasing then run."*
+#
+# So the temperament still sets a spider's baseline (DC-52), and what it is
+# *doing* overrides it. A state absent from this map keeps the baseline,
+# which is why Wander is not listed: it is the state a spider is in most of
+# the time, and forcing it either way would erase the temperament entirely.
+GAIT_BY_STATE = {
+    # Looking into something. Short darting bursts with tiny pauses, which is
+    # what "skitter" already is and what an interested spider actually does.
+    "Inspect": "skitter",
+    "Observe": "skitter",
+    "Alert": "skitter",
+    "WebWalk": "skitter",
+    "WebApproach": "skitter",
+    # Going somewhere, and meaning it. A continuous lifted stride rather than
+    # burst-and-stop, because stopping is exactly what you do not do while
+    # running from something.
+    "Chase": "lively",
+    "Approach": "lively",
+    "Retreat": "lively",
+    "Startled": "lively",
+    "Zoom": "lively",
+    "DriftRun": "lively",
+    "Play": "lively",
+}
+
+# DC-59: what a fight looks like.
+#
+# The owner: *"next thing i want a good looking fight between spiders. how
+# they move their legs and body as in an attack stance and focus, and so on."*
+# Before this, two spiders fighting were two spiders running into each other:
+# every number was right -- hits landed on a cooldown, silk pinned, the loser
+# died -- and none of it was visible, because nothing about a fighting spider
+# was drawn differently from a walking one.
+#
+# Four things, in the order they read on screen:
+#
+# 1. **Spacing.** A spider stops at arm's length instead of walking into its
+#    foe. This is the standing "a fight is one clump of overlapping bodies"
+#    complaint from the first real-hardware session.
+# 2. **Stance.** Squared up: front legs raised and spread, body reared back
+#    and turned to face, which is what a threatened tarantula actually does.
+# 3. **Focus.** The head and eyes stay on the foe even while the body is
+#    backing off or circling.
+# 4. **Lunge and recoil.** A landed blow throws the attacker's body forward
+#    over its planted feet and knocks the defender's back. The feet stay put,
+#    so the legs stretch and compress -- which is the whole effect, and it is
+#    free, because the legs are already solved in world space.
+
+# How far apart two fighting spiders stand, as a multiple of their combined
+# size. Below about 1.1 they overlap and the fight is a clump again.
+COMBAT_SPACING = 1.35
+# Hysteresis on that, so a spider at exactly the standoff distance does not
+# shuffle in and out on alternate frames.
+COMBAT_SPACING_SLACK = 0.22
+# How quickly a spider squares up, and how quickly it drops the stance once
+# the fight is over. Rising fast reads as reacting; falling slowly keeps it
+# from flickering while a foe crosses in and out of range.
+STANCE_RISE_PER_SECOND = 4.5
+STANCE_FALL_PER_SECOND = 1.6
+# How far a landed blow throws a body, as a fraction of the spider's size,
+# and how fast that decays.
+LUNGE_REACH = 0.42
+RECOIL_REACH = 0.26
+LUNGE_DECAY_PER_SECOND = 4.2
+
 VALID_GAIT_STYLES = ("classic", "lively", "skitter")
 GAIT_LABELS = {
     "classic": "Classic",
