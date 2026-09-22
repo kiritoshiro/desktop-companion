@@ -26,6 +26,7 @@ from ..world.desktop_environment import DesktopSurface
 from ..state.progression import normalize_team_stances
 from ..state.teams import normalize_teams, teams_payload
 from ..world.jobs import BaseWorld, job_ability_ids, normalize_job_id
+from ..world.playfield import Playfield
 from ..content.personality_profiles import COMPACT_TEMPERAMENT_IDS
 from ..support.profiling import get_profiler
 from ..state.runtime_state import (
@@ -76,6 +77,9 @@ class CreatureManager(
         self._id_rng = None if seed is None else random.Random(f"{seed}:creature-ids")
         self.screen_w = screen_w
         self.screen_h = screen_h
+        # DC-65: which parts of the overlay are actually on a monitor. Empty
+        # means "all of it", which is one monitor and every headless test.
+        self.playfield = Playfield(screen_w, screen_h)
         self.creatures: List[Creature] = []
         self.dragged_creature: Optional[Creature] = None
         self.models = {}
@@ -456,9 +460,39 @@ class CreatureManager(
         self._refresh_neighbor_links()
         self._refresh_render_order()
 
+    def _keep_on_a_real_screen(self, creature) -> None:
+        """Keep one spider on a monitor rather than merely inside the window.
+
+        Runs only when the monitors do not tile their own bounding box, so
+        the single-screen case never reaches here (see ``Playfield.simple``).
+
+        Both the body **and** its destination are pulled back. Clamping the
+        body alone would leave a spider walking into dead space every frame
+        and being shoved out of it every frame, which reads as a spider
+        vibrating against an invisible wall; moving the target too means it
+        picks somewhere it can actually go.
+        """
+        margin = max(8.0, creature.size * 0.5)
+        x, y = self.playfield.clamp(creature.x, creature.y, margin)
+        if x != creature.x or y != creature.y:
+            creature.x, creature.y = x, y
+        tx, ty = self.playfield.clamp(
+            getattr(creature, "target_x", x), getattr(creature, "target_y", y), margin)
+        creature.target_x, creature.target_y = tx, ty
+
+    def set_screen_rects(self, rects) -> None:
+        """Publish the real monitor rectangles, in overlay-local pixels (DC-65).
+
+        The engine calls this whenever the screen layout changes. Until it
+        does, the whole window counts as habitable, which is correct for one
+        monitor and for two that happen to tile.
+        """
+        self.playfield.set_rects(rects)
+
     def resize(self, screen_w: int, screen_h: int) -> None:
         self.screen_w = screen_w
         self.screen_h = screen_h
+        self.playfield.set_size(screen_w, screen_h)
         for creature in self.creatures:
             creature.resize_screen(screen_w, screen_h)
         for cage in self.cages:
@@ -1056,6 +1090,8 @@ class CreatureManager(
                 creature._hunting_prey = hunting
                 with creatures_span:
                     creature.update(dt, fx, fy, self.screen_w, self.screen_h)
+            if not self.playfield.simple:
+                self._keep_on_a_real_screen(creature)
             with desktop_span:
                 self._update_desktop_awareness(creature, dt)
 

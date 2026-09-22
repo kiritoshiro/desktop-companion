@@ -651,6 +651,7 @@ DesktopBugCompanion/
         flies.py
         jobs.py
         mouse_webs.py
+        playfield.py
         webs.py
 
   models/

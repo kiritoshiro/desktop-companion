@@ -56,6 +56,37 @@ OUTNUMBERED_RATIO = 1.5
 # Fleeing is a sprint, not a stroll.
 FLEE_SPEED_MULT = 1.45
 
+# ---------------------------------------------------------------------------
+# DC-64: a retreat has to end.
+#
+# The owner, watching a colony: *"after initiating runing after low health,
+# they get stuck in that position where they runinng, and not stoping, so end
+# up mostly to top right corner."*
+#
+# DC-50 gave a spider only one way out of a retreat: heal back up to
+# RALLY_HEALTH_FRACTION. The one thing that heals is a base, so a spider whose
+# team has not built one -- or that runs the wrong way -- can never satisfy it.
+# It pins itself in a screen corner and runs on the spot forever. Measured
+# before the fix: 7200 of 7200 frames fleeing over two minutes, ending 856px
+# from a threat whose scan radius is 260.
+#
+# Escaping is the missing exit. A spider runs until it is *safe*, not until it
+# is well, which is also what running is for.
+#
+# The radius is wider than the one that starts a retreat, for the same reason
+# RALLY sits well above FLEE: leaving by the same line you entered by makes a
+# spider oscillate on the boundary.
+ESCAPED_RADIUS = THREAT_SCAN_RADIUS * 1.6
+# ...and it has to stay clear for this long, so one frame of a foe clipping
+# out of range does not call off a retreat mid-stride.
+ESCAPED_SECONDS = 1.1
+
+# Once safe but still hurt, a spider walks home to heal instead of resuming
+# its rounds at 12% hp. This is the calm half of the same behaviour: no
+# sprint, no panic, just somewhere better to be. It ends at RALLY_HEALTH_
+# FRACTION, the same bar a retreat ends at.
+RECOVER_ARRIVE_RADIUS = 40.0
+
 
 JOB_STATES = (
     "JobTravel", "JobBuild", "JobPatrol", "JobGuardAlert",

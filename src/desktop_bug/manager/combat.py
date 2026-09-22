@@ -15,6 +15,8 @@ from __future__ import annotations
 import math
 
 from ..creature.constants import (
+    ESCAPED_RADIUS,
+    ESCAPED_SECONDS,
     FLEE_HEALTH_FRACTION,
     OUTNUMBERED_RATIO,
     RALLY_HEALTH_FRACTION,
@@ -26,7 +28,7 @@ from ..world.carcass import (
     carcass_for,
     eaters_near,
 )
-from .constants import log
+from .constants import DAMAGE_XP_PER_POINT, KILL_XP_REWARD, log
 
 # How close two foes must be, relative to their combined size, to trade hits.
 #
@@ -183,21 +185,87 @@ class CombatMixin:
             outnumbered = threat > 0 and threat > (friends + 1) * OUTNUMBERED_RATIO
 
             if creature.fleeing:
-                # Keep running until patched up and no longer swamped. The
-                # rally threshold is well above the flee one on purpose, so a
-                # spider does not bounce in and out of a fight on one hit.
+                # Three ways out, and DC-50 only had the first.
+                #
+                # 1. Patched up and no longer swamped. The rally threshold is
+                #    well above the flee one on purpose, so a spider does not
+                #    bounce in and out of a fight on one hit.
                 if (recovered or not hurt) and not outnumbered:
-                    creature.flee_timer = 0.0
-                    creature.flee_from = None
+                    self._call_off_retreat(creature)
+                    continue
+                # 2. Got away (DC-64). Without this a spider that cannot heal
+                #    -- no base, or the wrong way from one -- runs until it
+                #    hits a corner and then runs on the spot for ever, which
+                #    is what the owner watched it do. Escaping is what running
+                #    is *for*; refusing to notice it succeeded is the bug.
+                if self._is_clear_of_threats(creature, live):
+                    creature.escaped_timer += dt
+                    if creature.escaped_timer >= ESCAPED_SECONDS:
+                        self._call_off_retreat(creature)
+                        continue
                 else:
-                    creature.flee_timer = max(creature.flee_timer, 0.6)
-                    creature.flee_from = nearest or creature.flee_from
+                    creature.escaped_timer = 0.0
+                # 3. Still cornered: keep running, and keep the target fresh.
+                creature.flee_timer = max(creature.flee_timer, 0.6)
+                creature.flee_from = nearest or creature.flee_from
                 continue
 
             if (hurt or outnumbered) and nearest is not None:
                 creature.flee_timer = 1.4
                 creature.flee_from = nearest
+                creature.escaped_timer = 0.0
+                creature.recovering = False
                 creature._foe = None
+                continue
+
+            # Safe, but still not well. Walk home and heal rather than
+            # resuming the rounds at a tenth of full hp (DC-64). This is the
+            # calm half of a retreat: the sprint is over, the reason for it
+            # is not. A team with no base has nowhere to go and simply gets
+            # on with things, which is the honest outcome for a colony that
+            # has built nothing.
+            if creature.recovering:
+                if recovered:
+                    creature.recovering = False
+            elif hurt and creature._own_base_point() is not None:
+                # Only worth flagging when there is somewhere to recover at.
+                # Setting it regardless made the flag flicker on and off every
+                # frame for a team that had built nothing, because the
+                # behaviour clears what it cannot act on.
+                creature.recovering = True
+
+    @staticmethod
+    def _call_off_retreat(creature) -> None:
+        """End a retreat cleanly (DC-64).
+
+        ``flee_from`` outliving ``flee_timer`` is what let a spider keep
+        running from something on the far side of the screen: the creature's
+        own update clears it when the timer lapses, but the manager wrote it
+        back every frame from the stale reference.
+        """
+        creature.flee_timer = 0.0
+        creature.flee_from = None
+        creature.escaped_timer = 0.0
+
+    @staticmethod
+    def _is_clear_of_threats(creature, live) -> bool:
+        """Whether nothing hostile is within ``ESCAPED_RADIUS`` (DC-64).
+
+        Deliberately not ``_threat_around``: that scans the narrower radius
+        that *starts* a retreat, and ending one on the same line makes a
+        spider oscillate across it.
+        """
+        for other in live:
+            if other is creature or other.dead:
+                continue
+            try:
+                if creature.relation_to(other) != "foe":
+                    continue
+            except Exception:
+                continue
+            if math.hypot(other.x - creature.x, other.y - creature.y) <= ESCAPED_RADIUS:
+                return False
+        return True
 
     @staticmethod
     def _threat_around(creature, live):
@@ -276,6 +344,7 @@ class CombatMixin:
         landed = defender.take_damage(blow, attacker)
         if landed <= 0.0:
             return
+        self._credit_fight_xp(attacker, landed, killed=defender.dead)
         if defender.dead:
             log.info("%s killed %s", attacker.display_name, defender.display_name)
             return
@@ -283,7 +352,29 @@ class CombatMixin:
         # someone else -- otherwise being attacked is a free extra attack.
         if defender.attack_cooldown <= 0.0:
             defender.attack_cooldown = ATTACK_INTERVAL
-            attacker.take_damage(defender.damage, defender)
+            struck = attacker.take_damage(defender.damage, defender)
+            if struck > 0.0:
+                # The counter-blow earns as much as any other. Paying only the
+                # aggressor would quietly make picking fights the only way to
+                # progress, and reward exactly the behaviour DC-50 added nerve
+                # to discourage.
+                self._credit_fight_xp(defender, struck, killed=attacker.dead)
+
+    def _credit_fight_xp(self, fighter, damage: float, killed: bool) -> None:
+        """Pay a spider for a blow that landed, and for finishing a foe (DC-66).
+
+        Routed through ``award_feed_xp`` rather than ``gain_experience``
+        directly so combat earns its levels through the same hook flies do:
+        that is the one place that marks runtime state dirty, and a level won
+        in a fight has to survive a restart exactly as one won at dinner does.
+        """
+        amount = damage * DAMAGE_XP_PER_POINT + (KILL_XP_REWARD if killed else 0.0)
+        if amount <= 0.0:
+            return
+        events = self.award_feed_xp(fighter, int(round(amount)),
+                                    source="kill" if killed else "fight")
+        for event in events:
+            log.info("%s %s", fighter.display_name, event)
 
     def _bury_the_dead(self) -> None:
         """Take the beaten out of the colony and leave remains where they fell.
