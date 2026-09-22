@@ -22,7 +22,14 @@ class PreyMixin:
     # ------------------------------------------------------------------
     def award_feed_xp(self, creature: Creature, amount: int = FEED_XP_REWARD,
                       source: str = "feed") -> list[str]:
-        """Shared hook for future food sources (flies, treats, web catches)."""
+        """The one place XP is awarded, whatever earned it.
+
+        Named for flies because they were the only source when it was
+        written; since DC-66 combat pays through it too (damage landed, and
+        finishing a foe). Everything routes here because this is what marks
+        runtime state dirty, so a level is a level however it was won and all
+        of them survive a restart.
+        """
         if creature is None or creature not in self.creatures:
             return []
         events = creature.gain_experience(amount, reason=source)

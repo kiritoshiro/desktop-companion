@@ -168,6 +168,11 @@ class BehaviourMixin(
         # it stood still while its "flee target" was recomputed behind it.
         if self.fleeing and self._flee_from_danger(dt):
             return
+        # DC-64: safe but still hurt. Outranks a job -- a spider limping at a
+        # tenth of its hp should be heading home, not patrolling -- but not a
+        # retreat, and it is a walk rather than a sprint.
+        if getattr(self, "recovering", False) and self._walk_home_to_heal(dt):
+            return
         if self._update_job_state(dt, mx, my):
             # Jobs own their work target, while temperament still drives the
             # leg solver, posture, and animation style underneath it.

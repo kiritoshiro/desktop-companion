@@ -271,6 +271,12 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # it so every state it could be in runs at the same panicked pace.
         self.flee_timer = 0.0
         self.flee_from = None
+        # DC-64: how long this spider has been clear of every foe. A retreat
+        # ends when it has got away, not only when it has healed -- without
+        # this a spider that cannot heal runs into a corner and stays there.
+        self.escaped_timer = 0.0
+        # Safe, but still hurt: walking home to heal rather than sprinting.
+        self.recovering = False
         # Counts down the minimum time a fight is held for; see
         # manager/combat.py::ENGAGEMENT_COMMITMENT.
         self.engagement_timer = 0.0
@@ -644,8 +650,28 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             value += float(getattr(item, key, 0.0))
         return value
 
-    def _apply_progression_stats(self, reset_resources: bool = False) -> None:
-        """Recompute level and equipment-derived stats without changing pose."""
+    def _apply_progression_stats(self, reset_resources: bool = False,
+                                 carry_wounds: bool = False) -> None:
+        """Recompute level and equipment-derived stats without changing pose.
+
+        Three ways to treat hp and energy when the ceiling moves:
+
+        * ``reset_resources`` -- refill. Used when a spider is being built or
+          rebuilt and has no history worth keeping.
+        * ``carry_wounds`` -- the ceiling rises and the damage already taken
+          stays taken (DC-66). This is what a level-up does.
+        * neither -- keep the same *fraction*, which is right for a change of
+          equipment: the spider is not hurt any differently, its pool simply
+          changed shape.
+
+        The middle one exists because of DC-66. A level-up used to refill,
+        which was harmless while eating a fly was the only way to earn XP --
+        no spider ever levelled mid-fight. Now that damage earns XP, a refill
+        would mean a hard fight heals both sides: measured immediately, two
+        foes brawling for three seconds both ended *above* the hp they
+        started with (115.2 and 123.0 against 100.0), and neither could ever
+        have been finished.
+        """
         size_mult, growth_speed = growth_multipliers(self.progression.level)
         self._progression_size_multiplier = size_mult
         self._progression_speed_multiplier = clamp(
@@ -662,6 +688,12 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         if reset_resources:
             self.hp = self.max_hp
             self.energy = self.max_energy
+        elif carry_wounds:
+            self.hp = clamp(float(getattr(self, "hp", old_max_hp)) + (self.max_hp - old_max_hp),
+                            0.0, self.max_hp)
+            self.energy = clamp(
+                float(getattr(self, "energy", old_max_energy)) + (self.max_energy - old_max_energy),
+                0.0, self.max_energy)
         else:
             hp_ratio = float(getattr(self, "hp", old_max_hp)) / max(1.0, old_max_hp)
             energy_ratio = float(getattr(self, "energy", old_max_energy)) / max(1.0, old_max_energy)
@@ -694,7 +726,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.progression.xp -= threshold
             self.progression.level += 1
             self.progression.skill_points += 1
-            self._apply_progression_stats(reset_resources=True)
+            self._apply_progression_stats(carry_wounds=True)
             events.append(f"reached level {self.progression.level}")
             events.extend(self._spend_skill_points())
         if self.progression.level >= MAX_LEVEL:
@@ -728,7 +760,12 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.progression.unlocked_abilities.append(node.id)
             unlocked.append(f"learned {node.name}")
         if unlocked:
-            self._apply_progression_stats()
+            # Wounds carry here too. These unlocks happen *inside* a level-up
+            # (DC-57 spends the point the level just awarded), so applying the
+            # fraction-preserving mode would hand back most of what the
+            # level-up had just been made to keep: a spider on 60 of 100 came
+            # out of one level on 111 hp.
+            self._apply_progression_stats(carry_wounds=True)
         return unlocked
 
     def unlock_progression_ability(self, ability_id: str) -> tuple[bool, str]:

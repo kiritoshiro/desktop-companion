@@ -18,10 +18,12 @@ from ...support.math_utils import (
 from ..constants import (
     COMBAT_SPACING,
     COMBAT_SPACING_SLACK,
+    ESCAPED_RADIUS,
     HUNT_COMMITTED_STATES,
     JOB_MODE_STATES,
     JOB_PREEMPTING_STATES,
     JOB_STATES,
+    RECOVER_ARRIVE_RADIUS,
 )
 
 
@@ -169,6 +171,67 @@ class JobBehaviourMixin:
         # rather than as oblivious.
         if threat is not None:
             self.target_heading = math.atan2(threat.y - self.y, threat.x - self.x)
+        return False
+
+    def _walk_home_to_heal(self, dt: float) -> bool:
+        """Head for the base to heal, at walking pace (DC-64).
+
+        The calm half of DC-50's retreat. A sprint is for getting away; this
+        is what a spider does once it has, while still too hurt to be any use
+        in a fight. Returns False when there is nowhere to go, so a team that
+        has built nothing simply carries on rather than standing still --
+        there is no base to reach, and pretending otherwise would swap one
+        stuck spider for another.
+
+        Deliberately reuses the ordinary travel states rather than adding one:
+        a limping spider should look like a spider walking somewhere, and
+        every state it could be in already animates.
+        """
+        home = self._own_base_point()
+        if home is None:
+            self.recovering = False
+            return False
+        target_x, target_y = home
+        if self._foe_near(target_x, target_y, ESCAPED_RADIUS):
+            # Home is where the enemy is. Walking into it would put the
+            # spider straight back over the flee threshold, and it would
+            # bounce between running and limping home for as long as the foe
+            # stayed -- measured at 2104 of 7200 frames before this guard.
+            # Stay out of it and get on with things until the base is clear.
+            return False
+        if math.hypot(target_x - self.x, target_y - self.y) <= RECOVER_ARRIVE_RADIUS:
+            # Arrived. Sit in the regen radius and let the base do its work;
+            # the manager drops `recovering` once hp is back up.
+            self.motion_paused = True
+            self.speed = 0.0
+            self.target_heading = angle_to(self.x, self.y, target_x, target_y)
+            return True
+        if self.has_skill("approach"):
+            if self.state != "Approach":
+                self.enter_approach(target_x, target_y)
+            else:
+                self.target_x, self.target_y = target_x, target_y
+            return True
+        if self.has_skill("chase"):
+            if self.state != "Chase":
+                self.enter_chase(target_x, target_y)
+            else:
+                self.target_x, self.target_y = target_x, target_y
+            return True
+        return False
+
+    def _foe_near(self, x: float, y: float, radius: float) -> bool:
+        """Whether any hostile spider is within ``radius`` of a point."""
+        for other in (getattr(self, "neighbors", None) or ()):
+            if other is self or getattr(other, "dead", False):
+                continue
+            try:
+                if self.relation_to(other) != "foe":
+                    continue
+            except Exception:
+                continue
+            if math.hypot(other.x - x, other.y - y) <= radius:
+                return True
         return False
 
     def _own_base_point(self):
