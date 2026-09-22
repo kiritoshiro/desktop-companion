@@ -106,6 +106,17 @@ WEBBER_WEAVE_SPEED = 42.0
 # Hunter: how far past the base radius its home patrol ring sits, and how
 # much a base's soft resource budget grows per delivered catch.
 HUNTER_PATROL_RADIUS_PAD = 70.0
+# DC-50: how far a Hunter actually ranges. The pad above put it on a ring
+# about a hundred pixels out, and watching a colony the owner reported
+# exactly what that looks like: "spiders like their own base way too much
+# ... i chose hunters and they just circle around their base and barely
+# fight other team". A hunter is the profession that should be out looking
+# for trouble, so it sweeps a wide, breathing ring instead of a tight fixed
+# one, and it looks for foes across the whole of that range rather than only
+# beside the front door.
+HUNTER_RANGE_RADIUS = 430.0
+HUNTER_RANGE_BREATHE = 0.24
+HUNTER_FOE_SCAN_PAD = 240.0
 HUNTER_CARRY_FOOD_AMOUNT = 12.0
 
 # DC-21: any team member eating a fly tops the team's food up a little too --
@@ -975,10 +986,14 @@ class BaseWorld:
             angle = self._rng.uniform(0.0, math.tau)
         angle = (angle + dt * 0.6) % math.tau
         self._hunt_patrol_angle[key] = angle
-        radius = max(50.0, home_radius + HUNTER_PATROL_RADIUS_PAD)
+        # A sweep that breathes in and out, so a hunter covers ground between
+        # the base and the far edge of its range instead of tracing one ring.
+        breathe = 1.0 + math.sin(angle * 2.7) * HUNTER_RANGE_BREATHE
+        radius = max(80.0, home_radius + HUNTER_PATROL_RADIUS_PAD) + HUNTER_RANGE_RADIUS * breathe
         target = (home_x + math.cos(angle) * radius, home_y + math.sin(angle) * radius)
         alert_target = None
-        best_d = radius + 40.0
+        # Look for a foe across the range it patrols, not just beside home.
+        best_d = radius + HUNTER_FOE_SCAN_PAD
         for other in creatures:
             if other is hunter or getattr(other, "dragging", False):
                 continue

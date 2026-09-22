@@ -18,8 +18,15 @@ from typing import Tuple
 # How long a carcass lasts with nobody eating it, and how much faster it
 # goes when somebody is. Short either way: the owner asked for it to
 # disappear soon, and a desktop littered with bodies is not the tone.
-CARCASS_LIFETIME = 9.0
+CARCASS_LIFETIME = 16.0
 EATEN_SPEED_UP = 3.2
+# DC-50: before anything starts eating, the body simply lies there. The owner
+# watched a colony and asked for exactly this -- "once dead he disapears too
+# quikcly let it sit there upside down for a few seconds before vanishing" --
+# because a death that is gone in a moment does not register as a death. A
+# scavenger arriving during the wake starts the clock early rather than
+# waiting it out.
+CARCASS_SETTLE_SECONDS = 4.0
 # How close a living spider must be, relative to the carcass's own size, to
 # be eating it.
 FEEDING_REACH = 1.9
@@ -39,6 +46,7 @@ class Carcass:
         self.team_id = str(team_id or "neutral")
         self.colors = dict(colors or {})
         self.t = 0.0
+        self.settle_t = 0.0
         self.being_eaten = False
         # Legs fold under a dead spider rather than staying splayed; these are
         # fixed at death so the shape does not shimmer while it fades.
@@ -53,6 +61,11 @@ class Carcass:
             ))
 
     @property
+    def settling(self) -> bool:
+        """Still lying intact, before anything has begun on it."""
+        return self.settle_t < CARCASS_SETTLE_SECONDS
+
+    @property
     def spent(self) -> float:
         """How far through being eaten this carcass is, 0..1."""
         return max(0.0, min(1.0, self.t / CARCASS_LIFETIME))
@@ -65,8 +78,14 @@ class Carcass:
         they arrive.
         """
         self.being_eaten = eaters > 0
+        step = max(0.0, float(dt))
+        if self.settling and not self.being_eaten:
+            # Lying there. The settle clock runs, the decay clock does not.
+            self.settle_t += step
+            return False
         rate = EATEN_SPEED_UP if self.being_eaten else 1.0
-        self.t += max(0.0, float(dt)) * rate
+        self.settle_t = CARCASS_SETTLE_SECONDS
+        self.t += step * rate
         return self.t >= CARCASS_LIFETIME
 
     def footprint(self) -> Tuple[float, float, float, float]:

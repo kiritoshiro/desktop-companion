@@ -25,11 +25,14 @@ from desktop_bug.app.config_ui import (
     COL_ABILITIES,
     COL_COLORS,
     COL_COUNT,
+    COL_CATEGORY,
     COL_JOB,
-    COL_MODEL,
+    COL_SKIN,
     COL_REMOVE,
     COL_TEAM,
     COL_TEMPERAMENT,
+    RANDOM_CATEGORY_ID,
+    RANDOM_MODEL_ID,
     SLOT_COLUMNS,
     SLOT_HEADERS,
     ConfigWindow,
@@ -58,7 +61,7 @@ def test_the_table_has_no_pick_1_10_column(window):
                for i in range(window.table.columnCount())]
     assert headers == SLOT_HEADERS
     assert "Pick 1-10" not in headers
-    assert window.table.columnCount() == SLOT_COLUMNS == 8
+    assert window.table.columnCount() == SLOT_COLUMNS
 
 
 def test_no_row_still_carries_the_checkbox(window):
@@ -73,7 +76,8 @@ def test_every_remaining_control_is_in_its_named_column(window):
     """Removing a column renumbers the lookups; this is what that breaks."""
     window.add_slot(None, None, 2, False)
     row = window.table.rowCount() - 1
-    assert isinstance(window.table.cellWidget(row, COL_MODEL), QComboBox)
+    assert isinstance(window.table.cellWidget(row, COL_CATEGORY), QComboBox)
+    assert isinstance(window.table.cellWidget(row, COL_SKIN), QComboBox)
     assert isinstance(window.table.cellWidget(row, COL_TEMPERAMENT), QComboBox)
     assert isinstance(window.table.cellWidget(row, COL_COUNT), QSpinBox)
     assert isinstance(window.table.cellWidget(row, COL_ABILITIES), QPushButton)
@@ -155,3 +159,84 @@ def test_a_saved_preset_still_loads_every_slot_field(window, scratch):
     assert reloaded[0]["count"] == 3
     assert reloaded[0]["team"] == "hunters"
     assert reloaded[0]["job"] == "guard"
+
+
+# ----------------------------------------------------------------------
+# Category and Skin
+#
+# DC-49 reduced forty-one leg rigs to four body plans, which made a single
+# dropdown of forty-nine models the wrong shape: picking a spider is really
+# picking a *kind* and then a *look*. The owner asked for the menu to list
+# "only those few categories we left, and in other collumns just the skns
+# column and/or color picker".
+# ----------------------------------------------------------------------
+
+def test_the_category_column_lists_only_the_body_plans(window):
+    from desktop_bug.content.body_plans import BODY_PLAN_IDS
+
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 1, False)
+    box = window.table.cellWidget(0, COL_CATEGORY)
+    offered = [box.itemData(i) for i in range(box.count())]
+    assert offered[0] == RANDOM_CATEGORY_ID
+    assert set(offered[1:]) == set(BODY_PLAN_IDS)
+    assert len(offered) == len(BODY_PLAN_IDS) + 1
+
+
+def test_the_skin_column_only_offers_that_category(window):
+    window.table.setRowCount(0)
+    window.add_slot("tarantula", None, 1, False)
+    category = window.table.cellWidget(0, COL_CATEGORY)
+    skin = window.table.cellWidget(0, COL_SKIN)
+    assert category.currentData() == "tarantula", "the category did not follow the skin"
+
+    category.setCurrentIndex(category.findData("jumper"))
+    offered = [skin.itemData(i) for i in range(skin.count()) if skin.itemData(i) != RANDOM_MODEL_ID]
+    assert offered, "no skins offered for the jumper category"
+    for model_id in offered:
+        assert window.models[model_id]["body_plan"] == "jumper", model_id
+
+
+def test_switching_category_never_leaves_the_slot_empty(window):
+    """It must land on a real skin, not silently become a random one."""
+    window.table.setRowCount(0)
+    window.add_slot("spider", None, 1, False)
+    category = window.table.cellWidget(0, COL_CATEGORY)
+    skin = window.table.cellWidget(0, COL_SKIN)
+    for plan in ("segmented", "jumper", "tarantula", "bug"):
+        category.setCurrentIndex(category.findData(plan))
+        assert skin.currentData() not in (None, RANDOM_MODEL_ID), plan
+        assert window.models[skin.currentData()]["body_plan"] == plan
+
+
+def test_any_kind_offers_every_skin(window):
+    window.table.setRowCount(0)
+    window.add_slot(None, None, 1, False)
+    category = window.table.cellWidget(0, COL_CATEGORY)
+    skin = window.table.cellWidget(0, COL_SKIN)
+    category.setCurrentIndex(category.findData(RANDOM_CATEGORY_ID))
+    offered = {skin.itemData(i) for i in range(skin.count())} - {RANDOM_MODEL_ID}
+    assert offered == set(window.models), sorted(set(window.models) - offered)
+
+
+def test_the_preset_still_stores_a_model_not_a_category(window):
+    """The split is a way of choosing; it must not change what is saved."""
+    window.table.setRowCount(0)
+    window.add_slot("giant_copper", None, 1, False)
+    slot = window.collect_slots(silent=True)[0]
+    assert slot["model"] == "giant_copper"
+    assert "category" not in slot and "body_plan" not in slot
+
+
+def test_loading_a_preset_puts_the_category_back(window, scratch):
+    window.table.setRowCount(0)
+    window.add_slot("silk_peacock_jumper", None, 1, False)
+    preset = scratch / "cat.json"
+    preset.write_text(json.dumps({
+        "name": "cat", "slots": window.collect_slots(silent=True), "settings": {}}),
+        encoding="utf-8")
+
+    window.table.setRowCount(0)
+    window.load_preset_path(preset)
+    assert window.table.cellWidget(0, COL_CATEGORY).currentData() == "jumper"
+    assert window.table.cellWidget(0, COL_SKIN).currentData() == "silk_peacock_jumper"

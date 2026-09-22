@@ -29,8 +29,32 @@ MIN_DAMAGE_FRACTION = 0.15
 # DC-45: silk landed on a spider by another spider. Long enough that
 # trapping is worth a shot and the shooter can close, short enough that
 # being pinned is a setback rather than a sentence.
-WEBBED_SECONDS = 3.4
+WEBBED_SECONDS = 4.6
 WEBBED_SPEED_MULT = 0.35
+# DC-50: for the first part of that, silk *holds* rather than slows. Watching
+# it run, a merely-slowed spider still walked away looking unbothered, so the
+# skill read as nothing at all -- the owner reported that webbing a spider did
+# not immobilise it the way webbing the pointer does. A held spider cannot
+# translate; it can still turn, flinch and be attacked, so it struggles in
+# place instead of freezing like a statue.
+WEBBED_HOLD_SECONDS = 2.2
+
+# ---------------------------------------------------------------------------
+# DC-50: nerve. A spider that fights to the death regardless of the odds reads
+# as a machine, and the colony grinds itself down to nothing in a few minutes.
+# ---------------------------------------------------------------------------
+# Below this fraction of max hp, a spider breaks off and runs.
+FLEE_HEALTH_FRACTION = 0.35
+# It stops running once patched back up to here, so it does not yo-yo in and
+# out of a fight at the threshold.
+RALLY_HEALTH_FRACTION = 0.72
+# Foes within this radius are counted when deciding whether it is outnumbered.
+THREAT_SCAN_RADIUS = 260.0
+# Strictly greater than this many foes for each friend nearby, and it withdraws
+# rather than engaging. Two-on-one is a fight worth avoiding; one-on-one is not.
+OUTNUMBERED_RATIO = 1.5
+# Fleeing is a sprint, not a stroll.
+FLEE_SPEED_MULT = 1.45
 
 
 JOB_STATES = (

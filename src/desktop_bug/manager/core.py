@@ -234,6 +234,7 @@ class CreatureManager(
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
+        creature.base_world = getattr(self, "base_world", None)
         if pos is not None:
             creature.x, creature.y = pos
             creature.target_x, creature.target_y = pos

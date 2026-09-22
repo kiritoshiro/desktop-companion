@@ -112,6 +112,76 @@ class JobBehaviourMixin:
         elif self.has_skill("approach") and self.state != "Approach":
             self.enter_approach(mx, my)
 
+    def _flee_from_danger(self, dt: float) -> bool:
+        """Run: home if there is a base to run to, away if there is not.
+
+        Three of the owner's observations are one behaviour. "when nearing
+        low health they should try to run away", "if outnumbered they should
+        try to avoid conflict, and run quickly away", and "at the base they
+        can reheal, when low health they should seek their bases" -- so a
+        retreat is not merely away from the danger, it is *towards* the one
+        place that puts health back on. Base regen already exists (DC-21);
+        nothing was ever steering a hurt spider to it.
+
+        A spider with no base, or one too far to matter, simply runs
+        directly away, which is the honest fallback for a team that has not
+        built anything.
+        """
+        threat = self.flee_from
+        home = self._own_base_point()
+
+        if home is not None:
+            target_x, target_y = home
+            # Refuse a "retreat" that runs through the thing being fled from.
+            if threat is not None:
+                to_home = math.atan2(target_y - self.y, target_x - self.x)
+                to_threat = math.atan2(threat.y - self.y, threat.x - self.x)
+                gap = abs((to_home - to_threat + math.pi) % math.tau - math.pi)
+                if gap < 0.7:
+                    home = None
+
+        if home is None:
+            if threat is None:
+                return False
+            away = math.atan2(self.y - threat.y, self.x - threat.x)
+            reach = float(self.personality.get("reaction_radius", 360)) * 0.9
+            target_x = self.x + math.cos(away) * reach
+            target_y = self.y + math.sin(away) * reach
+
+        target_x = clamp(target_x, 12.0, float(self.screen_w) - 12.0)
+        target_y = clamp(target_y, 12.0, float(self.screen_h) - 12.0)
+
+        if self.has_skill("chase"):
+            if self.state != "Chase":
+                self.enter_chase(target_x, target_y)
+            else:
+                self.target_x, self.target_y = target_x, target_y
+            return True
+        if self.has_skill("approach"):
+            if self.state != "Approach":
+                self.enter_approach(target_x, target_y)
+            else:
+                self.target_x, self.target_y = target_x, target_y
+            return True
+        # Nothing that can run. Facing the danger at least reads as cornered
+        # rather than as oblivious.
+        if threat is not None:
+            self.target_heading = math.atan2(threat.y - self.y, threat.x - self.x)
+        return False
+
+    def _own_base_point(self):
+        """This spider's own team's base, if it has one, as (x, y)."""
+        base_world = getattr(self, "base_world", None)
+        if base_world is None:
+            return None
+        team = str(getattr(self.progression, "team_id", "neutral") or "neutral")
+        if team == "neutral":
+            return None
+        site = getattr(base_world, "bases", {}).get(f"team:{team}")
+        if site is None:
+            return None
+        return float(site.x), float(site.y)
+
     def _pursue_foe(self, dt: float) -> bool:
         """Fight the foe the manager has published, with this spider's own kit.
 
