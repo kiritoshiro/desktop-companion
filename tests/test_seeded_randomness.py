@@ -54,11 +54,14 @@ def run(seed: int) -> list[tuple]:
 def _trace(seed: int) -> list[tuple]:
     manager = CreatureManager(PRESET, 1600, 900, seed=seed)
     manager.base_world.clear()
-    # Flies and webs are their own worlds with their own, still module-level
-    # randomness (DC-09 seeds Creature and CreatureManager, the two things the
-    # plan names); turning them off keeps this test inside what DC-09 actually
-    # promises instead of failing on a gap it did not create.
-    manager.set_flies_enabled(False)
+    # Flies and webs used to be their own worlds with their own module-level
+    # randomness, so this test turned flies off to stay inside what DC-09
+    # actually promised rather than fail on a gap it did not create.
+    #
+    # DC-68 closed that gap -- each world now draws from a stream derived from
+    # the run seed -- so the flies stay on and this test finally covers the
+    # whole claim its docstring makes. That is the point of the package: the
+    # promise and the test now say the same thing.
     trace: list[tuple] = []
     for _ in range(FRAMES):
         # Off screen, so nothing here depends on the mouse nudging a spider

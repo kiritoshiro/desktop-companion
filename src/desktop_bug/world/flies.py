@@ -61,49 +61,54 @@ class Fly:
     """A single buzzing fly."""
 
     def __init__(self, x: float, y: float, screen_w: float, screen_h: float,
-                 heading: Optional[float] = None, scale: float = 1.0) -> None:
+                 heading: Optional[float] = None, scale: float = 1.0,
+                 rng=None) -> None:
+        # DC-68: the stream this fly draws from. Defaults to the `random`
+        # module, which is exactly what it used before, so an unseeded colony
+        # behaves as it always has.
+        self.rng = rng if rng is not None else random
         self.screen_w = float(screen_w)
         self.screen_h = float(screen_h)
         self.scale = clamp(float(scale), 0.5, 2.2)
 
         self.x = float(x)
         self.y = float(y)
-        jitter = random.uniform(0.82, 1.22)
+        jitter = self.rng.uniform(0.82, 1.22)
         self.length = clamp(FLY_BASE_LENGTH * jitter * self.scale, FLY_MIN_LENGTH, FLY_MAX_LENGTH)
         # A convenient "radius-ish" size other code (capture/catch maths) reads.
         self.size = self.length
 
-        self.heading = heading if heading is not None else random.uniform(-math.pi, math.pi)
+        self.heading = heading if heading is not None else self.rng.uniform(-math.pi, math.pi)
         self.target_heading = self.heading
-        self.cruise = random.uniform(*FLY_CRUISE_SPEED)
-        self.panic = random.uniform(*FLY_PANIC_SPEED)
+        self.cruise = self.rng.uniform(*FLY_CRUISE_SPEED)
+        self.panic = self.rng.uniform(*FLY_PANIC_SPEED)
         self.speed = self.cruise
         self.vx = math.cos(self.heading) * self.speed
         self.vy = math.sin(self.heading) * self.speed
-        self.turn_rate = random.uniform(7.0, 12.0)
+        self.turn_rate = self.rng.uniform(7.0, 12.0)
 
         # Natural stop-walk-turn bookkeeping.  A calm fly takes short walks,
         # freezes for irregular pauses, and often turns in place before moving
         # again.  Panic temporarily overrides this little state machine.
-        self.motion_mode = random.choice(("walk", "pause", "pause", "turn"))
+        self.motion_mode = self.rng.choice(("walk", "pause", "pause", "turn"))
         if self.motion_mode == "walk":
-            self.motion_timer = random.uniform(0.22, 0.85)
+            self.motion_timer = self.rng.uniform(0.22, 0.85)
         elif self.motion_mode == "turn":
-            self.motion_timer = random.uniform(0.08, 0.28)
+            self.motion_timer = self.rng.uniform(0.08, 0.28)
         else:
-            self.motion_timer = random.uniform(0.18, 1.15)
+            self.motion_timer = self.rng.uniform(0.18, 1.15)
         if self.motion_mode != "walk":
             self.speed = 0.0
             self.vx = self.vy = 0.0
-        self.wander_timer = random.uniform(0.12, 0.45)
+        self.wander_timer = self.rng.uniform(0.12, 0.45)
         self.hover_timer = 0.0
         self.panic_level = 0.0
 
         # Buzzing wing / body wobble clocks.
-        self.wing_phase = random.random() * math.tau
-        self.wing_rate = random.uniform(46.0, 64.0)
-        self.buzz_phase = random.random() * math.tau
-        self.buzz_rate = random.uniform(18.0, 26.0)
+        self.wing_phase = self.rng.random() * math.tau
+        self.wing_rate = self.rng.uniform(46.0, 64.0)
+        self.buzz_phase = self.rng.random() * math.tau
+        self.buzz_rate = self.rng.uniform(18.0, 26.0)
 
         # State: "flying" -> "trapped" -> "eaten" -> (removed)
         self.state = "flying"
@@ -116,11 +121,11 @@ class Fly:
         self.tether_from: Optional[Point] = None
         self.web_splat = 0.0
         self._trapper = None
-        self.struggle_phase = random.random() * math.tau
-        self.pluck_timer = random.uniform(0.12, 0.28)
+        self.struggle_phase = self.rng.random() * math.tau
+        self.pluck_timer = self.rng.uniform(0.12, 0.28)
         self.trapped_for = 0.0
         self.free_progress = 0.0
-        self.web_check_timer = random.uniform(0.0, 0.08)
+        self.web_check_timer = self.rng.uniform(0.0, 0.08)
         self._draw_jitter = 0.0
         self._web_pegs: list = []
 
@@ -186,7 +191,7 @@ class Fly:
         self.speed = 0.0
         self.trapped_for = 0.0
         self.free_progress = 0.0
-        self.pluck_timer = random.uniform(0.05, 0.14)
+        self.pluck_timer = self.rng.uniform(0.05, 0.14)
         try:
             web.pluck((self.x, self.y), strength=0.9)
         except Exception:
@@ -203,16 +208,16 @@ class Fly:
         self.speed = 0.0
         self.trapped_for = 0.0
         self.free_progress = 0.0
-        self.pluck_timer = random.uniform(0.1, 0.2)
+        self.pluck_timer = self.rng.uniform(0.1, 0.2)
 
     def _make_web_pegs(self) -> None:
         """Fixed anchor points for a static web splat (generated once per catch)."""
         self._web_pegs = []
         L = self.length
-        n = random.randint(6, 8)
+        n = self.rng.randint(6, 8)
         for i in range(n):
-            a = (i / n) * math.tau + random.uniform(-0.28, 0.28)
-            r = L * random.uniform(1.4, 2.6)
+            a = (i / n) * math.tau + self.rng.uniform(-0.28, 0.28)
+            r = L * self.rng.uniform(1.4, 2.6)
             self._web_pegs.append((math.cos(a) * r, math.sin(a) * r))
 
     def pin_with_web_shot(self, origin: Point, kind: str = "trap") -> None:
@@ -232,7 +237,7 @@ class Fly:
         self.trapped_for = 0.0
         # Web shot wraps tighter than a single thrown thread: harder to escape.
         self.free_progress = -0.6
-        self.pluck_timer = random.uniform(0.1, 0.2)
+        self.pluck_timer = self.rng.uniform(0.1, 0.2)
 
     def break_free(self) -> None:
         self.state = "flying"
@@ -243,10 +248,10 @@ class Fly:
         self._trapper = None
         self.panic_level = 1.0
         self.motion_mode = "walk"
-        self.motion_timer = random.uniform(0.35, 0.8)
+        self.motion_timer = self.rng.uniform(0.35, 0.8)
         self.speed = self.panic
         # Pop away in a random direction.
-        self.heading = random.uniform(-math.pi, math.pi)
+        self.heading = self.rng.uniform(-math.pi, math.pi)
         self.target_heading = self.heading
         self.vx = math.cos(self.heading) * self.speed
         self.vy = math.sin(self.heading) * self.speed
@@ -300,7 +305,7 @@ class Fly:
             self.panic_level = clamp(sp / self.panic, 0.0, 1.0)
         else:
             self.motion_mode = "walk"
-            self.motion_timer = random.uniform(0.3, 0.8)
+            self.motion_timer = self.rng.uniform(0.3, 0.8)
             self.speed = self.cruise
         self.vx = math.cos(self.heading) * self.speed
         self.vy = math.sin(self.heading) * self.speed
@@ -310,7 +315,7 @@ class Fly:
     def update(self, dt: float, spiders: Sequence, web_world) -> None:
         self.wing_phase += dt * self.wing_rate
         self.buzz_phase += dt * self.buzz_rate
-        self.struggle_phase += dt * random.uniform(11.0, 16.0)
+        self.struggle_phase += dt * self.rng.uniform(11.0, 16.0)
 
         if self.dragging:
             # Held by the cursor: hang there buzzing hard, nothing else.
@@ -350,10 +355,10 @@ class Fly:
             # this as a distress signal that pulls nearby spiders in.
             self.pluck_timer -= dt
             if self.pluck_timer <= 0.0:
-                self.pluck_timer = random.uniform(0.16, 0.34)
+                self.pluck_timer = self.rng.uniform(0.16, 0.34)
                 try:
                     self.stuck_web.pluck((self.x, self.y),
-                                         strength=random.uniform(0.55, 1.0))
+                                         strength=self.rng.uniform(0.55, 1.0))
                 except Exception:
                     pass
 
@@ -369,7 +374,7 @@ class Fly:
             escape_rate = 0.08
         else:
             escape_rate = 0.14
-        self.free_progress += dt * escape_rate * random.uniform(0.4, 1.2)
+        self.free_progress += dt * escape_rate * self.rng.uniform(0.4, 1.2)
         if self.free_progress >= 1.0:
             self.break_free()
 
@@ -420,7 +425,7 @@ class Fly:
             flee_heading = math.atan2(flee_y, flee_x)
             self.target_heading = flee_heading
             self.hover_timer = 0.0
-            self.wander_timer = random.uniform(0.05, 0.16)
+            self.wander_timer = self.rng.uniform(0.05, 0.16)
         else:
             self.panic_level = clamp(self.panic_level - dt * 1.6, 0.0, 1.0)
             self._update_wander(dt)
@@ -471,7 +476,7 @@ class Fly:
         #    scan so it is cheap with several flies on screen.
         self.web_check_timer -= dt
         if self.web_check_timer <= 0.0:
-            self.web_check_timer = random.uniform(0.05, 0.1)
+            self.web_check_timer = self.rng.uniform(0.05, 0.1)
             self._maybe_get_stuck(dt, web_world)
 
     def _update_wander(self, dt: float) -> None:
@@ -481,46 +486,46 @@ class Fly:
         if self.motion_mode == "walk":
             # Small course corrections during a short walking bout.
             if self.wander_timer <= 0.0:
-                self.wander_timer = random.uniform(0.18, 0.55)
+                self.wander_timer = self.rng.uniform(0.18, 0.55)
                 self.target_heading = normalize_angle(
-                    self.target_heading + random.uniform(-0.34, 0.34))
+                    self.target_heading + self.rng.uniform(-0.34, 0.34))
             if self.motion_timer <= 0.0:
-                roll = random.random()
+                roll = self.rng.random()
                 if roll < 0.58:
                     self.motion_mode = "pause"
-                    self.motion_timer = random.uniform(0.22, 1.35)
+                    self.motion_timer = self.rng.uniform(0.22, 1.35)
                 else:
                     self.motion_mode = "turn"
-                    self.motion_timer = random.uniform(0.09, 0.34)
+                    self.motion_timer = self.rng.uniform(0.09, 0.34)
                     self.target_heading = normalize_angle(
-                        self.heading + random.choice((-1.0, 1.0)) * random.uniform(0.45, 2.35))
+                        self.heading + self.rng.choice((-1.0, 1.0)) * self.rng.uniform(0.45, 2.35))
 
         elif self.motion_mode == "turn":
             # Rotate mostly in place, then either inspect for a beat or set off.
             if self.motion_timer <= 0.0:
-                if random.random() < 0.45:
+                if self.rng.random() < 0.45:
                     self.motion_mode = "pause"
-                    self.motion_timer = random.uniform(0.12, 0.7)
+                    self.motion_timer = self.rng.uniform(0.12, 0.7)
                 else:
                     self.motion_mode = "walk"
-                    self.motion_timer = random.uniform(0.25, 1.05)
-                    self.wander_timer = random.uniform(0.16, 0.5)
+                    self.motion_timer = self.rng.uniform(0.25, 1.05)
+                    self.wander_timer = self.rng.uniform(0.16, 0.5)
 
         else:  # pause
             # Stay planted.  Some pauses end with a visible in-place turn, while
             # others resume in nearly the same direction.
             if self.motion_timer <= 0.0:
-                if random.random() < 0.62:
+                if self.rng.random() < 0.62:
                     self.motion_mode = "turn"
-                    self.motion_timer = random.uniform(0.08, 0.32)
+                    self.motion_timer = self.rng.uniform(0.08, 0.32)
                     self.target_heading = normalize_angle(
-                        self.heading + random.choice((-1.0, 1.0)) * random.uniform(0.35, 2.6))
+                        self.heading + self.rng.choice((-1.0, 1.0)) * self.rng.uniform(0.35, 2.6))
                 else:
                     self.motion_mode = "walk"
-                    self.motion_timer = random.uniform(0.24, 1.15)
-                    self.wander_timer = random.uniform(0.14, 0.45)
+                    self.motion_timer = self.rng.uniform(0.24, 1.15)
+                    self.wander_timer = self.rng.uniform(0.14, 0.45)
                     self.target_heading = normalize_angle(
-                        self.heading + random.uniform(-0.42, 0.42))
+                        self.heading + self.rng.uniform(-0.42, 0.42))
 
     def _edge_steer(self, edge: float) -> Optional[float]:
         push_x = 0.0
@@ -585,7 +590,7 @@ class Fly:
             if snap is None:
                 continue
             # Probability scaled to the frame so the catch does not depend on FPS.
-            if random.random() < clamp(base_chance * (self.web_check_timer + dt) * 12.0, 0.02, 0.85):
+            if self.rng.random() < clamp(base_chance * (self.web_check_timer + dt) * 12.0, 0.02, 0.85):
                 self.stick_to_web(web, snap)
                 return
 
@@ -899,7 +904,8 @@ class FlyRemains:
 
     LIFETIME = 3.6
 
-    def __init__(self, x: float, y: float, scale: float = 1.0) -> None:
+    def __init__(self, x: float, y: float, scale: float = 1.0, rng=None) -> None:
+        self.rng = rng if rng is not None else random
         self.x = float(x)
         self.y = float(y)
         self.scale = clamp(float(scale), 0.5, 2.2)
@@ -908,15 +914,15 @@ class FlyRemains:
         # A few disassembled parts: legs, a torn wing, a body crumb, each with a
         # small outward offset and final resting spot.
         self.parts = []
-        for _ in range(random.randint(4, 6)):
-            ang = random.uniform(0.0, math.tau)
-            dist = random.uniform(L * 0.4, L * 1.6)
-            kind = random.choice(("leg", "leg", "wing", "crumb"))
+        for _ in range(self.rng.randint(4, 6)):
+            ang = self.rng.uniform(0.0, math.tau)
+            dist = self.rng.uniform(L * 0.4, L * 1.6)
+            kind = self.rng.choice(("leg", "leg", "wing", "crumb"))
             self.parts.append({
                 "x": math.cos(ang) * dist,
                 "y": math.sin(ang) * dist,
-                "rot": random.uniform(0.0, math.tau),
-                "len": L * random.uniform(0.4, 0.9),
+                "rot": self.rng.uniform(0.0, math.tau),
+                "len": L * self.rng.uniform(0.4, 0.9),
                 "kind": kind,
             })
 
@@ -966,21 +972,22 @@ class FlyRemains:
 class FlySpawner:
     """A movable nest the flies crawl out of."""
 
-    def __init__(self, x: float, y: float, scale: float = 1.0) -> None:
+    def __init__(self, x: float, y: float, scale: float = 1.0, rng=None) -> None:
+        self.rng = rng if rng is not None else random
         self.x = float(x)
         self.y = float(y)
         self.scale = clamp(float(scale), 0.5, 2.2)
         self.radius = 22.0 * self.scale
-        self.pulse = random.random() * math.tau
+        self.pulse = self.rng.random() * math.tau
         self.dragging = False
         self._drag_dx = 0.0
         self._drag_dy = 0.0
         # A few flecks/specks crawling on the nest for life.
         self.specks = []
         for _ in range(5):
-            self.specks.append([random.uniform(0.0, math.tau),
-                                random.uniform(0.3, 0.85),
-                                random.uniform(0.4, 1.1)])
+            self.specks.append([self.rng.uniform(0.0, math.tau),
+                                self.rng.uniform(0.3, 0.85),
+                                self.rng.uniform(0.4, 1.1)])
 
     # -- dragging
     def hit_test(self, x: float, y: float) -> bool:
@@ -1004,7 +1011,7 @@ class FlySpawner:
 
     def emit_point(self) -> Tuple[float, float, float]:
         """A point at the nest opening with an outward-ish heading."""
-        ang = random.uniform(0.0, math.tau)
+        ang = self.rng.uniform(0.0, math.tau)
         r = self.radius * 0.5
         return (self.x + math.cos(ang) * r, self.y + math.sin(ang) * r, ang)
 
@@ -1050,7 +1057,14 @@ class FlyWorld:
 
     def __init__(self, screen_w: float, screen_h: float, *, enabled: bool = True,
                  min_interval: float = 4.0, max_interval: float = 9.0,
-                 max_flies: int = 6, scale: float = 1.0) -> None:
+                 max_flies: int = 6, scale: float = 1.0, rng=None) -> None:
+        # DC-68: a seeded colony has to replay exactly, and flies were the
+        # one world that stopped it. Measured before this: three spiders,
+        # one seed, 900 frames, run twice in the same process -- identical
+        # with flies off, and landing hundreds of pixels apart with flies on.
+        # Everything a fly rolls comes from here and is handed to each fly,
+        # spawner and set of remains as it is made.
+        self.rng = rng if rng is not None else random
         self.screen_w = float(screen_w)
         self.screen_h = float(screen_h)
         self.enabled = bool(enabled)
@@ -1111,7 +1125,7 @@ class FlyWorld:
     def _roll_interval(self) -> float:
         lo = max(0.3, min(self.min_interval, self.max_interval))
         hi = max(lo, max(self.min_interval, self.max_interval))
-        return random.uniform(lo, hi)
+        return self.rng.uniform(lo, hi)
 
     # -- lifecycle ------------------------------------------------------
     def clear(self) -> None:
@@ -1146,13 +1160,13 @@ class FlyWorld:
     def ensure_spawner(self) -> None:
         if not self.spawners:
             x, y = self._default_spawner_pos()
-            self.spawners.append(FlySpawner(x, y, scale=self.scale))
+            self.spawners.append(FlySpawner(x, y, scale=self.scale, rng=self.rng))
 
     def add_spawner(self, at: Optional[Point] = None) -> "FlySpawner":
         if at is None:
-            at = (random.uniform(self.screen_w * 0.2, self.screen_w * 0.8),
-                  random.uniform(self.screen_h * 0.2, self.screen_h * 0.8))
-        sp = FlySpawner(at[0], at[1], scale=self.scale)
+            at = (self.rng.uniform(self.screen_w * 0.2, self.screen_w * 0.8),
+                  self.rng.uniform(self.screen_h * 0.2, self.screen_h * 0.8))
+        sp = FlySpawner(at[0], at[1], scale=self.scale, rng=self.rng)
         sp.clamp_to_screen(self.screen_w, self.screen_h)
         self.spawners.append(sp)
         self.use_spawner = True
@@ -1185,7 +1199,7 @@ class FlyWorld:
             if not isinstance(entry, dict):
                 continue
             try:
-                sp = FlySpawner(float(entry["x"]), float(entry["y"]),
+                sp = FlySpawner(float(entry["x"]), float(entry["y"]), rng=self.rng,
                                 scale=float(entry.get("scale", self.scale)))
             except (TypeError, ValueError, KeyError):
                 continue
@@ -1245,25 +1259,25 @@ class FlyWorld:
         return True
 
     def add_remains(self, at: Point, scale: float = 1.0) -> None:
-        self.remains.append(FlyRemains(at[0], at[1], scale=scale))
+        self.remains.append(FlyRemains(at[0], at[1], scale=scale, rng=self.rng))
 
     def _spawn_edge_point(self) -> Tuple[float, float, float]:
         """A point just inside a random screen edge, heading inward."""
         w, h = self.screen_w, self.screen_h
         m = FLY_EDGE_MARGIN + 6.0
-        side = random.choice(("top", "bottom", "left", "right"))
+        side = self.rng.choice(("top", "bottom", "left", "right"))
         if side == "top":
-            return random.uniform(m, w - m), m, random.uniform(0.2, math.pi - 0.2)
+            return self.rng.uniform(m, w - m), m, self.rng.uniform(0.2, math.pi - 0.2)
         if side == "bottom":
-            return random.uniform(m, w - m), h - m, random.uniform(-math.pi + 0.2, -0.2)
+            return self.rng.uniform(m, w - m), h - m, self.rng.uniform(-math.pi + 0.2, -0.2)
         if side == "left":
-            return m, random.uniform(m, h - m), random.uniform(-1.2, 1.2)
-        return w - m, random.uniform(m, h - m), random.uniform(math.pi - 1.2, math.pi + 1.2)
+            return m, self.rng.uniform(m, h - m), self.rng.uniform(-1.2, 1.2)
+        return w - m, self.rng.uniform(m, h - m), self.rng.uniform(math.pi - 1.2, math.pi + 1.2)
 
     def _spawn_origin(self) -> Tuple[float, float, float]:
         """Where a new fly appears: from a nest if one exists, else a screen edge."""
         if self.use_spawner and self.spawners:
-            sp = random.choice(self.spawners)
+            sp = self.rng.choice(self.spawners)
             return sp.emit_point()
         return self._spawn_edge_point()
 
@@ -1271,10 +1285,11 @@ class FlyWorld:
         if self.count_alive() >= self.max_flies and not force:
             return None
         x, y, heading = self._spawn_origin()
-        fly = Fly(x, y, self.screen_w, self.screen_h, heading=heading, scale=self.scale)
+        fly = Fly(x, y, self.screen_w, self.screen_h, heading=heading,
+                  scale=self.scale, rng=self.rng)
         # A fly leaving the nest starts with one short outward walking bout.
         fly.motion_mode = "walk"
-        fly.motion_timer = random.uniform(0.28, 0.75)
+        fly.motion_timer = self.rng.uniform(0.28, 0.75)
         fly.speed = fly.cruise
         fly.vx = math.cos(heading) * fly.speed
         fly.vy = math.sin(heading) * fly.speed

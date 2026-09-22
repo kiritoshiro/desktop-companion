@@ -39,23 +39,32 @@ def render_reference_frame() -> QImage:
     manager = CreatureManager(ROOT / "presets" / "colony.json", *SCREEN, seed=SEED)
     manager.base_world.clear()
     manager.set_flies_enabled(False)
-    # Webs and the cursor-silk world are not part of DC-09's seeding (see
-    # tests/test_seeded_randomness.py); silk drawn during the run would make
-    # this golden frame depend on the module-level random state instead of
-    # only on `seed`. Turning off every web-related skill keeps the one thing
-    # this test cares about -- did the split change the picture -- decoupled
-    # from a determinism gap this package did not create.
+    # Webs and the cursor-silk world used not to be part of DC-09's seeding,
+    # so silk drawn during the run made this golden frame depend on the
+    # module-level random state instead of only on `seed`. Turning off every
+    # web-related skill kept the one thing this test cares about -- did the
+    # split change the picture -- decoupled from that gap.
+    #
+    # DC-68 closed the gap: each world now draws from a stream derived from
+    # the run seed. Measured afterwards, two in-process renders differ by
+    # 0/255 with this workaround removed as well as with it. It is kept
+    # because dropping it would mean regenerating the reference for no gain
+    # here, not because it is still load-bearing -- a later package that
+    # wants this frame to cover silk can simply delete these two lines and
+    # regenerate.
     for creature in manager.creatures:
         for skill_id in ("weave_web", "web_walk", "shoot_web", "wall_web", "drift"):
             creature.skills.set_enabled(skill_id, False)
     for _ in range(FRAMES):
         manager.update(DT, -100000.0, -100000.0)
-    # FlyWorld.ensure_spawner() plants a nest marker at screen-centre even with
-    # flies off, and FlySpawner itself carries a pulse phase from flies.py's
-    # own (unseeded, out-of-scope-for-DC-09) module-level random -- confirmed
-    # by comparing two in-process runs with identical creature state that
-    # still disagreed on a ~44x40 patch centred on (screen_w/2, screen_h/2).
-    # Dropping it keeps this test about the split, not about that gap.
+    # FlyWorld.ensure_spawner() plants a nest marker at screen-centre even
+    # with flies off, and FlySpawner carried a pulse phase from flies.py's own
+    # module-level random -- confirmed at the time by comparing two in-process
+    # runs with identical creature state that still disagreed on a ~44x40
+    # patch centred on (screen_w/2, screen_h/2). That was the same gap DC-68
+    # closed; the spawner now draws from the fly world's seeded stream and two
+    # runs agree to 0/255 with this line removed. Kept for the same reason as
+    # the skills above.
     manager.fly_world.spawners.clear()
     # A fresh cache per process is deterministic; a *reused* one is not once
     # more than one manager has been built in the same run (its keys are
