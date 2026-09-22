@@ -81,9 +81,13 @@ class Carcass:
         left = 1.0 - self.spent
         if left <= 0.0:
             return
-        alpha = int(210 * left)
-        body = self.colors.get("body") or (92, 84, 96)
-        shade = QColor(int(body[0] * 0.55), int(body[1] * 0.55), int(body[2] * 0.55), alpha)
+        alpha = int(225 * left)
+        body = self.colors.get("body") or (132, 120, 136)
+        # Drained of colour but not of contrast: a corpse should read as dead
+        # without becoming invisible against a dark desktop, which the first
+        # pass at 0.55 was -- checked by rendering it, not by reasoning.
+        shade = QColor(int(body[0] * 0.78) + 26, int(body[1] * 0.78) + 24,
+                       int(body[2] * 0.78) + 28, alpha)
         scale = self.size * (0.55 + 0.45 * left)
 
         painter.save()
