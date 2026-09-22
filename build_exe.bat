@@ -7,14 +7,20 @@ REM used to be spelled out here and again in both GitHub workflows, with the
 REM spec file sitting unused beside them, so four places could disagree about
 REM what "the build" meant.
 
-python -m pip install -r requirements.txt
+REM Same reason as run_dev.bat: a bare `python` is whichever environment the
+REM shell was left in, which here would install the requirements into someone
+REM else's venv and build from it.
+set "PY=python"
+if exist "%~dp0.venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
+
+"%PY%" -m pip install -r requirements.txt
 if errorlevel 1 (
   echo Could not install requirements.
   pause
   exit /b 1
 )
 
-python -m PyInstaller --noconfirm --clean DesktopBugCompanion.spec
+"%PY%" -m PyInstaller --noconfirm --clean DesktopBugCompanion.spec
 if errorlevel 1 (
   echo Build failed.
   pause
