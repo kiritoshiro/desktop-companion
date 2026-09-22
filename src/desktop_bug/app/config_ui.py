@@ -59,6 +59,7 @@ from ..state.teams import (
     team_label,
     teams_payload,
 )
+from ..content.body_plans import BODY_PLAN_IDS
 from ..content.skills import (
     SKILLS,
     compact_ability_summary,
@@ -167,10 +168,27 @@ class NoScrollDoubleSpinBox(QDoubleSpinBox):
 # The slot table's columns, in order. Spelled out once because the row builder,
 # collect_slots and update_summary all index into them by number, and the
 # "Pick 1-10" removal had to renumber every one of those call sites.
-SLOT_HEADERS = ["Creature model", "Temperament", "How many", "Abilities", "Colors", "Team", "Job", ""]
+# DC-49 reduced forty-one leg rigs to four body plans, which made the single
+# "Creature model" dropdown of forty-nine entries the wrong shape: a person
+# picking a spider is really choosing a *kind* and then a *look*. The column
+# splits into Category (the body plan, four choices) and Skin (the models
+# built on it), with the colour swatch beside them, so those three columns
+# together are the whole appearance of a slot.
+SLOT_HEADERS = ["Category", "Skin", "Colors", "Temperament", "How many",
+                "Abilities", "Team", "Job", ""]
 SLOT_COLUMNS = len(SLOT_HEADERS)
-(COL_MODEL, COL_TEMPERAMENT, COL_COUNT, COL_ABILITIES,
- COL_COLORS, COL_TEAM, COL_JOB, COL_REMOVE) = range(SLOT_COLUMNS)
+(COL_CATEGORY, COL_SKIN, COL_COLORS, COL_TEMPERAMENT, COL_COUNT,
+ COL_ABILITIES, COL_TEAM, COL_JOB, COL_REMOVE) = range(SLOT_COLUMNS)
+# The skin dropdown is the one that still carries a model id, so everything
+# that used to read the model column reads this one.
+COL_MODEL = COL_SKIN
+RANDOM_CATEGORY_ID = "__random_category__"
+BODY_PLAN_LABELS = {
+    "bug": "Bug",
+    "segmented": "Segmented",
+    "jumper": "Jumper",
+    "tarantula": "Tarantula",
+}
 
 
 class SlotTable(QTableWidget):
@@ -181,9 +199,11 @@ class SlotTable(QTableWidget):
         # wider than the button underneath it.
         self.horizontalHeaderItem(SLOT_COLUMNS - 1).setToolTip("Remove a creature slot")
         self.horizontalHeader().setStretchLastSection(False)
-        self.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
-        for col in range(2, SLOT_COLUMNS):
+        # Skin and Temperament carry the long names, so they take the slack.
+        self.horizontalHeader().setSectionResizeMode(COL_SKIN, QHeaderView.Stretch)
+        self.horizontalHeader().setSectionResizeMode(COL_TEMPERAMENT, QHeaderView.Stretch)
+        for col in (COL_CATEGORY, COL_COLORS, COL_COUNT, COL_ABILITIES,
+                    COL_TEAM, COL_JOB, COL_REMOVE):
             self.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
         self.verticalHeader().setVisible(False)
         self.setAlternatingRowColors(True)
@@ -694,31 +714,33 @@ class ConfigWindow(QMainWindow):
         self.table.insertRow(row)
         self.table.setRowHeight(row, max(64, MODEL_ICON_SIZE + 12))
 
+        category_box = NoScrollComboBox()
+        category_box.setMinimumWidth(120)
+        category_box.addItem("Any kind", RANDOM_CATEGORY_ID)
+        for plan in BODY_PLAN_IDS:
+            category_box.addItem(BODY_PLAN_LABELS.get(plan, plan.title()), plan)
+        category_box.setToolTip(
+            "The spider's body plan: how it is built and how it walks. "
+            "Every skin below is one of these four."
+        )
+
+        # The skin dropdown carries the model id, and so is the one the rest
+        # of this window still reads. It is filtered by the category above.
         model_box = NoScrollComboBox()
         model_box.setProperty("slot_id", str(slot_id or f"slot-{uuid.uuid4().hex[:12]}"))
         model_box.setIconSize(QSize(MODEL_ICON_SIZE, MODEL_ICON_SIZE))
-        model_box.setMinimumWidth(285)
-        model_box.addItem(self._random_model_icon(), "Random model at launch", RANDOM_MODEL_ID)
-        # Keep the newest model at the top of every slot dropdown. Discovery
-        # already preserves this order, but sort here too because this widget
-        # is rebuilt from a dictionary after every refresh.
-        def newest_model_key(model):
-            try:
-                added_time = Path(model.get("_path", "")).stat().st_ctime
-            except (OSError, ValueError):
-                added_time = 0.0
-            return (-added_time, model.get("display_name", model.get("id", "")).casefold())
+        model_box.setMinimumWidth(250)
+        model_box.setToolTip(
+            "Which artwork this slot uses. Skins with their own PNG art keep "
+            "it; every skin can still be recoloured with the swatch beside it."
+        )
 
-        for model in sorted(self.models.values(), key=newest_model_key):
-            model_box.addItem(self._model_icon(model), model.get("display_name", model["id"]), model["id"])
-        if model_id:
-            idx = model_box.findData(model_id)
-            if idx >= 0:
-                model_box.setCurrentIndex(idx)
-        else:
-            idx = model_box.findData("spider")
-            if idx >= 0:
-                model_box.setCurrentIndex(idx)
+        resolved_plan = self._plan_of_model(model_id) if model_id else None
+        if resolved_plan is not None:
+            index = category_box.findData(resolved_plan)
+            if index >= 0:
+                category_box.setCurrentIndex(index)
+        self._fill_skin_box(model_box, category_box.currentData(), model_id)
 
         personality_box = NoScrollComboBox()
         personality_box.addItem("Random personality at launch", RANDOM_PERSONALITY_ID)
@@ -846,14 +868,19 @@ class ConfigWindow(QMainWindow):
         remove_btn.setObjectName("removeSlotButton")
         remove_btn.clicked.connect(lambda: self.remove_slot_by_button(remove_btn))
 
-        self.table.setCellWidget(row, 0, model_box)
-        self.table.setCellWidget(row, 1, personality_box)
-        self.table.setCellWidget(row, 2, count_spin)
-        self.table.setCellWidget(row, 3, skills_btn)
-        self.table.setCellWidget(row, 4, colors_btn)
-        self.table.setCellWidget(row, 5, team_box)
-        self.table.setCellWidget(row, 6, job_box)
-        self.table.setCellWidget(row, 7, remove_btn)
+        category_box.currentIndexChanged.connect(
+            lambda _i=0, cb=category_box, mb=model_box, bt=colors_btn:
+            self._on_category_changed(cb, mb, bt))
+
+        self.table.setCellWidget(row, COL_CATEGORY, category_box)
+        self.table.setCellWidget(row, COL_SKIN, model_box)
+        self.table.setCellWidget(row, COL_COLORS, colors_btn)
+        self.table.setCellWidget(row, COL_TEMPERAMENT, personality_box)
+        self.table.setCellWidget(row, COL_COUNT, count_spin)
+        self.table.setCellWidget(row, COL_ABILITIES, skills_btn)
+        self.table.setCellWidget(row, COL_TEAM, team_box)
+        self.table.setCellWidget(row, COL_JOB, job_box)
+        self.table.setCellWidget(row, COL_REMOVE, remove_btn)
         for col in range(SLOT_COLUMNS):
             self.table.setItem(row, col, QTableWidgetItem(""))
 
@@ -1090,6 +1117,59 @@ class ConfigWindow(QMainWindow):
             f"Colors for this slot: {len(overrides)} custom" if overrides
             else "Colors for this slot: model default")
         button.setAccessibleDescription(description)
+
+    def _plan_of_model(self, model_id: str):
+        """The body plan a model is built on, or None if it is not a model."""
+        model = self.models.get(str(model_id or ""))
+        if not isinstance(model, dict):
+            return None
+        plan = str(model.get("body_plan", "") or "").strip().lower()
+        return plan if plan in BODY_PLAN_IDS else None
+
+    def _fill_skin_box(self, model_box, category, keep_model_id=None) -> None:
+        """Repopulate a skin dropdown for one category, keeping the selection.
+
+        Rebuilt rather than filtered in place because the categories have
+        very different sizes -- 35 skins on `bug`, one on `tarantula` -- and
+        a hidden-item approach leaves the dropdown's height lying about how
+        much is in it.
+        """
+        wanted = str(category or RANDOM_CATEGORY_ID)
+        previous = keep_model_id if keep_model_id is not None else model_box.currentData()
+        blocked = model_box.blockSignals(True)
+        model_box.clear()
+        model_box.addItem(self._random_model_icon(), "Random skin at launch", RANDOM_MODEL_ID)
+
+        def newest_first(model):
+            try:
+                added = Path(model.get("_path", "")).stat().st_ctime
+            except (OSError, ValueError):
+                added = 0.0
+            return (-added, model.get("display_name", model.get("id", "")).casefold())
+
+        for model in sorted(self.models.values(), key=newest_first):
+            if wanted != RANDOM_CATEGORY_ID and model.get("body_plan") != wanted:
+                continue
+            model_box.addItem(self._model_icon(model),
+                              model.get("display_name", model["id"]), model["id"])
+        model_box.blockSignals(blocked)
+
+        for candidate in (previous, "spider"):
+            if candidate is None:
+                continue
+            index = model_box.findData(candidate)
+            if index >= 0:
+                model_box.setCurrentIndex(index)
+                return
+        # The old skin is not in this category: fall to its first real entry
+        # rather than to "Random skin", which would quietly change the slot
+        # into a random one.
+        model_box.setCurrentIndex(1 if model_box.count() > 1 else 0)
+
+    def _on_category_changed(self, category_box, model_box, colors_btn) -> None:
+        self._fill_skin_box(model_box, category_box.currentData())
+        self._refresh_colors_button(colors_btn, model_box)
+        self.update_summary()
 
     def _model_color_defaults(self, model_box: QComboBox) -> dict:
         model_id = model_box.currentData() if model_box is not None else None
@@ -1369,7 +1449,7 @@ class ConfigWindow(QMainWindow):
     def _iter_row_widgets(self):
         for row in range(self.table.rowCount()):
             yield (
-                self.table.cellWidget(row, COL_MODEL),
+                self.table.cellWidget(row, COL_SKIN),
                 self.table.cellWidget(row, COL_TEMPERAMENT),
                 self.table.cellWidget(row, COL_COUNT),
                 self.table.cellWidget(row, COL_ABILITIES),

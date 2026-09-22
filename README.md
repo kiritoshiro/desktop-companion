@@ -242,7 +242,8 @@ before the DC-43 package split; the old path no longer exists.
 
 The settings UI opens first. Choose model, personality, count, save/load a preset, then click **Save and launch overlay**. The main settings window includes the same launch-time options shown before launch:
 
-- The **Model** dropdown shows a small live thumbnail beside each model name, so you can see the spider shape/color before launching. These thumbnails are generated from the model data automatically, including new model folders.
+- **Category** picks the spider's body plan -- **Bug**, **Segmented**, **Jumper** or **Tarantula** -- or **Any kind**. This is what the spider *is*: how it is built and how it walks, since each plan carries its own gait. There used to be a single dropdown of forty-nine models; four body plans replaced forty-one hand-tuned leg rigs, so choosing a spider is now choosing a kind and then a look.
+- **Skin** picks the artwork, listing only the skins built on the chosen category, with a live thumbnail beside each name. Skins with their own PNG art keep it; the rest are drawn procedurally. Either way the **Colors** swatch next to it recolours them, so one skin gives you the whole palette. These thumbnails are generated from the model data automatically, including new model folders.
 - **Random model** sets each model dropdown to **Random model (pick at launch)**.
 - **Random personality** sets each personality dropdown to **Random personality (pick at launch)**.
 - **Random count (1-10)** checks the per-slot **Random 1-10** box, so that slot chooses a new count at launch.
