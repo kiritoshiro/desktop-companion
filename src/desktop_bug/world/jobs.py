@@ -208,6 +208,93 @@ def _plan_mounds(site_id: str, radius: float) -> list[tuple[float, float, float,
     return placed
 
 
+# DC-51: a mound is drawn as a patch of earth, not as a half-circle.
+#
+# The first version drew each mound with `drawChord` -- a geometrically exact
+# dome, with a second smaller dome for the lit crest and a team-coloured arc
+# on top once it was finished. Twelve of those in a cluster read as a diagram
+# of a base rather than as dug soil, which is what the owner meant by
+# "geometrical mould".
+#
+# What replaced it: one ragged field of damp soil under the whole cluster, so
+# the pile has ground rather than floating; low-contrast patches on top of it
+# for the individual mounds; and a scatter of clods and specks. Outlines are
+# smoothed through their points rather than joined with straight lines -- at
+# base size a thirteen-sided polygon reads as a cut gemstone, which is the
+# opposite of the problem being fixed.
+#
+# The shapes are seeded from the mound's own position so a base looks the same
+# on every frame, in every process and after a restart -- the same reason
+# `_plan_mounds` seeds from the site id, and the same reason it uses a string
+# seed rather than `hash()`, which Python salts per process.
+PATCH_POINTS = 15
+# Earth is wider than it is deep, because it is lying on the ground and seen
+# from slightly above, like everything else in the overlay.
+PATCH_FLATTEN = 0.58
+# How far the soil is pulled towards the owning team's colour. Small on
+# purpose: at 0.16 for the body and 0.30 for the crown -- the first numbers
+# tried -- a finished base rendered as a heap of coloured pebbles rather than
+# as tinted earth. Dirt has to stay the colour of dirt.
+TEAM_TINT_SOIL = 0.05
+TEAM_TINT_BODY = 0.08
+TEAM_TINT_CROWN = 0.13
+_PATCH_CACHE: dict[str, dict] = {}
+
+
+def _ragged_outline(rng: random.Random, points: int, squash: float,
+                    wobble: float) -> list[tuple[float, float]]:
+    """A closed unit-radius outline whose radius wobbles from point to point."""
+    outline = []
+    for index in range(points):
+        angle = (index / points) * math.tau
+        radius = 1.0 + rng.uniform(-wobble, wobble * 0.78)
+        outline.append((math.cos(angle) * radius, math.sin(angle) * radius * squash))
+    return outline
+
+
+def patch_recipe(key: str) -> dict:
+    """The fixed shape of one dirt patch: its outline, crown and loose clods.
+
+    Cached because it is otherwise rebuilt for every mound on every frame, and
+    a full colony is dozens of mounds at sixty frames a second. Everything in
+    it is in unit coordinates, so the same recipe serves a mound at any size.
+    """
+    cached = _PATCH_CACHE.get(key)
+    if cached is not None:
+        return cached
+    rng = random.Random(key)
+    clods = []
+    for _ in range(6):
+        angle = rng.uniform(0.0, math.tau)
+        distance = rng.uniform(0.55, 1.20)
+        clods.append((
+            math.cos(angle) * distance,
+            math.sin(angle) * distance * PATCH_FLATTEN,
+            rng.uniform(0.06, 0.15),
+            rng.uniform(0.0, 0.95),
+        ))
+    recipe = {
+        # The pile and the part the light catches, each with its own outline
+        # so the crown does not trace the edge below it.
+        "body": _ragged_outline(rng, PATCH_POINTS, PATCH_FLATTEN, 0.24),
+        "crown": _ragged_outline(rng, PATCH_POINTS - 5, PATCH_FLATTEN * 1.12, 0.30),
+        "crown_offset": (rng.uniform(-0.18, 0.04), rng.uniform(-0.28, -0.14)),
+        "clods": clods,
+    }
+    _PATCH_CACHE[key] = recipe
+    return recipe
+
+
+def _blend(base: tuple, towards: tuple, amount: float) -> tuple:
+    """Mix one RGB triple towards another. Used to cast a team's colour over
+    the earth, which is how a base says whose it is now that the drawn ring
+    around it is gone."""
+    return tuple(
+        int(round(channel + (target - channel) * amount))
+        for channel, target in zip(base, towards)
+    )
+
+
 @dataclass
 class DutyCycle:
     """Whether one worker is currently on shift, and for how much longer."""
@@ -388,6 +475,26 @@ class BaseWorld:
             if site.id == site_id:
                 del self.bases[key]
                 return True
+        return False
+
+    def move_base(self, site_id: str, x: float, y: float) -> bool:
+        """Pick a base up and put it down somewhere else. True if it moved.
+
+        The earth moves with it: `BaseSite.mounds()` returns offsets from the
+        site centre, so the pile that was dug keeps its shape and its build
+        progress rather than starting again. The individual patch *shapes* are
+        seeded from world position and so are re-rolled by a move, which is
+        the one visible difference and a fair one -- the soil was carried.
+
+        Clamped the same way `resize` clamps, so a base cannot be dropped off
+        the edge of the desktop where nothing could ever reach it.
+        """
+        for site in self.bases.values():
+            if site.id != site_id:
+                continue
+            site.x = max(32.0, min(self.screen_w - 32.0, float(x)))
+            site.y = max(32.0, min(self.screen_h - 32.0, float(y)))
+            return True
         return False
 
     def clear(self) -> None:
@@ -1020,49 +1127,126 @@ class BaseWorld:
     def render(self, painter, clip=None) -> None:
         if not self.bases:
             return
-        from PyQt5.QtCore import QRectF, Qt
-        from PyQt5.QtGui import QColor, QPainter, QPen
+        from PyQt5.QtCore import QPointF, QRectF, Qt
+        from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
 
         from ..state.teams import team_color
+
+        def patch(outline, cx, cy, rx, ry) -> QPainterPath:
+            """A closed, smoothed path through a unit outline.
+
+            Straight segments between the points made a patch look faceted --
+            a cut stone rather than a heap of soil -- so each segment is a
+            quadratic curve whose control point is the outline vertex and
+            whose ends are the midpoints either side of it.
+            """
+            points = [(cx + px * rx, cy + py * ry) for px, py in outline]
+            count = len(points)
+            path = QPainterPath()
+            first_x, first_y = points[0]
+            last_x, last_y = points[-1]
+            path.moveTo(QPointF((last_x + first_x) * 0.5, (last_y + first_y) * 0.5))
+            for index in range(count):
+                cx_point, cy_point = points[index]
+                nx, ny = points[(index + 1) % count]
+                path.quadTo(QPointF(cx_point, cy_point),
+                            QPointF((cx_point + nx) * 0.5, (cy_point + ny) * 0.5))
+            path.closeSubpath()
+            return path
 
         for site in self.bases.values():
             if clip is not None and (site.x + site.radius < clip[0] or site.x - site.radius > clip[2] or site.y + site.radius < clip[1] or site.y - site.radius > clip[3]):
                 continue
             completion = site.completion
+            if completion <= 0.01:
+                # Nothing has been dug yet. DC-51 removed the dashed circle
+                # that used to mark the spot: a ring with a tinted disc inside
+                # it drew the *idea* of a base -- an area marker -- around the
+                # earth that is the base. Whose it is now reads from the
+                # colour cast over the soil, which is what the owner asked
+                # for: teams shown by colour and nothing else.
+                if site.alert <= 0.01:
+                    continue
             red, green, blue = team_color(site.team_id, self.team_profiles)
-            accent = QColor(red, green, blue, 190)
-            faint = QColor(accent.red(), accent.green(), accent.blue(), 45)
+            soil = _blend((46, 34, 25), (red, green, blue), TEAM_TINT_SOIL)
+            earth = _blend((86, 62, 42), (red, green, blue), TEAM_TINT_BODY)
+            crown = _blend((118, 91, 63), (red, green, blue), TEAM_TINT_CROWN)
+            shade = _blend((38, 27, 19), (red, green, blue), TEAM_TINT_SOIL)
             painter.save()
             painter.setRenderHint(QPainter.Antialiasing, True)
-            painter.setPen(QPen(faint, 1.2, Qt.DashLine))
-            painter.setBrush(QColor(25, 30, 38, 30))
-            painter.drawEllipse(QRectF(site.x - site.radius, site.y - site.radius, site.radius * 2.0, site.radius * 2.0))
+            painter.setPen(Qt.NoPen)
             if completion > 0.01:
-                # DC-41: a pile of dirt mounds, each one finished before the
-                # next is started, drawn back to front so the cluster reads
-                # as a heap rather than a flat pattern. Nothing here turns.
+                # One field of damp, turned soil under the whole cluster, so
+                # the mounds sit in ground instead of floating on the desktop.
+                # It spreads as the base is dug rather than appearing at full
+                # size, which is what makes early progress read as digging.
+                field = patch_recipe(f"{site.id}:field")
+                spread = site.radius * (0.52 + 0.46 * completion)
+                painter.setBrush(QColor(*soil, int(60 + 55 * completion)))
+                painter.drawPath(patch(field["body"], site.x, site.y + site.radius * 0.06,
+                                       spread, spread * 1.12))
+
+                # Grit over the whole worked area. Without it a patch is a
+                # smooth wash at any zoom, and smooth is the one thing turned
+                # earth is not.
+                for gx, gy, gsize, gthreshold in field["clods"] + patch_recipe(
+                        f"{site.id}:grit")["clods"]:
+                    if completion < gthreshold:
+                        continue
+                    radius = max(0.7, spread * gsize * 0.16)
+                    # Kept inside the field: at full spread the outermost
+                    # grains landed on bare desktop and read as dirty pixels.
+                    grit_x = site.x + gx * spread * 0.78
+                    grit_y = site.y + gy * spread * 0.78
+                    painter.setBrush(QColor(*soil, 150))
+                    painter.drawEllipse(QRectF(grit_x - radius, grit_y - radius,
+                                               radius * 2.0, radius * 2.0))
+
+                # DC-41: a pile of dirt, each mound finished before the next
+                # is started, drawn back to front so the cluster reads as a
+                # heap rather than a flat pattern. Nothing here turns.
                 for mx, my, size, aspect, built in sorted(site.mounds(), key=lambda m: m[1]):
                     grown = size * (0.35 + 0.65 * built)
                     half = grown * aspect
-                    painter.setPen(Qt.NoPen)
-                    # The damp earth the mound sits on, slightly wider than
-                    # the mound itself so the pile has a footprint.
-                    painter.setBrush(QColor(38, 28, 20, int(70 * built)))
-                    painter.drawEllipse(QRectF(mx - half * 1.15, my - grown * 0.34,
-                                               half * 2.3, grown * 0.68))
-                    painter.setBrush(QColor(92, 66, 44, int(120 + 110 * built)))
-                    painter.drawChord(QRectF(mx - half, my - grown * 0.9,
-                                             half * 2.0, grown * 1.8), 0, 180 * 16)
-                    # A lit crest, and a team-coloured rim once it is finished,
-                    # so whose base this is still reads at a glance (DC-33).
-                    painter.setBrush(QColor(126, 96, 66, int(90 + 90 * built)))
-                    painter.drawChord(QRectF(mx - half * 0.58, my - grown * 0.78,
-                                             half * 1.16, grown * 1.2), 0, 180 * 16)
-                    if built >= 1.0:
-                        painter.setPen(QPen(accent, 1.1, Qt.SolidLine))
-                        painter.setBrush(Qt.NoBrush)
-                        painter.drawChord(QRectF(mx - half, my - grown * 0.9,
-                                                 half * 2.0, grown * 1.8), 0, 180 * 16)
+                    # Seeded from where the mound sits, so the same patch is
+                    # the same shape in the next process. `mounds()` returns
+                    # its entries in build order without an index, and the
+                    # position is the part of it that never moves.
+                    recipe = patch_recipe(f"{site.id}:patch:{mx:.2f}:{my:.2f}")
+                    # Deliberately wider than the mound's own footprint: at
+                    # 1.1x each patch sat alone with a visible edge and the
+                    # cluster read as a handful of pebbles. Overlapping them
+                    # makes one worked patch of ground with lumps in it.
+                    painter.setBrush(QColor(*earth, int(82 + 62 * built)))
+                    painter.drawPath(patch(recipe["body"], mx, my,
+                                           half * 1.62, grown * 1.48))
+                    # The part the light catches, offset rather than
+                    # concentric so the pile has a side in shade.
+                    offset_x, offset_y = recipe["crown_offset"]
+                    painter.setBrush(QColor(*crown, int(20 + 34 * built)))
+                    painter.drawPath(patch(recipe["crown"],
+                                           mx + half * offset_x, my + grown * offset_y,
+                                           half * 1.05, grown * 0.94))
+                    # A crescent of shade along the lower edge. Earth lit from
+                    # above is mostly shadow, not highlight: the bright crest
+                    # the first pass drew turned every mound into a cobble.
+                    painter.setBrush(QColor(*shade, int(30 + 46 * built)))
+                    painter.drawPath(patch(recipe["crown"],
+                                           mx - half * offset_x * 0.6,
+                                           my + grown * 0.46,
+                                           half * 1.18, grown * 0.52))
+                    # Loose clods and grit, appearing as the mound is piled.
+                    for cx_unit, cy_unit, clod_size, threshold in recipe["clods"]:
+                        if built < threshold:
+                            continue
+                        radius = grown * clod_size
+                        # Earth-coloured, not crown-coloured: pale clods read
+                        # as gravel scattered on soil rather than as soil.
+                        painter.setBrush(QColor(*earth, int(55 + 60 * built)))
+                        painter.drawEllipse(
+                            QRectF(mx + cx_unit * half - radius,
+                                   my + cy_unit * grown - radius * 0.62,
+                                   radius * 2.0, radius * 1.24))
             if site.alert > 0.01:
                 painter.setPen(QPen(QColor(245, 92, 72, int(90 + site.alert * 130)), 2.0, Qt.SolidLine))
                 painter.setBrush(Qt.NoBrush)

@@ -84,7 +84,11 @@ def default_color(team_id) -> tuple:
     if known is not None:
         return known[1]
     if team_id == NEUTRAL:
-        return (150, 156, 168)
+        # DC-51: white, at the owner's request -- "white would be neutral".
+        # The old grey was hard to tell from a team whose hash happened to
+        # land on a desaturated colour, which is the one distinction a
+        # colour-only team marker cannot afford to lose.
+        return (255, 255, 255)
     return _color_at_hue(_fnv1a(team_id), 0)
 
 
@@ -120,7 +124,11 @@ def distinct_color(team_id, taken: Iterable[tuple] = ()) -> tuple:
     if known is not None:
         return known[1]
     if team_id == NEUTRAL:
-        return (150, 156, 168)
+        # DC-51: white, at the owner's request -- "white would be neutral".
+        # The old grey was hard to tell from a team whose hash happened to
+        # land on a desaturated colour, which is the one distinction a
+        # colour-only team marker cannot afford to lose.
+        return (255, 255, 255)
     digest = _fnv1a(team_id)
     others = list(taken)
     for step in range(8):

@@ -472,6 +472,10 @@ class OverlayWindow(QWidget):
         self._state_dir = state_dir()
         self._log_path = log_path(self._state_dir)
         self._stop_requested = False
+        # The base picked up by "Move this base", waiting for a second
+        # right-click to say where it goes. Held by id rather than by object
+        # so a base deleted in between simply cancels the move.
+        self._moving_base_id = None
         clear_stop_request(self._state_dir)
 
         # Live two-way channel to any settings window (DC-16). One local-socket
@@ -1053,8 +1057,31 @@ class OverlayWindow(QWidget):
         # A base under the cursor gets its own entry, above the cage ones, so
         # the nearest thing to what was actually right-clicked comes first.
         base = self.manager.base_at(mx, my)
+        # A base already picked up puts its destination first, because that is
+        # the only thing the next click is for.
+        carried = self._carried_base()
+        if carried is not None and carried is not base:
+            carried_name = team_label(carried.team_id, self.manager.team_profiles)
+            drop = menu.addAction(f"Put the {carried_name} base down here")
+            drop.setToolTip("Move the base you picked up to this spot, earth and all.")
+            drop.triggered.connect(
+                lambda _checked=False, site=carried, x=mx, y=my: self._drop_base(site, x, y))
+            cancel = menu.addAction("Leave it where it is")
+            cancel.triggered.connect(lambda _checked=False: self._cancel_base_move())
+            menu.addSeparator()
         if base is not None:
             team_name = team_label(base.team_id, self.manager.team_profiles)
+            if carried is base:
+                cancel_here = menu.addAction(f"Leave the {team_name} base where it is")
+                cancel_here.triggered.connect(lambda _checked=False: self._cancel_base_move())
+            else:
+                move_base = menu.addAction(f"Move the {team_name} base…")
+                move_base.setToolTip(
+                    "Pick this base up, then right-click where it should go. "
+                    "It keeps its level, its food and the earth already dug."
+                )
+                move_base.triggered.connect(
+                    lambda _checked=False, site=base: self._pick_up_base(site))
             remove_base = menu.addAction(f"Remove the {team_name} base here")
             remove_base.setToolTip(
                 "Delete this base. Its team keeps its spiders and its food; a "
@@ -1062,6 +1089,14 @@ class OverlayWindow(QWidget):
             )
             remove_base.triggered.connect(
                 lambda _checked=False, site=base: self._announce(self.manager.remove_base(site)))
+            menu.addSeparator()
+        if getattr(self.manager, "base_world", None) is not None and self.manager.base_world.bases:
+            remove_all_bases = menu.addAction("Remove every base")
+            remove_all_bases.setToolTip(
+                "Clear the desktop of colonies. Builders start again from nothing."
+            )
+            remove_all_bases.triggered.connect(
+                lambda _checked=False: self._announce(self.manager.remove_bases()))
             menu.addSeparator()
 
         add_cage = menu.addAction("Add a cage here")
@@ -1078,6 +1113,37 @@ class OverlayWindow(QWidget):
         menu.aboutToHide.connect(self._request_full_repaint)
         menu.exec_(global_pos)
         apply_click_through(self)
+
+    def _carried_base(self):
+        """The base waiting to be put down, if it still exists."""
+        site_id = self._moving_base_id
+        if site_id is None:
+            return None
+        world = getattr(self.manager, "base_world", None)
+        if world is None:
+            self._moving_base_id = None
+            return None
+        for site in world.bases.values():
+            if site.id == site_id:
+                return site
+        # Removed while it was being carried; forget it rather than offering
+        # to put down something that is gone.
+        self._moving_base_id = None
+        return None
+
+    def _pick_up_base(self, site) -> None:
+        self._moving_base_id = site.id
+        name = team_label(site.team_id, self.manager.team_profiles)
+        self._announce(f"Picked up the {name} base. Right-click where it should go.")
+
+    def _cancel_base_move(self) -> None:
+        self._moving_base_id = None
+        self._announce("Left the base where it is.")
+
+    def _drop_base(self, site, x: float, y: float) -> None:
+        self._moving_base_id = None
+        self._announce(self.manager.move_base(site, x, y))
+        self._request_full_repaint()
 
     def _show_inspector(self, creature) -> None:
         dialog = CreatureInspectorDialog(self, creature)

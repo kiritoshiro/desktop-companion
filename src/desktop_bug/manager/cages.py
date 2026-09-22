@@ -181,6 +181,22 @@ class CageMixin:
         self.save_runtime_state()
         return f"Removed the {team_label} base."
 
+    def move_base(self, site, x: float, y: float) -> str:
+        """Carry one base to a new spot on the desktop.
+
+        The owner asked for bases to be removable "or moving them somewhere",
+        and moving is the kinder of the two: a base is where a team heals and
+        banks its food, so deleting one to get it out of the way costs the
+        team both.
+        """
+        base_world = getattr(self, "base_world", None)
+        if base_world is None or site is None:
+            return "There is no base there to move."
+        if not base_world.move_base(site.id, x, y):
+            return "There is no base there to move."
+        self.save_runtime_state()
+        return f"Moved the {site.team_id or 'neutral'} base."
+
     def remove_bases(self) -> str:
         base_world = getattr(self, "base_world", None)
         if base_world is None or not base_world.bases:
