@@ -20,7 +20,12 @@ from ..creature.constants import (
     RALLY_HEALTH_FRACTION,
     THREAT_SCAN_RADIUS,
 )
-from ..world.carcass import CARCASS_FOOD_AMOUNT, carcass_for, eaters_near
+from ..world.carcass import (
+    CARCASS_FOOD_AMOUNT,
+    CARCASS_LIFETIME,
+    carcass_for,
+    eaters_near,
+)
 from .constants import log
 
 # How close two foes must be, relative to their combined size, to trade hits.
@@ -310,19 +315,27 @@ class CombatMixin:
         left = []
         for carcass in self.carcasses:
             eaters = eaters_near(carcass, self.creatures)
+            eaten_before = carcass.t
             finished = carcass.update(dt, eaters)
-            if not finished:
-                left.append(carcass)
-                continue
             # A spider that ate its way through a body fed its colony doing
             # it, in the same banked food DC-21 spends on building.
-            if eaters and base_world is not None:
+            #
+            # Credited by the mouthful rather than in one lump when the
+            # carcass runs out. It used to be paid on the final frame only,
+            # to whoever was standing on it at that instant -- so a spider
+            # that ate a whole body and happened to take a step on the last
+            # frame of 189 was paid nothing. Measured, that is what it did:
+            # the eater was in reach for 179 of the 189 frames and the frame
+            # it finished was one of the other ten.
+            eaten_now = max(0.0, carcass.t - eaten_before)
+            if eaters and eaten_now > 0.0 and base_world is not None:
+                share = CARCASS_FOOD_AMOUNT * (eaten_now / CARCASS_LIFETIME) / eaters
                 for creature in self.creatures:
                     if eaters_near(carcass, [creature]):
                         base_world.credit_team_food(
-                            getattr(creature.progression, "team_id", None),
-                            CARCASS_FOOD_AMOUNT / max(1, eaters),
-                        )
+                            getattr(creature.progression, "team_id", None), share)
+            if not finished:
+                left.append(carcass)
         self.carcasses = left
 
     def carcass_dirty_rects(self):

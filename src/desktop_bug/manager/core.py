@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from ..content.personality_profiles import personality_gait_style
 from ..creature import Creature, GAIT_LABELS, normalize_gait_style
 from ..world.cage import Cage
 from ..world.webs import WebWorld
@@ -81,7 +82,13 @@ class CreatureManager(
         self.size_scale = 1.0
         self.interferable = True
         self.mood_mode = "auto"
-        self.social_play = False
+        # DC-52: on by default and no longer shown anywhere. This was a
+        # master switch over a `social_play` skill that every temperament
+        # already carries, weighted by its sociability -- 0 for a hunter, 10
+        # for a cuddly one -- so all it could do was make a sociable spider
+        # antisocial. The temperament decides; an old preset that set it to
+        # false is still honoured.
+        self.social_play = True
         # DC-22: conflict is on by default. The audience for it is the user
         # who watches these spiders fight for their lands, so shipping it off
         # would hide the thing it exists for -- see the decision record. The
@@ -90,7 +97,10 @@ class CreatureManager(
         self.conflict_enabled = True
         # DC-47: remains of spiders that lost, being eaten and on their way out.
         self.carcasses: List = []
-        self.gait_style = "classic"
+        # None means "ask each temperament", which is what a preset saved by
+        # the settings window now does. A preset that names a gait still
+        # overrides every spider, so an old one keeps behaving as it did.
+        self.gait_style = None
         # Declared stances between teams, shared by every spider in the scene.
         self.team_stances: dict = {}
         # Who each team is: the name its owner chose and its colour. Keyed
@@ -204,7 +214,7 @@ class CreatureManager(
             index=index,
             size_scale=self.size_scale,
             skills=skills,
-            gait_style=self.gait_style,
+            gait_style=self.gait_style or personality_gait_style(personality),
             color_overrides=color_overrides,
             progression_state=progression_state,
             progression_id=state_key,
@@ -343,7 +353,11 @@ class CreatureManager(
             self.mood_mode = str(settings.get("mood_mode", self.mood_mode) or "auto").lower()
             self.social_play = bool(settings.get("social_play", self.social_play))
             self.conflict_enabled = bool(settings.get("conflict", self.conflict_enabled))
-            self.gait_style = normalize_gait_style(settings.get("gait_style", self.gait_style))
+            if settings.get("gait_style") is not None:
+                self.gait_style = normalize_gait_style(settings["gait_style"])
+            for key in ("always_show_names", "always_show_levels", "always_show_health"):
+                if key in settings:
+                    setattr(self, key, bool(settings[key]))
             self.team_stances = normalize_team_stances(settings.get("team_relations"))
             # Every team a slot refers to gets an identity, even in an older
             # preset that has no `teams` block at all.
@@ -737,6 +751,14 @@ class CreatureManager(
                 self.set_conflict_enabled(bool(settings.get("conflict")))
             if "gait_style" in settings:
                 self.set_gait_style(str(settings.get("gait_style") or "classic"))
+            # DC-52: the settings window's three "Always show" switches, so
+            # ticking one reaches a running overlay the same way the size
+            # slider does instead of waiting for a relaunch.
+            for key, setter in (("always_show_names", self.set_always_show_names),
+                                ("always_show_levels", self.set_always_show_levels),
+                                ("always_show_health", self.set_always_show_health)):
+                if key in settings:
+                    setter(bool(settings[key]))
             if "allow_mouse_capture" in settings:
                 self.set_allow_mouse_capture(bool(settings.get("allow_mouse_capture")))
             if "desktop_icons_enabled" in settings:
@@ -796,6 +818,9 @@ class CreatureManager(
         """
         return {
             "mood_mode": self.mood_mode,
+            "always_show_names": self.always_show_names,
+            "always_show_levels": self.always_show_levels,
+            "always_show_health": self.always_show_health,
             "size_scale": self.size_scale,
             "social_play": self.social_play,
             "flies_enabled": self.flies_enabled,

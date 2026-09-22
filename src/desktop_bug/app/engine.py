@@ -1475,22 +1475,11 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
         size_group.addAction(action)
         action.triggered.connect(lambda checked=False, s=scale, text=label: (window.manager.set_size_scale(s), announce(f"Size set to {text}.")))
 
-    mood_menu = appearance_menu.addMenu("Mood override")
-    mood_group = QActionGroup(menu)
-    mood_group.setExclusive(True)
-    mood_options = [
-        ("Auto - use each personality", "auto"),
-        ("Playful", "playful"),
-        ("Cuddly", "cuddly"),
-        ("Curious", "curious"),
-        ("Calm", "calm"),
-    ]
-    for label, mode in mood_options:
-        action = mood_menu.addAction(label)
-        action.setCheckable(True)
-        action.setChecked(mode == window.manager.mood_mode)
-        mood_group.addAction(action)
-        action.triggered.connect(lambda checked=False, m=mode: announce(window.manager.set_mood_mode(m)))
+    # DC-52: "Mood override" is gone from here as well as from the settings
+    # window. It set every spider in the scene to one mood, over the top of
+    # the temperament that already names one, and the owner asked for moods
+    # to be consolidated into the temperament rather than overridden beside
+    # it. `set_mood_mode` remains for a preset that still carries the key.
 
     random_menu = menu.addMenu("Randomize creatures")
     add_note(random_menu, "Changes apply immediately to the running overlay.")
@@ -1525,11 +1514,11 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
         )
     )
 
-    social_action = interaction_menu.addAction("Allow spiders to play together")
-    social_action.setCheckable(True)
-    social_action.setChecked(window.manager.social_play)
-    social_action.setToolTip("When enabled, multiple spiders can seek each other out for social play.")
-    social_action.toggled.connect(lambda enabled: announce(window.manager.set_social_play(enabled)))
+    # DC-52: social play is a per-spider skill, weighted by each
+    # temperament's sociability, and the per-spider "Skills for this spider"
+    # submenu on the overlay's own right-click still lists it. This was a
+    # master switch on top of that, and all it could do was make a sociable
+    # spider antisocial.
 
     mouse_web_action = interaction_menu.addAction("Let spiders web-trap the mouse")
     mouse_web_action.setCheckable(True)

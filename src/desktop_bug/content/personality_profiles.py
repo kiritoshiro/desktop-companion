@@ -408,6 +408,35 @@ def movement_profile_for(personality) -> str:
     return str(PERSONALITY_COMPONENTS.get(pid, {}).get("movement", "curious"))
 
 
+# DC-52: which walking animation a temperament uses.
+#
+# The gait used to be one scene-wide dropdown -- Classic, Lively, Skitter --
+# sitting beside a Temperament column that already decided how each spider
+# moves. The owner asked for the two to be consolidated, so the temperament
+# picks. Classic is deliberately unreachable from here: it is the original
+# pre-DC-16 gait, kept only so an old preset that names it still loads.
+GAIT_BY_MOVEMENT: dict[str, str] = {
+    # Quick, twitchy movers get the burst-and-stop gait.
+    "bold": "skitter",
+    "escape": "skitter",
+    "hunter": "skitter",
+    "jumper": "skitter",
+    # Everything else lifts its legs and feels its way around.
+    "camouflage": "lively",
+    "curious": "lively",
+    "drift": "lively",
+    "gentle": "lively",
+    "observer": "lively",
+    "social": "lively",
+    "webber": "lively",
+}
+
+
+def personality_gait_style(personality) -> str:
+    """The walking animation this temperament uses."""
+    return GAIT_BY_MOVEMENT.get(movement_profile_for(personality), "lively")
+
+
 def phase_scores_for(personality) -> dict[str, float]:
     """Return clamped 0..10 occurrence scores for the behaviour phases."""
     traits = temperament_for(personality)

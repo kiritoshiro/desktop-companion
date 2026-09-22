@@ -175,11 +175,16 @@ def test_dc16_acceptance(monkeypatch) -> None:
         assert settings._ensure_channel_connected(500), "settings window could not reach the overlay"
         assert _pump(lambda: overlay._channel_server.client_count >= 1)
 
-        # --- tray side changes mood; the settings-window-side model updates ---
-        assert settings.mood_combo.currentData() != "playful"
-        overlay._announce(overlay.manager.set_mood_mode("playful"))
-        assert _pump(lambda: settings.mood_combo.currentData() == "playful"), (
-            "settings window mood did not follow the tray-driven change"
+        # --- the tray changes something; the settings-window model follows ---
+        # This used to push a mood override. DC-52 removed that control: a
+        # temperament already names its mood and the scene-wide override was
+        # one of the three settings the owner asked to have folded back into
+        # the per-slot columns. The scene-wide label switches replaced it in
+        # that panel, and they travel the same channel.
+        assert settings.always_names_check.isChecked() is False
+        overlay._announce(overlay.manager.set_always_show_names(True))
+        assert _pump(lambda: settings.always_names_check.isChecked()), (
+            "settings window did not follow the tray-driven change"
         )
         assert settings._live_creature_state, "no per-creature state arrived with the snapshot"
 

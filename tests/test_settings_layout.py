@@ -149,7 +149,14 @@ def test_the_skin_column_gets_the_room(window, qapp):
 def test_a_dropdown_does_not_demand_its_longest_entry(window, qapp):
     """The single biggest cause, and the least obvious one."""
     _laid_out(window, 1000, 780, qapp)
-    for combo in (window.movement_combo, window.mood_combo, window.size_combo):
+    # The two worst offenders, Movement and Mood, were retired by DC-52 --
+    # they were scene-wide overrides of what the Temperament column already
+    # decides. The rule they proved still has to hold for the combos that
+    # are left, including the per-row ones, which are the long ones now.
+    combos = [window.size_combo,
+              window.table.cellWidget(0, COL_SKIN),
+              window.table.cellWidget(0, COL_TEMPERAMENT)]
+    for combo in combos:
         longest = max((combo.itemText(i) for i in range(combo.count())), key=len)
         assert len(longest) > 12, "pick a combo that actually has a long entry"
         assert combo.minimumSizeHint().width() < 320, (
@@ -160,7 +167,8 @@ def test_a_dropdown_does_not_demand_its_longest_entry(window, qapp):
 def test_every_shortened_control_still_explains_itself(window, qapp):
     """Labels were cut to fit; the meaning moved to the tooltip, not away."""
     _laid_out(window, 1000, 780, qapp)
-    for control in (window.interferable_check, window.social_play_check,
+    for control in (window.interferable_check, window.always_names_check,
+                    window.always_levels_check, window.always_health_check,
                     window.add_slot_btn, window.random_model_btn,
                     window.random_personality_btn, window.random_count_btn):
         assert control.toolTip().strip(), control.text()
@@ -170,3 +178,41 @@ def test_every_shortened_control_still_explains_itself(window, qapp):
     skills_btn = window.table.cellWidget(0, COL_ABILITIES)
     assert skills_btn.toolTip().strip()
     assert len(skills_btn.text()) <= 16, skills_btn.text()
+
+
+def test_the_teams_panel_leaves_nothing_behind_when_it_rebuilds(window, qapp):
+    """The stray vertical line through the Teams panel, explained.
+
+    `_refresh_teams_panel` used to clear itself with `deleteLater()` alone.
+    That defers destruction to the event loop, so until the loop runs each
+    old widget is still a visible child of the panel -- and, having just
+    been taken out of the layout, it has reverted to a default 640x480 at
+    (0, 0) and is painting over everything. The panel rebuilds three times
+    while the window is being constructed, before the loop has ever spun, so
+    it left seventeen of them stacked up, and the right edge of one 640px
+    QLineEdit was the line visible in the owner's screenshot.
+
+    Counting orphans rather than looking for the line: a pixel test would
+    pass the moment the stacking happened to be hidden behind something.
+    """
+    from PyQt5.QtWidgets import QWidget
+
+    _laid_out(window, 980, 820, qapp)
+    for _ in range(3):
+        window._teams_signature = None
+        window._refresh_teams_panel()
+    qapp.processEvents()
+
+    laid = {id(window.teams_layout.itemAt(i).widget())
+            for i in range(window.teams_layout.count())}
+    orphans = [child for child in window.teams_panel.findChildren(QWidget)
+               if child.parentWidget() is window.teams_panel and id(child) not in laid]
+    assert orphans == [], [
+        (type(o).__name__, o.geometry()) for o in orphans]
+
+
+def test_the_size_dropdown_does_not_fill_its_whole_row(window, qapp):
+    """With Mood and Movement retired it was the only thing left in the row
+    and grew to 700px to fill it, which reads as a mistake."""
+    _laid_out(window, 980, 820, qapp)
+    assert window.size_combo.width() <= 220, window.size_combo.width()

@@ -9,7 +9,7 @@ import time
 import uuid
 from pathlib import Path
 
-from PyQt5.QtCore import QSize, QTimer, Qt
+from PyQt5.QtCore import QRectF, QSize, QTimer, Qt
 from PyQt5.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PyQt5.QtWidgets import (
     QApplication,
@@ -53,6 +53,7 @@ from ..state.teams import (
     STANCE_LABELS,
     TeamProfile,
     default_color,
+    default_name,
     describe_stance,
     normalize_team_name,
     normalize_teams,
@@ -63,6 +64,7 @@ from ..state.teams import (
 )
 from ..content.body_plans import BODY_PLAN_IDS
 from ..content.skills import (
+    ABILITY_SKILL_IDS,
     SKILLS,
     compact_ability_summary,
     normalize_ability_ids,
@@ -95,19 +97,6 @@ SIZE_OPTIONS = [
     ("Large (125%)", 1.25),
     ("Huge (160%)", 1.60),
 ]
-MOOD_OPTIONS = [
-    ("Auto - use each personality", "auto"),
-    ("Playful", "playful"),
-    ("Cuddly", "cuddly"),
-    ("Curious", "curious"),
-    ("Calm", "calm"),
-]
-MOVEMENT_OPTIONS = [
-    ("Classic - original gait", "classic"),
-    ("Lively - lifts legs + feels objects", "lively"),
-    ("Skitter - rapid bursts + tiny stops", "skitter"),
-]
-
 COLOR_KEYS = (
     ("body", "Body"),
     ("legs", "Legs"),
@@ -119,14 +108,18 @@ COLOR_KEYS = (
 )
 
 
-def _short_ability_label(ids, summary: str) -> str:
-    """A label narrow enough for a table cell; the tooltip carries the rest."""
-    count = len(ids)
-    if summary in ("All abilities", "No optional abilities"):
-        return "All" if count else "None"
-    if count == 1:
-        return summary
-    return f"{count} abilities"
+def _short_ability_label(ids, _summary: str) -> str:
+    """A label narrow enough for a table cell; the tooltip carries the rest.
+
+    It used to count `ids` -- the whole skill list, behaviours included --
+    and print "13 abilities" beside a dialog that offers five checkboxes.
+    The owner asked the obvious question: "why does it show 13 abilites if
+    cant select them. only show count for how many can be selectable by our
+    design." The behaviours in that thirteen are chosen by the temperament
+    and are deliberately not editable here, so they are not counted here.
+    """
+    selectable = normalize_ability_ids(ids)
+    return f"{len(selectable)} of {len(ABILITY_SKILL_IDS)}"
 
 
 def _normalize_color_overrides(value):
@@ -228,12 +221,17 @@ FIXED_COLUMN_WIDTHS = {
     COL_COLORS: 46,
     COL_COUNT: 62,
     COL_ABILITIES: 96,
-    COL_TEAM: 116,
+    COL_TEAM: 56,
     COL_JOB: 100,
     COL_TEMPERAMENT: 150,
     COL_REMOVE: 28,
 }
 RANDOM_CATEGORY_ID = "__random_category__"
+# What a brand-new slot starts as. DC-52: "lets focus mainly on the tarantula
+# model from now on. others can live for now, but not our main objective." A
+# new row lands on the kind the project is actually about; every other
+# category is still one click away and nothing existing is touched.
+DEFAULT_CATEGORY_ID = "tarantula"
 BODY_PLAN_LABELS = {
     "bug": "Bug",
     "segmented": "Segmented",
@@ -569,40 +567,58 @@ class ConfigWindow(QMainWindow):
         for label, scale in SIZE_OPTIONS:
             self.size_combo.addItem(label, scale)
         self.size_combo.setCurrentIndex(2)
-        self.mood_combo = NoScrollComboBox()
-        for label, mode in MOOD_OPTIONS:
-            self.mood_combo.addItem(label, mode)
-        self.movement_combo = NoScrollComboBox()
-        for label, style in MOVEMENT_OPTIONS:
-            self.movement_combo.addItem(label, style)
-        self.movement_combo.setCurrentIndex(0)
+        # DC-52: Mood, Movement and Social play used to live here, as three
+        # scene-wide overrides sitting on top of the per-slot columns that
+        # decide the same things. The owner asked for them to be
+        # "consolidated in the temperaments skills jobs", and each of them
+        # already had a home there:
+        #
+        # * Mood was "Auto - use each personality" by default and every
+        #   other setting overrode every spider at once. A temperament
+        #   already names its mood (`personality_profiles.PERSONALITY_MOODS`).
+        # * Movement was classic/lively/skitter for the whole scene. A
+        #   temperament already names a movement style, and DC-49 gave each
+        #   body plan its own leg rig; `personality_gait_style` joins them up
+        #   so the Temperament column picks the gait.
+        # * Social play was a master switch over a `social_play` skill that
+        #   every temperament already carries, weighted by its sociability --
+        #   0 for a hunter, 10 for a cuddly one. The switch could only ever
+        #   make a sociable spider antisocial.
+        #
+        # What replaced them is the three switches the owner asked for in the
+        # same message, which had existed only in the overlay's own menus.
         self.interferable_check = QCheckBox("Draggable")
         self.interferable_check.setToolTip(
             "Allow dragging spiders. When off, clicks pass through spider pixels too.")
         self.interferable_check.setChecked(True)
-        self.social_play_check = QCheckBox("Social play")
-        self.social_play_check.setToolTip(
-            "Allow spiders to seek each other out to chase and tumble together.")
-        self.social_play_check.setChecked(True)
+        self.always_names_check = QCheckBox("Names")
+        self.always_names_check.setToolTip(
+            "Show every spider's name all the time, not only on hover. A "
+            "spider nobody has named shows its model's name.")
+        self.always_levels_check = QCheckBox("Levels")
+        self.always_levels_check.setToolTip(
+            "Show every spider's level beside its name.")
+        self.always_health_check = QCheckBox("Health")
+        self.always_health_check.setToolTip(
+            "Show every spider's health bar, not only ones pinned one at a time.")
+        # A stretch column on the right rather than under the combo: with
+        # Mood and Movement gone the size dropdown was the only thing in its
+        # row and grew to 700px to fill it, which looks like a mistake.
+        self.size_combo.setMaximumWidth(200)
         behavior_layout.addWidget(QLabel("Size:"), 0, 0)
         behavior_layout.addWidget(self.size_combo, 0, 1)
-        behavior_layout.addWidget(QLabel("Mood:"), 0, 2)
-        behavior_layout.addWidget(self.mood_combo, 0, 3)
-        behavior_layout.addWidget(QLabel("Movement:"), 1, 0)
-        behavior_layout.addWidget(self.movement_combo, 1, 1)
-        # Short, because a word-wrapped QLabel still reports the width of its
-        # longest unbroken run as its minimum, and this one alone was asking
-        # for 1217px -- wider than the creature table and the real reason the
-        # whole window could not be made narrow without overlapping itself.
-        # The full description is already on the combo's tooltip.
-        movement_hint = QLabel("Lively lifts and probes; Skitter runs in bursts.")
-        movement_hint.setObjectName("hintLabel")
-        movement_hint.setWordWrap(True)
-        movement_hint.setMinimumWidth(1)
-        behavior_layout.addWidget(movement_hint, 1, 2, 1, 2)
-        behavior_layout.addWidget(self.interferable_check, 2, 1)
-        behavior_layout.addWidget(self.social_play_check, 2, 3)
-        behavior_layout.setColumnStretch(1, 1)
+        behavior_layout.addWidget(self.interferable_check, 0, 2)
+        behavior_layout.addWidget(QLabel("Always show:"), 1, 0)
+        switches = QHBoxLayout()
+        switches.setContentsMargins(0, 0, 0, 0)
+        switches.setSpacing(12)
+        for check in (self.always_names_check, self.always_levels_check,
+                      self.always_health_check):
+            switches.addWidget(check)
+        switches.addStretch(1)
+        switch_row = QWidget()
+        switch_row.setLayout(switches)
+        behavior_layout.addWidget(switch_row, 1, 1, 1, 2)
         behavior_layout.setColumnStretch(3, 1)
         layout.addWidget(self.behavior_group)
 
@@ -697,10 +713,10 @@ class ConfigWindow(QMainWindow):
         self.random_count_btn.clicked.connect(self.set_random_count_options)
         self.random_all_btn.clicked.connect(self.set_random_all_options)
         self.size_combo.currentIndexChanged.connect(self.update_summary)
-        self.mood_combo.currentIndexChanged.connect(self.update_summary)
-        self.movement_combo.currentIndexChanged.connect(self.update_summary)
         self.interferable_check.toggled.connect(self.update_summary)
-        self.social_play_check.toggled.connect(self.update_summary)
+        for check in (self.always_names_check, self.always_levels_check,
+                      self.always_health_check):
+            check.toggled.connect(self.update_summary)
         self.flies_enabled_check.toggled.connect(self.update_summary)
         self.flies_enabled_check.toggled.connect(self._update_flies_details_visibility)
         self.fly_min_spin.valueChanged.connect(self._on_fly_min_changed)
@@ -753,15 +769,7 @@ class ConfigWindow(QMainWindow):
         self.random_count_btn.setToolTip("Roll a new count from 1 to 10 into every slot now.")
         self.random_all_btn.setToolTip("Randomize model, personality, and count for every slot.")
         self.size_combo.setToolTip("Scale all creatures in the overlay.")
-        self.mood_combo.setToolTip("Override moods, or leave Auto to use personality defaults.")
-        self.movement_combo.setToolTip(
-            "How the spiders walk. Classic is the original gait. Lively lifts the legs "
-            "off the ground while stepping, walks the feet around through turns, and "
-            "reaches out with the front legs and pedipalps to feel nearby objects. "
-            "Skitter is based on Lively but adds quick burst-burst-stop movement."
-        )
         self.interferable_check.setToolTip("When enabled, you can grab spiders; empty overlay space still remains click-through.")
-        self.social_play_check.setToolTip("When enabled, multiple spiders may seek each other out and play.")
         self.save_btn.setToolTip("Save the current preset. While the overlay is running, this also applies your changes to it live.")
         self.launch_btn.setToolTip("Start the overlay. While it is already running, this applies your changes live instead of restarting.")
         self.stop_btn.setToolTip("Stop the overlay process launched from this window.")
@@ -838,7 +846,9 @@ class ConfigWindow(QMainWindow):
             "it; every skin can still be recoloured with the swatch beside it."
         )
 
-        resolved_plan = self._plan_of_model(model_id) if model_id else None
+        # A slot that names a model follows that model's plan; a fresh slot
+        # starts on the project's main kind rather than on "Any kind".
+        resolved_plan = self._plan_of_model(model_id) if model_id else DEFAULT_CATEGORY_ID
         if resolved_plan is not None:
             index = category_box.findData(resolved_plan)
             if index >= 0:
@@ -934,13 +944,12 @@ class ConfigWindow(QMainWindow):
         )
 
         team_box = NoScrollComboBox()
-        team_box.setMinimumWidth(88)
+        # A swatch and an arrow. `setMinimumContentsLength` is what the base
+        # class uses to stop a combo demanding its widest *item*; with no item
+        # text left there is nothing to demand, so this asks for the icon.
+        team_box.setMinimumContentsLength(1)
+        team_box.setMinimumWidth(52)
         self._populate_team_box(team_box, team_id)
-        team_box.setToolTip(
-            "Which group this slot belongs to. Name your teams and set what "
-            "stands between them in the Teams panel below."
-            "\n\n" + HOSTILITY_NOTE
-        )
 
         job_box = NoScrollComboBox()
         job_box.setMinimumWidth(84)
@@ -1473,12 +1482,18 @@ class ConfigWindow(QMainWindow):
         # widget here -- team relations, the mouse-capture switch -- would
         # otherwise be lost every time the user pressed Save.
         settings = dict(getattr(self, "_loaded_settings", {}))
+        # Dropped rather than merely left unwritten: `_loaded_settings` keeps
+        # everything this window has no widget for, so a preset that was
+        # saved with a scene-wide mood/gait/social override would carry it
+        # forward forever and the temperament would never get a say.
+        for retired in ("mood_mode", "social_play", "gait_style"):
+            settings.pop(retired, None)
         settings.update({
             "size_scale": float(self.size_combo.currentData() or 1.0),
             "interferable": bool(self.interferable_check.isChecked()),
-            "mood_mode": str(self.mood_combo.currentData() or "auto"),
-            "social_play": bool(self.social_play_check.isChecked()),
-            "gait_style": str(self.movement_combo.currentData() or "classic"),
+            "always_show_names": bool(self.always_names_check.isChecked()),
+            "always_show_levels": bool(self.always_levels_check.isChecked()),
+            "always_show_health": bool(self.always_health_check.isChecked()),
             "teams": teams_payload(self._ensure_team_profiles()),
             # Only what was actually declared. Recomputing this from the pairs on
             # screen would drop a stance about a team no slot currently uses, and
@@ -1529,14 +1544,9 @@ class ConfigWindow(QMainWindow):
                 closest_index = idx
         self.size_combo.setCurrentIndex(closest_index)
         self.interferable_check.setChecked(bool(settings.get("interferable", True)))
-        self.social_play_check.setChecked(bool(settings.get("social_play", True)))
-        mood_mode = str(settings.get("mood_mode", "auto") or "auto").lower()
-        mood_idx = self.mood_combo.findData(mood_mode)
-        self.mood_combo.setCurrentIndex(mood_idx if mood_idx >= 0 else 0)
-
-        gait_style = str(settings.get("gait_style", "classic") or "classic").lower()
-        gait_idx = self.movement_combo.findData(gait_style)
-        self.movement_combo.setCurrentIndex(gait_idx if gait_idx >= 0 else 0)
+        self.always_names_check.setChecked(bool(settings.get("always_show_names", False)))
+        self.always_levels_check.setChecked(bool(settings.get("always_show_levels", False)))
+        self.always_health_check.setChecked(bool(settings.get("always_show_health", False)))
 
         flies = settings.get("flies")
         flies = flies if isinstance(flies, dict) else {}
@@ -1595,37 +1605,83 @@ class ConfigWindow(QMainWindow):
         return self._team_profiles
 
     def _populate_team_box(self, box, selected) -> None:
-        """Fill one slot's team picker from the teams this preset knows about."""
+        """Fill one slot's team picker: a colour, and nothing else.
+
+        DC-52. The owner asked for teams to be shown "just by the color. no
+        need for titles. white would be neutral" -- and this column is where
+        the titles were: a dot plus "Hunters", "Rivals", "Neutral / solo",
+        needing 116px to say what a 14px dot says. The name has not gone,
+        it has moved to the tooltip and to the Teams panel below, which is
+        the place a team is actually named and recoloured.
+
+        Neutral keeps a swatch rather than being blank, because an empty
+        cell reads as "not set yet" rather than as a choice. It is white,
+        which is what the owner asked for and what `default_color` now
+        returns.
+        """
         selected = normalize_team_id(selected or "neutral")
         box.blockSignals(True)
         box.clear()
-        box.addItem("Neutral / solo", "neutral")
+
+        def add(team_id, name, color):
+            box.addItem(self._team_icon(color), "", team_id)
+            # The name has to stay reachable: by hovering, and by anything
+            # reading the list aloud.
+            box.setItemData(box.count() - 1, name, Qt.ToolTipRole)
+            box.setItemData(box.count() - 1, name, Qt.AccessibleTextRole)
+
+        add("neutral", default_name("neutral"), default_color("neutral"))
         for team_id in sorted(self._team_profiles):
             profile = self._team_profiles[team_id]
-            box.addItem(self._team_icon(profile.color), profile.name, team_id)
+            add(team_id, profile.name, profile.color)
         if selected != "neutral" and box.findData(selected) < 0:
             # A preset can name a team the block never described; it still has to
             # be selectable, or loading the preset would silently move the slot.
             profile = TeamProfile(selected, selected.replace("_", " ").title(),
                                   default_color(selected))
             self._team_profiles[selected] = profile
-            box.addItem(self._team_icon(profile.color), profile.name, selected)
+            add(selected, profile.name, profile.color)
         box.insertSeparator(box.count())
+        # The one entry that is an action rather than a team, so it keeps its
+        # words -- it has no colour to show instead.
         box.addItem("New team...", self.NEW_TEAM_SENTINEL)
         index = box.findData(selected)
         box.setCurrentIndex(index if index >= 0 else 0)
         box.blockSignals(False)
+        self._refresh_team_box_tooltip(box)
+
+    def _refresh_team_box_tooltip(self, box) -> None:
+        """Say in words which team the swatch stands for.
+
+        Without this the column is unreadable to anyone who cannot tell the
+        colours apart, and ambiguous to anyone who can but has three teams.
+        """
+        team_id = normalize_team_id(box.currentData() or "neutral")
+        profile = self._team_profiles.get(team_id)
+        name = profile.name if profile is not None else default_name(team_id)
+        box.setAccessibleName(f"Team: {name}")
+        box.setToolTip(
+            f"Team: {name}."
+            "\nName your teams and set what stands between them in the Teams "
+            "panel below."
+            "\n\n" + HOSTILITY_NOTE
+        )
 
     @staticmethod
     def _team_icon(color) -> QIcon:
-        """A filled swatch, so a team is recognisable in the list at a glance."""
+        """A filled swatch, so a team is recognisable in the list at a glance.
+
+        The outline is firmer than it was because neutral is now white
+        (DC-52) on a pale panel: at the old alpha of 90 the neutral swatch
+        read as an empty control rather than as a deliberate colour.
+        """
         pixmap = QPixmap(14, 14)
         pixmap.fill(Qt.transparent)
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        painter.setPen(QColor(0, 0, 0, 90))
+        painter.setPen(QPen(QColor(40, 44, 54, 170), 1.3))
         painter.setBrush(QColor(*color))
-        painter.drawEllipse(1, 1, 12, 12)
+        painter.drawEllipse(QRectF(1.0, 1.0, 12.0, 12.0))
         painter.end()
         return QIcon(pixmap)
 
@@ -1636,6 +1692,7 @@ class ConfigWindow(QMainWindow):
                 self._populate_team_box(box, box.currentData())
 
     def _on_team_box_changed(self, box) -> None:
+        self._refresh_team_box_tooltip(box)
         if str(box.currentData() or "") == self.NEW_TEAM_SENTINEL:
             team_id = self._prompt_for_new_team()
             # Falls back to the previous choice when the prompt is cancelled,
@@ -1695,6 +1752,20 @@ class ConfigWindow(QMainWindow):
             item = self.teams_layout.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                # `setParent(None)` before `deleteLater()`, and both.
+                #
+                # `deleteLater` defers destruction until the event loop runs.
+                # Until then the widget is still a visible child of the
+                # panel -- and, having just been taken out of the layout, it
+                # has reverted to a default 640x480 at (0, 0) and is
+                # painting over everything. The panel is rebuilt three times
+                # during construction, before the loop has ever spun, so it
+                # left seventeen of them stacked on the panel: a QLineEdit's
+                # right edge at x=640 was the mysterious vertical line
+                # running through the Teams panel in the owner's screenshot.
+                # Detaching first takes it off screen immediately; the
+                # deleteLater still frees it.
+                widget.setParent(None)
                 widget.deleteLater()
 
         if not self._team_profiles:
@@ -1869,11 +1940,14 @@ class ConfigWindow(QMainWindow):
         self._refresh_teams_panel()
 
         size_text = self.size_combo.currentText() if hasattr(self, "size_combo") else "Normal (100%)"
-        mood_text = self.mood_combo.currentText() if hasattr(self, "mood_combo") else "Auto"
-        move_text = self.movement_combo.currentData() if hasattr(self, "movement_combo") else "classic"
         drag_text = "dragging on" if self.interferable_check.isChecked() else "dragging off"
-        social_text = "social play on" if self.social_play_check.isChecked() else "social play off"
-        summary = f"Preset summary: {creature_text} Size: {size_text}. Mood: {mood_text}. Movement: {move_text}. {drag_text}; {social_text}."
+        shown = [name for name, check in (("names", self.always_names_check),
+                                          ("levels", self.always_levels_check),
+                                          ("health", self.always_health_check))
+                 if check.isChecked()]
+        label_text = ("always showing " + ", ".join(shown)) if shown else "labels on hover"
+        summary = (f"Preset summary: {creature_text} Size: {size_text}. "
+                   f"{drag_text}; {label_text}.")
         self.summary.setText(summary)
         if hasattr(self, "launch_group"):
             self.launch_group.setToolTip(summary)
@@ -1970,10 +2044,11 @@ class ConfigWindow(QMainWindow):
         """
         if not isinstance(state, dict):
             return
-        if "mood_mode" in state:
-            mood_idx = self.mood_combo.findData(str(state["mood_mode"] or "auto").lower())
-            if mood_idx >= 0:
-                self.mood_combo.setCurrentIndex(mood_idx)
+        for key, check in (("always_show_names", self.always_names_check),
+                           ("always_show_levels", self.always_levels_check),
+                           ("always_show_health", self.always_health_check)):
+            if key in state:
+                check.setChecked(bool(state[key]))
         if "size_scale" in state:
             try:
                 size_scale = float(state["size_scale"])
@@ -1986,8 +2061,7 @@ class ConfigWindow(QMainWindow):
                     if distance < closest_distance:
                         closest_index, closest_distance = idx, distance
                 self.size_combo.setCurrentIndex(closest_index)
-        if "social_play" in state:
-            self.social_play_check.setChecked(bool(state["social_play"]))
+
         if "flies_enabled" in state:
             self.flies_enabled_check.setChecked(bool(state["flies_enabled"]))
         if "interferable" in state:
