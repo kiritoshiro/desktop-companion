@@ -8,6 +8,7 @@ import random
 
 import pytest
 from desktop_bug.creature import Creature
+from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
 
 SEED = 7
@@ -15,9 +16,9 @@ SEED = 7
 
 @pytest.fixture
 def drifter() -> Creature:
-    model = json.loads(
+    model = resolve_body_plan(json.loads(
         (ROOT / "models" / "plush_snow_hybrid_2" / "model.json").read_text(encoding="utf-8")
-    )
+    ))
     personality = json.loads(
         (ROOT / "personalities" / "drifter.json").read_text(encoding="utf-8")
     )

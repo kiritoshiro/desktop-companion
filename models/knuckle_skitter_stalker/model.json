@@ -66,6 +66,7 @@
       "enabled": false
     }
   },
+  "body_plan": "segmented",
   "legs": [
     {
       "name": "front_left",

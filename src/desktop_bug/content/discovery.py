@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from .body_plans import BODY_PLAN_IDS, resolve_body_plan
 from .personality_profiles import (
     ABILITY_BUNDLES,
     BEHAVIOUR_MODULE_IDS,
@@ -308,6 +309,15 @@ def _read_json(path: Path):
 
 
 def validate_model(data: dict, path: Path) -> Tuple[bool, str]:
+    # A model that names a plan is validated on the rig that plan gives it, so
+    # a plan file with a broken leg is caught by the same checks as a
+    # hand-written one rather than slipping past them.
+    plan = data.get("body_plan")
+    if plan is not None:
+        if not isinstance(plan, str) or plan.strip().lower() not in BODY_PLAN_IDS:
+            return False, (f"{path}: body_plan must be one of "
+                           f"{', '.join(BODY_PLAN_IDS)} (got {plan!r})")
+        data = resolve_body_plan(dict(data))
     required = ["id", "display_name", "base_size", "default_personality", "colors", "legs"]
     missing = [key for key in required if key not in data]
     if missing:
@@ -434,6 +444,11 @@ def discover_models(root: Path = None) -> Tuple[Dict[str, dict], List[str]]:
         for path in sorted(models_dir.glob("*/model.json"), key=_newest_first):
             try:
                 data = _read_json(path)
+                # DC-49: a model may name a body plan instead of restating a
+                # skeleton. Resolving here, before validation, means every
+                # consumer downstream still sees a complete `legs` array and
+                # nothing else had to learn about plans.
+                data = resolve_body_plan(data)
                 ok, message = validate_model(data, path)
                 if not ok:
                     warnings.append(message)

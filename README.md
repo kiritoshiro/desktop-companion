@@ -584,6 +584,7 @@ DesktopBugCompanion/
 
       content/               # what ships as data, and how it is loaded and validated
         discovery.py
+        body_plans.py          # the four leg rigs every model is built on
         personality_profiles.py
         preset_io.py
         skills.py
