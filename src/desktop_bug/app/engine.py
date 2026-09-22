@@ -472,6 +472,10 @@ class OverlayWindow(QWidget):
         self._state_dir = state_dir()
         self._log_path = log_path(self._state_dir)
         self._stop_requested = False
+        # The base picked up by "Move this base", waiting for a second
+        # right-click to say where it goes. Held by id rather than by object
+        # so a base deleted in between simply cancels the move.
+        self._moving_base_id = None
         clear_stop_request(self._state_dir)
 
         # Live two-way channel to any settings window (DC-16). One local-socket
@@ -1053,8 +1057,33 @@ class OverlayWindow(QWidget):
         # A base under the cursor gets its own entry, above the cage ones, so
         # the nearest thing to what was actually right-clicked comes first.
         base = self.manager.base_at(mx, my)
+        # A base already picked up puts its destination first, because that is
+        # the only thing the next click is for.
+        carried = self._carried_base()
+        if carried is not None and carried is not base:
+            carried_name = team_label(carried.team_id, self.manager.team_profiles)
+            drop = menu.addAction(f"Put the {carried_name} base down here")
+            drop.setToolTip("Move the base you picked up to this spot, earth and all.")
+            drop.triggered.connect(
+                lambda _checked=False, site=carried, x=mx, y=my: self._drop_base(site, x, y))
+            cancel = menu.addAction("Leave it where it is")
+            cancel.triggered.connect(lambda _checked=False: self._cancel_base_move())
+            menu.addSeparator()
         if base is not None:
             team_name = team_label(base.team_id, self.manager.team_profiles)
+            if carried is base:
+                cancel_here = menu.addAction(f"Leave the {team_name} base where it is")
+                cancel_here.triggered.connect(lambda _checked=False: self._cancel_base_move())
+            else:
+                move_base = menu.addAction(f"Move the {team_name} base…")
+                move_base.setToolTip(
+                    "Pick this base up, then right-click where it should go. "
+                    "It keeps its level, its food and the earth already dug. "
+                    "You can also just drag the earth with the left button, "
+                    "when dragging is switched on."
+                )
+                move_base.triggered.connect(
+                    lambda _checked=False, site=base: self._pick_up_base(site))
             remove_base = menu.addAction(f"Remove the {team_name} base here")
             remove_base.setToolTip(
                 "Delete this base. Its team keeps its spiders and its food; a "
@@ -1062,6 +1091,14 @@ class OverlayWindow(QWidget):
             )
             remove_base.triggered.connect(
                 lambda _checked=False, site=base: self._announce(self.manager.remove_base(site)))
+            menu.addSeparator()
+        if getattr(self.manager, "base_world", None) is not None and self.manager.base_world.bases:
+            remove_all_bases = menu.addAction("Remove every base")
+            remove_all_bases.setToolTip(
+                "Clear the desktop of colonies. Builders start again from nothing."
+            )
+            remove_all_bases.triggered.connect(
+                lambda _checked=False: self._announce(self.manager.remove_bases()))
             menu.addSeparator()
 
         add_cage = menu.addAction("Add a cage here")
@@ -1078,6 +1115,37 @@ class OverlayWindow(QWidget):
         menu.aboutToHide.connect(self._request_full_repaint)
         menu.exec_(global_pos)
         apply_click_through(self)
+
+    def _carried_base(self):
+        """The base waiting to be put down, if it still exists."""
+        site_id = self._moving_base_id
+        if site_id is None:
+            return None
+        world = getattr(self.manager, "base_world", None)
+        if world is None:
+            self._moving_base_id = None
+            return None
+        for site in world.bases.values():
+            if site.id == site_id:
+                return site
+        # Removed while it was being carried; forget it rather than offering
+        # to put down something that is gone.
+        self._moving_base_id = None
+        return None
+
+    def _pick_up_base(self, site) -> None:
+        self._moving_base_id = site.id
+        name = team_label(site.team_id, self.manager.team_profiles)
+        self._announce(f"Picked up the {name} base. Right-click where it should go.")
+
+    def _cancel_base_move(self) -> None:
+        self._moving_base_id = None
+        self._announce("Left the base where it is.")
+
+    def _drop_base(self, site, x: float, y: float) -> None:
+        self._moving_base_id = None
+        self._announce(self.manager.move_base(site, x, y))
+        self._request_full_repaint()
 
     def _show_inspector(self, creature) -> None:
         dialog = CreatureInspectorDialog(self, creature)
@@ -1409,22 +1477,11 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
         size_group.addAction(action)
         action.triggered.connect(lambda checked=False, s=scale, text=label: (window.manager.set_size_scale(s), announce(f"Size set to {text}.")))
 
-    mood_menu = appearance_menu.addMenu("Mood override")
-    mood_group = QActionGroup(menu)
-    mood_group.setExclusive(True)
-    mood_options = [
-        ("Auto - use each personality", "auto"),
-        ("Playful", "playful"),
-        ("Cuddly", "cuddly"),
-        ("Curious", "curious"),
-        ("Calm", "calm"),
-    ]
-    for label, mode in mood_options:
-        action = mood_menu.addAction(label)
-        action.setCheckable(True)
-        action.setChecked(mode == window.manager.mood_mode)
-        mood_group.addAction(action)
-        action.triggered.connect(lambda checked=False, m=mode: announce(window.manager.set_mood_mode(m)))
+    # DC-52: "Mood override" is gone from here as well as from the settings
+    # window. It set every spider in the scene to one mood, over the top of
+    # the temperament that already names one, and the owner asked for moods
+    # to be consolidated into the temperament rather than overridden beside
+    # it. `set_mood_mode` remains for a preset that still carries the key.
 
     random_menu = menu.addMenu("Randomize creatures")
     add_note(random_menu, "Changes apply immediately to the running overlay.")
@@ -1459,11 +1516,11 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
         )
     )
 
-    social_action = interaction_menu.addAction("Allow spiders to play together")
-    social_action.setCheckable(True)
-    social_action.setChecked(window.manager.social_play)
-    social_action.setToolTip("When enabled, multiple spiders can seek each other out for social play.")
-    social_action.toggled.connect(lambda enabled: announce(window.manager.set_social_play(enabled)))
+    # DC-52: social play is a per-spider skill, weighted by each
+    # temperament's sociability, and the per-spider "Skills for this spider"
+    # submenu on the overlay's own right-click still lists it. This was a
+    # master switch on top of that, and all it could do was make a sociable
+    # spider antisocial.
 
     mouse_web_action = interaction_menu.addAction("Let spiders web-trap the mouse")
     mouse_web_action.setCheckable(True)

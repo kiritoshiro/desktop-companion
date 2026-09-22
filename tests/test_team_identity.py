@@ -142,7 +142,16 @@ def test_shipped_colony_shows_two_teams() -> None:
 
 
 def test_team_color_reaches_the_screen() -> None:
-    """Render a spider and look at the pixels, rather than trusting the call."""
+    """Render a spider and look at the pixels, rather than trusting the call.
+
+    DC-51 moved where the colour lives. It used to be a ring painted on the
+    ground under every spider on a team; the owner asked for that circle to
+    go, and for teams to be shown "just by the color. no need for titles.
+    white would be neutral". The name label's border is the colour now, so
+    that is what this renders -- and a neutral spider's border is white
+    rather than absent, which the old version could not check because a
+    neutral spider was marked with nothing at all.
+    """
     from PyQt5.QtGui import QColor, QImage, QPainter
 
     from desktop_bug.creature import Creature
@@ -156,7 +165,7 @@ def test_team_color_reaches_the_screen() -> None:
     def paint(team_id: str) -> QImage:
         random.seed(12)
         creature = Creature(model, personality, 400, 400)
-        creature.x, creature.y = 200.0, 200.0
+        creature.x, creature.y = 200.0, 260.0
         creature._initialize_legs()
         creature.set_team(team_id)
         creature.team_profiles = teams.normalize_teams({team_id: {"color": "#ff00ff"}}) \
@@ -165,62 +174,136 @@ def test_team_color_reaches_the_screen() -> None:
         image.fill(QColor(0, 0, 0, 0))
         painter = QPainter(image)
         painter.setRenderHint(QPainter.Antialiasing, True)
-        creature.render(painter)
+        creature.render(painter, always_show_names=True)
         painter.end()
         return image
 
-    def marker_pixels(image: QImage) -> int:
-        """Count marker-coloured pixels in the band where the ring sits.
-
-        Every pixel in that band, not a sampled grid: the ring is a thin stroke
-        and a stride of two walked straight past most of it, which made the
-        first version of this check fail for the wrong reason.
-        """
+    def pixels_near(image: QImage, wanted, tolerance: float) -> int:
+        """Every pixel in the frame, not a sampled grid: the border is a
+        two-pixel stroke, and a stride of two walked straight past most of
+        the old ring, which is how the first version of this check failed
+        for the wrong reason."""
         found = 0
-        for y in range(180, 260):
-            for x in range(150, 250):
+        for y in range(image.height()):
+            for x in range(image.width()):
                 pixel = image.pixelColor(x, y)
                 if pixel.alpha() > 40 and color_distance(
-                        (pixel.red(), pixel.green(), pixel.blue()), marker) < 90:
+                        (pixel.red(), pixel.green(), pixel.blue()), wanted) < tolerance:
                     found += 1
         return found
 
-    on_team = marker_pixels(paint("porch_guard"))
+    on_team = pixels_near(paint("porch_guard"), marker, 90)
     assert on_team > 40, f"a spider on a team wore no sign of it: {on_team} pixels"
 
-    alone = marker_pixels(paint("neutral"))
-    assert alone == 0, f"a spider on no team was marked anyway: {alone} pixels"
+    alone = paint("neutral")
+    assert pixels_near(alone, marker, 90) == 0, "a neutral spider wore a team colour"
+    assert pixels_near(alone, (255, 255, 255), 30) > 40, (
+        "a neutral spider is not marked in white")
 
 
-def test_base_ring_uses_the_team_color() -> None:
+def test_no_ring_is_painted_under_a_spider() -> None:
+    """The circle the owner asked to have removed, pinned as removed.
+
+    Written as a regression because it was cheap to reintroduce: it was four
+    lines in `Creature.render`, and "put a marker under the spider" is the
+    natural thing to reach for the next time teams need to read at a glance.
+    """
+    from PyQt5.QtGui import QColor, QImage, QPainter
+
+    from desktop_bug.creature import Creature
+
+    qt_app()
+    model = resolve_body_plan(json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8")))
+    personality = json.loads((ROOT / "personalities" / "mellow.json").read_text(encoding="utf-8"))
+
+    random.seed(12)
+    creature = Creature(model, personality, 400, 400)
+    creature.x, creature.y = 200.0, 200.0
+    creature._initialize_legs()
+    creature.set_team("porch_guard")
+    creature.team_profiles = teams.normalize_teams({"porch_guard": {"color": "#ff00ff"}})
+    image = QImage(400, 400, QImage.Format_ARGB32_Premultiplied)
+    image.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    # No label: this is the spider as it is drawn the rest of the time.
+    creature.render(painter)
+    painter.end()
+
+    found = 0
+    for y in range(image.height()):
+        for x in range(image.width()):
+            pixel = image.pixelColor(x, y)
+            if pixel.alpha() > 40 and color_distance(
+                    (pixel.red(), pixel.green(), pixel.blue()), (255, 0, 255)) < 90:
+                found += 1
+    assert found == 0, f"something is still drawn in the team colour: {found} pixels"
+
+
+def test_a_base_is_tinted_by_whose_it_is() -> None:
+    """DC-51: the earth carries the team colour; there is no ring to carry it.
+
+    A base used to be drawn inside a dashed circle in the team colour, with a
+    coloured arc over each finished mound. Both were geometry drawn *about* a
+    base rather than the base itself, and both went with the domes. What is
+    left is a cast over the soil, deliberately slight -- 5 to 13 percent --
+    so this compares two teams against each other rather than looking for a
+    literal team-coloured pixel, which is what the old test did and what a
+    tint can never satisfy.
+    """
     from PyQt5.QtGui import QColor, QImage, QPainter
 
     from desktop_bug.world.jobs import MAX_BUILD_PROGRESS, BaseSite, BaseWorld
 
     qt_app()
-    world = BaseWorld(600, 600)
-    world.team_profiles = teams.normalize_teams({"porch_guard": {"color": "#ff00ff"}})
-    site = BaseSite(id="team:porch_guard", owner_id="test", team_id="porch_guard",
-                    x=300.0, y=300.0)
-    site.build_progress = MAX_BUILD_PROGRESS
-    site.level = 3
-    world.bases[site.id] = site
 
-    image = QImage(600, 600, QImage.Format_ARGB32_Premultiplied)
-    image.fill(QColor(0, 0, 0, 0))
-    painter = QPainter(image)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    world.render(painter)
-    painter.end()
+    def paint(hex_color: str) -> QImage:
+        world = BaseWorld(600, 600)
+        world.team_profiles = teams.normalize_teams({"porch_guard": {"color": hex_color}})
+        site = BaseSite(id="team:porch_guard", owner_id="test", team_id="porch_guard",
+                        x=300.0, y=300.0)
+        site.build_progress = MAX_BUILD_PROGRESS
+        site.level = 3
+        world.bases[site.id] = site
+        image = QImage(600, 600, QImage.Format_ARGB32_Premultiplied)
+        image.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        world.render(painter)
+        painter.end()
+        return image
 
-    found = 0
-    for y in range(0, 600, 2):
-        for x in range(0, 600, 2):
-            pixel = image.pixelColor(x, y)
-            if pixel.alpha() > 40 and color_distance(
-                    (pixel.red(), pixel.green(), pixel.blue()), (255, 0, 255)) < 110:
-                found += 1
-    assert found > 12, f"the base ring was not drawn in its team colour: {found} pixels"
+    def mean_soil(image: QImage):
+        total = [0, 0, 0]
+        count = 0
+        for y in range(240, 361):
+            for x in range(240, 361):
+                pixel = image.pixelColor(x, y)
+                if pixel.alpha() <= 40:
+                    continue
+                total[0] += pixel.red()
+                total[1] += pixel.green()
+                total[2] += pixel.blue()
+                count += 1
+        assert count > 400, f"barely any base was drawn: {count} pixels"
+        return [channel / count for channel in total]
+
+    red_team = mean_soil(paint("#ff0000"))
+    blue_team = mean_soil(paint("#0000ff"))
+
+    # The whole point: two teams' bases do not look the same.
+    assert color_distance(red_team, blue_team) > 6.0, (red_team, blue_team)
+    # And they lean the way they should, rather than merely differing.
+    assert red_team[0] > blue_team[0], (red_team, blue_team)
+    assert blue_team[2] > red_team[2], (red_team, blue_team)
+    # Still earth. A base that has gone red is not what was asked for.
+    # Still earth. A base that has gone red is not what was asked for. Only
+    # red-dominance is claimed: a saturated pure-blue team does lift blue
+    # past green, measured at 49.2 to 45.5, and a tint that could not do
+    # even that would not be visible at all.
+    for soil in (red_team, blue_team):
+        assert soil[0] > soil[1], f"the soil stopped being brown: {soil}"
+        assert soil[0] > soil[2], f"the soil stopped being brown: {soil}"
 
 
 def test_stances_round_trip_minimally() -> None:

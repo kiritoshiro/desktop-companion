@@ -122,6 +122,111 @@ JOB_PREEMPTING_STATES = frozenset({
 })
 
 
+# DC-56: a gait is a phase, not a fixed trait.
+#
+# The owner: *"it seems that now they inherit only one of those movement
+# modes right? ... i think they should be a phases also the way they move, not
+# just strickly one way so to make it more interesting they should choose one
+# based on their goals to acheive it quicker. if curious then skittle, if
+# runing or chasing then run."*
+#
+# So the temperament still sets a spider's baseline (DC-52), and what it is
+# *doing* overrides it. A state absent from this map keeps the baseline,
+# which is why Wander is not listed: it is the state a spider is in most of
+# the time, and forcing it either way would erase the temperament entirely.
+GAIT_BY_STATE = {
+    # Looking into something. Short darting bursts with tiny pauses, which is
+    # what "skitter" already is and what an interested spider actually does.
+    "Inspect": "skitter",
+    "Observe": "skitter",
+    "Alert": "skitter",
+    "WebWalk": "skitter",
+    "WebApproach": "skitter",
+    # Going somewhere, and meaning it. A continuous lifted stride rather than
+    # burst-and-stop, because stopping is exactly what you do not do while
+    # running from something.
+    "Chase": "lively",
+    "Approach": "lively",
+    "Retreat": "lively",
+    "Startled": "lively",
+    "Zoom": "lively",
+    "DriftRun": "lively",
+    "Play": "lively",
+}
+
+# DC-59: what a fight looks like.
+#
+# The owner: *"next thing i want a good looking fight between spiders. how
+# they move their legs and body as in an attack stance and focus, and so on."*
+# Before this, two spiders fighting were two spiders running into each other:
+# every number was right -- hits landed on a cooldown, silk pinned, the loser
+# died -- and none of it was visible, because nothing about a fighting spider
+# was drawn differently from a walking one.
+#
+# Four things, in the order they read on screen:
+#
+# 1. **Spacing.** A spider stops at arm's length instead of walking into its
+#    foe. This is the standing "a fight is one clump of overlapping bodies"
+#    complaint from the first real-hardware session.
+# 2. **Stance.** Squared up: front legs raised and spread, body reared back
+#    and turned to face, which is what a threatened tarantula actually does.
+# 3. **Focus.** The head and eyes stay on the foe even while the body is
+#    backing off or circling.
+# 4. **Lunge and recoil.** A landed blow throws the attacker's body forward
+#    over its planted feet and knocks the defender's back. The feet stay put,
+#    so the legs stretch and compress -- which is the whole effect, and it is
+#    free, because the legs are already solved in world space.
+
+# How far apart two fighting spiders stand, as a multiple of their combined
+# size. Below about 1.1 they overlap and the fight is a clump again.
+COMBAT_SPACING = 1.35
+# Hysteresis on that, so a spider at exactly the standoff distance does not
+# shuffle in and out on alternate frames.
+COMBAT_SPACING_SLACK = 0.22
+# How quickly a spider squares up, and how quickly it drops the stance once
+# the fight is over. Rising fast reads as reacting; falling slowly keeps it
+# from flickering while a foe crosses in and out of range.
+STANCE_RISE_PER_SECOND = 4.5
+STANCE_FALL_PER_SECOND = 1.6
+# How far a landed blow throws a body, as a fraction of the spider's size,
+# and how fast that decays.
+LUNGE_REACH = 0.42
+RECOIL_REACH = 0.26
+LUNGE_DECAY_PER_SECOND = 4.2
+
+# DC-62: how much a spider minds being picked up.
+#
+# The owner: *"mouse trying to catch it repeatedly would make him run away
+# from mouse more often."* Being grabbed was entirely without consequence --
+# a spider was startled for a second and then walked back into the pointer as
+# happily as before, however many times it had been caught.
+#
+# `cursor_pressure` runs 0..1, rises on each grab, and bleeds away over about
+# two minutes of being left alone, so a spider that was pestered and then
+# ignored forgives.
+CURSOR_PRESSURE_PER_GRAB = 0.34
+CURSOR_PRESSURE_DECAY_PER_SECOND = 1.0 / 120.0
+# Above this, the spider treats the pointer as a threat rather than as
+# something interesting. Deliberately a threshold rather than a gradient: the
+# whole behaviour model here is a table of per-situation multipliers, and a
+# spider that is wary of the pointer is in a different situation, not in the
+# same one by a smaller amount.
+CURSOR_WARY_THRESHOLD = 0.5
+
+# DC-63: an occasional change of step, so walking is not monotonous.
+#
+# The owner: *"to make more varied movements make them in pipline of common
+# spider movement so that they could be changed randomly or based on activity
+# they do."* DC-56 did the activity half. This is the random half: now and
+# then a spider adopts the other gait for a few seconds.
+#
+# It applies **only where no activity has an opinion** -- a spider running
+# from something does not stop to try a different walk. That ordering is the
+# pipeline, and it is what keeps "random variety" from undoing "the way it
+# moves means something".
+GAIT_SPELL_GAP = (9.0, 26.0)
+GAIT_SPELL_LENGTH = (1.8, 4.5)
+
 VALID_GAIT_STYLES = ("classic", "lively", "skitter")
 GAIT_LABELS = {
     "classic": "Classic",

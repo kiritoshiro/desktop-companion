@@ -181,6 +181,87 @@ class CageMixin:
         self.save_runtime_state()
         return f"Removed the {team_label} base."
 
+    # How close the pointer has to be to pick a base up, when the base is so
+    # young there is barely any earth to aim at.
+    BASE_GRAB_FLOOR = 22.0
+
+    def base_grab_at(self, x: float, y: float):
+        """The base whose dug earth is under the point, for picking one up.
+
+        Deliberately tighter than `base_at`, which the right-click menu uses:
+        that reaches the whole site radius, up to 80px at level 5. Opening a
+        menu over 80px of desktop costs nothing, but *claiming* 80px of
+        desktop from the mouse so a drag can start would put a large invisible
+        dead zone under every colony. This follows the soil instead, which is
+        the thing you can actually see and aim at.
+
+        Returns None when dragging is switched off, for the same reason
+        spiders cannot be grabbed then.
+        """
+        if not self.interferable:
+            return None
+        base_world = getattr(self, "base_world", None)
+        if base_world is None:
+            return None
+        best = None
+        best_distance = 0.0
+        for site in base_world.bases.values():
+            # The same spread the renderer gives the field of soil.
+            reach = max(self.BASE_GRAB_FLOOR,
+                        site.radius * (0.52 + 0.46 * site.completion))
+            distance = math.hypot(float(x) - site.x, float(y) - site.y)
+            if distance <= reach and (best is None or distance < best_distance):
+                best = site
+                best_distance = distance
+        return best
+
+    def start_base_drag(self, x: float, y: float) -> bool:
+        """Pick up whatever base is under the pointer. True if one was."""
+        site = self.base_grab_at(x, y)
+        if site is None:
+            return False
+        self._dragged_base = site
+        # Grab it where it was actually clicked, so a big base does not jump
+        # its centre to the cursor the instant it is touched.
+        self._base_drag_offset = (site.x - float(x), site.y - float(y))
+        return True
+
+    def drag_base_to(self, x: float, y: float) -> None:
+        site = getattr(self, "_dragged_base", None)
+        if site is None:
+            return
+        offset_x, offset_y = getattr(self, "_base_drag_offset", (0.0, 0.0))
+        base_world = getattr(self, "base_world", None)
+        if base_world is None:
+            return
+        # Straight to the world, not through `move_base`: that saves the
+        # runtime state, and a drag would write the save file sixty times a
+        # second. The save happens once, on release.
+        base_world.move_base(site.id, float(x) + offset_x, float(y) + offset_y)
+
+    def release_base_drag(self) -> None:
+        if getattr(self, "_dragged_base", None) is None:
+            return
+        self._dragged_base = None
+        self._base_drag_offset = (0.0, 0.0)
+        self.save_runtime_state()
+
+    def move_base(self, site, x: float, y: float) -> str:
+        """Carry one base to a new spot on the desktop.
+
+        The owner asked for bases to be removable "or moving them somewhere",
+        and moving is the kinder of the two: a base is where a team heals and
+        banks its food, so deleting one to get it out of the way costs the
+        team both.
+        """
+        base_world = getattr(self, "base_world", None)
+        if base_world is None or site is None:
+            return "There is no base there to move."
+        if not base_world.move_base(site.id, x, y):
+            return "There is no base there to move."
+        self.save_runtime_state()
+        return f"Moved the {site.team_id or 'neutral'} base."
+
     def remove_bases(self) -> str:
         base_world = getattr(self, "base_world", None)
         if base_world is None or not base_world.bases:

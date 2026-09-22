@@ -58,8 +58,15 @@ def validate_preset(data: dict) -> None:
                 raise ValueError("Preset settings.size_scale must be between 0.45 and 2.25")
         if "interferable" in settings and not isinstance(settings["interferable"], bool):
             raise ValueError("Preset settings.interferable must be true or false")
+        # `social_play`, `mood_mode` and `gait_style` are no longer written by
+        # the settings window (DC-52 folded them into the per-slot columns),
+        # but a preset written before that, or by hand, is still valid and is
+        # still honoured, so they are still checked.
         if "social_play" in settings and not isinstance(settings["social_play"], bool):
             raise ValueError("Preset settings.social_play must be true or false")
+        for switch in ("always_show_names", "always_show_levels", "always_show_health"):
+            if switch in settings and not isinstance(settings[switch], bool):
+                raise ValueError(f"Preset settings.{switch} must be true or false")
         if "mood_mode" in settings:
             valid_moods = {"auto", "playful", "cuddly", "curious", "calm"}
             if not isinstance(settings["mood_mode"], str) or settings["mood_mode"].lower() not in valid_moods:

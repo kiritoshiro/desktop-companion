@@ -161,3 +161,29 @@ def test_a_spider_born_later_joins_the_setting(colony):
         colony.creatures[0].model, colony.creatures[0].personality, index=9)
     assert born.force_show_level and born.force_show_health
     assert born.level_label_pinned and born.health_label_pinned
+
+
+def test_always_show_names_shows_the_ones_nobody_named(colony):
+    """The switch said "always" and meant "always, if it has a name".
+
+    `label_visible` began with `bool(self.name or pinned) and ...`, so a
+    colony nobody had named by hand answered the switch with nothing at all
+    -- which is what the owner was looking at when they asked for these
+    checkboxes again. `display_name` already falls back to the model's own
+    name, so there was always something to draw.
+    """
+    for creature in colony.creatures:
+        assert not creature.name, "this test needs unnamed spiders"
+        assert creature.display_name
+        assert creature.label_visible(False) is False
+        assert creature.label_visible(True) is True
+
+
+def test_hovering_an_unnamed_spider_still_says_nothing(colony):
+    """A label appearing under the cursor is not the same as one the owner
+    asked for, so the hover path deliberately did not change."""
+    creature = colony.creatures[0]
+    creature._hovered = True
+    assert creature.label_visible(False) is False
+    creature.set_name("Bramble")
+    assert creature.label_visible(False) is True

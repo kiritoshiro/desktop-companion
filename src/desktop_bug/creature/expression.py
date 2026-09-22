@@ -8,6 +8,14 @@ from __future__ import annotations
 
 import math
 
+from .constants import (
+    CURSOR_PRESSURE_DECAY_PER_SECOND,
+    LUNGE_REACH,
+    LUNGE_DECAY_PER_SECOND,
+    RECOIL_REACH,
+    STANCE_FALL_PER_SECOND,
+    STANCE_RISE_PER_SECOND,
+)
 from ..support.math_utils import (
     clamp,
 )
@@ -46,6 +54,69 @@ class ExpressionMixin:
             self.expression_blink = 1.0
             self.blink_timer = self.rng.uniform(2.0, 6.0)
 
+    def _update_combat_pose(self, dt: float) -> None:
+        """Square up at a foe, and let a thrown or taken blow decay (DC-59).
+
+        Kept here with the other posture channels, and kept entirely separate
+        from `manager/combat.py`, which decides what a fight *does*. Nothing
+        in this method may change a number that decides a fight; if it ever
+        does, a rendering change becomes a balance change.
+        """
+        foe = getattr(self, "_foe", None)
+        engaged = (foe is not None and not getattr(foe, "dead", False)
+                   and not self.dead and not self.dragging
+                   and not getattr(self, "fleeing", False))
+        if engaged:
+            dx, dy = foe.x - self.x, foe.y - self.y
+            span = math.hypot(dx, dy) or 1.0
+            self.combat_face_x, self.combat_face_y = dx / span, dy / span
+            self.combat_stance = min(1.0, self.combat_stance + dt * STANCE_RISE_PER_SECOND)
+            # A squared-up spider is reared, which is what the body renderer
+            # already reads. Held rather than nudged, so it does not decay
+            # back to flat between frames of a long standoff.
+            self.rear = max(self.rear, self.combat_stance * 0.85)
+        else:
+            self.combat_stance = max(0.0, self.combat_stance - dt * STANCE_FALL_PER_SECOND)
+        self.lunge -= self.lunge * min(1.0, dt * LUNGE_DECAY_PER_SECOND)
+        if abs(self.lunge) < 0.002:
+            self.lunge = 0.0
+
+    def strike_landed(self, foe) -> None:
+        """Throw this spider's body forward over its feet (DC-59)."""
+        self._face_for_combat(foe)
+        self.lunge = 1.0
+
+    def blow_taken(self, foe) -> None:
+        """Knock this spider's body back off its feet (DC-59).
+
+        Separate from `hurt_flash`, which is a colour: a recoil has to be
+        visible on a spider whose art is already dark, and at a glance from
+        across a desktop a body moving reads where a tint does not.
+        """
+        self._face_for_combat(foe)
+        self.lunge = -1.0
+
+    def _face_for_combat(self, foe) -> None:
+        if foe is None:
+            return
+        dx, dy = foe.x - self.x, foe.y - self.y
+        span = math.hypot(dx, dy) or 1.0
+        self.combat_face_x, self.combat_face_y = dx / span, dy / span
+
+    def combat_body_offset(self) -> tuple:
+        """Where the body sits relative to its planted feet, in pixels.
+
+        A lunge throws the body forward along the line to the foe and a blow
+        taken throws it back; the feet do not move, so the legs stretch and
+        compress. That stretch is the animation -- there is no separate
+        "strike" pose anywhere.
+        """
+        if self.lunge == 0.0:
+            return (0.0, 0.0)
+        reach = LUNGE_REACH if self.lunge > 0.0 else RECOIL_REACH
+        push = self.lunge * reach * self.size
+        return (self.combat_face_x * push, self.combat_face_y * push)
+
     def _update_posture(self, dt: float) -> None:
         m = self.mood
         # Decay transient channels.
@@ -55,6 +126,14 @@ class ExpressionMixin:
             self.crouch = max(0.0, self.crouch - dt * 3.0)
         if self.state not in ("Cuddle", "Aim"):
             self.rear = max(0.0, self.rear - dt * 3.5)
+        self._update_combat_pose(dt)
+        self._update_gait_spell(dt)
+        if not self.dragging:
+            # Forgives over about two minutes of being left alone. It does
+            # not decay while actually held, or a long drag would end with
+            # the spider less bothered than when it was picked up.
+            self.cursor_pressure = max(
+                0.0, self.cursor_pressure - dt * CURSOR_PRESSURE_DECAY_PER_SECOND)
         # Landing squash recovers smoothly back to neutral.
         self.squash += (1.0 - self.squash) * (1.0 - math.exp(-dt * 10.0))
         if self.land_recover > 0.0:

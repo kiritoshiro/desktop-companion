@@ -53,13 +53,27 @@ def test_one_award_may_cross_several_thresholds_but_not_the_ceiling(spider):
 
 
 def test_a_talent_costs_a_point_and_raises_a_stat(spider):
-    # A talent needs a level behind it; the original ran these checks in one
-    # sequence, so this one inherited the levels the checks above had gained.
-    spider.gain_experience(sum(xp_to_next_level(level) for level in range(1, 5)) + 1, "fly")
+    """DC-57 made this happen on its own, so this checks it happened.
+
+    The spider used to bank a point per level and wait for someone to open
+    the inspector and spend it, which no spider in a colony was ever going to
+    get. Levelling now spends them, so the test that used to call
+    `unlock_progression_ability` by hand watches the level-up do it -- and
+    then checks that the manual API, which the inspector still calls, refuses
+    an already-unlocked node rather than charging for it twice.
+    """
     before_hp = spider.max_hp
-    spider.progression.skill_points = max(spider.progression.skill_points, 1)
-    ok, _ = spider.unlock_progression_ability("vitality")
-    assert ok and spider.max_hp > before_hp
+    before_points = spider.progression.skill_points
+    spider.gain_experience(sum(xp_to_next_level(level) for level in range(1, 5)) + 1, "fly")
+
+    assert "vitality" in spider.progression.unlocked_abilities
+    assert spider.max_hp > before_hp
+    # Points were spent, not merely banked.
+    assert spider.progression.skill_points < before_points + 4
+
+    ok, message = spider.unlock_progression_ability("vitality")
+    assert ok is False
+    assert "already" in message.lower(), message
 
 
 def test_worn_equipment_absorbs_damage(spider):

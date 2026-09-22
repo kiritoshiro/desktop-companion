@@ -71,7 +71,13 @@ def test_the_jobs_are_the_six_a_spider_can_hold():
 
 def test_a_builder_founds_a_base_and_a_guard_answers_the_intruder(colony):
     world, site, builder, guard, _foe = colony
-    assert len(world.bases) == 1
+    # Two: the builder's, and one for the rival team the intruder belongs to.
+    # DC-54 gives every named team a base whether or not it has a builder --
+    # "as many teams there are that many bases supposed to be" -- because a
+    # team without one has nowhere to heal, nowhere to bank food, and nothing
+    # for its own Guards and Scouts to do.
+    assert len(world.bases) == 2, sorted(world.bases)
+    assert {s.team_id for s in world.bases.values()} == {"pack_a", "rivals"}
     assert builder.job_base_id == site.id
     assert builder.job_mode == "build"
     assert guard.job_mode == "guard_alert"
@@ -335,15 +341,22 @@ def test_a_hunter_carries_a_catch_home_and_it_feeds_the_base(colony):
     assert site.resources > 0.0, "a delivered catch never credited the base"
 
 
-def test_a_hunter_with_no_team_base_still_gets_a_home_to_patrol(colony):
-    """`presets/colony.json` deliberately puts its Hunter on a base-less
-    rival team (DC-30/DC-33's "give the Guard something to guard against"),
-    so the job must still produce states without a real ``BaseSite``."""
-    world, _site, _builder, _guard, foe = colony
-    foe.job_id = "hunter"
+def test_a_hunter_with_no_team_base_still_gets_a_home_to_patrol():
+    """A hunter has to produce states without a real ``BaseSite``.
+
+    This used to lean on `presets/colony.json` putting its Hunter on a
+    base-less rival team, which DC-54 made impossible: every named team is
+    given a base now. The condition it was really testing -- a hunter whose
+    team owns nothing -- still happens, for a solo spider on no team, so that
+    is what it uses. `_site_for_team` returning None is the path under test,
+    and neutral is the one team id that never gets a site.
+    """
+    world = BaseWorld(800, 600)
+    loner = DummySpider("hunter", "neutral", 400.0, 300.0, 91)
     modes = set()
     for _ in range(60 * 20):
-        world.update(DT, [foe])
-        modes.add(foe.job_mode)
+        world.update(DT, [loner])
+        modes.add(loner.job_mode)
     assert "hunt_patrol" in modes, modes
-    assert foe.job_base_id is None
+    assert loner.job_base_id is None
+    assert world.bases == {}, "a neutral spider founded a base"

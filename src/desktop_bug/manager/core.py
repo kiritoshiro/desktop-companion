@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from ..content.personality_profiles import personality_gait_style
 from ..creature import Creature, GAIT_LABELS, normalize_gait_style
 from ..world.cage import Cage
 from ..world.webs import WebWorld
@@ -34,6 +35,7 @@ from ..state.runtime_state import (
 
 from .persistence import RuntimeStateMixin
 from .cages import CageMixin
+from .colony import ColonyGrowthMixin
 from .combat import CombatMixin
 from .prey import PreyMixin
 from .hunting import HuntingMixin
@@ -49,6 +51,7 @@ from .constants import (
 class CreatureManager(
     RuntimeStateMixin,
     CageMixin,
+    ColonyGrowthMixin,
     CombatMixin,
     PreyMixin,
     HuntingMixin,
@@ -81,7 +84,13 @@ class CreatureManager(
         self.size_scale = 1.0
         self.interferable = True
         self.mood_mode = "auto"
-        self.social_play = False
+        # DC-52: on by default and no longer shown anywhere. This was a
+        # master switch over a `social_play` skill that every temperament
+        # already carries, weighted by its sociability -- 0 for a hunter, 10
+        # for a cuddly one -- so all it could do was make a sociable spider
+        # antisocial. The temperament decides; an old preset that set it to
+        # false is still honoured.
+        self.social_play = True
         # DC-22: conflict is on by default. The audience for it is the user
         # who watches these spiders fight for their lands, so shipping it off
         # would hide the thing it exists for -- see the decision record. The
@@ -90,7 +99,10 @@ class CreatureManager(
         self.conflict_enabled = True
         # DC-47: remains of spiders that lost, being eaten and on their way out.
         self.carcasses: List = []
-        self.gait_style = "classic"
+        # None means "ask each temperament", which is what a preset saved by
+        # the settings window now does. A preset that names a gait still
+        # overrides every spider, so an old one keeps behaving as it did.
+        self.gait_style = None
         # Declared stances between teams, shared by every spider in the scene.
         self.team_stances: dict = {}
         # Who each team is: the name its owner chose and its colour. Keyed
@@ -141,6 +153,15 @@ class CreatureManager(
         )
         self._dragged_fly = None
         self._dragged_spawner = None
+        # The base being carried by the pointer, and where on it the pointer
+        # took hold. DC-53: a base can be dragged as well as moved through
+        # the right-click menu.
+        self._dragged_base = None
+        self._base_drag_offset = (0.0, 0.0)
+        # DC-55: how long each base has been raising its next spider.
+        # Transient by design -- a reload starts the wait again, and the food
+        # has not been spent yet, so nothing is lost.
+        self._raise_timers: dict = {}
         self._render_order: List[Creature] = []
         self._render_sort_accum = 0.0
         self._neighbor_refresh_accum = 0.0
@@ -204,7 +225,7 @@ class CreatureManager(
             index=index,
             size_scale=self.size_scale,
             skills=skills,
-            gait_style=self.gait_style,
+            gait_style=self.gait_style or personality_gait_style(personality),
             color_overrides=color_overrides,
             progression_state=progression_state,
             progression_id=state_key,
@@ -327,6 +348,7 @@ class CreatureManager(
         if getattr(self, "fly_world", None) is not None:
             self.fly_world.clear()
         self.dragged_creature = None
+        self._dragged_base = None
         self.models, model_warnings = discover_models(self.root)
         self.personalities, personality_warnings = discover_personalities(self.root)
         self.warnings = model_warnings + personality_warnings
@@ -343,7 +365,11 @@ class CreatureManager(
             self.mood_mode = str(settings.get("mood_mode", self.mood_mode) or "auto").lower()
             self.social_play = bool(settings.get("social_play", self.social_play))
             self.conflict_enabled = bool(settings.get("conflict", self.conflict_enabled))
-            self.gait_style = normalize_gait_style(settings.get("gait_style", self.gait_style))
+            if settings.get("gait_style") is not None:
+                self.gait_style = normalize_gait_style(settings["gait_style"])
+            for key in ("always_show_names", "always_show_levels", "always_show_health"):
+                if key in settings:
+                    setattr(self, key, bool(settings[key]))
             self.team_stances = normalize_team_stances(settings.get("team_relations"))
             # Every team a slot refers to gets an identity, even in an older
             # preset that has no `teams` block at all.
@@ -488,11 +514,17 @@ class CreatureManager(
             return True
         if self._dragged_fly is not None or self._dragged_spawner is not None:
             return True
+        if self._dragged_base is not None:
+            return True
         if (self.interferable or self.naming_enabled) and self.creature_at(mx, my) is not None:
             return True
         # Flies and the movable nest are grabbable when interaction is enabled.
         if self.interferable and (self.fly_world.hit_fly_at(mx, my) is not None
                                   or self.fly_world.hit_spawner_at(mx, my) is not None):
+            return True
+        # The dug earth of a base, so it can be picked up and carried. Only
+        # the earth: see `base_grab_at` for why this is not the site radius.
+        if self.base_grab_at(mx, my) is not None:
             return True
         return False
 
@@ -737,6 +769,14 @@ class CreatureManager(
                 self.set_conflict_enabled(bool(settings.get("conflict")))
             if "gait_style" in settings:
                 self.set_gait_style(str(settings.get("gait_style") or "classic"))
+            # DC-52: the settings window's three "Always show" switches, so
+            # ticking one reaches a running overlay the same way the size
+            # slider does instead of waiting for a relaunch.
+            for key, setter in (("always_show_names", self.set_always_show_names),
+                                ("always_show_levels", self.set_always_show_levels),
+                                ("always_show_health", self.set_always_show_health)):
+                if key in settings:
+                    setter(bool(settings[key]))
             if "allow_mouse_capture" in settings:
                 self.set_allow_mouse_capture(bool(settings.get("allow_mouse_capture")))
             if "desktop_icons_enabled" in settings:
@@ -796,6 +836,9 @@ class CreatureManager(
         """
         return {
             "mood_mode": self.mood_mode,
+            "always_show_names": self.always_show_names,
+            "always_show_levels": self.always_show_levels,
+            "always_show_health": self.always_show_health,
             "size_scale": self.size_scale,
             "social_play": self.social_play,
             "flies_enabled": self.flies_enabled,
@@ -921,7 +964,12 @@ class CreatureManager(
                     handled = True
             # 3) Otherwise grab the cage frame to move the whole enclosure.
             if not handled and hit is not None and hit[1] is None:
-                self._start_cage_drag(mx, my)
+                handled = self._start_cage_drag(mx, my)
+            # 4) A base is last, because it is the largest thing on screen and
+            #    spiders stand on top of their own: grabbing the earth must
+            #    never take priority over grabbing the spider standing on it.
+            if not handled and self.interferable:
+                handled = self.start_base_drag(mx, my)
 
         if mouse_down and self._cage_drag is not None:
             self._drag_cage(mx, my)
@@ -931,6 +979,8 @@ class CreatureManager(
             self._dragged_fly.drag_to(mx, my)
         elif mouse_down and self._dragged_spawner is not None:
             self._dragged_spawner.drag_to(mx, my, self.screen_w, self.screen_h)
+        elif mouse_down and self._dragged_base is not None:
+            self.drag_base_to(mx, my)
 
         if mouse_released and self._cage_drag is not None:
             self._cage_drag = None
@@ -941,6 +991,8 @@ class CreatureManager(
         if mouse_released and self._dragged_spawner is not None:
             self._dragged_spawner.release_drag()
             self._dragged_spawner = None
+        if (mouse_released or not self.interferable) and self._dragged_base is not None:
+            self.release_base_drag()
 
         if (mouse_released or not self.interferable) and self.dragged_creature is not None:
             self.dragged_creature.release_drag(mx, my)
@@ -970,6 +1022,7 @@ class CreatureManager(
         # remains free to describe *how* that work looks.
         with profiler.section("jobs"):
             self.base_world.update(dt, self.creatures, self.web_world)
+            self._update_colony_growth(dt)
         # Base construction advances continuously, so it uses the same debounced
         # save as feeding instead of only being persisted on quit.
         if any(getattr(creature, "job_mode", "idle") == "build" for creature in self.creatures):

@@ -176,7 +176,12 @@ def test_settings_round_trip() -> None:
         saved = window.current_settings_data()
         assert saved.get("team_relations") == {"pack_a": {"rivals": "foe"}}, saved.get("team_relations")
         # The widget-backed settings still win over the remembered copy.
-        assert "gait_style" in saved and "flies" in saved
+        assert "size_scale" in saved and "flies" in saved
+        # And the three DC-52 retired the window's controls for are dropped
+        # rather than carried forward from the loaded preset, or a temperament
+        # would never get to decide the mood or the gait.
+        for retired in ("mood_mode", "gait_style", "social_play"):
+            assert retired not in saved, retired
     finally:
         window.close()
         window.deleteLater()

@@ -129,21 +129,27 @@ def canonical_personality_definitions() -> dict[str, dict]:
 def selectable_personality_ids(personalities: dict | None = None, include_id: str | None = None) -> tuple[str, ...]:
     """Return the compact menu plus every legacy personality that actually ships.
 
-    Previously this returned only the six compact ids plus one specifically
-    requested legacy id, so every other legacy personality under
-    ``personalities/`` (hunter, jumper, observer, nope, drifter, webber,
-    trapper, ...) stayed loadable but invisible in the settings menu -- the
-    UI and the data disagreed about what personalities existed (DC-19, C5).
-    Now every id actually present in ``personalities`` is offered, labelled
-    "Legacy: ..." by the caller (``config_ui.py`` already does this).
+    DC-60 narrows this back to the six, at the owner's request: *"some of
+    them could be consolidated and left only a few since they kinda look the
+    same."* Twenty-one personality files already shared eleven movement
+    profiles between them, so most of the list was distinctions without a
+    visible difference.
+
+    Nothing is deleted. Every legacy id still loads, still resolves to its
+    own traits, abilities and movement profile, and is still offered *in the
+    row that already uses it* through ``include_id`` -- so a preset or a
+    saved spider keeps exactly the personality its author chose, and loading
+    one then saving does not silently rewrite it. They are simply no longer
+    offered as fresh choices.
+
+    (This reverses DC-19's C5 fix, which widened the list because the UI and
+    the data disagreed about what existed. They agree again, in the other
+    direction: the menu offers what a person should pick from, and
+    ``include_id`` keeps it honest about what is already in use.)
     """
     values = list(COMPACT_TEMPERAMENT_IDS)
-    if personalities:
-        for personality_id in sorted(personalities):
-            if personality_id not in values:
-                values.append(personality_id)
     legacy_id = str(include_id or "").strip().lower()
-    if legacy_id and legacy_id not in values:
+    if legacy_id and legacy_id not in values and (not personalities or legacy_id in personalities):
         values.append(legacy_id)
     return tuple(values)
 
@@ -406,6 +412,35 @@ def movement_profile_for(personality) -> str:
     else:
         pid = str(personality or "").strip().lower()
     return str(PERSONALITY_COMPONENTS.get(pid, {}).get("movement", "curious"))
+
+
+# DC-52: which walking animation a temperament uses.
+#
+# The gait used to be one scene-wide dropdown -- Classic, Lively, Skitter --
+# sitting beside a Temperament column that already decided how each spider
+# moves. The owner asked for the two to be consolidated, so the temperament
+# picks. Classic is deliberately unreachable from here: it is the original
+# pre-DC-16 gait, kept only so an old preset that names it still loads.
+GAIT_BY_MOVEMENT: dict[str, str] = {
+    # Quick, twitchy movers get the burst-and-stop gait.
+    "bold": "skitter",
+    "escape": "skitter",
+    "hunter": "skitter",
+    "jumper": "skitter",
+    # Everything else lifts its legs and feels its way around.
+    "camouflage": "lively",
+    "curious": "lively",
+    "drift": "lively",
+    "gentle": "lively",
+    "observer": "lively",
+    "social": "lively",
+    "webber": "lively",
+}
+
+
+def personality_gait_style(personality) -> str:
+    """The walking animation this temperament uses."""
+    return GAIT_BY_MOVEMENT.get(movement_profile_for(personality), "lively")
 
 
 def phase_scores_for(personality) -> dict[str, float]:

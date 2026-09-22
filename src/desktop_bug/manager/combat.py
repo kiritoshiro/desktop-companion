@@ -20,11 +20,26 @@ from ..creature.constants import (
     RALLY_HEALTH_FRACTION,
     THREAT_SCAN_RADIUS,
 )
-from ..world.carcass import CARCASS_FOOD_AMOUNT, carcass_for, eaters_near
+from ..world.carcass import (
+    CARCASS_FOOD_AMOUNT,
+    CARCASS_LIFETIME,
+    carcass_for,
+    eaters_near,
+)
 from .constants import log
 
 # How close two foes must be, relative to their combined size, to trade hits.
-CONTACT_REACH = 0.85
+#
+# DC-59 raised this from 0.85. Two spiders now hold each other at
+# `COMBAT_SPACING` -- 1.35 of their combined size, up to 1.65 with the
+# hysteresis -- instead of walking into one another, and a reach of 0.85
+# would have meant two spiders squared up at exactly the right distance
+# could never land a blow. It has to sit above the far edge of that band.
+#
+# Read as: a spider strikes with its front legs out, so its reach is most of
+# its leg span rather than the width of its body. The one balance effect is
+# that fewer swings miss while both are circling.
+CONTACT_REACH = 1.75
 # A spider lands at most one hit this often, so a brawl reads as exchanges
 # rather than as hp draining smoothly to zero.
 ATTACK_INTERVAL = 0.85
@@ -250,6 +265,11 @@ class CombatMixin:
         overlap and flatten one another in well under a second.
         """
         attacker.attack_cooldown = ATTACK_INTERVAL
+        # DC-59: the animation of the blow. Set here because this is the one
+        # place that knows a blow happened; it changes nothing about the
+        # outcome, which is deliberate -- see `_update_combat_pose`.
+        attacker.strike_landed(defender)
+        defender.blow_taken(attacker)
         # DC-45: a pinned defender cannot dodge, so the hit tells. This is
         # what a web shot buys the shooter.
         blow = attacker.damage * (WEBBED_DAMAGE_BONUS if defender.webbed else 1.0)
@@ -310,19 +330,27 @@ class CombatMixin:
         left = []
         for carcass in self.carcasses:
             eaters = eaters_near(carcass, self.creatures)
+            eaten_before = carcass.t
             finished = carcass.update(dt, eaters)
-            if not finished:
-                left.append(carcass)
-                continue
             # A spider that ate its way through a body fed its colony doing
             # it, in the same banked food DC-21 spends on building.
-            if eaters and base_world is not None:
+            #
+            # Credited by the mouthful rather than in one lump when the
+            # carcass runs out. It used to be paid on the final frame only,
+            # to whoever was standing on it at that instant -- so a spider
+            # that ate a whole body and happened to take a step on the last
+            # frame of 189 was paid nothing. Measured, that is what it did:
+            # the eater was in reach for 179 of the 189 frames and the frame
+            # it finished was one of the other ten.
+            eaten_now = max(0.0, carcass.t - eaten_before)
+            if eaters and eaten_now > 0.0 and base_world is not None:
+                share = CARCASS_FOOD_AMOUNT * (eaten_now / CARCASS_LIFETIME) / eaters
                 for creature in self.creatures:
                     if eaters_near(carcass, [creature]):
                         base_world.credit_team_food(
-                            getattr(creature.progression, "team_id", None),
-                            CARCASS_FOOD_AMOUNT / max(1, eaters),
-                        )
+                            getattr(creature.progression, "team_id", None), share)
+            if not finished:
+                left.append(carcass)
         self.carcasses = left
 
     def carcass_dirty_rects(self):

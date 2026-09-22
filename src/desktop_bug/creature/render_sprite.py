@@ -137,7 +137,11 @@ class RenderSpriteMixin:
 
         crouch_drop = self.crouch * self.size * 0.06
         painter.save()
-        painter.translate(self.x + tremble_x, self.y + self.body_bob + tremble_y - self.jump_z + crouch_drop)
+        # DC-59: see the procedural renderer for why the body moves and the
+        # feet do not.
+        lunge_x, lunge_y = self.combat_body_offset()
+        painter.translate(self.x + tremble_x + lunge_x,
+                          self.y + self.body_bob + tremble_y - self.jump_z + crouch_drop + lunge_y)
         painter.rotate(math.degrees(self.heading))
         if self._spider_gait_config() is None:
             painter.rotate(math.degrees(self.body_wiggle))
@@ -162,6 +166,12 @@ class RenderSpriteMixin:
         ceph_w *= (1.0 + self.rear * 0.12)
         ceph_h *= (1.0 + self.rear * 0.12)
         ceph_offset_x += self.rear * self.size * 0.05
+        stance = getattr(self, "combat_stance", 0.0)
+        if stance > 0.01:
+            ceph_offset_x += stance * self.size * 0.16
+            ceph_w *= (1.0 + stance * 0.10)
+            ceph_h *= (1.0 + stance * 0.10)
+            abdomen_offset_x -= stance * self.size * 0.10
 
         if abdomen is not None:
             painter.save()

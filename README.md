@@ -577,6 +577,7 @@ DesktopBugCompanion/
 
       manager/               # the orchestrator: owns the creatures and the worlds
         cages.py
+        colony.py              # a base spends banked food to raise a spider
         combat.py
         constants.py
         core.py
@@ -596,6 +597,7 @@ DesktopBugCompanion/
       content/               # what ships as data, and how it is loaded and validated
         discovery.py
         body_plans.py          # the four leg rigs every model is built on
+        palettes.py            # named colour presets, and a random one
         personality_profiles.py
         preset_io.py
         skills.py

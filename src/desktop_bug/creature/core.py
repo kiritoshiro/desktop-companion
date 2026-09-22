@@ -30,6 +30,7 @@ from .perception import build_perception
 from .phase_scheduler import BehaviourPhaseScheduler
 from ..state.progression import (
     ABILITY_BY_ID,
+    ABILITY_TREE,
     ARMOR_BY_ID,
     MAX_LEVEL,
     ProgressionState,
@@ -46,6 +47,9 @@ from .constants import (
     WEBBED_HOLD_SECONDS,
     WEBBED_SECONDS,
     WEBBED_SPEED_MULT,
+    CURSOR_PRESSURE_PER_GRAB,
+    CURSOR_WARY_THRESHOLD,
+    GAIT_SPELL_GAP,
     normalize_gait_style,
 )
 from .behaviour import BehaviourMixin
@@ -294,6 +298,18 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # based on lively but runs in quick burst-burst-stop successions, like
         # a small jumping spider in a macro video.
         self.gait_style = normalize_gait_style(gait_style)
+        # DC-63: the current spell, and how long until it changes.
+        #
+        # Its own random stream, not `self.rng`. Drawing from the shared one
+        # -- even once, in __init__ -- shifts every later value in it, and a
+        # seeded run is supposed to replay exactly (DC-09). Caught by
+        # `test_tarantula.py::test_a_walk_stays_inside_its_limits`, which
+        # started failing a leg-geometry invariant purely because the walk
+        # now began from a different phase seed. Same reasoning, and the same
+        # fix, as the `_id_rng` split in the manager.
+        self._gait_rng = random.Random(f"{self.progression_id}:gait-spell")
+        self.gait_spell = None
+        self.gait_spell_timer = self._gait_rng.uniform(*GAIT_SPELL_GAP)
         self._lively_gait_phase = self.rng.random()
         self._skitter_burst_timer = self.rng.uniform(0.14, 0.34)
         self._skitter_pause_timer = 0.0
@@ -346,6 +362,17 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.abdomen_wag = 0.0          # extra abdomen sway (radians)
         self.crouch = 0.0               # 0 upright .. 1 coiled/low (jump prep, play bow)
         self.rear = 0.0                 # 0 flat .. 1 reared front (alert/excited)
+        # DC-59: the fighting pose. `combat_stance` is 0..1, how squared-up
+        # this spider is at a foe; `lunge` is a signed 0..1 impulse along the
+        # line to that foe -- positive for a blow thrown, negative for one
+        # taken. Both are pure animation: nothing here changes a number that
+        # decides a fight.
+        # DC-62: how wary of the pointer this spider has become.
+        self.cursor_pressure = 0.0
+        self.combat_stance = 0.0
+        self.lunge = 0.0
+        self.combat_face_x = 0.0
+        self.combat_face_y = 0.0
         self.squash = 1.0               # landing squash-and-stretch (1 = neutral)
         self.wiggle_phase = self.rng.random() * math.tau
         self.wiggle_amp = 0.0           # target amplitude driven by mood/intent
@@ -669,11 +696,40 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.progression.skill_points += 1
             self._apply_progression_stats(reset_resources=True)
             events.append(f"reached level {self.progression.level}")
+            events.extend(self._spend_skill_points())
         if self.progression.level >= MAX_LEVEL:
             # One large award can carry a remainder past the last threshold.
             # Leaving it unclamped overfills the inspector's XP bar.
             self.progression.xp = xp_to_next_level(MAX_LEVEL)
         return events
+
+    def _spend_skill_points(self) -> list[str]:
+        """Unlock whatever this level just made available (DC-57).
+
+        The owner: *"and the skills unlocks as they level up."* The tree, the
+        level gates and the prerequisites all already existed; what did not
+        was anyone to spend the points. A skill point was awarded on every
+        level and then sat there unless a person opened the inspector and
+        clicked, which no spider in a colony of five was ever going to get.
+
+        Cheapest-first by level requirement, then in tree order, so a spider
+        walks up the tree the way its author laid it out rather than taking
+        whichever node a set happened to yield first. `can_unlock` is the same
+        gate the inspector uses, so the two cannot drift.
+        """
+        unlocked = []
+        while self.progression.skill_points > 0:
+            available = [node for node in ABILITY_TREE
+                         if self.progression.can_unlock(node.id)]
+            if not available:
+                break
+            node = min(available, key=lambda n: (n.level_required, ABILITY_TREE.index(n)))
+            self.progression.skill_points -= node.cost
+            self.progression.unlocked_abilities.append(node.id)
+            unlocked.append(f"learned {node.name}")
+        if unlocked:
+            self._apply_progression_stats()
+        return unlocked
 
     def unlock_progression_ability(self, ability_id: str) -> tuple[bool, str]:
         ability_id = str(ability_id).strip().lower()
@@ -957,7 +1013,20 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self._initialize_legs()
         self.startled_timer = max(self.startled_timer, 0.45)
 
+    @property
+    def wary_of_cursor(self) -> bool:
+        """Has this spider been caught often enough to mind the pointer?
+
+        A threshold rather than a gradient, because the behaviour model it
+        feeds is a table of per-situation multipliers: a wary spider is in a
+        different situation, not in the same one by a smaller amount.
+        """
+        return self.cursor_pressure >= CURSOR_WARY_THRESHOLD
+
     def start_drag(self, mx: float, my: float) -> None:
+        # DC-62: remember it. Bumped here rather than on release, so a grab
+        # counts even if the spider is put straight back down.
+        self.cursor_pressure = min(1.0, self.cursor_pressure + CURSOR_PRESSURE_PER_GRAB)
         self.dragging = True
         self.phase_scheduler.cancel()
         self.state = "Dragged"
@@ -1379,18 +1448,40 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         return font
 
     def label_visible(self, always_show: bool) -> bool:
+        """Whether the label above this spider is drawn at all.
+
+        "Always show names" used to mean "always show the names of the
+        spiders that have one", because of an `and bool(self.name)` that sat
+        in front of everything else: a colony nobody had named by hand
+        answered the switch by showing nothing. It shows `display_name`
+        instead, which falls back to the model's own name, so the switch now
+        does what its label says. Hover is unchanged -- an unnamed spider
+        still says nothing when the pointer passes over it, because that is a
+        label appearing under the cursor rather than one the owner asked for.
+        """
         pinned = self.level_label_pinned or self.health_label_pinned
-        return bool(self.name or pinned) and (self._hovered or always_show or pinned)
+        if always_show or pinned:
+            return True
+        return bool(self.name) and self._hovered
 
     def _label_border_color(self, QColor):
-        """The hover label is edged in the team colour, or plain white for none."""
+        """The label is edged in the team colour -- white when there is no team.
+
+        DC-51 removed the coloured ring that used to be painted on the ground
+        under every spider on a team. The owner asked for it to go ("remove
+        that under the spider circle, it should not be visible") and, in the
+        same breath, for teams to be shown "just by the color. no need for
+        titles. white would be neutral". This border is where that colour
+        lives now, so it is drawn at full strength rather than as a hint, and
+        a spider on no team gets white rather than a faint grey.
+        """
         team_id = str(getattr(self.progression, "team_id", "neutral") or "neutral")
         if team_id.strip().lower() in ("", "neutral"):
-            return QColor(255, 255, 255, 60)
+            return QColor(255, 255, 255, 215)
         from ..state.teams import team_color
 
         red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
-        return QColor(red, green, blue, 200)
+        return QColor(red, green, blue, 235)
 
     def _label_text(self) -> str:
         text = self.display_name
@@ -1463,29 +1554,6 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self._bbox = (min_x, min_y, max_x, max_y)
         return self._bbox
 
-    def _draw_team_marker(self, painter) -> None:
-        """A small ring in the team colour, on the ground under the spider.
-
-        Deliberately understated. A team is a fact about a spider, not the point
-        of looking at one, and a solid badge would fight with the art. A spider
-        on no team wears nothing at all.
-        """
-        team_id = str(getattr(self.progression, "team_id", "neutral") or "neutral")
-        if team_id.strip().lower() in ("", "neutral"):
-            return
-
-        from ..state.teams import team_color
-
-        red, green, blue = team_color(team_id, getattr(self, "team_profiles", None))
-        width = self.size * 1.35
-        height = self.size * 0.46
-        # Sits just below the body, where a shadow would be, so it reads as
-        # ground marking rather than as part of the creature.
-        top = self.y + self.size * 0.36 + self.jump_z * 0.25
-        painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(QColor(red, green, blue, 190), max(1.6, self.size * 0.09)))
-        painter.drawEllipse(QRectF(self.x - width * 0.5, top - height * 0.5, width, height))
-
     def _health_bar_height(self) -> float:
         return max(4.0, min(7.0, self.size * 0.20))
 
@@ -1545,7 +1613,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         painter.setBrush(QBrush(QColor(18, 18, 22, 205)))
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setBrush(Qt.NoBrush)
-        painter.setPen(QPen(self._label_border_color(QColor), 1.0))
+        # Two pixels, not one: this border is the only place a team's colour
+        # is shown on a spider now, so it has to survive being looked at over
+        # a busy desktop.
+        painter.setPen(QPen(self._label_border_color(QColor), 2.0))
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setPen(QPen(QColor(245, 247, 250, 255)))
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
@@ -1569,10 +1640,6 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             except Exception:
                 painter.setOpacity(camouflage_opacity)
             camouflage_saved = True
-        # Before the body, so the legs walk over the ring rather than under it,
-        # and outside the tumble transform, because a marking on the ground does
-        # not spin with the spider.
-        self._draw_team_marker(painter)
         rolling = abs(self.roll_spin) > 1e-4
         if rolling:
             # Spin the whole creature (legs and body) about its centre for a

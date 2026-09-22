@@ -100,13 +100,54 @@ def test_no_is_personality_branches_remain():
     assert hits == []
 
 
-def test_selectable_personality_ids_reconciles_menu_with_shipped_files(personalities):
-    """C5: every shipped legacy personality must be selectable, not hidden."""
+LEGACY_IDS = ("hunter", "jumper", "observer", "nope", "drifter", "webber", "trapper")
+
+
+def test_the_menu_offers_the_six_temperaments(personalities):
+    """DC-60 narrows the list; it does not delete anything.
+
+    This reverses DC-19's C5 fix, deliberately and at the owner's request:
+    *"some of them could be consolidated and left only a few since they kinda
+    look the same."* Twenty-one personality files already shared eleven
+    movement profiles between them, so most of the list was distinctions
+    without a visible difference.
+
+    C5's actual complaint was that the UI and the data disagreed about what
+    personalities existed. They agree again, from the other direction: the
+    menu offers what a person should pick from, and `include_id` (below)
+    keeps it honest about what is already in use.
+    """
     selectable = selectable_personality_ids(personalities)
-    for legacy_id in ("hunter", "jumper", "observer", "nope", "drifter", "webber", "trapper"):
-        assert legacy_id in selectable, legacy_id
     for compact_id in ("balanced", "playful", "curious", "bold", "cautious", "social"):
         assert compact_id in selectable, compact_id
+    for legacy_id in LEGACY_IDS:
+        assert legacy_id not in selectable, legacy_id
+
+
+def test_a_legacy_personality_already_in_use_is_still_offered(personalities):
+    """The half that stops this being a deletion.
+
+    A preset or a saved spider that names one keeps it, and the row showing
+    it can still show it -- otherwise loading a preset and saving it again
+    would silently rewrite somebody's choice.
+    """
+    for legacy_id in LEGACY_IDS:
+        assert legacy_id in selectable_personality_ids(personalities, legacy_id), legacy_id
+
+
+def test_a_personality_that_does_not_exist_is_not_offered(personalities):
+    """`include_id` is "what this row already uses", not "anything asked for"."""
+    assert "not_a_personality" not in selectable_personality_ids(personalities, "not_a_personality")
+
+
+def test_every_legacy_personality_still_loads_and_still_differs(personalities):
+    """Consolidating the *menu* must not consolidate the behaviour."""
+    from desktop_bug.content.personality_profiles import movement_profile_for
+
+    for legacy_id in LEGACY_IDS:
+        assert legacy_id in personalities, legacy_id
+    profiles = {movement_profile_for(personalities[legacy_id]) for legacy_id in LEGACY_IDS}
+    assert len(profiles) > 3, profiles
 
 
 @pytest.mark.parametrize(

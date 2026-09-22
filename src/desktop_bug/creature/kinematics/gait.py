@@ -12,17 +12,66 @@ from ...support.math_utils import (
     clamp_point,
 )
 
+from ..constants import GAIT_BY_STATE, GAIT_SPELL_GAP, GAIT_SPELL_LENGTH
 from .legstate import LegState
 
 
 class GaitConfigMixin:
     """Gait configuration and grounded-locomotion body solving."""
 
+    def effective_gait_style(self) -> str:
+        """The gait this spider is walking with *right now*.
+
+        A pipeline of three stages, most specific last (DC-56, DC-63):
+
+        1. **Temperament** sets the baseline, once, for life (DC-52).
+        2. **A spell** may swap it for a few seconds, at random, so walking
+           around is not monotonous.
+        3. **The activity** overrides both: a curious spider darts, a running
+           one runs. What a spider is doing always beats what it fancies.
+
+        `classic` opts out of every stage. It is the original pre-DC-16 gait,
+        kept so a preset that names it behaves exactly as its author left it,
+        and phasing it would quietly break that promise.
+        """
+        baseline = getattr(self, "gait_style", "classic")
+        if baseline == "classic":
+            return baseline
+        if getattr(self, "fleeing", False):
+            # DC-50's retreat can run under several states; whichever one it
+            # is, a frightened spider is running.
+            return "lively"
+        activity = GAIT_BY_STATE.get(getattr(self, "state", ""))
+        if activity is not None:
+            return activity
+        spell = getattr(self, "gait_spell", None)
+        return spell or baseline
+
+    def _update_gait_spell(self, dt: float) -> None:
+        """Roll the occasional change of step (DC-63).
+
+        Driven from a dedicated stream (`_gait_rng`), so a replayed run
+        walks the same way *and* drawing from it cannot shift the shared
+        simulation stream -- see the comment where it is created.
+        """
+        if getattr(self, "gait_style", "classic") == "classic":
+            return
+        self.gait_spell_timer -= max(0.0, dt)
+        if self.gait_spell_timer > 0.0:
+            return
+        if self.gait_spell is None:
+            other = "skitter" if self.gait_style == "lively" else "lively"
+            self.gait_spell = other
+            self.gait_spell_timer = self._gait_rng.uniform(*GAIT_SPELL_LENGTH)
+        else:
+            self.gait_spell = None
+            self.gait_spell_timer = self._gait_rng.uniform(*GAIT_SPELL_GAP)
+
     def _uses_lively_gait(self) -> bool:
-        return getattr(self, "gait_style", "classic") in ("lively", "skitter")
+        return self.effective_gait_style() in ("lively", "skitter")
 
     def _uses_skitter_gait(self) -> bool:
-        return getattr(self, "gait_style", "classic") == "skitter"
+        return self.effective_gait_style() == "skitter"
 
     def _spider_gait_config(self):
         """Return bounded tuning for models that opt into an insect-like gait.
