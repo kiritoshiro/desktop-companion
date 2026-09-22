@@ -24,13 +24,28 @@ class JobDefinition:
     protects_base: bool = False
 
 
+# DC-45 taught a fighting spider to pin its enemy with silk, and then nothing
+# ever did it. Measuring a real colony found why, and it was not the cooldown:
+# of twenty-one temperaments only the legacy "Trapper" grants `shoot_web`, and
+# no job granted it at all -- so all thirty-six combinations of the six
+# temperaments the settings window actually offers and the six jobs produced a
+# spider that could never throw silk. The skill was reachable only by hand-
+# ticking it in the per-slot Abilities list.
+#
+# Two jobs now grant it. Web tender is a plain coherence fix: the silk
+# specialist could weave a web but not shoot one. Guard is the deliberate one
+# -- a guard that pins an intruder instead of only body-blocking it is the
+# behaviour the owner asked to see, and guards are the spiders that actually
+# meet foes.
 JOB_DEFINITIONS = (
     JobDefinition("none", "No job", "Acts only from temperament and selected abilities."),
     JobDefinition("hunter", "Hunter", "Tracks nearby prey and threats with focused pursuit."),
     JobDefinition("builder", "Builder", "Establishes and upgrades a shared colony base.", creates_base=True),
-    JobDefinition("guard", "Guard", "Patrols a friendly base and responds to declared foes.", protects_base=True),
+    JobDefinition("guard", "Guard", "Patrols a friendly base, and pins declared foes with silk.",
+                  ability_ids=("shoot_web",), protects_base=True),
     JobDefinition("scout", "Scout", "Ranges beyond the base and reports points of interest."),
-    JobDefinition("webber", "Web tender", "Maintains the colony's silk structures.", ability_ids=("weave_web",)),
+    JobDefinition("webber", "Web tender", "Maintains the colony's silk structures, and throws silk.",
+                  ability_ids=("weave_web", "shoot_web")),
 )
 JOB_BY_ID = {job.id: job for job in JOB_DEFINITIONS}
 JOB_IDS = tuple(job.id for job in JOB_DEFINITIONS)
