@@ -255,6 +255,11 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
                     self.colors[str(key)] = [int(clamp(float(raw[i]), 0, 255)) for i in range(3)]
                 except (TypeError, ValueError):
                     continue
+        # Scene-wide label switches, set by the manager rather than saved per
+        # spider: "show every spider's level / health". Declared here rather
+        # than discovered by getattr, per DC-10.
+        self.force_show_level = False
+        self.force_show_health = False
         self.color_overrides = {}
         if isinstance(color_overrides, dict):
             for key, raw in color_overrides.items():
@@ -1306,14 +1311,18 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
 
     @property
     def level_label_pinned(self) -> bool:
-        return bool(self.progression.pin_level)
+        # Either this spider was pinned individually, or the scene has been
+        # asked to show every spider's level. The per-spider pin survives the
+        # global switch being turned off again, because it is stored on the
+        # progression and this only reads alongside it.
+        return bool(self.progression.pin_level or self.force_show_level)
 
     def set_level_label_pinned(self, enabled: bool) -> None:
         self.progression.pin_level = bool(enabled)
 
     @property
     def health_label_pinned(self) -> bool:
-        return bool(self.progression.pin_health)
+        return bool(self.progression.pin_health or self.force_show_health)
 
     def set_health_label_pinned(self, enabled: bool) -> None:
         self.progression.pin_health = bool(enabled)

@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication, QWidget
 from desktop_bug.creature import Creature
 from desktop_bug.app.engine import CreatureInspectorDialog
 from desktop_bug.state.teams import normalize_teams
+from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
 import pytest
 
@@ -59,7 +60,7 @@ def inspector():
     pytest happened to run them in.
     """
     random.seed(31)
-    model = json.loads((ROOT / "models" / "plush_snow_hybrid_2" / "model.json").read_text())
+    model = resolve_body_plan(json.loads((ROOT / "models" / "plush_snow_hybrid_2" / "model.json").read_text()))
     personality = json.loads((ROOT / "personalities" / "cuddly.json").read_text())
     app = QApplication.instance()
     first = Creature(model, personality, 1200, 800)

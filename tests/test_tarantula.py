@@ -23,13 +23,14 @@ from movement import (
     run_walk,
 )
 from support import ROOT
+from desktop_bug.content.body_plans import resolve_body_plan
 
 SEED = 19
 
 
 @pytest.fixture(scope="module")
 def tarantula():
-    model = json.loads((ROOT / "models/tarantula/model.json").read_text())
+    model = resolve_body_plan(json.loads((ROOT / "models/tarantula/model.json").read_text()))
     personality = json.loads((ROOT / "personalities/curious.json").read_text())
     return model, personality
 

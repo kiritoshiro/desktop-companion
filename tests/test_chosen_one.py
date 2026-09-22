@@ -9,6 +9,7 @@ import random
 import pytest
 from movement import build_creature, run_causality_checks, run_walk
 from support import ROOT
+from desktop_bug.content.body_plans import resolve_body_plan
 
 SEED = 19
 SECONDS = 5.0
@@ -17,7 +18,7 @@ DT = 1.0 / 60.0
 
 @pytest.fixture(scope="module")
 def chosen():
-    model = json.loads((ROOT / "models/chosen_one/model.json").read_text())
+    model = resolve_body_plan(json.loads((ROOT / "models/chosen_one/model.json").read_text()))
     personality = json.loads((ROOT / "personalities/curious.json").read_text())
     return model, personality
 

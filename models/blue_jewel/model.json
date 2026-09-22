@@ -4,25 +4,221 @@
   "base_size": 33,
   "default_personality": "observer",
   "render_mode": "procedural",
-  "colors": {"body": [21, 35, 68], "legs": [28, 65, 119], "leg_band": [100, 190, 233], "leg_tip": [14, 25, 53], "highlight": [143, 231, 255], "eyes": [226, 246, 255]},
-  "legs": [
-    {"name": "front_left", "side": "left", "gait_group": 0, "phase_offset": 0.00, "attach_angle": -30, "rest_angle": -43, "reach": 1.98, "upper_len": 0.94, "lower_len": 1.15, "attach_forward": 0.42, "attach_side": 0.26, "rest_forward": 1.50, "rest_side": 0.93, "coxa_len": 0.28, "stride_forward": 0.45},
-    {"name": "front_right", "side": "right", "gait_group": 1, "phase_offset": 0.50, "attach_angle": 30, "rest_angle": 43, "reach": 1.98, "upper_len": 0.94, "lower_len": 1.15, "attach_forward": 0.42, "attach_side": 0.26, "rest_forward": 1.50, "rest_side": 0.93, "coxa_len": 0.28, "stride_forward": 0.45},
-    {"name": "mid_front_left", "side": "left", "gait_group": 1, "phase_offset": 0.74, "attach_angle": -70, "rest_angle": -84, "reach": 1.92, "upper_len": 0.90, "lower_len": 1.17, "attach_forward": 0.14, "attach_side": 0.35, "rest_forward": 0.48, "rest_side": 1.12, "coxa_len": 0.29, "stride_forward": 0.42},
-    {"name": "mid_front_right", "side": "right", "gait_group": 0, "phase_offset": 0.24, "attach_angle": 70, "rest_angle": 84, "reach": 1.92, "upper_len": 0.90, "lower_len": 1.17, "attach_forward": 0.14, "attach_side": 0.35, "rest_forward": 0.48, "rest_side": 1.12, "coxa_len": 0.29, "stride_forward": 0.42},
-    {"name": "mid_rear_left", "side": "left", "gait_group": 0, "phase_offset": 0.44, "attach_angle": -110, "rest_angle": -119, "reach": 1.89, "upper_len": 0.92, "lower_len": 1.15, "attach_forward": -0.14, "attach_side": 0.35, "rest_forward": -0.48, "rest_side": 1.10, "coxa_len": 0.29, "stride_forward": 0.40},
-    {"name": "mid_rear_right", "side": "right", "gait_group": 1, "phase_offset": 0.94, "attach_angle": 110, "rest_angle": 119, "reach": 1.89, "upper_len": 0.92, "lower_len": 1.15, "attach_forward": -0.14, "attach_side": 0.35, "rest_forward": -0.48, "rest_side": 1.10, "coxa_len": 0.29, "stride_forward": 0.40},
-    {"name": "rear_left", "side": "left", "gait_group": 1, "phase_offset": 0.66, "attach_angle": -147, "rest_angle": -151, "reach": 1.96, "upper_len": 0.97, "lower_len": 1.13, "attach_forward": -0.42, "attach_side": 0.26, "rest_forward": -1.48, "rest_side": 0.93, "coxa_len": 0.28, "stride_forward": 0.38},
-    {"name": "rear_right", "side": "right", "gait_group": 0, "phase_offset": 0.16, "attach_angle": 147, "rest_angle": 151, "reach": 1.96, "upper_len": 0.97, "lower_len": 1.13, "attach_forward": -0.42, "attach_side": 0.26, "rest_forward": -1.48, "rest_side": 0.93, "coxa_len": 0.28, "stride_forward": 0.38}
-  ],
+  "colors": {
+    "body": [
+      21,
+      35,
+      68
+    ],
+    "legs": [
+      28,
+      65,
+      119
+    ],
+    "leg_band": [
+      100,
+      190,
+      233
+    ],
+    "leg_tip": [
+      14,
+      25,
+      53
+    ],
+    "highlight": [
+      143,
+      231,
+      255
+    ],
+    "eyes": [
+      226,
+      246,
+      255
+    ]
+  },
+  "body_plan": "segmented",
   "appearance": {
-    "abdomen_scale": [1.16, 0.90], "cephalothorax_scale": [0.84, 0.68], "abdomen_offset_x": -0.25, "cephalothorax_offset_x": 0.34,
-    "pedicel": {"enabled": true, "offset_x": -0.06, "scale": [0.21, 0.14], "color_key": "body", "outline_key": "legs"},
-    "head": {"enabled": true, "offset_x": 0.50, "scale": [0.25, 0.22], "color_key": "body", "outline_key": "legs", "face_forward": 0.10},
-    "pedipalp_scale": 0.78, "eye_scale": 0.98, "eye_count": 8, "highlight_alpha": 150, "leg_thickness": 1.18, "coxa_thickness_scale": 1.22,
-    "segmented_legs": true, "show_joint_nodes": true, "joint_node_scale": 1.04, "fluffiness": 0.16, "fluff_color": [82, 134, 190],
-    "stripe_color": [92, 184, 238], "stripe_alpha": 92, "stripe_count": 3, "leg_connections": {"enabled": true},
-    "leg_chain": {"enabled": true, "segment_count": 5, "extra_segment_asset": "leg_knuckle", "segment_lengths": [1.00, 1.05, 0.78, 0.56, 0.44], "segment_scales": [0.92, 1.02, 0.76, 0.68, 0.50], "joint_scales": [0.92, 1.12, 0.92, 0.68], "bend_profile": [0.72, 1.00, 0.68, 0.42], "joint_phase_offsets": [0.00, 0.42, -0.28, 0.58], "bend_directions": [1.00, 1.08, 0.44, -0.24], "segment_color_keys": ["legs", "leg_band", "legs", "leg_band", "leg_tip"], "joint_color_key": "leg_band", "tip_color_key": "leg_tip", "hairy": false},
-    "antennae": {"enabled": true, "style": "tarantula_hand_palps", "segments": 4, "length": 0.40, "base_forward": 0.48, "base_side": 0.23, "thickness": 0.076, "leg_thickness": 0.82, "joint_scale": 0.88, "proximal_rise": 0.17, "screen_lift_scale": 0.20, "tip_nail_length": 0.048, "tip_curl": 0.64, "hairy": false, "segment_lengths": [0.27, 0.31, 0.24, 0.14], "segment_widths": [1.18, 1.02, 0.78, 0.48], "segment_color_keys": ["legs", "leg_band", "legs", "leg_tip"], "joint_color_key": "leg_band", "claw_color_key": "leg_tip", "hand_rest_forward": 0.42, "hand_rest_lateral": 0.21, "hand_min_forward": 0.21, "hand_max_forward": 0.66, "hand_min_lateral": 0.12, "hand_max_lateral": 0.48, "rest_angles": [0.88, 0.44, -0.02, -0.40], "free_range_of_motion": [0.50, 0.74, 0.58, 0.24], "joint_angle_limits": [0.50, 0.74, 0.58, 0.24], "joint_steering": [0.25, 0.36, 0.30, 0.15], "joint_steering_limits": [0.48, 0.70, 0.56, 0.30], "symmetric_rest": true}
+    "abdomen_scale": [
+      1.16,
+      0.9
+    ],
+    "cephalothorax_scale": [
+      0.84,
+      0.68
+    ],
+    "abdomen_offset_x": -0.25,
+    "cephalothorax_offset_x": 0.34,
+    "pedicel": {
+      "enabled": true,
+      "offset_x": -0.06,
+      "scale": [
+        0.21,
+        0.14
+      ],
+      "color_key": "body",
+      "outline_key": "legs"
+    },
+    "head": {
+      "enabled": true,
+      "offset_x": 0.5,
+      "scale": [
+        0.25,
+        0.22
+      ],
+      "color_key": "body",
+      "outline_key": "legs",
+      "face_forward": 0.1
+    },
+    "pedipalp_scale": 0.78,
+    "eye_scale": 0.98,
+    "eye_count": 8,
+    "highlight_alpha": 150,
+    "leg_thickness": 1.18,
+    "coxa_thickness_scale": 1.22,
+    "segmented_legs": true,
+    "show_joint_nodes": true,
+    "joint_node_scale": 1.04,
+    "fluffiness": 0.16,
+    "fluff_color": [
+      82,
+      134,
+      190
+    ],
+    "stripe_color": [
+      92,
+      184,
+      238
+    ],
+    "stripe_alpha": 92,
+    "stripe_count": 3,
+    "leg_connections": {
+      "enabled": true
+    },
+    "leg_chain": {
+      "enabled": true,
+      "segment_count": 5,
+      "extra_segment_asset": "leg_knuckle",
+      "segment_lengths": [
+        1.0,
+        1.05,
+        0.78,
+        0.56,
+        0.44
+      ],
+      "segment_scales": [
+        0.92,
+        1.02,
+        0.76,
+        0.68,
+        0.5
+      ],
+      "joint_scales": [
+        0.92,
+        1.12,
+        0.92,
+        0.68
+      ],
+      "bend_profile": [
+        0.72,
+        1.0,
+        0.68,
+        0.42
+      ],
+      "joint_phase_offsets": [
+        0.0,
+        0.42,
+        -0.28,
+        0.58
+      ],
+      "bend_directions": [
+        1.0,
+        1.08,
+        0.44,
+        -0.24
+      ],
+      "segment_color_keys": [
+        "legs",
+        "leg_band",
+        "legs",
+        "leg_band",
+        "leg_tip"
+      ],
+      "joint_color_key": "leg_band",
+      "tip_color_key": "leg_tip",
+      "hairy": false
+    },
+    "antennae": {
+      "enabled": true,
+      "style": "tarantula_hand_palps",
+      "segments": 4,
+      "length": 0.4,
+      "base_forward": 0.48,
+      "base_side": 0.23,
+      "thickness": 0.076,
+      "leg_thickness": 0.82,
+      "joint_scale": 0.88,
+      "proximal_rise": 0.17,
+      "screen_lift_scale": 0.2,
+      "tip_nail_length": 0.048,
+      "tip_curl": 0.64,
+      "hairy": false,
+      "segment_lengths": [
+        0.27,
+        0.31,
+        0.24,
+        0.14
+      ],
+      "segment_widths": [
+        1.18,
+        1.02,
+        0.78,
+        0.48
+      ],
+      "segment_color_keys": [
+        "legs",
+        "leg_band",
+        "legs",
+        "leg_tip"
+      ],
+      "joint_color_key": "leg_band",
+      "claw_color_key": "leg_tip",
+      "hand_rest_forward": 0.42,
+      "hand_rest_lateral": 0.21,
+      "hand_min_forward": 0.21,
+      "hand_max_forward": 0.66,
+      "hand_min_lateral": 0.12,
+      "hand_max_lateral": 0.48,
+      "rest_angles": [
+        0.88,
+        0.44,
+        -0.02,
+        -0.4
+      ],
+      "free_range_of_motion": [
+        0.5,
+        0.74,
+        0.58,
+        0.24
+      ],
+      "joint_angle_limits": [
+        0.5,
+        0.74,
+        0.58,
+        0.24
+      ],
+      "joint_steering": [
+        0.25,
+        0.36,
+        0.3,
+        0.15
+      ],
+      "joint_steering_limits": [
+        0.48,
+        0.7,
+        0.56,
+        0.3
+      ],
+      "symmetric_rest": true
+    }
   }
 }

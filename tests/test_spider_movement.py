@@ -21,6 +21,7 @@ from movement import (
     run_walk,
 )
 from support import ROOT
+from desktop_bug.content.body_plans import resolve_body_plan
 
 SEED = 19
 SECONDS = 8.0
@@ -32,7 +33,7 @@ DT = 1.0 / 60.0
 def gait():
     """The model, personality and solved gait configuration under test."""
     random.seed(SEED)
-    model = json.loads((ROOT / "models/plush_snow_hybrid_2/model.json").read_text())
+    model = resolve_body_plan(json.loads((ROOT / "models/plush_snow_hybrid_2/model.json").read_text()))
     personality = json.loads((ROOT / "personalities/cuddly.json").read_text())
     config = build_creature(model, personality)._spider_gait_config()
     return model, personality, config

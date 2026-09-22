@@ -19,6 +19,7 @@ import random
 from desktop_bug.state import teams
 from desktop_bug.manager import CreatureManager
 from desktop_bug.state.progression import normalize_team_stances, team_stance
+from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
 import pytest
 
@@ -147,7 +148,7 @@ def test_team_color_reaches_the_screen() -> None:
     from desktop_bug.creature import Creature
 
     qt_app()
-    model = json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8"))
+    model = resolve_body_plan(json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8")))
     personality = json.loads((ROOT / "personalities" / "mellow.json").read_text(encoding="utf-8"))
 
     marker = (255, 0, 255)  # nothing in the spider art is this colour

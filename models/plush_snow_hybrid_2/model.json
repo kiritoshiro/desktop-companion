@@ -25,6 +25,7 @@
       74
     ]
   },
+  "body_plan": "tarantula",
   "legs": [
     {
       "name": "front_left",
@@ -32,12 +33,12 @@
       "gait_group": 0,
       "attach_angle": -35,
       "rest_angle": -50,
-      "reach": 1.90,
+      "reach": 1.9,
       "upper_len": 0.96,
       "lower_len": 1.17,
       "attach_forward": 0.36,
       "attach_side": 0.55,
-      "rest_forward": 1.50,
+      "rest_forward": 1.5,
       "rest_side": 1.45,
       "rest_jitter": 0.014,
       "coxa_len": 0.26,
@@ -49,12 +50,12 @@
       "gait_group": 1,
       "attach_angle": 35,
       "rest_angle": 50,
-      "reach": 1.90,
+      "reach": 1.9,
       "upper_len": 0.96,
       "lower_len": 1.17,
       "attach_forward": 0.36,
       "attach_side": 0.55,
-      "rest_forward": 1.50,
+      "rest_forward": 1.5,
       "rest_side": 1.45,
       "rest_jitter": 0.014,
       "coxa_len": 0.26,
@@ -72,7 +73,7 @@
       "attach_forward": 0.12,
       "attach_side": 0.58,
       "rest_forward": 0.58,
-      "rest_side": 1.50,
+      "rest_side": 1.5,
       "rest_jitter": 0.016,
       "coxa_len": 0.25,
       "stride_forward": 0.406
@@ -89,7 +90,7 @@
       "attach_forward": 0.12,
       "attach_side": 0.58,
       "rest_forward": 0.58,
-      "rest_side": 1.50,
+      "rest_side": 1.5,
       "rest_jitter": 0.014,
       "coxa_len": 0.25,
       "stride_forward": 0.406
@@ -134,13 +135,13 @@
       "gait_group": 1,
       "attach_angle": -142,
       "rest_angle": -150,
-      "reach": 1.90,
+      "reach": 1.9,
       "upper_len": 0.96,
       "lower_len": 1.17,
       "attach_forward": -0.36,
       "attach_side": 0.55,
       "rest_forward": -1.46,
-      "rest_side": 1.30,
+      "rest_side": 1.3,
       "rest_jitter": 0.016,
       "coxa_len": 0.26,
       "stride_forward": 0.349
@@ -151,13 +152,13 @@
       "gait_group": 0,
       "attach_angle": 142,
       "rest_angle": 150,
-      "reach": 1.90,
+      "reach": 1.9,
       "upper_len": 0.96,
       "lower_len": 1.17,
       "attach_forward": -0.36,
       "attach_side": 0.55,
       "rest_forward": -1.46,
-      "rest_side": 1.30,
+      "rest_side": 1.3,
       "rest_jitter": 0.014,
       "coxa_len": 0.26,
       "stride_forward": 0.349
@@ -204,36 +205,36 @@
       "joint_scales": [
         0.95,
         0.72,
-        0.60
+        0.6
       ]
     },
     "spider_gait": {
       "enabled": true,
       "max_airborne": 3,
-      "swing_arc_outward": 0.10,
+      "swing_arc_outward": 0.1,
       "swing_arc_forward": 0.26,
-      "swing_height": 0.60,
+      "swing_height": 0.6,
       "front_stride_bias": 0.18,
       "swing_fraction": 0.29,
-      "cycle_hz": 2.10,
+      "cycle_hz": 2.1,
       "speed_cycle_gain": 1.45,
       "step_lookahead": 0.72,
-      "stance_deadband": 0.40,
+      "stance_deadband": 0.4,
       "front_phase_offset": 0.035,
       "refractory_fraction": 0.16,
       "support_stroke_limit": 0.62,
       "support_turn_limit": 0.95,
-      "support_blend_time": 0.10,
-      "max_body_turn_rate": 5.50,
+      "support_blend_time": 0.1,
+      "max_body_turn_rate": 5.5,
       "turn_gain": 1.35,
       "turn_radial_gain": 0.34,
       "turn_radial_limit": 0.26,
       "turn_step_pressure": 0.78,
       "turn_cycle_gain": 0.32,
-      "turn_error_drive": 1.60,
+      "turn_error_drive": 1.6,
       "turn_speed_floor": 0.32,
       "heading_smoothing": 6.8,
-      "heading_deadband": 0.050
+      "heading_deadband": 0.05
     }
   }
 }

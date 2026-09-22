@@ -8,6 +8,7 @@ import json
 import pytest
 from desktop_bug.creature import Creature
 from desktop_bug.content.preset_io import validate_preset
+from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
 
 PALETTE = {"body": [220, 40, 80], "leg_band": [40, 200, 160]}
@@ -49,7 +50,7 @@ def test_a_malformed_palette_is_rejected(colors):
 
 
 def test_an_override_reaches_the_creature_without_being_shared():
-    model = json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8"))
+    model = resolve_body_plan(json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8")))
     original = copy.deepcopy(model["colors"])
     first = Creature(model, PERSONALITY, 800, 600, color_overrides=PALETTE)
     second = Creature(model, PERSONALITY, 800, 600, color_overrides=PALETTE)

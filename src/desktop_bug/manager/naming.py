@@ -40,6 +40,32 @@ class NamingMixin:
         self.always_show_names = bool(enabled)
         return f"Spider names {'always shown' if self.always_show_names else 'shown on hover only'}."
 
+    # ------------------------------------------------------------------
+    # Scene-wide label switches. A spider could already be given its level or
+    # its health bar one at a time through the inspector, which is tedious
+    # for a colony; these turn it on for everybody at once. They are kept on
+    # the manager and pushed onto each creature rather than written into a
+    # spider's saved progression, so switching them off does not wipe a pin
+    # somebody set deliberately on one spider.
+    # ------------------------------------------------------------------
+
+    def _apply_label_overrides(self) -> None:
+        for creature in self.creatures:
+            creature.force_show_level = self.always_show_levels
+            creature.force_show_health = self.always_show_health
+
+    def set_always_show_levels(self, enabled: bool) -> str:
+        self.always_show_levels = bool(enabled)
+        self._apply_label_overrides()
+        state = "on every spider" if self.always_show_levels else "only where it was pinned"
+        return f"Level now shown {state}."
+
+    def set_always_show_health(self, enabled: bool) -> str:
+        self.always_show_health = bool(enabled)
+        self._apply_label_overrides()
+        state = "on every spider" if self.always_show_health else "only where it was pinned"
+        return f"Health bar now shown {state}."
+
     def name_creature(self, creature: Creature, name: str) -> str:
         if creature is None:
             return "No spider there to name."

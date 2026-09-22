@@ -23,6 +23,7 @@ from desktop_bug.creature import arbiter
 from desktop_bug.creature import Creature, JOB_STATES
 from desktop_bug.creature.constants import JOB_MODE_STATES
 from desktop_bug.manager import CreatureManager
+from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
 
 # Behaviour is a package of mixins since DC-43.
@@ -48,14 +49,14 @@ def _qt(qapp):
 
 
 def build_guard(job_id: str = "guard") -> Creature:
-    model = json.loads((ROOT / "models" / "plush_snow_hybrid_2" / "model.json").read_text(encoding="utf-8"))
+    model = resolve_body_plan(json.loads((ROOT / "models" / "plush_snow_hybrid_2" / "model.json").read_text(encoding="utf-8")))
     personality = json.loads((ROOT / "personalities" / "curious.json").read_text(encoding="utf-8"))
     return Creature(model, personality, *SCREEN, index=0, job_id=job_id)
 
 
 def build_playful(seed: int = 1) -> Creature:
     random.seed(seed)
-    model = json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8"))
+    model = resolve_body_plan(json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8")))
     traits = json.loads((ROOT / "personalities" / "playful.json").read_text(encoding="utf-8"))
     creature = Creature(model, traits, *SCREEN, index=0, progression_id=f"arbiter:{seed}")
     creature.x, creature.y = 800.0, 450.0

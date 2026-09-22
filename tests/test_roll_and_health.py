@@ -20,6 +20,7 @@ import random
 
 from desktop_bug.creature import Creature
 from desktop_bug.state.progression import ProgressionState
+from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
 import pytest
 
@@ -57,7 +58,7 @@ def qt_app():
 
 def build(seed: int, personality: str = "playful") -> Creature:
     random.seed(seed)
-    model = json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8"))
+    model = resolve_body_plan(json.loads((ROOT / "models" / "tarantula" / "model.json").read_text(encoding="utf-8")))
     traits = json.loads((ROOT / "personalities" / f"{personality}.json").read_text(encoding="utf-8"))
     creature = Creature(model, traits, *SCREEN, index=0, progression_id=f"roll:{seed}")
     creature.x, creature.y = 800.0, 450.0

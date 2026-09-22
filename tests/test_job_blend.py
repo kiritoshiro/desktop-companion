@@ -17,6 +17,7 @@ from pathlib import Path
 
 from desktop_bug.creature import JOB_PREEMPTING_STATES, JOB_STATES, Creature
 from desktop_bug.manager import CreatureManager
+from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
 import pytest
 
@@ -34,7 +35,7 @@ def _qt(qapp):
 
 
 def build_guard():
-    model = json.loads((ROOT / "models" / "plush_snow_hybrid_2" / "model.json").read_text(encoding="utf-8"))
+    model = resolve_body_plan(json.loads((ROOT / "models" / "plush_snow_hybrid_2" / "model.json").read_text(encoding="utf-8")))
     personality = json.loads((ROOT / "personalities" / "curious.json").read_text(encoding="utf-8"))
     return Creature(model, personality, 1200, 800, index=0, job_id="guard")
 
