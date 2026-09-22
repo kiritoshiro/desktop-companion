@@ -9,7 +9,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from PyQt5.QtCore import QElapsedTimer, QRect, QTimer, Qt
+from PyQt5.QtCore import QElapsedTimer, QPoint, QRect, QTimer, Qt
 from PyQt5.QtGui import QColor, QCursor, QGuiApplication, QIcon, QPainter, QPixmap, QRegion
 from PyQt5.QtWidgets import (
     QActionGroup,
@@ -41,6 +41,7 @@ from ..manager import CreatureManager
 from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos
 from ..world.desktop_environment import snapshot_desktop_surfaces
+from ..world.playfield import ScreenRect
 from ..support.frame_policy import FramePolicy
 from ..support.profiling import hud_requested, profiler_from_env
 from ..content.skills import SKILLS
@@ -131,6 +132,25 @@ def virtual_screen_geometry() -> QRect:
     for screen in screens[1:]:
         rect = rect.united(screen.geometry())
     return rect
+
+
+def screen_rects_local(origin: QPoint) -> list:
+    """Every monitor as an overlay-local rectangle (DC-65).
+
+    The overlay spans the *bounding box* of all monitors, and on a mixed
+    layout that box contains regions no screen shows -- a 2560x1440 beside a
+    1920x1080 leaves 1920x360 of nothing in the corner. A spider clamped only
+    to the window can sit in there: updated, painted, and invisible.
+
+    Same logical-pixel space as `virtual_screen_geometry`, so no DPI
+    conversion is involved (see that function's note).
+    """
+    rects = []
+    for screen in QGuiApplication.screens():
+        g = screen.geometry()
+        rects.append(ScreenRect(float(g.x() - origin.x()), float(g.y() - origin.y()),
+                                float(g.width()), float(g.height())))
+    return rects
 
 
 class CreatureInspectorDialog(QDialog):
@@ -454,6 +474,7 @@ class OverlayWindow(QWidget):
         self._last_camouflage_sample_ms = 0
         self.setGeometry(self.geometry_rect)
         self.manager = CreatureManager(preset_path, self.width(), self.height(), seed=seed)
+        self.manager.set_screen_rects(screen_rects_local(self.geometry_rect.topLeft()))
         for warning in self.manager.warnings:
             log.warning("%s", warning)
 
@@ -746,6 +767,7 @@ class OverlayWindow(QWidget):
                 self.geometry_rect = rect
                 self.setGeometry(rect)
                 self.manager.resize(self.width(), self.height())
+                self.manager.set_screen_rects(screen_rects_local(rect.topLeft()))
                 apply_click_through(self)
                 self._request_full_repaint()
         if current_ms - self._last_desktop_surface_check_ms >= DESKTOP_SURFACE_CHECK_MS:
