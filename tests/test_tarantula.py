@@ -76,10 +76,34 @@ def test_the_model_is_shaped_as_the_gait_expects(tarantula):
     assert min(root_sides) >= float(ceph_scale[1]) * 0.58
     assert max(root_sides) <= float(ceph_scale[1]) * 0.75
     assert all(ceph_forward_min <= value <= ceph_forward_max for value in root_forwards)
-    assert default_polar_angles["front_left"] < 35.0
-    assert 45.0 < default_polar_angles["mid_front_left"] < 60.0
-    assert 120.0 < default_polar_angles["mid_rear_left"] < 135.0
-    assert default_polar_angles["rear_left"] > 145.0
+    # These four bands used to be 35 / 45-60 / 120-135 / 145, drawn around the
+    # shipped numbers -- and the shipped numbers were the fault. 29/52/128/151
+    # puts the eight legs in four pairs 23 degrees apart with a 76 degree hole
+    # where a leg should be pointing straight out sideways, which is what the
+    # owner was seeing: *"the body and legs sometimes on spiders become too
+    # close or just weird loking."*
+    assert default_polar_angles["front_left"] < 40.0
+    assert 55.0 < default_polar_angles["mid_front_left"] < 80.0
+    assert 100.0 < default_polar_angles["mid_rear_left"] < 125.0
+    assert default_polar_angles["rear_left"] > 140.0
+    # The property those bands were standing in for, and never checked: the
+    # legs are spread, not clumped. A band around each leg separately cannot
+    # see a clump, which is how the fault sat here through four packages that
+    # each ran this test.
+    #
+    #   shipped   gaps 23 76 23 58 (mirrored)   widest/narrowest 3.33
+    #   here      gaps 35 44 35 66              widest/narrowest 1.89
+    ring = sorted(
+        (default_polar_angles[leg["name"]]
+         * (-1.0 if str(leg.get("side")) == "left" else 1.0)) % 360.0
+        for leg in model["legs"]
+    )
+    gaps = [b - a for a, b in zip(ring, ring[1:])] + [ring[0] + 360.0 - ring[-1]]
+    assert min(gaps) > 30.0, f"two legs only {min(gaps):.1f} deg apart"
+    assert max(gaps) / min(gaps) < 2.2, (
+        f"legs are clumped: widest gap {max(gaps):.1f} deg against narrowest "
+        f"{min(gaps):.1f}"
+    )
     assert leg_by_name["front_left"]["rest_forward"] > leg_by_name["mid_front_left"]["rest_forward"] > 0.0
     assert leg_by_name["mid_rear_left"]["rest_forward"] > leg_by_name["rear_left"]["rest_forward"]
     pedicel = model["appearance"]["pedicel"]
