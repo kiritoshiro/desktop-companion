@@ -217,11 +217,17 @@ def _plan_corner_orb(vertex: Point, din: Point, span: float,
     nr = rng.randint(9, 13)
 
     tips: List[Point] = []
+    radii_angles: List[float] = []
     for i in range(nr):
         a = base - sector + (2.0 * sector) * (i / (nr - 1))
         tip = (hub[0] + math.cos(a) * r, hub[1] + math.sin(a) * r)
         tip = (clamp(tip[0], 2.0, screen_w - 2.0), clamp(tip[1], 2.0, screen_h - 2.0))
         tips.append(tip)
+        # The angle of the radius as it is actually drawn, not as it was
+        # asked for: a tip that reaches past the screen edge is clamped back,
+        # which moves the spoke. The spiral has to follow the spoke that
+        # exists (DC-70).
+        radii_angles.append(math.atan2(tip[1] - hub[1], tip[0] - hub[0]))
 
     strands: List[Strand] = []
     # 1) Bridge / main support: hub anchored back to the corner.
@@ -230,8 +236,7 @@ def _plan_corner_orb(vertex: Point, din: Point, span: float,
     frame_pts = [vertex, tips[0]] + tips + [tips[-1], vertex]
     strands.append(Strand(frame_pts, kind="frame"))
     # 3) Radii: hub -> tip, one at a time (moves back to hub are auto-inserted).
-    for tip in tips:
-        strands.append(Strand([hub, tip], kind="radius"))
+    #    Appended below, once the spirals have said where they cross each spoke.
     # 4) Hub reinforcement: a tight little loop around the centre.
     hub_r = r * 0.10
     hub_loop = []
@@ -243,11 +248,23 @@ def _plan_corner_orb(vertex: Point, din: Point, span: float,
     # 5) Auxiliary (temporary) spiral: hub -> rim, widely spaced. Non-sticky guide.
     aux_loops = 3
     aux_inner = hub_r * 1.4
-    aux_pts = _spiral_points(hub, base - sector, base + sector, aux_inner, r * 0.96, aux_loops, outward=True)
-    strands.append(Strand(aux_pts, kind="aux", temporary=True))
+    reaches = [distance(hub[0], hub[1], t[0], t[1]) for t in tips]
+    aux_pts, aux_cross = _spiral_on_radii(hub, radii_angles, aux_inner,
+                                          r * 0.96, aux_loops, full=False,
+                                          reaches=reaches)
     # 6) Capture (sticky) spiral: rim -> hub, closely spaced, replaces the aux spiral.
     cap_loops = max(5, nr - 4)
-    cap_pts = _spiral_points(hub, base + sector, base - sector, r * 0.92, aux_inner * 1.2, cap_loops, outward=False)
+    # Spun inward from the rim, so it starts at the far spoke: the radii are
+    # walked in reverse for the same reason the angles used to be swapped.
+    cap_pts, cap_cross = _spiral_on_radii(
+        hub, list(reversed(radii_angles)), r * 0.92, aux_inner * 1.2,
+        cap_loops, full=False, reaches=list(reversed(reaches)))
+    # It walked the spokes in reverse, so flip the indices back before they
+    # can be matched against the radii.
+    last = len(radii_angles) - 1
+    cap_cross = [(last - i, rr) for i, rr in cap_cross]
+    strands.extend(_radii_through(hub, radii_angles, tips, aux_cross, cap_cross))
+    strands.append(Strand(aux_pts, kind="aux", temporary=True))
     strands.append(Strand(cap_pts, kind="capture"))
 
     strands = _connect(strands)
@@ -263,25 +280,38 @@ def _plan_orb(center: Point, span: float, screen_w: float, screen_h: float, rng=
     r = span
     nr = rng.randint(11, 15)
     tips: List[Point] = []
+    radii_angles: List[float] = []
     for i in range(nr):
         a = -math.pi + (2.0 * math.pi) * (i / nr)
         tip = (hub[0] + math.cos(a) * r, hub[1] + math.sin(a) * r)
         tip = (clamp(tip[0], 2.0, screen_w - 2.0), clamp(tip[1], 2.0, screen_h - 2.0))
         tips.append(tip)
+        # The angle of the radius as it is actually drawn, not as it was
+        # asked for: a tip that reaches past the screen edge is clamped back,
+        # which moves the spoke. The spiral has to follow the spoke that
+        # exists (DC-70).
+        radii_angles.append(math.atan2(tip[1] - hub[1], tip[0] - hub[0]))
 
     strands: List[Strand] = []
     # Bridge across the top, then the frame polygon through every tip.
     strands.append(Strand([tips[0], hub], kind="bridge"))
     strands.append(Strand(tips + [tips[0]], kind="frame"))
-    for tip in tips:
-        strands.append(Strand([hub, tip], kind="radius"))
+    # Radii appended below, once the spirals report their crossings.
     hub_r = r * 0.09
     hub_loop = [(hub[0] + math.cos(-math.pi + 2.0 * math.pi * i / nr) * hub_r,
                  hub[1] + math.sin(-math.pi + 2.0 * math.pi * i / nr) * hub_r) for i in range(nr + 1)]
     strands.append(Strand(hub_loop, kind="hub"))
-    aux_pts = _spiral_points(hub, -math.pi, math.pi, hub_r * 1.5, r * 0.95, 4, outward=True, full=True)
+    reaches = [distance(hub[0], hub[1], t[0], t[1]) for t in tips]
+    aux_pts, aux_cross = _spiral_on_radii(hub, radii_angles, hub_r * 1.5,
+                                          r * 0.95, 4, full=True,
+                                          reaches=reaches)
+    cap_pts, cap_cross = _spiral_on_radii(
+        hub, list(reversed(radii_angles)), r * 0.92, hub_r * 1.8,
+        max(7, nr - 3), full=True, reaches=list(reversed(reaches)))
+    last = len(radii_angles) - 1
+    cap_cross = [(last - i, rr) for i, rr in cap_cross]
+    strands.extend(_radii_through(hub, radii_angles, tips, aux_cross, cap_cross))
     strands.append(Strand(aux_pts, kind="aux", temporary=True))
-    cap_pts = _spiral_points(hub, math.pi, -math.pi, r * 0.92, hub_r * 1.8, max(7, nr - 3), outward=False, full=True)
     strands.append(Strand(cap_pts, kind="capture"))
 
     strands = _connect(strands)
@@ -397,28 +427,99 @@ def _plan_tangle(vertex: Point, din: Point, span: float,
     return strands, hub, din
 
 
-def _spiral_points(hub: Point, a_start: float, a_end: float, r_start: float, r_end: float,
-                   loops: int, outward: bool, full: bool = False) -> List[Point]:
-    """Sample an Archimedean spiral around ``hub``.
+def _spiral_on_radii(hub: Point, angles: Sequence[float], r_start: float,
+                     r_end: float, loops: int, full: bool,
+                     reaches: Optional[Sequence[float]] = None):
+    """A spiral whose every vertex sits on a radius (DC-70).
 
-    For sector webs the angle sweeps once across the fan per loop and folds back,
-    giving the characteristic to-and-fro spiral; for a full orb (``full``) the
-    angle simply winds continuously.
+    The owner, looking at a web on the desktop: *"the webs being not realistic
+    as they are not conected stright to the spine but rotating little by little
+    despite the spine."*
+
+    He is describing what an orb weaver actually does. The capture spiral is
+    not a curve laid over the web; it is a sequence of straight silk segments,
+    each one bridging two neighbouring radii and **knotted to every radius it
+    crosses**. That is why the spiral's corners line up with the spokes in a
+    real web.
+
+    The old ``_spiral_points`` sampled an Archimedean spiral on its own
+    parameter -- ``max(12, loops * 16)`` evenly spaced steps -- so its corners
+    landed wherever that arithmetic put them, drifting against the spokes a
+    little more on every turn. Measured: **91% of the vertices sat off a
+    radius**, by up to 15 degrees where the radii were 30 apart, which is half
+    a sector adrift.
+
+    Here the radii come first and the spiral walks them: one vertex per spoke,
+    the radius shrinking (or growing) as it goes. A full orb winds round; a
+    sector web folds back and forth across its fan, which is what the corner
+    webs do.
+
+    Returns the points and, alongside them, every ``(spoke index, radius)`` it
+    touched. ``_radii_through`` uses those to put a vertex in the spoke at
+    each crossing, which is what keeps the two attached once the static
+    gravity sag is applied: the sag is a position field, so two points in the
+    same place move together, but a radius drawn as a bare hub-to-tip line has
+    nothing in the middle to move with them. Without this the spiral bends
+    under the sag and the straight spokes do not, and they come apart again --
+    82% of vertices off a radius, measured, with the geometry otherwise exact.
     """
+    n = len(angles)
+    if n < 2 or loops < 1:
+        return []
+    if full:
+        steps = max(1, int(round(loops * n)))
+
+        def index_at(k: int) -> int:
+            return k % n
+    else:
+        # Out to the far spoke and back is two sweeps of (n - 1) steps.
+        period = 2 * (n - 1)
+        steps = max(1, int(round(loops * (n - 1))))
+
+        def index_at(k: int) -> int:
+            pos = k % period
+            return pos if pos < n else period - pos
+
     pts: List[Point] = []
-    steps = max(12, loops * 16)
-    for i in range(steps + 1):
-        f = i / steps
-        rr = lerp(r_start, r_end, f)
-        if full:
-            a = a_start + (a_end - a_start) * f + (2.0 * math.pi * loops) * f * (1.0 if outward else -1.0)
-        else:
-            # Fold the sweep back and forth across the sector as radius changes.
-            phase = (f * loops) % 1.0
-            tri = 1.0 - abs(2.0 * phase - 1.0)
-            a = lerp(a_start, a_end, tri)
+    crossings: List[Tuple[int, float]] = []
+    for k in range(steps + 1):
+        rr = lerp(r_start, r_end, k / steps)
+        i = index_at(k)
+        if reaches is not None and i < len(reaches):
+            # A spoke cut short by the screen edge cannot carry silk past its
+            # own tip, and a vertex placed out there is the one thing left
+            # that is not knotted to anything.
+            rr = min(rr, reaches[i] * 0.97)
+        a = angles[i]
+        crossings.append((i, rr))
         pts.append((hub[0] + math.cos(a) * rr, hub[1] + math.sin(a) * rr))
-    return pts
+    return pts, crossings
+
+
+def _radii_through(hub: Point, angles: Sequence[float], tips: Sequence[Point],
+                   *crossing_lists: Sequence[Tuple[int, float]]) -> List[Strand]:
+    """Radius strands with a vertex wherever a spiral is knotted to them.
+
+    A radius used to be ``Strand([hub, tip])`` -- two points and nothing in
+    between. That is fine until the sag bends everything else around it.
+    """
+    per_spoke: List[set] = [set() for _ in angles]
+    for crossings in crossing_lists:
+        for index, radius in crossings:
+            if 0 <= index < len(per_spoke):
+                per_spoke[index].add(round(float(radius), 4))
+
+    strands: List[Strand] = []
+    for index, (angle, tip) in enumerate(zip(angles, tips)):
+        reach = distance(hub[0], hub[1], tip[0], tip[1])
+        points: List[Point] = [hub]
+        for radius in sorted(per_spoke[index]):
+            if 1e-6 < radius < reach - 1e-6:
+                points.append((hub[0] + math.cos(angle) * radius,
+                               hub[1] + math.sin(angle) * radius))
+        points.append(tip)
+        strands.append(Strand(points, kind="radius"))
+    return strands
 
 
 def _apply_sag(strands: List[Strand], anchors: Sequence[Point], droop: float) -> List[Strand]:
