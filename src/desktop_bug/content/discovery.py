@@ -352,6 +352,11 @@ def validate_model(data: dict, path: Path) -> Tuple[bool, str]:
                 values = chain.get(key)
                 if values is not None and (not isinstance(values, list) or len(values) != expected_length):
                     return False, f"{path}: appearance.leg_chain.{key} must contain {expected_length} values"
+            # A non-number here would make the renderer's parse raise and drop
+            # the whole leg chain for this model, silently.
+            if "leg_curve" in chain and (isinstance(chain["leg_curve"], bool)
+                                         or not isinstance(chain["leg_curve"], (int, float))):
+                return False, f"{path}: appearance.leg_chain.leg_curve must be a number of degrees"
     return True, ""
 
 

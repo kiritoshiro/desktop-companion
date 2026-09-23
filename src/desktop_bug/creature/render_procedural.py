@@ -40,6 +40,12 @@ from ..state.progression import (
 )
 from .kinematics import LegState
 
+# DC-76 purity switch. Off, every model lays its legs out exactly as it did
+# before curved legs existed -- tests/golden/creature_render_straight_legs.png
+# holds that picture and the render must match it to 0/255.
+CURVED_LEGS = True
+
+
 def _mix(base, other, amount: float):
     """Warm one colour toward another, keeping the first one's alpha.
 
@@ -189,6 +195,10 @@ class RenderProceduralMixin:
             proximal_lift = clamp(float(raw.get("proximal_lift", 1.0)), 1.0, 2.20)
             hairy = bool(raw.get("hairy", False))
             hair_scale = clamp(float(raw.get("hair_scale", 0.18)), 0.0, 0.50)
+            # DC-76: degrees the femur is swung toward the flank, off the
+            # socket-to-foot line, so the distal half curves back in. 0 keeps
+            # the straight-spine layout every other model was tuned against.
+            leg_curve = clamp(float(raw.get("leg_curve", 0.0)), 0.0, 60.0) if CURVED_LEGS else 0.0
             default_scales = [1.0, 0.84, 0.64, 0.52, 0.42][:segment_count]
             # Width scales are deliberately separate from anatomical lengths.
             # Older configs only had segment_scales, which made the renderer
@@ -233,6 +243,7 @@ class RenderProceduralMixin:
                 "proximal_lift": proximal_lift,
                 "hairy": hairy,
                 "hair_scale": hair_scale,
+                "leg_curve": leg_curve,
                 "segment_scales": segment_scales,
                 "width_scales": width_scales,
                 "segment_color_keys": segment_color_keys,
@@ -337,7 +348,14 @@ class RenderProceduralMixin:
         a_f, a_s = self._world_to_body_local(ax, ay)
         f_f, f_s = self._world_to_body_local(fx, fy)
         direct = max(1e-4, math.hypot(f_f - a_f, f_s - a_s))
-        seg_scales = chain_config["segment_scales"]
+        leg_curve = chain_config.get("leg_curve", 0.0)
+        # The joints are seeded at these fractions of the socket-to-foot line.
+        # They have always come from segment_scales, which is a presentation
+        # list -- the tarantula's gives the patella the largest share -- so
+        # DC-75's anatomical segment_lengths only ever acted as a length cap
+        # and the knee stayed drawn 53% of the way out. A model that opts into
+        # the curved leg is also seeded from its anatomy.
+        seg_scales = chain_config["segment_lengths" if leg_curve > 0.0 else "segment_scales"]
         total = max(1e-4, sum(seg_scales))
         fractions = []
         running = 0.0
@@ -398,6 +416,35 @@ class RenderProceduralMixin:
             held_response = 0.0
             carry_wave_amount = 0.0
             carry_wave_phase = 0.0
+        # DC-76: a real leg is not a spoke. Seen from above the femur leaves
+        # the body swung toward the flank and the distal half curves back in
+        # -- forward on legs I-II, backward on III-IV -- because the knee is
+        # raised and the tarsus is planted ([[Tarantula Reference -
+        # Brachypelma hamorii]]). The spine the joints are seeded on becomes a
+        # quadratic Bezier from socket to foot whose control point is the
+        # socket-to-foot line rotated by `swing`. The femur therefore departs
+        # `swing` off that line and the tarsus arrives on the other side of
+        # it. Its offset from the straight line is 2t(1-t)(C - M), so a joint
+        # costs four multiplies more than it did.
+        curve_f = curve_s = 0.0
+        if leg_curve > 0.0:
+            rest_f = float(leg.definition.get("rest_forward", front))
+            rest_side = abs(float(leg.definition.get("rest_side", 1.0)))
+            rest_bearing = math.degrees(math.atan2(rest_side, rest_f))
+            # Legs I and IV curve the most, II and III less but still
+            # visibly; the sign swings a front leg's femur back toward the
+            # flank and a rear leg's forward toward it.
+            lateral = abs(90.0 - rest_bearing) / 90.0
+            swing = math.radians(leg_curve * (0.15 + 0.85 * lateral))
+            if rest_bearing > 90.0:
+                swing = -swing
+            d_f = f_f - a_f
+            d_out = (f_s - a_s) * side
+            cos_w, sin_w = math.cos(swing), math.sin(swing)
+            # 0.5 * (R(swing) - I) applied to the foot vector, in the frame
+            # where + is outward from the body on this leg's side.
+            curve_f = 0.5 * (d_f * cos_w - d_out * sin_w - d_f)
+            curve_s = 0.5 * (d_f * sin_w + d_out * cos_w - d_out) * side
         joint_bends = leg.joint_bends
         if len(joint_bends) != len(profiles):
             joint_bends = [0.90 + 0.06 * index for index in range(len(profiles))]
@@ -463,8 +510,9 @@ class RenderProceduralMixin:
                         self.size * 0.075 * catch_strength
                         * catch_bend_profile[index]
                     )
-                local_f = a_f + (f_f - a_f) * fraction + forward_bias * profiles[index]
-                local_s = a_s + (f_s - a_s) * fraction + side * bend
+                arch = 2.0 * fraction * (1.0 - fraction) * bend_scale
+                local_f = a_f + (f_f - a_f) * fraction + forward_bias * profiles[index] + curve_f * arch
+                local_s = a_s + (f_s - a_s) * fraction + side * bend + curve_s * arch
                 point_x, point_y = self._body_local_to_world(local_f, local_s)
                 if self.dragging:
                     # Screen-down gravity acts on every suspended joint.  The
