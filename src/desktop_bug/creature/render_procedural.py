@@ -18,6 +18,16 @@ from ..support.math_utils import (
     clamp,
 )
 from .mood import antenna_drive_from_mood, build_antenna_points
+from . import render_batch
+from .render_batch import (
+    LAYER_CORE,
+    LAYER_FOOT,
+    LAYER_FUZZ,
+    LAYER_HAIR,
+    LAYER_JOINT,
+    LAYER_SEGMENT,
+    LegBatch,
+)
 from .render_detail import (
     MERGED_HAIR_TINT,
     hair_detail,
@@ -647,6 +657,9 @@ class RenderProceduralMixin:
         # cannot flicker while it walks.
         resting_leg_width = max(1.4, self.size * 0.066 * leg_width_scale)
         detail = hair_detail(resting_leg_width, chain_config)
+        # Hoisted out of the loop as well as gated: the over-stroke colour does
+        # not vary between segments or between legs, but the shipped code
+        # rebuilt it for every one of the forty segments a tarantula has.
         hair_color = None
         if detail.separate_hair or detail.merge_hair:
             hair_color = self._qcolor_triplet(
@@ -654,6 +667,14 @@ class RenderProceduralMixin:
                 int(72 + chain_config["hair_scale"] * 90),
             )
 
+        # Every leg stroke and joint node goes into one batch and is issued as
+        # a handful of paths once the loop is done. Profiling put drawEllipse
+        # at 10% of render and drawLine at 9%, with setPen almost free, so the
+        # win is in making fewer draws -- not fewer pen changes.
+        batch = LegBatch(
+            width_step=render_batch.LEG_WIDTH_STEP,
+            direct=None if render_batch.BATCH_LEGS else painter,
+        )
         # Legs first, underneath body. Segment thickness tapers from coxa to tarsus.
         for leg in self.legs:
             ax, ay, foot_x, foot_y = self._leg_draw_points(leg)
@@ -710,17 +731,16 @@ class RenderProceduralMixin:
             # fuzzy spline filled the gaps between joints and made long legs
             # look like bat wings, so reserve it for legacy unsegmented legs.
             if fluffiness > 0.0 and chain_points is None:
-                painter.setPen(QPen(self._qcolor("highlight", int(40 + fluffiness * 50)), base_width * (1.4 + fluffiness * 0.6), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                if chain_points is not None:
-                    fuzzy_path = QPainterPath(QPointF(*chain_points[0]))
-                    for point_x, point_y in chain_points[1:]:
-                        fuzzy_path.lineTo(QPointF(point_x, point_y))
-                else:
-                    fuzzy_path = QPainterPath(QPointF(ax, ay))
-                    fuzzy_path.cubicTo(QPointF(coxa_x, coxa_y), QPointF(coxa_x, coxa_y), QPointF(kx, ky))
-                    fuzzy_path.lineTo(QPointF(tarsus_x, tarsus_y))
-                    fuzzy_path.lineTo(QPointF(foot_x, foot_y))
-                painter.drawPath(fuzzy_path)
+                # The chain_points branch that used to sit here was dead: the
+                # whole block only runs when chain_points is None.
+                fuzzy_path = QPainterPath(QPointF(ax, ay))
+                fuzzy_path.cubicTo(QPointF(coxa_x, coxa_y), QPointF(coxa_x, coxa_y), QPointF(kx, ky))
+                fuzzy_path.lineTo(QPointF(tarsus_x, tarsus_y))
+                fuzzy_path.lineTo(QPointF(foot_x, foot_y))
+                batch.add_path(LAYER_FUZZ,
+                               self._qcolor("highlight", int(40 + fluffiness * 50)),
+                               base_width * (1.4 + fluffiness * 0.6),
+                               fuzzy_path)
 
             # Leg motion is communicated by the articulated pose. Do not make
             # the swinging leg glow; highlight remains reserved for a genuine
@@ -746,8 +766,9 @@ class RenderProceduralMixin:
                     start_x, start_y = chain_points[index]
                     end_x, end_y = chain_points[index + 1]
                     if detail.separate_hair:
-                        painter.setPen(QPen(hair_color, hair_pen_width(width, chain_config["hair_scale"]), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                        painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
+                        batch.line(LAYER_HAIR, hair_color,
+                                   hair_pen_width(width, chain_config["hair_scale"]),
+                                   start_x, start_y, end_x, end_y)
                     if startle_highlight:
                         segment_color = self._qcolor("highlight", 230)
                     else:
@@ -762,34 +783,31 @@ class RenderProceduralMixin:
                         # colour so it keeps its tone.
                         stroke_width = hair_pen_width(width, chain_config["hair_scale"])
                         segment_color = _mix(segment_color, hair_color, MERGED_HAIR_TINT)
-                    painter.setPen(QPen(segment_color, stroke_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                    painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
+                    batch.line(LAYER_SEGMENT, segment_color, stroke_width,
+                               start_x, start_y, end_x, end_y)
             elif segmented_legs:
-                painter.setPen(QPen(color, coxa_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                painter.drawLine(QPointF(ax, ay), QPointF(coxa_x, coxa_y))
-                painter.setPen(QPen(color, femur_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                painter.drawLine(QPointF(coxa_x, coxa_y), QPointF(kx, ky))
-                painter.setPen(QPen(color, tibia_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                painter.drawLine(QPointF(kx, ky), QPointF(tarsus_x, tarsus_y))
-                painter.setPen(QPen(self._qcolor("legs", 210), tarsus_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
-                painter.drawLine(QPointF(tarsus_x, tarsus_y), QPointF(foot_x, foot_y))
+                batch.line(LAYER_SEGMENT, color, coxa_width, ax, ay, coxa_x, coxa_y)
+                batch.line(LAYER_SEGMENT, color, femur_width, coxa_x, coxa_y, kx, ky)
+                batch.line(LAYER_SEGMENT, color, tibia_width, kx, ky, tarsus_x, tarsus_y)
+                batch.line(LAYER_SEGMENT, self._qcolor("legs", 210), tarsus_width,
+                           tarsus_x, tarsus_y, foot_x, foot_y)
             else:
-                painter.setPen(QPen(color, base_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                 path = QPainterPath(QPointF(ax, ay))
                 path.cubicTo(QPointF(coxa_x, coxa_y), QPointF(coxa_x, coxa_y), QPointF(kx, ky))
                 path.lineTo(QPointF(tarsus_x, tarsus_y))
                 path.lineTo(QPointF(foot_x, foot_y))
-                painter.drawPath(path)
-                painter.setPen(QPen(self._qcolor("legs", 210), max(1.0, base_width * 0.48), Qt.SolidLine, Qt.RoundCap))
-                painter.drawLine(QPointF(tarsus_x, tarsus_y), QPointF(foot_x, foot_y))
+                batch.add_path(LAYER_SEGMENT, color, base_width, path)
+                batch.line(LAYER_SEGMENT, self._qcolor("legs", 210),
+                           max(1.0, base_width * 0.48),
+                           tarsus_x, tarsus_y, foot_x, foot_y)
             if show_joint_nodes:
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(
-                    self._qcolor(
-                        chain_config.get("joint_color_key", "legs") if chain_config else "legs",
-                        225,
-                    )
-                ))
+                # These are the draws the profile singled out. An ellipse's
+                # radius lives inside the path, so every node sharing a colour
+                # batches into one fill whatever size each one is.
+                joint_color = self._qcolor(
+                    chain_config.get("joint_color_key", "legs") if chain_config else "legs",
+                    225,
+                )
                 node_r = max(1.0, base_width * 0.24 * joint_node_scale)
                 if chain_points is not None:
                     joint_scales = chain_config["joint_scales"]
@@ -802,30 +820,32 @@ class RenderProceduralMixin:
                     for joint_index, (joint_x, joint_y) in enumerate(joints):
                         scale = joint_scales[joint_index]
                         radius = node_r * scale * (1.12 if joint_index == 1 else 0.96)
-                        neighbours = chain_widths[joint_index:joint_index + 2]
-                        if not joint_node_shows(radius, *neighbours):
+                        if not joint_node_shows(radius, *chain_widths[joint_index:joint_index + 2]):
                             continue
                         shown.append((joint_index, joint_x, joint_y))
-                        painter.drawEllipse(QPointF(joint_x, joint_y), radius, radius)
+                        batch.dot(LAYER_JOINT, joint_color, joint_x, joint_y, radius)
                     # A small core on every joint makes all four independently
                     # animated pivots readable at desktop scale. The patella
                     # and distal hinge receive a slightly stronger core.
                     if shown:
-                        painter.setBrush(QBrush(self._qcolor(chain_config.get("joint_color_key", "legs"), 230)))
+                        core_color = self._qcolor(chain_config.get("joint_color_key", "legs"), 230)
                         for joint_index, joint_x, joint_y in shown:
                             core_scale = 0.48 if joint_index in (1, len(joints) - 1) else 0.34
-                            painter.drawEllipse(QPointF(joint_x, joint_y), node_r * core_scale, node_r * core_scale)
+                            batch.dot(LAYER_CORE, core_color, joint_x, joint_y,
+                                      node_r * core_scale)
                 else:
-                    painter.drawEllipse(QPointF(coxa_x, coxa_y), node_r * 1.05, node_r * 1.05)
-                    painter.drawEllipse(QPointF(kx, ky), node_r * 1.30, node_r * 1.30)
-                    painter.drawEllipse(QPointF(tarsus_x, tarsus_y), node_r * 0.98, node_r * 0.98)
-                    painter.setBrush(QBrush(self._qcolor("highlight", 210)))
-                    painter.drawEllipse(QPointF(kx, ky), node_r * 0.60, node_r * 0.60)
+                    batch.dot(LAYER_JOINT, joint_color, coxa_x, coxa_y, node_r * 1.05)
+                    batch.dot(LAYER_JOINT, joint_color, kx, ky, node_r * 1.30)
+                    batch.dot(LAYER_JOINT, joint_color, tarsus_x, tarsus_y, node_r * 0.98)
+                    batch.dot(LAYER_CORE, self._qcolor("highlight", 210),
+                              kx, ky, node_r * 0.60)
             foot_key = "highlight" if startle_highlight else (
                 chain_config.get("tip_color_key", "legs") if chain_config else "legs"
             )
-            painter.setPen(QPen(self._qcolor(foot_key, 220), max(1.0, tarsus_width * 0.8), Qt.SolidLine, Qt.RoundCap))
-            painter.drawPoint(QPointF(foot_x, foot_y))
+            batch.point(LAYER_FOOT, self._qcolor(foot_key, 220),
+                        max(1.0, tarsus_width * 0.8), foot_x, foot_y)
+
+        batch.flush(painter)
 
         crouch_drop = self.crouch * self.size * 0.06
         painter.save()

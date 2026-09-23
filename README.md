@@ -628,6 +628,7 @@ DesktopBugCompanion/
         mood.py
         perception.py
         phase_scheduler.py
+        render_batch.py        # issues a spider's leg pass as a few paths
         render_detail.py       # skips leg detail too small to be seen
         render_procedural.py
         render_sprite.py
