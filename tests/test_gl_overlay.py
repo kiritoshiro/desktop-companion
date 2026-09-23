@@ -31,9 +31,9 @@ multi-monitor desktop, found plenty of non-background pixels and reported
 success. Creature coordinates are overlay-local and this overlay's top-left
 is at (0, -718).
 
-**Off by default**, because 9% does not justify making every launch depend on
-a working GL driver, and because what it changes is the whole window -- its
-behaviour on other machines, other drivers and a packaged build is not
+DC-74 shipped it off by default. **DC-78 turned it on** at the owner's
+request ("make gpu on by default"); `DESKTOP_BUG_GL=0` turns it off. Its
+behaviour on other machines, other drivers and a packaged build is still not
 something one machine settles.
 
 The tests below cannot render GL under a headless run, so they pin the switch
@@ -49,7 +49,6 @@ import sys
 
 import pytest
 from PyQt5.QtGui import QSurfaceFormat
-from PyQt5.QtWidgets import QWidget
 
 from desktop_bug.app import engine
 from support import ROOT
@@ -62,35 +61,37 @@ def _qt(qapp):
 
 # ------------------------------------------------------------------ the switch
 
-def test_it_is_off_unless_asked_for(monkeypatch):
+def test_it_is_on_unless_told_otherwise(monkeypatch):
     monkeypatch.delenv("DESKTOP_BUG_GL", raising=False)
+    assert engine.gl_overlay_enabled() is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "FALSE", "no", "off", " 0 "])
+def test_the_ways_of_saying_no(monkeypatch, value):
+    monkeypatch.setenv("DESKTOP_BUG_GL", value)
     assert engine.gl_overlay_enabled() is False
 
 
-@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on", " 1 "])
-def test_the_ways_of_saying_yes(monkeypatch, value):
+@pytest.mark.parametrize("value", ["", "1", "yes", "on", "true", "maybe"])
+def test_everything_else_keeps_the_default(monkeypatch, value):
+    """A typo must not silently move every launch onto a different surface."""
     monkeypatch.setenv("DESKTOP_BUG_GL", value)
     assert engine.gl_overlay_enabled() is True
 
 
-@pytest.mark.parametrize("value", ["", "0", "no", "off", "false", "maybe"])
-def test_everything_else_is_no(monkeypatch, value):
-    """A typo must not silently move every launch onto a different surface."""
-    monkeypatch.setenv("DESKTOP_BUG_GL", value)
-    assert engine.gl_overlay_enabled() is False
-
-
-def test_the_shipped_default_is_the_software_path():
+def test_the_shipped_default_is_the_gl_path():
     """The module-level decision, not just the helper. This is what a launch
-    with no environment actually gets."""
-    assert engine.GL_OVERLAY is False
-    assert engine._OverlayBase is QWidget
+    with no environment actually gets -- checked in a fresh interpreter,
+    because the test run itself may have the variable set."""
+    flag, is_gl, is_widget, has_paint_gl, has_paint_event = _probe(None)
+    assert flag == "True" and is_gl == "True" and is_widget == "False"
+    assert has_paint_gl == "True" and has_paint_event == "False"
 
 
 # ---------------------------------------------------------- the surface format
 
 def test_no_surface_format_is_touched_when_it_is_off(monkeypatch):
-    monkeypatch.delenv("DESKTOP_BUG_GL", raising=False)
+    monkeypatch.setenv("DESKTOP_BUG_GL", "0")
     before = QSurfaceFormat.defaultFormat()
     assert engine.configure_gl_surface() is False
     assert QSurfaceFormat.defaultFormat().alphaBufferSize() == before.alphaBufferSize()
@@ -127,13 +128,15 @@ print(engine.GL_OVERLAY,
 """
 
 
-def _probe(gl: bool) -> list:
+def _probe(gl) -> list:
+    """gl True / False sets the switch explicitly; None leaves it unset."""
     import os
     env = dict(os.environ)
-    if gl:
+    env.pop("DESKTOP_BUG_GL", None)
+    if gl is True:
         env["DESKTOP_BUG_GL"] = "1"
-    else:
-        env.pop("DESKTOP_BUG_GL", None)
+    elif gl is False:
+        env["DESKTOP_BUG_GL"] = "0"
     out = subprocess.run(
         [sys.executable, "-c", _PROBE.format(src=str(ROOT / "src"))],
         capture_output=True, text=True, env=env, timeout=120,
