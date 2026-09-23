@@ -628,6 +628,7 @@ DesktopBugCompanion/
         mood.py
         perception.py
         phase_scheduler.py
+        render_batch.py        # issues a spider's leg pass as a few paths
         render_procedural.py
         render_sprite.py
         sprite_tint.py         # recolours PNG art by hue, keeping its shading
