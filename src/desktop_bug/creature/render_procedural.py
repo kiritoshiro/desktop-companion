@@ -845,8 +845,6 @@ class RenderProceduralMixin:
             batch.point(LAYER_FOOT, self._qcolor(foot_key, 220),
                         max(1.0, tarsus_width * 0.8), foot_x, foot_y)
 
-        batch.flush(painter)
-
         crouch_drop = self.crouch * self.size * 0.06
         painter.save()
         # DC-59: a landed blow throws the body over its planted feet, so the
@@ -1012,6 +1010,20 @@ class RenderProceduralMixin:
         self._draw_eyes(painter, eyes, ceph_offset_x, ceph_w, ceph_h, startle, aiming)
         self._draw_antennae(painter, ceph_offset_x, ceph_w, ceph_h, startle)
         painter.restore()
+        # The legs go on *top* of the body, not under it.
+        #
+        # From directly above, a tarantula's femur rises from beneath the
+        # carapace rim and the patella is the high point of the whole animal --
+        # it is why the red knees are the first thing you see. Drawing the leg
+        # pass before the body buried exactly that, and left the legs looking
+        # like they came out of the shell rather than over it. The owner:
+        # *"usualy the legs are above its body when bent and close to the body,
+        # even when strecehd they look on similar height."*
+        #
+        # See [[Tarantula Reference - Brachypelma hamorii]], "Posture, seen
+        # from the side". This costs nothing: it is the same draws in a
+        # different order.
+        batch.flush(painter)
         # The body above is drawn in a body-local QPainter transform.  Leg
         # connections are computed in world coordinates, so paint them only
         # after leaving that transform.  Drawing them inside it double-applied

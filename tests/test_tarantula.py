@@ -55,7 +55,23 @@ def test_the_model_is_shaped_as_the_gait_expects(tarantula):
     assert chain["hairy"] is True
     assert chain["hair_scale"] > 0.0
     assert len(chain["segment_lengths"]) == 5
-    assert chain["segment_lengths"][1] >= chain["segment_lengths"][3]
+    # This used to require the patella to be at least as long as the
+    # metatarsus, which is the wrong way round for a tarantula. The holotype
+    # measurements in [[Tarantula Reference - Brachypelma hamorii]] give leg I
+    # a patella of 13.9% and a metatarsus of 22.3% -- the patella is the
+    # second-shortest segment on the leg and the metatarsus one of the
+    # longest. Drawing it as the longest is what put the knee halfway out
+    # along the leg and made each leg read as a spoke.
+    lengths = chain["segment_lengths"]
+    assert lengths[1] == min(lengths), (
+        f"the patella must be the shortest segment, got {lengths}"
+    )
+    assert lengths[3] == max(lengths), (
+        f"the metatarsus must be the longest segment, got {lengths}"
+    )
+    # and the knee therefore sits nearer the body than the midpoint, which is
+    # what a raised knee looks like from directly overhead.
+    assert sum(lengths[:2]) / sum(lengths) < 0.42
     assert len(chain["width_scales"]) == 5
     assert chain["width_scales"][1] > chain["width_scales"][3] > chain["width_scales"][-1]
     assert chain["segment_color_keys"][1] == "leg_band"
@@ -359,7 +375,13 @@ def test_the_palps_feelers_and_leg_release_hold_together(tarantula):
     for leg in probe.legs:
         _, _, held_x, held_y = probe._leg_draw_points(leg)
         assert held_y > probe.y + probe.size * 0.50
-        assert abs(held_x - probe.x) > probe.size * 0.20
+        # 0.20 when legs I sat at 33 degrees off the body axis. They
+        # now sit at 27, because the reference note has them reaching
+        # forward close to parallel with the head, so a dangling front leg
+        # has less lateral offset by design. The guard is against the legs
+        # collapsing into one vertical line, and 0.15 still catches that:
+        # measured, the narrowest is 0.195 and the widest 1.16.
+        assert abs(held_x - probe.x) > probe.size * 0.15
     held_xs = [probe._leg_draw_points(leg)[2] for leg in probe.legs]
     assert max(held_xs) - min(held_xs) > probe.size * 1.60
     slow_held = probe._picked_up_leg_pose(drag_leg, drag_ax, drag_ay, normal_fx, normal_fy)
