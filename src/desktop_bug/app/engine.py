@@ -10,7 +10,8 @@ from dataclasses import replace
 from pathlib import Path
 
 from PyQt5.QtCore import QElapsedTimer, QPoint, QRect, QTimer, Qt
-from PyQt5.QtGui import QColor, QCursor, QGuiApplication, QIcon, QPainter, QPixmap, QRegion
+from PyQt5.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter, QPixmap,
+                         QRegion, QSurfaceFormat)
 from PyQt5.QtWidgets import (
     QActionGroup,
     QApplication,
@@ -23,6 +24,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMenu,
+    QOpenGLWidget,
     QPushButton,
     QProgressBar,
     QTabWidget,
@@ -69,6 +71,55 @@ def _target_fps() -> float:
 
 def _frame_interval_ms_for_fps(fps: float) -> int:
     return max(16, int(round(1000.0 / max(1.0, fps))))
+
+
+def gl_overlay_enabled() -> bool:
+    """Whether the overlay paints onto an OpenGL surface. Off by default.
+
+    Measured on twenty tarantulas at 1600x1000, offscreen, interleaved in one
+    process: a GPU framebuffer runs the same QPainter calls about **9%**
+    faster than a software QImage (8.7 / 8.6 / 10.1 over three runs), and 8.7%
+    with both sides clipped to the dirty region the overlay actually repaints.
+
+    Nine percent, not the transformation it sounds like, because **Qt's
+    OpenGL paint engine still turns every stroked path into triangles on the
+    CPU**. The GPU takes the fill and the antialiasing -- which DC-71 measured
+    at roughly 27% and 8% of render -- and leaves the per-primitive geometry
+    alone. Before DC-73 the same comparison gave 20-24%; DC-73 removed the
+    fill-heavy primitives, so most of that win had already been taken by
+    cheaper means.
+
+    It is off by default because 9% does not justify making every launch
+    depend on a working GL driver, and because what it changes is the whole
+    window: a layered, click-through, always-on-top surface whose behaviour on
+    other machines, other drivers and a packaged build is not something this
+    one measurement settles. Set ``DESKTOP_BUG_GL=1`` to try it.
+    """
+    return os.environ.get("DESKTOP_BUG_GL", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def configure_gl_surface() -> bool:
+    """Ask for an alpha channel and multisampling, before any QApplication.
+
+    A QOpenGLWidget cannot be translucent without an alpha buffer in the
+    default surface format, and the format has to be set before the
+    application object exists or it will not apply.
+    """
+    if not gl_overlay_enabled():
+        return False
+    fmt = QSurfaceFormat()
+    fmt.setAlphaBufferSize(8)
+    fmt.setSamples(4)
+    QSurfaceFormat.setDefaultFormat(fmt)
+    return True
+
+
+GL_OVERLAY = gl_overlay_enabled()
+# QOpenGLWidget drives painting through paintGL, QWidget through paintEvent,
+# so the base class decides which of the two the class below defines. Read
+# once at import: an overlay that changed surface type mid-run would have to
+# rebuild its window.
+_OverlayBase = QOpenGLWidget if GL_OVERLAY else QWidget
 
 
 TARGET_FPS = _target_fps()
@@ -451,7 +502,7 @@ class CreatureInspectorDialog(QDialog):
         super().closeEvent(event)
 
 
-class OverlayWindow(QWidget):
+class OverlayWindow(_OverlayBase):
     def __init__(self, preset_path: Path, seed: int | None = None):
         super().__init__(None)
         self.setWindowTitle("Desktop Bug Companion Overlay")
@@ -467,6 +518,11 @@ class OverlayWindow(QWidget):
         # On other platforms we keep the previous fully click-through behavior.
         self.setAttribute(Qt.WA_TransparentForMouseEvents, not sys.platform.startswith("win"))
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        if GL_OVERLAY:
+            # Qt's documented requirement for a translucent QOpenGLWidget:
+            # without it the GL surface is composited under the window's own
+            # background rather than through it.
+            self.setAttribute(Qt.WA_AlwaysStackOnTop, True)
 
         self.geometry_rect = virtual_screen_geometry()
         self._last_screen_check_ms = 0
@@ -960,16 +1016,26 @@ class OverlayWindow(QWidget):
             region += self._hud_rect()
         return region
 
-    def paintEvent(self, event):  # noqa: N802 - Qt API name
-        with self.profiler.section("paint"):
-            self._paint(event)
+    if GL_OVERLAY:
+        def paintGL(self):  # noqa: N802 - Qt API name
+            # No exposed region here: QOpenGLWidget redraws its whole
+            # framebuffer, so the dirty-region culling in CreatureManager.render
+            # has nothing to narrow. Measured, that costs nothing -- at twenty
+            # spiders the dirty region is 30.6% of the screen in 101 rects and
+            # clipping to it was 2.4% *slower* than painting the lot.
+            with self.profiler.section("paint"):
+                self._paint(QRegion(self.rect()))
+    else:
+        def paintEvent(self, event):  # noqa: N802 - Qt API name
+            with self.profiler.section("paint"):
+                self._paint(event.region())
 
-    def _paint(self, event) -> None:
+    def _paint(self, region: QRegion) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
         # Clip to the exposed region so the manager can cull off-region spiders
         # and so clearing remains partial instead of wiping the whole overlay.
-        painter.setClipRegion(event.region())
+        painter.setClipRegion(region)
 
         # Transparent overlays with WA_NoSystemBackground are not automatically
         # erased before partial repaints.  Clear the exact exposed region with
@@ -978,11 +1044,11 @@ class OverlayWindow(QWidget):
         # stale antenna/leg endpoint pixels before the current frame is drawn.
         painter.setCompositionMode(QPainter.CompositionMode_Clear)
         try:
-            rects = event.region().rects()
+            rects = region.rects()
         except Exception:
-            rects = [event.rect()]
+            rects = [self.rect()]
         if not rects:
-            rects = [event.rect()]
+            rects = [self.rect()]
         for rect in rects:
             painter.fillRect(rect, Qt.transparent)
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
@@ -1675,6 +1741,8 @@ def main(argv=None) -> int:
         log.warning("No log file could be opened under %s", state_dir())
 
     enable_high_dpi_scaling()
+    if configure_gl_surface():
+        log.info("DESKTOP_BUG_GL is set: painting the overlay onto an OpenGL surface")
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
     # Must search the bundled data too. A one-file build keeps its presets in
