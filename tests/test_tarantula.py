@@ -184,8 +184,15 @@ def test_the_model_is_shaped_as_the_gait_expects(tarantula):
     assert gait["stance_deadband"] > gait["step_trigger"]
     assert gait["stance_deadband"] >= 0.50
     assert gait["support_stroke_limit"] >= 0.90
-    assert gait["support_turn_limit"] >= 0.85
-    assert gait["max_body_turn_rate"] >= 4.0
+    # DC-77: these were floors (>= 0.85 rad, >= 4.0 rad/s) set with the
+    # smooth-pursuit tuning, and the model sat at 1.2 rad and 8.0 rad/s -- a
+    # body allowed to spin 69 degrees under planted feet at 458 deg/s. On a
+    # guard's patrol-to-idle turn that is exactly what it did, and all eight
+    # legs swept one way round the body: the pinwheel the owner reported.
+    # They are now ceilings. The turn is not slower for it (see
+    # test_turn_pinwheel.py); the feet replant instead.
+    assert 0.25 <= gait["support_turn_limit"] <= 0.45
+    assert 3.0 <= gait["max_body_turn_rate"] <= 5.0
     assert gait["turn_gain"] >= 1.5
     assert 0.45 <= gait["turn_step_pressure"] <= 0.88
     assert gait["turn_cycle_gain"] > 0.0
