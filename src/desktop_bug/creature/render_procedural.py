@@ -28,11 +28,35 @@ from .render_batch import (
     LAYER_SEGMENT,
     LegBatch,
 )
+from .render_detail import (
+    MERGED_HAIR_TINT,
+    hair_detail,
+    hair_pen_width,
+    joint_node_shows,
+)
 from .sprite_tint import palette_signature, tint_assets
 from ..state.progression import (
     equipped_items,
 )
 from .kinematics import LegState
+
+def _mix(base, other, amount: float):
+    """Warm one colour toward another, keeping the first one's alpha.
+
+    Used when a hair over-stroke is merged into the segment it sat under: the
+    stroke takes the hair's width so the leg keeps its weight, and a little of
+    its colour so it keeps its tone.
+    """
+    if other is None or amount <= 0.0:
+        return base
+    inv = 1.0 - amount
+    return QColor(
+        int(base.red() * inv + other.red() * amount),
+        int(base.green() * inv + other.green() * amount),
+        int(base.blue() * inv + other.blue() * amount),
+        base.alpha(),
+    )
+
 
 class RenderProceduralMixin:
     """Procedural drawing and the shared colour/leg-geometry helpers."""
@@ -625,6 +649,23 @@ class RenderProceduralMixin:
         joint_node_scale = float(self._appearance("joint_node_scale", 1.0))
         coxa_width_scale = float(self._appearance("coxa_thickness_scale", 1.0))
         chain_config = self._sprite_leg_chain_config()
+        # DC-71 measured about 60% of render as Qt turning each stroked path
+        # into an outline polygon, a cost that is per primitive and takes no
+        # account of size. So detail that cannot be seen is not merely wasted,
+        # it is the most expensive kind of waste. Decided once per spider from
+        # its resting leg width, not per frame from the live one, so the level
+        # cannot flicker while it walks.
+        resting_leg_width = max(1.4, self.size * 0.066 * leg_width_scale)
+        detail = hair_detail(resting_leg_width, chain_config)
+        # Hoisted out of the loop as well as gated: the over-stroke colour does
+        # not vary between segments or between legs, but the shipped code
+        # rebuilt it for every one of the forty segments a tarantula has.
+        hair_color = None
+        if detail.separate_hair or detail.merge_hair:
+            hair_color = self._qcolor_triplet(
+                self._appearance_color("fluff_color", "highlight"),
+                int(72 + chain_config["hair_scale"] * 90),
+            )
 
         # Every leg stroke and joint node goes into one batch and is issued as
         # a handful of paths once the loop is done. Profiling put drawEllipse
@@ -634,16 +675,6 @@ class RenderProceduralMixin:
             width_step=render_batch.LEG_WIDTH_STEP,
             direct=None if render_batch.BATCH_LEGS else painter,
         )
-        # A hairy chain's over-stroke colour does not vary between segments or
-        # between legs, but the shipped code rebuilt it for every one of the
-        # forty segments a tarantula has.
-        hair_color = None
-        if chain_config and chain_config["hairy"] and chain_config["hair_scale"] > 0.0:
-            hair_color = self._qcolor_triplet(
-                self._appearance_color("fluff_color", "highlight"),
-                int(72 + chain_config["hair_scale"] * 90),
-            )
-
         # Legs first, underneath body. Segment thickness tapers from coxa to tarsus.
         for leg in self.legs:
             ax, ay, foot_x, foot_y = self._leg_draw_points(leg)
@@ -734,9 +765,9 @@ class RenderProceduralMixin:
                 for index, width in enumerate(chain_widths):
                     start_x, start_y = chain_points[index]
                     end_x, end_y = chain_points[index + 1]
-                    if hair_color is not None:
+                    if detail.separate_hair:
                         batch.line(LAYER_HAIR, hair_color,
-                                   width * (1.12 + chain_config["hair_scale"] * 0.55),
+                                   hair_pen_width(width, chain_config["hair_scale"]),
                                    start_x, start_y, end_x, end_y)
                     if startle_highlight:
                         segment_color = self._qcolor("highlight", 230)
@@ -745,7 +776,14 @@ class RenderProceduralMixin:
                             segment_color_keys[index] if index < len(segment_color_keys) else "legs",
                             245 if index < len(chain_widths) - 1 else 220,
                         )
-                    batch.line(LAYER_SEGMENT, segment_color, width,
+                    stroke_width = width
+                    if detail.merge_hair:
+                        # One stroke doing the work of two: the hair's width,
+                        # so the leg keeps its weight, warmed toward the hair's
+                        # colour so it keeps its tone.
+                        stroke_width = hair_pen_width(width, chain_config["hair_scale"])
+                        segment_color = _mix(segment_color, hair_color, MERGED_HAIR_TINT)
+                    batch.line(LAYER_SEGMENT, segment_color, stroke_width,
                                start_x, start_y, end_x, end_y)
             elif segmented_legs:
                 batch.line(LAYER_SEGMENT, color, coxa_width, ax, ay, coxa_x, coxa_y)
@@ -774,18 +812,27 @@ class RenderProceduralMixin:
                 if chain_points is not None:
                     joint_scales = chain_config["joint_scales"]
                     joints = chain_points[1:-1]
+                    # A node whose radius is smaller than the half-width of
+                    # the stroke it sits on is not a joint, it is a stain
+                    # inside the leg. On a tarantula that is all four of them
+                    # at every size the model reaches.
+                    shown = []
                     for joint_index, (joint_x, joint_y) in enumerate(joints):
                         scale = joint_scales[joint_index]
                         radius = node_r * scale * (1.12 if joint_index == 1 else 0.96)
+                        if not joint_node_shows(radius, *chain_widths[joint_index:joint_index + 2]):
+                            continue
+                        shown.append((joint_index, joint_x, joint_y))
                         batch.dot(LAYER_JOINT, joint_color, joint_x, joint_y, radius)
                     # A small core on every joint makes all four independently
                     # animated pivots readable at desktop scale. The patella
                     # and distal hinge receive a slightly stronger core.
-                    core_color = self._qcolor(chain_config.get("joint_color_key", "legs"), 230)
-                    for joint_index, (joint_x, joint_y) in enumerate(joints):
-                        core_scale = 0.48 if joint_index in (1, len(joints) - 1) else 0.34
-                        batch.dot(LAYER_CORE, core_color, joint_x, joint_y,
-                                  node_r * core_scale)
+                    if shown:
+                        core_color = self._qcolor(chain_config.get("joint_color_key", "legs"), 230)
+                        for joint_index, joint_x, joint_y in shown:
+                            core_scale = 0.48 if joint_index in (1, len(joints) - 1) else 0.34
+                            batch.dot(LAYER_CORE, core_color, joint_x, joint_y,
+                                      node_r * core_scale)
                 else:
                     batch.dot(LAYER_JOINT, joint_color, coxa_x, coxa_y, node_r * 1.05)
                     batch.dot(LAYER_JOINT, joint_color, kx, ky, node_r * 1.30)

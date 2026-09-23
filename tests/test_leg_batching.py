@@ -170,9 +170,16 @@ def test_batching_collapses_the_leg_pass(monkeypatch):
     assert primitives == direct["lines"] + direct["dots"] + direct["points"], \
         "the two modes must draw the same things, only grouped differently"
     assert direct["issued"] == primitives, "passthrough must issue one draw each"
-    assert batched["issued"] * 4 < primitives, (
+    # This was a fourfold floor, and 280 primitives collapsing to 33 draws,
+    # until DC-73 landed. DC-73 removes the joint nodes, and the joint nodes
+    # were precisely what batched best -- 152 ellipses into 7 fills, because a
+    # radius lives inside the path while a stroke width does not. What is left
+    # is mostly strokes, which group only by width, so 122 primitives become
+    # 44 draws. The two packages overlap rather than add: DC-73 takes away the
+    # work DC-71 was best at avoiding.
+    assert batched["issued"] * 2 < primitives, (
         f"{primitives} primitives became {batched['issued']} draws; "
-        "expected at least a fourfold collapse"
+        "expected at least a twofold collapse"
     )
 
 
