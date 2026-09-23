@@ -18,11 +18,35 @@ from ..support.math_utils import (
     clamp,
 )
 from .mood import antenna_drive_from_mood, build_antenna_points
+from .render_detail import (
+    MERGED_HAIR_TINT,
+    hair_detail,
+    hair_pen_width,
+    joint_node_shows,
+)
 from .sprite_tint import palette_signature, tint_assets
 from ..state.progression import (
     equipped_items,
 )
 from .kinematics import LegState
+
+def _mix(base, other, amount: float):
+    """Warm one colour toward another, keeping the first one's alpha.
+
+    Used when a hair over-stroke is merged into the segment it sat under: the
+    stroke takes the hair's width so the leg keeps its weight, and a little of
+    its colour so it keeps its tone.
+    """
+    if other is None or amount <= 0.0:
+        return base
+    inv = 1.0 - amount
+    return QColor(
+        int(base.red() * inv + other.red() * amount),
+        int(base.green() * inv + other.green() * amount),
+        int(base.blue() * inv + other.blue() * amount),
+        base.alpha(),
+    )
+
 
 class RenderProceduralMixin:
     """Procedural drawing and the shared colour/leg-geometry helpers."""
@@ -615,6 +639,20 @@ class RenderProceduralMixin:
         joint_node_scale = float(self._appearance("joint_node_scale", 1.0))
         coxa_width_scale = float(self._appearance("coxa_thickness_scale", 1.0))
         chain_config = self._sprite_leg_chain_config()
+        # DC-71 measured about 60% of render as Qt turning each stroked path
+        # into an outline polygon, a cost that is per primitive and takes no
+        # account of size. So detail that cannot be seen is not merely wasted,
+        # it is the most expensive kind of waste. Decided once per spider from
+        # its resting leg width, not per frame from the live one, so the level
+        # cannot flicker while it walks.
+        resting_leg_width = max(1.4, self.size * 0.066 * leg_width_scale)
+        detail = hair_detail(resting_leg_width, chain_config)
+        hair_color = None
+        if detail.separate_hair or detail.merge_hair:
+            hair_color = self._qcolor_triplet(
+                self._appearance_color("fluff_color", "highlight"),
+                int(72 + chain_config["hair_scale"] * 90),
+            )
 
         # Legs first, underneath body. Segment thickness tapers from coxa to tarsus.
         for leg in self.legs:
@@ -707,12 +745,8 @@ class RenderProceduralMixin:
                 for index, width in enumerate(chain_widths):
                     start_x, start_y = chain_points[index]
                     end_x, end_y = chain_points[index + 1]
-                    if chain_config["hairy"] and chain_config["hair_scale"] > 0.0:
-                        hair_color = self._qcolor_triplet(
-                            self._appearance_color("fluff_color", "highlight"),
-                            int(72 + chain_config["hair_scale"] * 90),
-                        )
-                        painter.setPen(QPen(hair_color, width * (1.12 + chain_config["hair_scale"] * 0.55), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    if detail.separate_hair:
+                        painter.setPen(QPen(hair_color, hair_pen_width(width, chain_config["hair_scale"]), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                         painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
                     if startle_highlight:
                         segment_color = self._qcolor("highlight", 230)
@@ -721,7 +755,14 @@ class RenderProceduralMixin:
                             segment_color_keys[index] if index < len(segment_color_keys) else "legs",
                             245 if index < len(chain_widths) - 1 else 220,
                         )
-                    painter.setPen(QPen(segment_color, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                    stroke_width = width
+                    if detail.merge_hair:
+                        # One stroke doing the work of two: the hair's width,
+                        # so the leg keeps its weight, warmed toward the hair's
+                        # colour so it keeps its tone.
+                        stroke_width = hair_pen_width(width, chain_config["hair_scale"])
+                        segment_color = _mix(segment_color, hair_color, MERGED_HAIR_TINT)
+                    painter.setPen(QPen(segment_color, stroke_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                     painter.drawLine(QPointF(start_x, start_y), QPointF(end_x, end_y))
             elif segmented_legs:
                 painter.setPen(QPen(color, coxa_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
@@ -753,17 +794,27 @@ class RenderProceduralMixin:
                 if chain_points is not None:
                     joint_scales = chain_config["joint_scales"]
                     joints = chain_points[1:-1]
+                    # A node whose radius is smaller than the half-width of
+                    # the stroke it sits on is not a joint, it is a stain
+                    # inside the leg. On a tarantula that is all four of them
+                    # at every size the model reaches.
+                    shown = []
                     for joint_index, (joint_x, joint_y) in enumerate(joints):
                         scale = joint_scales[joint_index]
                         radius = node_r * scale * (1.12 if joint_index == 1 else 0.96)
+                        neighbours = chain_widths[joint_index:joint_index + 2]
+                        if not joint_node_shows(radius, *neighbours):
+                            continue
+                        shown.append((joint_index, joint_x, joint_y))
                         painter.drawEllipse(QPointF(joint_x, joint_y), radius, radius)
                     # A small core on every joint makes all four independently
                     # animated pivots readable at desktop scale. The patella
                     # and distal hinge receive a slightly stronger core.
-                    painter.setBrush(QBrush(self._qcolor(chain_config.get("joint_color_key", "legs"), 230)))
-                    for joint_index, (joint_x, joint_y) in enumerate(joints):
-                        core_scale = 0.48 if joint_index in (1, len(joints) - 1) else 0.34
-                        painter.drawEllipse(QPointF(joint_x, joint_y), node_r * core_scale, node_r * core_scale)
+                    if shown:
+                        painter.setBrush(QBrush(self._qcolor(chain_config.get("joint_color_key", "legs"), 230)))
+                        for joint_index, joint_x, joint_y in shown:
+                            core_scale = 0.48 if joint_index in (1, len(joints) - 1) else 0.34
+                            painter.drawEllipse(QPointF(joint_x, joint_y), node_r * core_scale, node_r * core_scale)
                 else:
                     painter.drawEllipse(QPointF(coxa_x, coxa_y), node_r * 1.05, node_r * 1.05)
                     painter.drawEllipse(QPointF(kx, ky), node_r * 1.30, node_r * 1.30)
