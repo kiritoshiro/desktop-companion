@@ -25,6 +25,12 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# DC-78 made the OpenGL overlay the default. The offscreen platform above has
+# no OpenGL, so a QOpenGLWidget built here paints nothing (measured: the HUD
+# test read 0 of 4080 pixels). Tests therefore run the software overlay, as
+# they always have; the real default is checked in a fresh interpreter by
+# test_gl_overlay.test_the_shipped_default_is_the_gl_path, which unsets this.
+os.environ.setdefault("DESKTOP_BUG_GL", "0")
 os.environ.setdefault(
     "DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="desktop-bug-tests-")
 )

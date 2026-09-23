@@ -74,7 +74,8 @@ def _frame_interval_ms_for_fps(fps: float) -> int:
 
 
 def gl_overlay_enabled() -> bool:
-    """Whether the overlay paints onto an OpenGL surface. Off by default.
+    """Whether the overlay paints onto an OpenGL surface. On by default since
+    DC-78, at the owner's request; ``DESKTOP_BUG_GL=0`` turns it off.
 
     Measured on twenty tarantulas at 1600x1000, offscreen, interleaved in one
     process: a GPU framebuffer runs the same QPainter calls about **9%**
@@ -89,13 +90,16 @@ def gl_overlay_enabled() -> bool:
     fill-heavy primitives, so most of that win had already been taken by
     cheaper means.
 
-    It is off by default because 9% does not justify making every launch
-    depend on a working GL driver, and because what it changes is the whole
-    window: a layered, click-through, always-on-top surface whose behaviour on
-    other machines, other drivers and a packaged build is not something this
-    one measurement settles. Set ``DESKTOP_BUG_GL=1`` to try it.
+    DC-74 shipped it off, because 9% did not seem to justify making every
+    launch depend on a working GL driver. The owner asked for it on (DC-78).
+    What that still leaves unproven is the whole window on other machines,
+    other drivers and a packaged build -- if the overlay ever comes up blank
+    or opaque, ``DESKTOP_BUG_GL=0`` is the first thing to try.
+
+    Only an explicit "no" turns it off. Anything else, a typo included, keeps
+    the default rather than silently changing the surface.
     """
-    return os.environ.get("DESKTOP_BUG_GL", "").strip().lower() in {"1", "true", "yes", "on"}
+    return os.environ.get("DESKTOP_BUG_GL", "").strip().lower() not in {"0", "false", "no", "off"}
 
 
 def configure_gl_surface() -> bool:
@@ -1742,7 +1746,7 @@ def main(argv=None) -> int:
 
     enable_high_dpi_scaling()
     if configure_gl_surface():
-        log.info("DESKTOP_BUG_GL is set: painting the overlay onto an OpenGL surface")
+        log.info("Painting the overlay onto an OpenGL surface (DESKTOP_BUG_GL=0 to turn off)")
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setQuitOnLastWindowClosed(False)
     # Must search the bundled data too. A one-file build keeps its presets in
