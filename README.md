@@ -72,10 +72,14 @@ The settings window opens on a three-mode start screen:
 - **Strategy** previews the planned colony command mode.
 
 Adventure takes control of the first living spider in the preset. Its current
-health, energy, level, equipment and progression are used. WASD moves, Shift
-sprints (draining energy), Space jumps, the mouse aims, left-click fires a web
-at a nearby fly or foe, right-click bites a nearby foe, K opens the existing
-skill tree, and Esc opens the pause menu. The status panel shows health,
+health, energy, level, equipment and progression are used. By default WASD
+moves, Shift sprints (draining energy), Space jumps, left-click fires a web and
+right-click bites, K opens the skill tree and Esc pauses. The mouse only aims:
+within a cone in front of the spider (90 degrees by default), and the spider
+turns by walking. **Controls...** on the Adventure page, or Settings in the
+pause menu, lists what every button does, changes the aim cone, and rebinds any
+action to another key or mouse button (saved in `state\controls.json`; Esc
+always pauses). The status panel shows health,
 stamina and action cooldowns; drag it to place it on screen. Adventure captures
 mouse input while active. Releasing control lets the spider resume its ordinary
 behavior and restores clicks on desktop folders and windows; click a spider to

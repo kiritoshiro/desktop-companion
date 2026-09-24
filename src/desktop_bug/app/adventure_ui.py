@@ -33,6 +33,62 @@ def hud_rect(window):
                  width, height)
 
 
+AIM_REACH = 170.0
+
+
+def aim_region(controller) -> QRect:
+    """The area the aim cone and line can cover, for partial repaints."""
+    spider = controller.creature
+    r = int(AIM_REACH + 12)
+    return QRect(int(spider.x) - r, int(spider.y) - r, r * 2, r * 2)
+
+
+def draw_aim(painter, controller) -> None:
+    """A faint wedge for the aim cone in front of the spider, and the aim line.
+
+    The wedge shows where silk can go; the brass line shows where it will go
+    -- towards the pointer, held to the cone's edge when the pointer is
+    outside it. With free aim (360) only the line is drawn.
+    """
+    import math
+
+    spider = controller.creature
+    if spider.dead:
+        return
+    cx, cy = spider.x, spider.y
+    heading = spider.heading
+    half = controller.controls.half_cone
+    angle = controller.aim_angle()
+    ax, ay = controller.aim
+    length = max(spider.size * 1.5, min(AIM_REACH, math.hypot(ax - cx, ay - cy)))
+    painter.save()
+    painter.setRenderHint(painter.Antialiasing, True)
+    if half < math.pi - 1e-3:
+        wedge = QPainterPath(QPointF(cx, cy))
+        steps = 16
+        for i in range(steps + 1):
+            a = heading - half + 2 * half * i / steps
+            wedge.lineTo(QPointF(cx + math.cos(a) * AIM_REACH, cy + math.sin(a) * AIM_REACH))
+        wedge.closeSubpath()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(246, 226, 184, 22))
+        painter.drawPath(wedge)
+        edge = QPen(QColor(246, 226, 184, 70), 1.2, Qt.DashLine)
+        painter.setPen(edge)
+        for a in (heading - half, heading + half):
+            painter.drawLine(QPointF(cx, cy), QPointF(cx + math.cos(a) * AIM_REACH,
+                                                        cy + math.sin(a) * AIM_REACH))
+    start = spider.size * 0.9
+    tip = QPointF(cx + math.cos(angle) * length, cy + math.sin(angle) * length)
+    painter.setPen(QPen(QColor(10, 4, 0, 120), 3.2, Qt.SolidLine, Qt.RoundCap))
+    painter.drawLine(QPointF(cx + math.cos(angle) * start, cy + math.sin(angle) * start), tip)
+    painter.setPen(QPen(_BRASS, 1.8, Qt.SolidLine, Qt.RoundCap))
+    painter.drawLine(QPointF(cx + math.cos(angle) * start, cy + math.sin(angle) * start), tip)
+    painter.setBrush(_BRASS)
+    painter.drawEllipse(tip, 3.2, 3.2)
+    painter.restore()
+
+
 def _board(painter, rect: QRect, radius: float) -> None:
     """Walnut with a raised, lit rim and a shadow under it."""
     outer = QRectF(rect)
@@ -66,6 +122,13 @@ def _well(painter, rect: QRect, radius: float, lit: bool = True) -> None:
     painter.drawLine(r.topLeft() + QPointF(radius, 0.8), r.topRight() + QPointF(-radius, 0.8))
     painter.setPen(QPen(QColor(220, 170, 110, 90), 1.2))
     painter.drawLine(r.bottomLeft() + QPointF(radius, 0.6), r.bottomRight() + QPointF(-radius, 0.6))
+
+
+def short_binding(name: str) -> str:
+    """A binding as it fits on an ability slot: "Mouse Left" -> "L CLICK"."""
+    mouse = {"Mouse Left": "L CLICK", "Mouse Right": "R CLICK", "Mouse Middle": "M CLICK",
+             "Mouse Back": "M4", "Mouse Forward": "M5"}
+    return mouse.get(name, name.upper())
 
 
 def draw_hud(painter, window, controller):
@@ -116,11 +179,18 @@ def draw_hud(painter, window, controller):
 
     bar(rect.top() + 44, "HEALTH", spider.hp, spider.max_hp, wood_theme.HEALTH)
     bar(rect.top() + 68, "STAMINA", spider.energy, spider.max_energy, wood_theme.STAMINA)
+    controls = getattr(controller, "controls", None)
+
+    def key(action, default):
+        return short_binding(controls.binding(action)) if controls is not None else default
+
     slots = (
-        ("jump", "SPACE", "Jump", controller.jump_cooldown, spider.energy >= controller.JUMP_ENERGY),
-        ("web", "L CLICK", "Web", controller.web_cooldown, spider.energy >= controller.WEB_ENERGY),
-        ("bite", "R CLICK", "Bite", spider.attack_cooldown, True),
-        ("skills", "K", "Skills", 0.0, True),
+        ("jump", key("jump", "SPACE"), "Jump", controller.jump_cooldown,
+         spider.energy >= controller.JUMP_ENERGY),
+        ("web", key("shoot", "L CLICK"), "Web", controller.web_cooldown,
+         spider.energy >= controller.WEB_ENERGY),
+        ("bite", key("bite", "R CLICK"), "Bite", spider.attack_cooldown, True),
+        ("skills", key("skills", "K"), "Skills", 0.0, True),
     )
     card_width = (rect.width() - 38) // 4
     for index, (kind, key, label, cooldown, enough_energy) in enumerate(slots):
@@ -199,8 +269,11 @@ class PauseDialog(QDialog):
 class AdventureSettingsDialog(QDialog):
     def __init__(self, window):
         super().__init__(window)
+        from .controls_ui import ControlsEditor, controls_qss
+
         self.setWindowTitle("Adventure settings")
-        self.setStyleSheet(wood_theme.dialog_qss())
+        self.setMinimumWidth(640)
+        self.setStyleSheet(wood_theme.dialog_qss() + controls_qss())
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 18, 22, 20)
         title = QLabel("Adventure settings")
@@ -216,10 +289,14 @@ class AdventureSettingsDialog(QDialog):
         self.fps.setCurrentIndex(current)
         row.addWidget(self.fps)
         layout.addLayout(row)
-        controls = QLabel("WASD move · Shift sprint · Space jump · Click shoot · "
-                          "Drag the status panel to move it · K skills · Esc pause")
-        controls.setWordWrap(True)
-        layout.addWidget(controls)
+        heading = QLabel("Controls")
+        heading.setObjectName("dialogTitle")
+        layout.addWidget(heading)
+        self.controls = ControlsEditor()
+        layout.addWidget(self.controls)
+        note = QLabel("Drag the status panel to move it.")
+        note.setObjectName("controlsHint")
+        layout.addWidget(note)
         done = QPushButton("Apply and return")
         done.clicked.connect(self.accept)
         layout.addWidget(done)
