@@ -92,7 +92,9 @@ def test_the_health_bar_is_the_same_width_whatever_the_name_or_health() -> None:
         f"bars differ in width for a short name, a long name, more health: {widths}")
 
 
-def test_the_xp_bar_sits_under_the_health_bar_and_fills_with_xp() -> None:
+def test_xp_is_a_line_under_the_level_not_a_bar_under_the_name() -> None:
+    """Moved by the owner: "only health and stamina should be there. the xp
+    bar maybe ... next to the lvl indicator"."""
     creature = build()
     creature.set_name("Bo")
     creature.set_health_label_pinned(True)
@@ -103,25 +105,37 @@ def test_the_xp_bar_sits_under_the_health_bar_and_fills_with_xp() -> None:
     image = paint(creature)
     health, health_row = widest_run(image, GREEN)
     most, xp_row = widest_run(image, Creature.XP_BAR_COLOR)
-    assert most >= 15, f"no XP bar was drawn: widest run {most}px"
-    assert xp_row > health_row, f"the XP bar is not under the health bar ({xp_row} vs {health_row})"
-    assert most <= health, "the XP bar is wider than the health bar"
+    assert most >= 8, f"no XP line was drawn: widest run {most}px"
+    assert xp_row < health_row, f"XP is still under the health bar ({xp_row} vs {health_row})"
+    from PyQt5.QtGui import QFontMetrics
+
+    level_w = QFontMetrics(creature._label_font()).horizontalAdvance(f"Lv {creature.level}")
+    assert most <= level_w + 2, f"the XP line is wider than the level text: {most} > {level_w}"
 
     creature.progression.xp = int(threshold * 0.2)
     little = widest_run(paint(creature), Creature.XP_BAR_COLOR)[0]
-    assert little < most * 0.5, f"the XP bar did not follow the XP: {little}px vs {most}px"
+    assert little < most * 0.5, f"the XP line did not follow the XP: {little}px vs {most}px"
 
     creature.force_show_xp = False
-    assert widest_run(paint(creature), Creature.XP_BAR_COLOR)[0] < 6, "XP bar drawn while off"
+    assert widest_run(paint(creature), Creature.XP_BAR_COLOR)[0] < 4, "XP drawn while off"
 
 
-def test_the_xp_bar_is_inside_the_repaint_footprint() -> None:
+def test_only_health_and_stamina_hang_under_the_label() -> None:
     creature = build()
     creature.set_name("Bo")
+    creature.set_level_label_pinned(True)
     creature.set_health_label_pinned(True)
     plain = creature.bounding_rect(True)
     creature.force_show_xp = True
-    assert creature.bounding_rect(True)[1] < plain[1] - 2.0
+    assert creature.bounding_rect(True)[1] == plain[1], "XP made the label taller"
+    creature.force_show_stamina = True
+    assert creature.bounding_rect(True)[1] < plain[1] - 2.0, "no room was made for stamina"
+    stamina = Creature.STAMINA_BAR_COLOR
+    creature.energy = creature.max_energy
+    full = widest_run(paint(creature), stamina)[0]
+    creature.energy = creature.max_energy * 0.25
+    low = widest_run(paint(creature), stamina)[0]
+    assert full >= 30 and low < full * 0.5, (full, low)
 
 
 def test_the_switch_reaches_every_spider_and_is_saved() -> None:

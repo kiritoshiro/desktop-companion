@@ -132,18 +132,54 @@ class Playfield:
     # ------------------------------------------------------------------
     # Queries
     # ------------------------------------------------------------------
+    def _covered(self, px: float, py: float) -> bool:
+        return any(r.contains(px, py) for r in self._rects)
+
     def contains(self, px: float, py: float, margin: float = 0.0) -> bool:
+        """Whether a body of half-size ``margin`` at the point is on the screens.
+
+        Judged against the monitors *together*: the square around the point
+        must lie on screen, not all on one monitor. Each monitor used to apply
+        the margin to every edge, including the edge it shares with its
+        neighbour, so a band ``2 * margin`` wide along the join counted as
+        off-screen from both sides; a spider walking across it was pushed
+        back every frame and stuck there (the owner: "spiders get stuck ...
+        at the edge").
+        """
         if self._simple:
             return (margin <= px <= self.width - margin
                     and margin <= py <= self.height - margin)
-        return any(r.contains(px, py, margin) for r in self._rects)
+        if margin <= 0.0:
+            return self._covered(px, py)
+        m = float(margin)
+        return all(self._covered(px + dx, py + dy)
+                   for dx in (-m, 0.0, m) for dy in (-m, 0.0, m))
+
+    def _open_sides(self, rect: ScreenRect) -> Tuple[bool, bool, bool, bool]:
+        """(left, right, top, bottom): which edges another monitor continues."""
+        def overlaps(a0, a1, b0, b1):
+            return min(a1, b1) - max(a0, b0) > 1.0
+
+        left = right = top = bottom = False
+        for other in self._rects:
+            if other is rect:
+                continue
+            if overlaps(rect.y, rect.bottom, other.y, other.bottom):
+                left = left or abs(other.right - rect.x) <= 1.5
+                right = right or abs(other.x - rect.right) <= 1.5
+            if overlaps(rect.x, rect.right, other.x, other.right):
+                top = top or abs(other.bottom - rect.y) <= 1.5
+                bottom = bottom or abs(other.y - rect.bottom) <= 1.5
+        return left, right, top, bottom
 
     def clamp(self, px: float, py: float, margin: float = 0.0) -> Tuple[float, float]:
         """Nearest habitable point, which is ``(px, py)`` when already on one.
 
         With several monitors the nearest point is found per rectangle and the
         closest wins, so a spider that strays into dead space is pushed back
-        onto whichever screen it left rather than to a fixed one.
+        onto whichever screen it left rather than to a fixed one. An edge a
+        monitor shares with its neighbour gets no margin, so the answer can
+        sit at the join instead of a margin into one screen.
         """
         if self._simple:
             return (
@@ -157,11 +193,23 @@ class Playfield:
         best = None
         best_d = float("inf")
         for rect in self._rects:
-            cx, cy = rect.clamp(px, py, margin)
-            d = (cx - px) ** 2 + (cy - py) ** 2
-            if d < best_d:
-                best_d = d
-                best = (cx, cy)
+            candidates = [rect.clamp(px, py, margin)]
+            if margin > 0.0:
+                left, right, top, bottom = self._open_sides(rect)
+                mx = min(margin, rect.w * 0.5)
+                my = min(margin, rect.h * 0.5)
+                x0 = rect.x + (0.0 if left else mx)
+                x1 = rect.right - (0.0 if right else mx)
+                y0 = rect.y + (0.0 if top else my)
+                y1 = rect.bottom - (0.0 if bottom else my)
+                seam = (min(max(px, x0), x1), min(max(py, y0), y1))
+                if self.contains(seam[0], seam[1], margin):
+                    candidates.append(seam)
+            for cx, cy in candidates:
+                d = (cx - px) ** 2 + (cy - py) ** 2
+                if d < best_d:
+                    best_d = d
+                    best = (cx, cy)
         return best if best is not None else (px, py)
 
 

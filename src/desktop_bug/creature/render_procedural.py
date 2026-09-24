@@ -1391,9 +1391,24 @@ class RenderProceduralMixin:
         does not levitate.
         """
         stance = getattr(self, "combat_stance", 0.0)
-        if stance <= 0.01 or front <= 0.15:
+        push, lift = self.strike_phase()
+        if (stance <= 0.01 and lift <= 0.01) or front <= 0.15:
             return foot_x, foot_y
-        weight = stance * clamp((front - 0.15) / 0.85, 0.0, 1.0)
+        front_weight = clamp((front - 0.15) / 0.85, 0.0, 1.0)
+        if lift > 0.01:
+            # A bite, seen from above: the front legs open out with the
+            # wind-up and are thrown at the target on the snap. No "raise"
+            # up the screen, which from above reads as one side reaching and
+            # the other tucking in.
+            face_x, face_y = self.strike_face
+            lateral_x, lateral_y = -face_y, face_x
+            side = self._side_sign(leg.definition.get("side", "right"))
+            spread = self.size * 0.30 * lift * front_weight
+            reach = self.size * (0.15 * lift + 0.60 * max(0.0, push)) * front_weight
+            foot_x += face_x * reach + lateral_x * side * spread
+            foot_y += face_y * reach + lateral_y * side * spread
+            return foot_x, foot_y
+        weight = stance * front_weight
         face_x = getattr(self, "combat_face_x", 0.0)
         face_y = getattr(self, "combat_face_y", 0.0)
         # Up, out to the side, and a little towards the foe: raised and

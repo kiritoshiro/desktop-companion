@@ -214,14 +214,26 @@ def test_a_squared_up_spider_faces_its_foe(brawl):
 # -------------------------------------------------------- the blow itself
 
 def test_a_landed_blow_throws_the_body_forward(brawl):
+    """Changed when the bite got a wind-up (the owner: "when attacking it
+    should show attacking movement, maybe the bite"). The body used to be at
+    full stretch on the frame of the blow and fade from there; now it draws
+    back first and then snaps forward past that stretch."""
     manager, left, right = brawl
     manager.update(DT, *AWAY)
     left.strike_landed(right)
-    assert left.lunge == pytest.approx(1.0)
-    offset_x, offset_y = left.combat_body_offset()
-    assert math.hypot(offset_x, offset_y) == pytest.approx(LUNGE_REACH * left.size)
-    # Forward, towards the foe.
-    assert offset_x * (right.x - left.x) + offset_y * (right.y - left.y) > 0.0
+    toward = (right.x - left.x, right.y - left.y)
+
+    def along():
+        ox, oy = left.combat_body_offset()
+        return (ox * toward[0] + oy * toward[1]) / (math.hypot(*toward) or 1.0)
+
+    first = along()
+    assert first < 0.0, "no wind-up: the body did not draw back first"
+    furthest = first
+    for _ in range(30):
+        left._update_combat_pose(DT)
+        furthest = max(furthest, along())
+    assert furthest >= LUNGE_REACH * left.size, (furthest, LUNGE_REACH * left.size)
 
 
 def test_a_blow_taken_throws_the_body_back(brawl):

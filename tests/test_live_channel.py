@@ -181,7 +181,12 @@ def test_dc16_acceptance(monkeypatch) -> None:
         # one of the three settings the owner asked to have folded back into
         # the per-slot columns. The scene-wide label switches replaced it in
         # that panel, and they travel the same channel.
-        assert settings.always_names_check.isChecked() is False
+        # Names are on by default now (the owner's request), so turn them off
+        # from the overlay first; each direction has to reach the window.
+        overlay._announce(overlay.manager.set_always_show_names(False))
+        assert _pump(lambda: not settings.always_names_check.isChecked()), (
+            "settings window did not follow the tray turning names off"
+        )
         overlay._announce(overlay.manager.set_always_show_names(True))
         assert _pump(lambda: settings.always_names_check.isChecked()), (
             "settings window did not follow the tray-driven change"

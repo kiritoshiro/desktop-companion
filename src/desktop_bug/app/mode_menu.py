@@ -49,8 +49,11 @@ def _art(kind: str, width: int) -> QLabel:
 
 
 class ModeShell(QWidget):
-    def __init__(self, companion: QWidget, start_adventure, parent=None):
+    def __init__(self, companion: QWidget, start_adventure, parent=None, leave_adventure=None):
         super().__init__(parent)
+        # Called when the player navigates away from the Adventure page, so
+        # the Adventure overlay does not stay on the desktop behind them.
+        self.leave_adventure = leave_adventure
         self.setObjectName("modeShell")
         # A QWidget subclass only paints a style-sheet background when asked.
         self.setAttribute(Qt.WA_StyledBackground, True)
@@ -67,6 +70,14 @@ class ModeShell(QWidget):
         for page in (self.companion, self.skirmish, self.strategy):
             self.stack.addWidget(page)
         self.stack.setCurrentWidget(self.home)
+        self._current_page = self.home
+        self.stack.currentChanged.connect(self._page_changed)
+
+    def _page_changed(self, _index: int) -> None:
+        previous, self._current_page = self._current_page, self.stack.currentWidget()
+        if previous is self.skirmish and self._current_page is not self.skirmish:
+            if self.leave_adventure is not None:
+                self.leave_adventure()
 
     def show_mode(self, mode: str):
         self.stack.setCurrentWidget(getattr(self, mode))

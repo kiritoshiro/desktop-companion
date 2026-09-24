@@ -202,3 +202,45 @@ def test_a_spider_is_not_left_vibrating_against_the_hole(monkeypatch):
         manager.update(DT, *AWAY)
     assert manager.playfield.contains(spider.target_x, spider.target_y), (
         "it is still aiming at a place no screen shows")
+
+
+# --------------------------------------------------------- the join between
+
+def test_the_join_between_two_monitors_is_not_an_edge():
+    """The owner: "sometimes spiders get stuck ... at the edge". Each monitor
+    applied the body margin to every one of its edges, the shared one too, so
+    a band two margins wide along the join counted as off-screen from both
+    sides and a spider crossing it was shoved back every frame."""
+    field = Playfield(*SCREEN, rects=[BIG, SMALL])
+    margin = 40.0
+    on_join = (BIG.right, 150.0)                 # both monitors cover y=150
+    assert field.contains(*on_join, margin)
+    assert field.clamp(*on_join, margin) == on_join
+    # The outside of a monitor, and the dead corner, are still edges.
+    assert not field.contains(BIG.right - 10.0, 590.0, margin)
+    assert not field.contains(*DEAD, margin)
+    x, y = field.clamp(BIG.right + 5.0, 590.0, margin)
+    assert field.contains(x, y, margin)
+
+
+def test_a_spider_walks_across_the_join(monkeypatch):
+    """Measured before the fix: crossing the join, the body jumped 28px in
+    one frame -- a whole body width -- as the nearest monitor flipped. After:
+    under a pixel, the ordinary walk."""
+    import math
+
+    manager = _colony(monkeypatch, rects=[BIG, SMALL], count=1)
+    spider = manager.creatures[0]
+    spider.x, spider.y = BIG.right - 150.0, 150.0
+    previous = (spider.x, spider.y)
+    biggest = 0.0
+    crossed = False
+    for _ in range(12 * 60):
+        spider.target_x, spider.target_y = SMALL.x + 250.0, 150.0
+        spider.state = "Wander"
+        manager.update(DT, *AWAY)
+        biggest = max(biggest, math.hypot(spider.x - previous[0], spider.y - previous[1]))
+        previous = (spider.x, spider.y)
+        crossed = crossed or spider.x > SMALL.x + 40.0
+    assert crossed, f"the spider never got across the join (x={spider.x:.0f})"
+    assert biggest < spider.size * 0.25, f"the body jumped {biggest:.1f}px in one frame"

@@ -68,7 +68,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     # name box, so a long name meant a long bar and two spiders at full health
     # looked different; the owner asked for "same width for all spiders".
     LABEL_BAR_WIDTH = 44.0
-    XP_BAR_COLOR = (112, 156, 236)
+    # Pale gold under the level; not the health bar's half-health amber.
+    XP_BAR_COLOR = (242, 212, 128)
+    # Sky blue: the health bar is green when full, so stamina must not be.
+    STAMINA_BAR_COLOR = (92, 176, 226)
     BASE_SIZE = 28.0
 
     def __init__(
@@ -275,6 +278,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.force_show_level = False
         self.force_show_health = False
         self.force_show_xp = False
+        self.force_show_stamina = False
         # DC-50: nerve. Counts down while this spider is running from a fight;
         # the manager sets it, the behaviour acts on it, and _speed_mult reads
         # it so every state it could be in runs at the same panicked pace.
@@ -386,6 +390,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.cursor_pressure = 0.0
         self.combat_stance = 0.0
         self.lunge = 0.0
+        # The bite animation (see ExpressionMixin.begin_strike): seconds into
+        # it, or None, and the unit direction it goes.
+        self.strike_clock = None
+        self.strike_face = (1.0, 0.0)
         self.combat_face_x = 0.0
         self.combat_face_y = 0.0
         self.squash = 1.0               # landing squash-and-stretch (1 = neutral)
@@ -1496,6 +1504,13 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     def xp_label_pinned(self) -> bool:
         return bool(self.force_show_xp)
 
+    @property
+    def stamina_label_pinned(self) -> bool:
+        return bool(self.force_show_stamina)
+
+    def stamina_fraction(self) -> float:
+        return clamp(float(self.energy) / max(1.0, float(self.max_energy)), 0.0, 1.0)
+
     def xp_fraction(self) -> float:
         """Progress toward the next level; full at the level cap."""
         if self.level >= MAX_LEVEL:
@@ -1520,7 +1535,8 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         still says nothing when the pointer passes over it, because that is a
         label appearing under the cursor rather than one the owner asked for.
         """
-        pinned = self.level_label_pinned or self.health_label_pinned or self.xp_label_pinned
+        pinned = (self.level_label_pinned or self.health_label_pinned or self.xp_label_pinned
+                  or self.stamina_label_pinned)
         if always_show or pinned:
             return True
         return bool(self.name) and self._hovered
@@ -1545,10 +1561,13 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         return QColor(red, green, blue, 235)
 
     def _label_text(self) -> str:
-        text = self.display_name
-        if self.level_label_pinned:
-            text += f"  ·  Lv {self.level}"
-        return text
+        return self.display_name + self._level_suffix()
+
+    def _level_suffix(self) -> str:
+        """"  ·  Lv N", shown for the level switch or for XP, which sits under it."""
+        if self.level_label_pinned or self.xp_label_pinned:
+            return f"  ·  Lv {self.level}"
+        return ""
 
     def bounding_rect(self, always_show_names: bool = False) -> Tuple[float, float, float, float]:
         """Return a padded (x0, y0, x1, y1) covering everything this spider draws.
@@ -1624,7 +1643,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         height = 0.0
         if self.health_label_pinned:
             height += self._health_bar_height() + 3.0
-        if self.xp_label_pinned:
+        if self.stamina_label_pinned:
             height += self._xp_bar_height() + 2.0
         return height
 
@@ -1695,6 +1714,21 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setPen(QPen(QColor(245, 247, 250, 255)))
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
+        if self.xp_label_pinned:
+            # XP as a thin brass line under "Lv N", inside the label: the
+            # owner wanted only health and stamina hanging below the name.
+            suffix = self._level_suffix().lstrip(" \u00b7")
+            level_w = fm.horizontalAdvance(suffix)
+            level_x = box_x + pad_x + tw - level_w
+            line_y = box_y + box_h - 3.5
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor(0, 0, 0, 150)))
+            painter.drawRoundedRect(QRectF(level_x, line_y, level_w, 2.5), 1.2, 1.2)
+            fill = level_w * self.xp_fraction()
+            if fill > 0.5:
+                painter.setBrush(QBrush(QColor(*self.XP_BAR_COLOR, 255)))
+                painter.drawRoundedRect(QRectF(level_x, line_y, fill, 2.5), 1.2, 1.2)
+            painter.setBrush(Qt.NoBrush)
         bar_w = self.LABEL_BAR_WIDTH
         bar_x = self.x - bar_w * 0.5
         bar_y = box_y + box_h + 3.0
@@ -1702,9 +1736,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self._draw_health_bar(painter, bar_x, bar_y, bar_w,
                                   QRectF, Qt, QColor, QBrush, QPen)
             bar_y += self._health_bar_height() + 2.0
-        if self.xp_label_pinned:
+        if self.stamina_label_pinned:
             self._draw_label_bar(painter, bar_x, bar_y, bar_w, self._xp_bar_height(),
-                                 self.xp_fraction(), QColor(*self.XP_BAR_COLOR, 235),
+                                 self.stamina_fraction(), QColor(*self.STAMINA_BAR_COLOR, 235),
                                  QRectF, Qt, QColor, QBrush, QPen)
 
     def render(self, painter, always_show_names: bool = False) -> None:

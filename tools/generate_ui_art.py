@@ -13,6 +13,7 @@ Outputs (all PNG):
 - ``wood_dark_tile.png`` walnut, tiles seamlessly; cards, HUD, dialogs
 - ``card_frame.png``     nine-slice carved frame for the mode cards
 - ``mode_companion.png`` / ``mode_adventure.png`` / ``mode_strategy.png``
+- ``app_icon.png`` / ``app_icon.ico``  the app's own icon (window, tray, exe)
 """
 
 from __future__ import annotations
@@ -225,7 +226,8 @@ _MODEL = None
 _TRAITS = None
 
 
-def spider_image(size: int, heading: float, walk_frames: int = 0, seed: int = 3) -> QImage:
+def spider_image(size: int, heading: float, walk_frames: int = 0, seed: int = 3,
+                 burned: bool = True) -> QImage:
     """The real tarantula, rendered and burned into a wood tone.
 
     Returned centred in a square ``size`` x ``size`` transparent image.
@@ -269,7 +271,7 @@ def spider_image(size: int, heading: float, walk_frames: int = 0, seed: int = 3)
     p.translate(-creature.x, -creature.y)
     creature.render(p, always_show_names=False)
     p.end()
-    return _burn_tone(raw)
+    return _burn_tone(raw) if burned else raw.convertToFormat(QImage.Format_ARGB32)
 
 
 def _burn_tone(image: QImage) -> QImage:
@@ -504,6 +506,81 @@ def card_frame() -> None:
     print("wrote card_frame.png")
 
 
+ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
+
+
+def app_icon_image(size: int = 256) -> QImage:
+    """A walnut medallion with a carved rim and the tarantula burned in.
+
+    Small sizes (the title bar and taskbar use 16-32px) get a lighter disc
+    and the spider in its own black and orange, larger: burned brown on brown
+    turned to mud below 48px.
+    """
+    small = size <= 48
+    image = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+    image.fill(0)
+    p = QPainter(image)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    disc = ellipse(size / 2, size / 2, size * 0.47, size * 0.47)
+    board = (wood(size, size, (214, 172, 118), (184, 138, 88), seed=41, rings=3) if small
+             else wood(size, size, (150, 100, 58), (96, 60, 32), seed=41, rings=4))
+    p.save()
+    p.setClipPath(disc)
+    p.drawImage(0, 0, board)
+    p.restore()
+    rim = size * (0.07 if small else 0.035)
+    p.setBrush(Qt.NoBrush)
+    p.setPen(QPen(QColor(30, 14, 4, 235), rim))
+    p.drawPath(disc)
+    p.setPen(QPen(QColor(255, 226, 170, 90), rim * 0.35))
+    p.drawEllipse(QPointF(size / 2 - rim * 0.25, size / 2 - rim * 0.25), size * 0.43, size * 0.43)
+    # Facing up and slightly right, legs spread: reads as a spider at 16px.
+    if small:
+        # Rendered large and scaled down, so the legs keep their shape.
+        spider = spider_image(256, -1.9, walk_frames=0, seed=4, burned=False)
+        spider = spider.scaled(int(size * 1.22), int(size * 1.22), Qt.KeepAspectRatio,
+                               Qt.SmoothTransformation)
+        place_spider(p, spider, size / 2, size / 2 + size * 0.03, scorch=False)
+    else:
+        spider = spider_image(int(size * 1.02), -1.9, walk_frames=0, seed=4)
+        place_spider(p, spider, size / 2, size / 2 + size * 0.02, scorch=size >= 64)
+    p.end()
+    return image
+
+
+def write_ico(images, path: Path) -> None:
+    """A Windows .ico holding one PNG per size (Vista and later read these)."""
+    import struct
+    from PyQt5.QtCore import QBuffer, QByteArray, QIODevice
+
+    blobs = []
+    for image in images:
+        data = QByteArray()
+        buffer = QBuffer(data)
+        buffer.open(QIODevice.WriteOnly)
+        image.save(buffer, "PNG")
+        buffer.close()
+        blobs.append((image.width(), bytes(data)))
+    header = struct.pack("<HHH", 0, 1, len(blobs))
+    offset = 6 + 16 * len(blobs)
+    entries, payload = b"", b""
+    for width, blob in blobs:
+        dim = 0 if width >= 256 else width
+        entries += struct.pack("<BBBBHHII", dim, dim, 0, 0, 1, 32, len(blob), offset + len(payload))
+        payload += blob
+    path.write_bytes(header + entries + payload)
+
+
+def app_icon() -> None:
+    big = app_icon_image(256)
+    big.save(str(OUT / "app_icon.png"))
+    images = [app_icon_image(n) if n <= 48 else
+              big.scaled(n, n, Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+              if n != 256 else big for n in ICON_SIZES]
+    write_ico(images, OUT / "app_icon.ico")
+    print("wrote app_icon.png, app_icon.ico")
+
+
 def main() -> None:
     app = QApplication.instance() or QApplication(sys.argv[:1])  # noqa: F841
     OUT.mkdir(parents=True, exist_ok=True)
@@ -515,6 +592,7 @@ def main() -> None:
     wood(256, 256, WALNUT_LIGHT, WALNUT_DARK, seed=5, rings=4).save(str(OUT / "wood_dark_tile.png"))
     print("wrote wood_dark_tile.png")
     card_frame()
+    app_icon()
     only = set(sys.argv[1:])
     for name, make in (("companion", companion), ("adventure", adventure), ("strategy", strategy)):
         if not only or name in only:

@@ -123,9 +123,20 @@ def test_remove_every_base(colony):
 # The scene-wide label switches
 # ----------------------------------------------------------------------
 
-def test_levels_are_off_until_asked_for(colony):
-    assert colony.always_show_levels is False
-    assert all(not c.level_label_pinned for c in colony.creatures)
+def _labels_off(colony):
+    """The owner turned names, levels, health and stamina on by default, so
+    the tests about what a switch *adds* start from everything off."""
+    for setter in (colony.set_always_show_levels, colony.set_always_show_health,
+                   colony.set_always_show_xp, colony.set_always_show_stamina):
+        setter(False)
+
+
+def test_levels_are_on_by_default(colony):
+    """Was "off until asked for"; the owner asked for them on by default."""
+    assert colony.always_show_levels is True
+    assert all(c.level_label_pinned for c in colony.creatures)
+    assert colony.always_show_health and colony.always_show_stamina
+    assert colony.always_show_xp is False, "XP is shown only on request"
 
 
 def test_one_switch_shows_every_level(colony):
@@ -172,6 +183,7 @@ def test_always_show_names_shows_the_ones_nobody_named(colony):
     checkboxes again. `display_name` already falls back to the model's own
     name, so there was always something to draw.
     """
+    _labels_off(colony)
     for creature in colony.creatures:
         assert not creature.name, "this test needs unnamed spiders"
         assert creature.display_name
@@ -182,6 +194,7 @@ def test_always_show_names_shows_the_ones_nobody_named(colony):
 def test_hovering_an_unnamed_spider_still_says_nothing(colony):
     """A label appearing under the cursor is not the same as one the owner
     asked for, so the hover path deliberately did not change."""
+    _labels_off(colony)
     creature = colony.creatures[0]
     creature._hovered = True
     assert creature.label_visible(False) is False

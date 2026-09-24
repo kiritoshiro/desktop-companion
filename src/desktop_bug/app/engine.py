@@ -44,7 +44,7 @@ from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from .adventure import PlayerController
 from .adventure_ui import AdventureSettingsDialog, PauseDialog, draw_hud, hud_rect
-from . import window_placement
+from . import window_placement, wood_theme
 from .controls import controls_path, load_controls
 from ..world.desktop_environment import snapshot_desktop_surfaces
 from ..world.playfield import ScreenRect
@@ -272,7 +272,7 @@ class CreatureInspectorDialog(QDialog):
         status_layout.addWidget(self.team_combo)
         team_note = QLabel(HOSTILITY_NOTE)
         team_note.setWordWrap(True)
-        team_note.setStyleSheet("color: #6a7180;")
+        team_note.setObjectName("teamNote")
         status_layout.addWidget(team_note)
         status_layout.addWidget(QLabel("Relationship with other spiders"))
         self.relations_layout = QVBoxLayout()
@@ -292,7 +292,7 @@ class CreatureInspectorDialog(QDialog):
 
         self.inventory_tab = QWidget()
         self.inventory_layout = QVBoxLayout(self.inventory_tab)
-        self.tabs.addTab(self.inventory_tab, "Inventory & armor")
+        self.tabs.addTab(self.inventory_tab, "Inventory && armor")
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.timeout.connect(self.refresh)
@@ -1782,7 +1782,9 @@ def _add_label_switches(parent, manager, announce) -> None:
         ("Always show health bars", "always_show_health", manager.set_always_show_health,
          "Show every spider's health bar, not just ones pinned individually."),
         ("Always show XP bars", "always_show_xp", manager.set_always_show_xp,
-         "Show every spider's progress to its next level under its health bar."),
+         "Show every spider's progress to its next level as a line under its level."),
+        ("Always show stamina bars", "always_show_stamina", manager.set_always_show_stamina,
+         "Show every spider's stamina (energy) under its health bar."),
     )
     for text, attribute, setter, tip in entries:
         action = parent.addAction(text)
@@ -1793,7 +1795,7 @@ def _add_label_switches(parent, manager, announce) -> None:
 
 
 def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
-    icon = QIcon.fromTheme("applications-games")
+    icon = wood_theme.app_icon() or QIcon.fromTheme("applications-games")
     if icon.isNull():
         icon = _fallback_tray_icon()
     tray = QSystemTrayIcon(icon, app)
@@ -2041,6 +2043,7 @@ def main(argv=None) -> int:
         log.info("Painting the overlay onto an OpenGL surface (DESKTOP_BUG_GL=0 to turn off)")
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window_placement.install(app)
+    wood_theme.apply_app_theme(app)
     app.setQuitOnLastWindowClosed(False)
     # Must search the bundled data too. A one-file build keeps its presets in
     # the directory it extracts itself into, not beside the executable.
