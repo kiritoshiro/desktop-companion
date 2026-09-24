@@ -603,6 +603,9 @@ class ConfigWindow(QMainWindow):
         self.always_health_check = QCheckBox("Health")
         self.always_health_check.setToolTip(
             "Show every spider's health bar, not only ones pinned one at a time.")
+        self.always_xp_check = QCheckBox("XP")
+        self.always_xp_check.setToolTip(
+            "Show every spider's progress to its next level, under its health bar.")
         # A stretch column on the right rather than under the combo: with
         # Mood and Movement gone the size dropdown was the only thing in its
         # row and grew to 700px to fill it, which looks like a mistake.
@@ -615,7 +618,7 @@ class ConfigWindow(QMainWindow):
         switches.setContentsMargins(0, 0, 0, 0)
         switches.setSpacing(12)
         for check in (self.always_names_check, self.always_levels_check,
-                      self.always_health_check):
+                      self.always_health_check, self.always_xp_check):
             switches.addWidget(check)
         switches.addStretch(1)
         switch_row = QWidget()
@@ -717,7 +720,7 @@ class ConfigWindow(QMainWindow):
         self.size_combo.currentIndexChanged.connect(self.update_summary)
         self.interferable_check.toggled.connect(self.update_summary)
         for check in (self.always_names_check, self.always_levels_check,
-                      self.always_health_check):
+                      self.always_health_check, self.always_xp_check):
             check.toggled.connect(self.update_summary)
         self.flies_enabled_check.toggled.connect(self.update_summary)
         self.flies_enabled_check.toggled.connect(self._update_flies_details_visibility)
@@ -1545,6 +1548,7 @@ class ConfigWindow(QMainWindow):
             "always_show_names": bool(self.always_names_check.isChecked()),
             "always_show_levels": bool(self.always_levels_check.isChecked()),
             "always_show_health": bool(self.always_health_check.isChecked()),
+            "always_show_xp": bool(self.always_xp_check.isChecked()),
             "teams": teams_payload(self._ensure_team_profiles()),
             # Only what was actually declared. Recomputing this from the pairs on
             # screen would drop a stance about a team no slot currently uses, and
@@ -1598,6 +1602,7 @@ class ConfigWindow(QMainWindow):
         self.always_names_check.setChecked(bool(settings.get("always_show_names", False)))
         self.always_levels_check.setChecked(bool(settings.get("always_show_levels", False)))
         self.always_health_check.setChecked(bool(settings.get("always_show_health", False)))
+        self.always_xp_check.setChecked(bool(settings.get("always_show_xp", False)))
 
         flies = settings.get("flies")
         flies = flies if isinstance(flies, dict) else {}
@@ -1994,7 +1999,8 @@ class ConfigWindow(QMainWindow):
         drag_text = "dragging on" if self.interferable_check.isChecked() else "dragging off"
         shown = [name for name, check in (("names", self.always_names_check),
                                           ("levels", self.always_levels_check),
-                                          ("health", self.always_health_check))
+                                          ("health", self.always_health_check),
+                                          ("XP", self.always_xp_check))
                  if check.isChecked()]
         label_text = ("always showing " + ", ".join(shown)) if shown else "labels on hover"
         summary = (f"Preset summary: {creature_text} Size: {size_text}. "
@@ -2097,7 +2103,8 @@ class ConfigWindow(QMainWindow):
             return
         for key, check in (("always_show_names", self.always_names_check),
                            ("always_show_levels", self.always_levels_check),
-                           ("always_show_health", self.always_health_check)):
+                           ("always_show_health", self.always_health_check),
+                           ("always_show_xp", self.always_xp_check)):
             if key in state:
                 check.setChecked(bool(state[key]))
         if "size_scale" in state:

@@ -53,6 +53,7 @@ class NamingMixin:
         for creature in self.creatures:
             creature.force_show_level = self.always_show_levels
             creature.force_show_health = self.always_show_health
+            creature.force_show_xp = getattr(self, "always_show_xp", False)
 
     def set_always_show_levels(self, enabled: bool) -> str:
         self.always_show_levels = bool(enabled)
@@ -65,6 +66,11 @@ class NamingMixin:
         self._apply_label_overrides()
         state = "on every spider" if self.always_show_health else "only where it was pinned"
         return f"Health bar now shown {state}."
+
+    def set_always_show_xp(self, enabled: bool) -> str:
+        self.always_show_xp = bool(enabled)
+        self._apply_label_overrides()
+        return f"XP bar {'shown on every spider' if self.always_show_xp else 'hidden'}."
 
     def name_creature(self, creature: Creature, name: str) -> str:
         if creature is None:

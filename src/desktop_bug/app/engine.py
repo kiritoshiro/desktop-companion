@@ -1525,6 +1525,8 @@ def _add_label_switches(parent, manager, announce) -> None:
          "Show every spider's level beside its name."),
         ("Always show health bars", "always_show_health", manager.set_always_show_health,
          "Show every spider's health bar, not just ones pinned individually."),
+        ("Always show XP bars", "always_show_xp", manager.set_always_show_xp,
+         "Show every spider's progress to its next level under its health bar."),
     )
     for text, attribute, setter, tip in entries:
         action = parent.addAction(text)
