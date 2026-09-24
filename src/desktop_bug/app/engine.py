@@ -518,6 +518,8 @@ class OverlayWindow(_OverlayBase):
         self.mode = mode
         self.player = None
         self._adventure_paused = False
+        self._adventure_hud_position = None
+        self._adventure_hud_drag_offset = None
         self.setWindowTitle("Desktop Bug Companion Overlay")
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -830,18 +832,26 @@ class OverlayWindow(_OverlayBase):
                 HTCLIENT = 1
                 HTTRANSPARENT = -1
                 if msg.message == WM_NCHITTEST:
-                    if self.mode == "adventure":
-                        return True, HTCLIENT
                     global_pos = QCursor.pos()
                     local = global_pos - self.geometry_rect.topLeft()
                     mx = float(local.x())
                     my = float(local.y())
+                    if self.mode == "adventure":
+                        if self._adventure_captures_mouse(mx, my):
+                            return True, HTCLIENT
+                        return True, HTTRANSPARENT
                     if self.manager.wants_mouse(mx, my):
                         return True, HTCLIENT
                     return True, HTTRANSPARENT
             except Exception:
                 pass
         return super().nativeEvent(event_type, message)
+
+    def _adventure_captures_mouse(self, mx: float, my: float) -> bool:
+        """Capture the screen while playing; after release, keep spider clicks."""
+        if self.player is not None or self._adventure_paused:
+            return True
+        return self.manager.creature_at(mx, my) is not None
 
     def _update_input_transparency(self) -> None:
         """GL overlay only: pass input through unless the cursor is over
@@ -854,8 +864,10 @@ class OverlayWindow(_OverlayBase):
         if not GL_OVERLAY:
             return
         if getattr(self, "mode", "companion") == "adventure":
-            if getattr(self, "_input_transparent", None) is not False:
-                set_input_transparent(self, False)
+            local = QCursor.pos() - self.geometry_rect.topLeft()
+            transparent = not self._adventure_captures_mouse(float(local.x()), float(local.y()))
+            if transparent != getattr(self, "_input_transparent", None):
+                set_input_transparent(self, transparent)
             return
         local = QCursor.pos() - self.geometry_rect.topLeft()
         transparent = not self.manager.wants_mouse(float(local.x()), float(local.y()))
@@ -1218,6 +1230,7 @@ class OverlayWindow(_OverlayBase):
             super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):  # noqa: N802 - Qt API name
+        self._adventure_hud_drag_offset = None
         if self.player is not None:
             self.player.clear_keys()
         super().focusOutEvent(event)
@@ -1280,6 +1293,11 @@ class OverlayWindow(_OverlayBase):
             if self._adventure_paused:
                 return
             local = event.globalPos() - self.geometry_rect.topLeft()
+            if (self.player is not None and event.button() == Qt.LeftButton
+                    and hud_rect(self).contains(local)):
+                self._adventure_hud_drag_offset = local - hud_rect(self).topLeft()
+                event.accept()
+                return
             if self.player is None:
                 creature = self.manager.creature_at(float(local.x()), float(local.y()))
                 if creature is not None:
@@ -1300,6 +1318,24 @@ class OverlayWindow(_OverlayBase):
         my = float(local.y())
         self._show_context_menu(gp, mx, my)
         event.accept()
+
+    def mouseMoveEvent(self, event):  # noqa: N802 - Qt API name
+        if self.mode == "adventure" and self._adventure_hud_drag_offset is not None:
+            if event.buttons() & Qt.LeftButton:
+                local = event.globalPos() - self.geometry_rect.topLeft()
+                self._adventure_hud_position = local - self._adventure_hud_drag_offset
+                self._request_full_repaint()
+                event.accept()
+                return
+            self._adventure_hud_drag_offset = None
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt API name
+        if self._adventure_hud_drag_offset is not None and event.button() == Qt.LeftButton:
+            self._adventure_hud_drag_offset = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def _show_context_menu(self, global_pos, mx: float, my: float) -> None:
         menu = QMenu(self)

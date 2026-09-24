@@ -70,9 +70,8 @@ def _render(levels: bool, monkeypatch) -> QImage:
 
 # ------------------------------------------------------- the picture, both ways
 
-def test_turning_the_levels_off_restores_the_previous_picture(monkeypatch):
-    """The strongest claim available about a change that removes drawing:
-    with the levels off, every pixel is where it was."""
+def test_turning_the_levels_off_matches_the_full_detail_reference(monkeypatch):
+    """With detail levels off, match the full-detail image at the current size."""
     assert FULL_DETAIL.exists(), "the full-detail reference is missing"
     before = QImage(str(FULL_DETAIL))
     assert not before.isNull()

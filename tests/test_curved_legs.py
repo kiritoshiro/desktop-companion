@@ -175,10 +175,8 @@ def test_only_the_tarantula_opts_in(content):
     assert curved == ["tarantula"], curved
 
 
-def test_turning_the_curve_off_restores_the_previous_picture(monkeypatch):
-    """`creature_render_straight_legs.png` is main's reference as it stood
-    before this package. Off, the renderer must reproduce it to 0/255 --
-    which also covers every other model in the colony frame."""
+def test_turning_the_curve_off_matches_the_straight_reference(monkeypatch):
+    """With curves off, match the straight-leg image at the current spider size."""
     monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="dc76-"))
     RP.CURVED_LEGS = False
     before = QImage(str(STRAIGHT))

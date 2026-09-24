@@ -71,16 +71,8 @@ def _render(batched: bool, monkeypatch) -> QImage:
 
 # --------------------------------------------------- the picture, both ways
 
-def test_turning_batching_off_restores_the_previous_picture(monkeypatch):
-    """The strongest thing that can be said about a performance change.
-
-    `creature_render_unbatched.png` is the reference exactly as it stood
-    before this package. With batching off the renderer must still produce
-    it to 0/255, which means everything this package touched -- the hoisted
-    hair colour, the toe, the dead branch removed from the fluff spline --
-    left the drawing alone, and the only thing that moves pixels is the
-    regrouping itself.
-    """
+def test_turning_batching_off_matches_the_unbatched_reference(monkeypatch):
+    """With batching off, match the unbatched image at the current spider size."""
     assert UNBATCHED.exists(), "the pre-batch reference is missing"
     before = QImage(str(UNBATCHED))
     assert not before.isNull()

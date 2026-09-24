@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QRect
+from PyQt5.QtCore import QRect, Qt
 from PyQt5.QtGui import QColor, QPen
 from PyQt5.QtWidgets import QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
 
@@ -12,9 +12,15 @@ HUD_HEIGHT = 134
 
 
 def hud_rect(window):
-    return QRect(max(8, (window.width() - HUD_WIDTH) // 2),
-                 max(8, window.height() - HUD_HEIGHT - 14),
-                 min(HUD_WIDTH, window.width() - 16), HUD_HEIGHT)
+    width = min(HUD_WIDTH, max(1, window.width() - 16))
+    height = min(HUD_HEIGHT, max(1, window.height() - 16))
+    position = getattr(window, "_adventure_hud_position", None)
+    if position is None:
+        return QRect(max(8, (window.width() - width) // 2),
+                     max(8, window.height() - height - 14), width, height)
+    return QRect(max(8, min(position.x(), window.width() - width - 8)),
+                 max(8, min(position.y(), window.height() - height - 8)),
+                 width, height)
 
 
 def draw_hud(painter, window, controller):
@@ -26,8 +32,17 @@ def draw_hud(painter, window, controller):
     painter.setBrush(QColor(19, 23, 38, 230))
     painter.drawRoundedRect(rect, 14, 14)
     painter.setPen(QColor("#f7f5ff"))
-    painter.drawText(rect.left() + 16, rect.top() + 22,
-                     f"{spider.display_name}  ·  Level {spider.level}")
+    body_font = painter.font()
+    painter.setFont(spider._label_font())
+    title = f"{spider.display_name}  ·  Level {spider.level}"
+    title = painter.fontMetrics().elidedText(title, Qt.ElideRight, max(1, rect.width() - 64))
+    painter.drawText(QRect(rect.left() + 16, rect.top() + 3, rect.width() - 64, 26),
+                     Qt.AlignLeft | Qt.AlignVCenter, title)
+    painter.setFont(body_font)
+    painter.setPen(QPen(QColor("#aab2cf"), 2, Qt.SolidLine, Qt.RoundCap))
+    for y in (11, 16, 21):
+        painter.drawLine(rect.right() - 31, rect.top() + y,
+                         rect.right() - 16, rect.top() + y)
 
     def bar(y, label, value, maximum, color):
         x = rect.left() + 16
@@ -130,7 +145,7 @@ class AdventureSettingsDialog(QDialog):
         self.fps.setCurrentIndex(current)
         row.addWidget(self.fps)
         layout.addLayout(row)
-        controls = QLabel("WASD move · Shift sprint · Space jump · Click shoot · K skills · Esc pause")
+        controls = QLabel("WASD move · Shift sprint · Space jump · Click shoot · Drag the status panel to move it · K skills · Esc pause")
         controls.setWordWrap(True)
         layout.addWidget(controls)
         done = QPushButton("Apply and return")

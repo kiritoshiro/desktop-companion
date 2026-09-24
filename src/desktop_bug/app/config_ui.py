@@ -1110,7 +1110,7 @@ class ConfigWindow(QMainWindow):
             creature.ceph_pulse = 0.0
             # Keep every model readable in the same icon space; this is a visual
             # swatch, not a scale comparison between species.
-            creature.size = max(16.0, min(22.0, float(model.get("base_size", 25)) * 0.82))
+            creature.size = Creature.BASE_SIZE * 0.75
             creature._initialize_legs()
             creature.render(painter)
         except Exception:
