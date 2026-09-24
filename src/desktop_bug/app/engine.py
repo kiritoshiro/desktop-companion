@@ -41,7 +41,7 @@ from .session_control import clear_stop_request, consume_stop_request
 from .live_channel import OverlayChannelServer, channel_name
 from ..manager import CreatureManager
 from ..content.preset_io import load_preset
-from .overlay_win32 import apply_click_through, set_cursor_pos
+from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from ..world.desktop_environment import snapshot_desktop_surfaces
 from ..world.playfield import ScreenRect
 from ..support.frame_policy import FramePolicy
@@ -67,6 +67,10 @@ def _target_fps() -> float:
     except Exception:
         fps = 60.0
     return max(10.0, min(60.0, fps))
+
+
+# DC-79: how often the GL overlay re-decides whether to let the mouse through.
+INPUT_CHECK_MS = 50
 
 
 def _frame_interval_ms_for_fps(fps: float) -> int:
@@ -603,6 +607,16 @@ class OverlayWindow(_OverlayBase):
         self.timer.timeout.connect(self.tick)
         self.timer.start(FRAME_INTERVAL_MS)
 
+        # DC-79: on the GL overlay, whether the window lets the mouse through
+        # is decided on its own timer, not in `tick`. The frame rate can drop
+        # to 1 FPS (FramePolicy, e.g. under a fullscreen app); tied to the
+        # frame, a cursor last seen over a spider would leave the whole screen
+        # captured for up to a second at a time.
+        self.input_timer = QTimer(self)
+        self.input_timer.timeout.connect(self._update_input_transparency)
+        if GL_OVERLAY:
+            self.input_timer.start(INPUT_CHECK_MS)
+
         # Qt/Windows can rewrite extended styles after show/repaint. Reapply periodically.
         self.style_timer = QTimer(self)
         self.style_timer.timeout.connect(lambda: apply_click_through(self))
@@ -610,6 +624,10 @@ class OverlayWindow(_OverlayBase):
 
     def showEvent(self, event):  # noqa: N802 - Qt API name
         super().showEvent(event)
+        if GL_OVERLAY:
+            # Start out letting the desktop keep its mouse; the input timer
+            # takes it back only when the cursor is over something to grab.
+            set_input_transparent(self, True)
         QTimer.singleShot(0, lambda: apply_click_through(self))
         QTimer.singleShot(0, self._refresh_desktop_surfaces)
         QTimer.singleShot(250, lambda: apply_click_through(self))
@@ -806,6 +824,21 @@ class OverlayWindow(_OverlayBase):
             except Exception:
                 pass
         return super().nativeEvent(event_type, message)
+
+    def _update_input_transparency(self) -> None:
+        """GL overlay only: pass input through unless the cursor is over
+        something interactive (DC-79; see overlay_win32.apply_click_through).
+
+        The same question nativeEvent answers per hit-test, asked once a frame
+        from the cursor position instead -- once the window is transparent to
+        input it receives no hit-tests to answer. Written only on change.
+        """
+        if not GL_OVERLAY:
+            return
+        local = QCursor.pos() - self.geometry_rect.topLeft()
+        transparent = not self.manager.wants_mouse(float(local.x()), float(local.y()))
+        if transparent != getattr(self, "_input_transparent", None):
+            set_input_transparent(self, transparent)
 
     def tick(self) -> None:
         self.profiler.begin_frame()
