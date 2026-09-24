@@ -69,6 +69,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     # looked different; the owner asked for "same width for all spiders".
     LABEL_BAR_WIDTH = 44.0
     XP_BAR_COLOR = (112, 156, 236)
+    BASE_SIZE = 28.0
 
     def __init__(
         self,
@@ -158,8 +159,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.team_profiles: dict = {}
 
         self.size_scale = clamp(float(size_scale), 0.45, 2.25)
-        self.size_jitter = self.rng.uniform(0.90, 1.12)
-        self._progression_base_size = float(model.get("base_size", 25)) * self.size_jitter
+        # Keep the old random draw in the seeded stream so removing size
+        # variation does not also change each spider's starting position.
+        self.rng.random()
+        self._progression_base_size = self.BASE_SIZE
         self.size = self._progression_base_size * self.size_scale
         self.x = self.rng.uniform(self.margin, self.screen_w - self.margin)
         self.y = self.rng.uniform(self.margin, self.screen_h - self.margin)
@@ -174,6 +177,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.strafe_observe = False
         self.turn_rate = self.rng.uniform(4.0, 6.0)
         self.state = "Idle"
+        self.player_control = None
         self.state_timer = rand_range(personality.get("idle_time"), 1.0, 3.0, rng=self.rng)
         self.decision_timer = self.rng.uniform(0.2, 0.5)
         self.motion_paused = False
@@ -733,7 +737,8 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.progression.skill_points += 1
             self._apply_progression_stats(carry_wounds=True)
             events.append(f"reached level {self.progression.level}")
-            events.extend(self._spend_skill_points())
+            if self.player_control is None:
+                events.extend(self._spend_skill_points())
         if self.progression.level >= MAX_LEVEL:
             # One large award can carry a remainder past the last threshold.
             # Leaving it unclamped overfills the inspector's XP bar.
@@ -1252,6 +1257,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.motion_paused = True
             self.current_speed = 0.0
             return
+        if self.player_control is not None:
+            self._regenerate_energy(dt)
+            self.player_control.update(dt)
+            return
         self.perception = build_perception(self)
         if self._hunting_prey:
             # A spider locked onto a fly reacts to that candidate here, before
@@ -1494,10 +1503,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         return clamp(float(self.xp) / max(1.0, float(xp_to_next_level(self.level))), 0.0, 1.0)
 
     def _label_font(self):
-
-        font = QFont()
-        font.setPointSizeF(max(8.0, min(13.0, self.size * 0.42)))
-        font.setBold(True)
+        font = QFont("Segoe UI")
+        font.setPointSizeF(10.0 + (self.level - 1) * 0.1)
+        font.setWeight(QFont.DemiBold)
         return font
 
     def label_visible(self, always_show: bool) -> bool:

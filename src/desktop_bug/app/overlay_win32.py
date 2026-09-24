@@ -73,13 +73,14 @@ def apply_click_through(widget) -> bool:
 
         # Keep the window available above normal apps without activating it.
         HWND_TOPMOST = -1
+        HWND_NOTOPMOST = -2
         SWP_NOMOVE = 0x0002
         SWP_NOSIZE = 0x0001
         SWP_NOACTIVATE = 0x0010
         SWP_SHOWWINDOW = 0x0040
         user32.SetWindowPos(
             wintypes.HWND(hwnd),
-            wintypes.HWND(HWND_TOPMOST),
+            wintypes.HWND(HWND_NOTOPMOST if getattr(widget, "mode", "companion") == "adventure" else HWND_TOPMOST),
             0,
             0,
             0,

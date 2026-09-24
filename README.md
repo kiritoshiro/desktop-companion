@@ -62,6 +62,27 @@ Teams are named and coloured in a preset, and pairs set in `team_relations`:
 "settings": { "team_relations": { "pack_a": { "rivals": "foe" } } }
 ```
 
+## Modes and Adventure control
+
+The settings window opens on a three-mode start screen:
+
+- **Companion** contains the existing preset editor and desktop overlay controls.
+- **Skirmish** previews the planned mission mode and launches the current
+  Adventure control prototype using the active preset.
+- **Strategy** previews the planned colony command mode.
+
+Adventure takes control of the first living spider in the preset. Its current
+health, energy, level, equipment and progression are used. WASD moves, Shift
+sprints (draining energy), Space jumps, the mouse aims, left-click fires a web
+at a nearby fly or foe, right-click bites a nearby foe, K opens the existing
+skill tree, and Esc opens the pause menu. The status panel shows health,
+stamina and action cooldowns; drag it to place it on screen. Adventure captures
+mouse input while active. Releasing control lets the spider resume its ordinary
+behavior and restores clicks on desktop folders and windows; click a spider to
+take control again. Spiders at the same level use the same baseline size and
+name style, growing slightly with each level. Saving uses the same runtime
+state as Companion. Skirmish missions and Strategy orders are future features.
+
 ## Saved state
 
 Progress is saved to `%LOCALAPPDATA%\DesktopBugCompanion\state\creatures.json`

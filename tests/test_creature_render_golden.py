@@ -1,11 +1,7 @@
-"""DC-11 splits an 8,500-line file with a hard rule: a pure move, no logic
-edits. The only way to actually know a mechanical split changed nothing is to
-render before and after and compare pixels, not to read the diff and hope.
+"""A seeded colony must match the committed creature rendering reference.
 
-This test renders a fixed, seeded colony to an offscreen QImage and compares
-it against a committed reference. It is written and the reference generated
-*before* creature.py is split into a package, exactly as the plan requires,
-so a failure here after the split means the split was not actually pure.
+The reference was refreshed for uniform baseline spider size and level-based
+name styling. Any later rendering change should be reviewed before replacing it.
 """
 
 from __future__ import annotations
@@ -103,7 +99,7 @@ def max_channel_difference(left: QImage, right: QImage) -> int:
     return worst
 
 
-def test_the_split_did_not_change_a_single_pixel(monkeypatch):
+def test_creature_render_matches_reference(monkeypatch):
     # A fresh, private state directory: otherwise this reads whatever
     # progression a real launch happened to save (or nothing, non-deterministic
     # either way), and a spider's size and health bar both depend on its level.
@@ -113,17 +109,13 @@ def test_the_split_did_not_change_a_single_pixel(monkeypatch):
     # before -- a rendering test should not fail over that.
     monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="golden-render-"))
     live = render_reference_frame()
-    assert GOLDEN.exists(), (
-        "no reference image yet -- generate it with the render helper in this "
-        "file *before* moving anything, per DC-11's guardrail"
-    )
+    assert GOLDEN.exists(), "no creature rendering reference image exists"
     reference = QImage(str(GOLDEN))
     assert not reference.isNull(), f"could not load {GOLDEN}"
     worst = max_channel_difference(live, reference)
     assert worst <= 2, (
         f"the rendered colony differs from the committed reference by up to "
-        f"{worst}/255 on one channel -- a mechanical move changed something "
-        "it should not have"
+        f"{worst}/255 on one channel"
     )
     # And the comparison has to be capable of failing, or it proves nothing.
     blank = QImage(*SCREEN, QImage.Format_ARGB32_Premultiplied)

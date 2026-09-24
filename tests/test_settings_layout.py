@@ -46,6 +46,7 @@ def window(qapp, monkeypatch):
     scratch = Path(tempfile.mkdtemp(prefix="dc-layout-"))
     monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(scratch / "state"))
     win = ConfigWindow()
+    win.mode_shell.show_mode("companion")
     yield win
     win.close()
 

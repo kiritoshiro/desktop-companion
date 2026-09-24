@@ -43,6 +43,7 @@ from ..content.discovery import app_root, discover_models, discover_personalitie
 from ..support.dpi import enable_high_dpi_scaling
 from ..support.logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
+from .mode_menu import ModeShell
 from ..state.runtime_state import reset_saved_progress
 from .live_channel import SettingsChannelClient, channel_name
 from ..content.preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
@@ -318,6 +319,10 @@ class ConfigWindow(QMainWindow):
         self.resize(960, 860)
         self.setMinimumSize(840, 560)
         self._build_ui()
+        companion_page = self.takeCentralWidget()
+        self.mode_shell = ModeShell(companion_page, self.start_adventure, self)
+        self.setCentralWidget(self.mode_shell)
+        self._overlay_mode = None
         self.refresh_discovery()
         self.refresh_presets()
         default_path = find_data_file("presets", "default.json", root=self.root)
@@ -1105,7 +1110,7 @@ class ConfigWindow(QMainWindow):
             creature.ceph_pulse = 0.0
             # Keep every model readable in the same icon space; this is a visual
             # swatch, not a scale comparison between species.
-            creature.size = max(16.0, min(22.0, float(model.get("base_size", 25)) * 0.82))
+            creature.size = Creature.BASE_SIZE * 0.75
             creature._initialize_legs()
             creature.render(painter)
         except Exception:
@@ -2207,10 +2212,15 @@ class ConfigWindow(QMainWindow):
         path = user_presets_dir() / safe_preset_filename(data["name"])
         return save_preset(data, path)
 
-    def launch_engine(self):
+    def start_adventure(self):
+        self.launch_engine(mode="adventure")
+
+    def launch_engine(self, _checked=False, mode="companion"):
         # If an overlay is already running, do not force a stop: rewrite its
         # preset and let it reload the new models, personalities, counts, skills,
         # and settings live.
+        if self._overlay_running() and self._overlay_mode != mode:
+            self.stop_overlay()
         if self._overlay_running():
             if self._apply_live_if_running():
                 self.status.setText("Applied changes to the running overlay. No restart needed.")
@@ -2221,7 +2231,7 @@ class ConfigWindow(QMainWindow):
             QMessageBox.critical(self, "Could not prepare preset", str(exc))
             return
         if getattr(sys, "frozen", False):
-            cmd = [sys.executable, "--engine", "--preset", str(preset_path)]
+            cmd = [sys.executable, "--engine", "--preset", str(preset_path), "--mode", mode]
             env = None
             cwd = str(self.root)
         else:
@@ -2230,7 +2240,7 @@ class ConfigWindow(QMainWindow):
             # with "No module named desktop_bug.engine". A module path in a
             # string is invisible to both the import machinery and ruff;
             # tests/test_module_paths.py now resolves these.
-            cmd = [sys.executable, "-m", "desktop_bug.app.engine", "--preset", str(preset_path)]
+            cmd = [sys.executable, "-m", "desktop_bug.app.engine", "--preset", str(preset_path), "--mode", mode]
             env = os.environ.copy()
             existing = env.get("PYTHONPATH", "")
             src_path = str(self.root / "src")
@@ -2265,6 +2275,7 @@ class ConfigWindow(QMainWindow):
             return
 
         self.launched_preset_path = str(preset_path)
+        self._overlay_mode = mode
         self.status.setText("Overlay launched. Edit and press Save to apply changes live, or Stop overlay to close it.")
 
     def _wait_tick(self, seconds: float) -> None:
@@ -2379,6 +2390,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Desktop Bug Companion settings UI")
     parser.add_argument("--engine", action="store_true", help="Internal: run the overlay engine from the packaged executable")
     parser.add_argument("--preset", default=None, help="Preset to use when --engine is present")
+    parser.add_argument("--mode", choices=("companion", "adventure"), default="companion")
     args, remaining = parser.parse_known_args(argv)
     if args.engine:
         from .engine import main as engine_main
@@ -2386,6 +2398,7 @@ def main(argv=None) -> int:
         engine_args = []
         if args.preset:
             engine_args.extend(["--preset", args.preset])
+        engine_args.extend(("--mode", args.mode))
         engine_args.extend(remaining)
         return engine_main(engine_args)
 

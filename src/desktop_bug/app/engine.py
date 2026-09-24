@@ -42,6 +42,8 @@ from .live_channel import OverlayChannelServer, channel_name
 from ..manager import CreatureManager
 from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
+from .adventure import PlayerController
+from .adventure_ui import AdventureSettingsDialog, PauseDialog, draw_hud, hud_rect
 from ..world.desktop_environment import snapshot_desktop_surfaces
 from ..world.playfield import ScreenRect
 from ..support.frame_policy import FramePolicy
@@ -511,8 +513,13 @@ class CreatureInspectorDialog(QDialog):
 
 
 class OverlayWindow(_OverlayBase):
-    def __init__(self, preset_path: Path, seed: int | None = None):
+    def __init__(self, preset_path: Path, seed: int | None = None, mode: str = "companion"):
         super().__init__(None)
+        self.mode = mode
+        self.player = None
+        self._adventure_paused = False
+        self._adventure_hud_position = None
+        self._adventure_hud_drag_offset = None
         self.setWindowTitle("Desktop Bug Companion Overlay")
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -525,7 +532,9 @@ class OverlayWindow(_OverlayBase):
         # On Windows, nativeEvent returns HTTRANSPARENT away from spider pixels.
         # On other platforms we keep the previous fully click-through behavior.
         self.setAttribute(Qt.WA_TransparentForMouseEvents, not sys.platform.startswith("win"))
-        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, mode != "adventure")
+        if mode == "adventure":
+            self.setFocusPolicy(Qt.StrongFocus)
         if GL_OVERLAY:
             # Qt's documented requirement for a translucent QOpenGLWidget:
             # without it the GL surface is composited under the window's own
@@ -538,6 +547,11 @@ class OverlayWindow(_OverlayBase):
         self._last_camouflage_sample_ms = 0
         self.setGeometry(self.geometry_rect)
         self.manager = CreatureManager(preset_path, self.width(), self.height(), seed=seed)
+        if mode == "adventure":
+            self.manager.interferable = False
+            self.manager.naming_enabled = False
+            self.manager.allow_mouse_capture = False
+            self._possess_next_spider()
         self.manager.set_screen_rects(screen_rects_local(self.geometry_rect.topLeft()))
         for warning in self.manager.warnings:
             log.warning("%s", warning)
@@ -624,12 +638,16 @@ class OverlayWindow(_OverlayBase):
 
     def showEvent(self, event):  # noqa: N802 - Qt API name
         super().showEvent(event)
-        if GL_OVERLAY:
+        if self.mode == "adventure":
+            QTimer.singleShot(0, self.activateWindow)
+            QTimer.singleShot(0, self.setFocus)
+        if GL_OVERLAY and self.mode != "adventure":
             # Start out letting the desktop keep its mouse; the input timer
             # takes it back only when the cursor is over something to grab.
             set_input_transparent(self, True)
         QTimer.singleShot(0, lambda: apply_click_through(self))
-        QTimer.singleShot(0, self._refresh_desktop_surfaces)
+        if self.mode != "adventure":
+            QTimer.singleShot(0, self._refresh_desktop_surfaces)
         QTimer.singleShot(250, lambda: apply_click_through(self))
 
     def set_target_fps(self, fps: float) -> None:
@@ -818,12 +836,22 @@ class OverlayWindow(_OverlayBase):
                     local = global_pos - self.geometry_rect.topLeft()
                     mx = float(local.x())
                     my = float(local.y())
+                    if self.mode == "adventure":
+                        if self._adventure_captures_mouse(mx, my):
+                            return True, HTCLIENT
+                        return True, HTTRANSPARENT
                     if self.manager.wants_mouse(mx, my):
                         return True, HTCLIENT
                     return True, HTTRANSPARENT
             except Exception:
                 pass
         return super().nativeEvent(event_type, message)
+
+    def _adventure_captures_mouse(self, mx: float, my: float) -> bool:
+        """Capture the screen while playing; after release, keep spider clicks."""
+        if self.player is not None or self._adventure_paused:
+            return True
+        return self.manager.creature_at(mx, my) is not None
 
     def _update_input_transparency(self) -> None:
         """GL overlay only: pass input through unless the cursor is over
@@ -834,6 +862,12 @@ class OverlayWindow(_OverlayBase):
         input it receives no hit-tests to answer. Written only on change.
         """
         if not GL_OVERLAY:
+            return
+        if getattr(self, "mode", "companion") == "adventure":
+            local = QCursor.pos() - self.geometry_rect.topLeft()
+            transparent = not self._adventure_captures_mouse(float(local.x()), float(local.y()))
+            if transparent != getattr(self, "_input_transparent", None):
+                set_input_transparent(self, transparent)
             return
         local = QCursor.pos() - self.geometry_rect.topLeft()
         transparent = not self.manager.wants_mouse(float(local.x()), float(local.y()))
@@ -863,7 +897,7 @@ class OverlayWindow(_OverlayBase):
                 self.manager.set_screen_rects(screen_rects_local(rect.topLeft()))
                 apply_click_through(self)
                 self._request_full_repaint()
-        if current_ms - self._last_desktop_surface_check_ms >= DESKTOP_SURFACE_CHECK_MS:
+        if self.mode != "adventure" and current_ms - self._last_desktop_surface_check_ms >= DESKTOP_SURFACE_CHECK_MS:
             self._last_desktop_surface_check_ms = current_ms
             # Timed separately because it still runs on the frame thread; DC-13
             # is the package that moves it off, and this is the evidence for it.
@@ -878,6 +912,12 @@ class OverlayWindow(_OverlayBase):
         local = global_pos - self.geometry_rect.topLeft()
         mx = float(local.x())
         my = float(local.y())
+        if self.mode == "adventure":
+            if self.player is not None:
+                self.player.aim = (mx, my)
+            if self._adventure_paused:
+                self.request_repaint()
+                return
 
         if current_ms - self._last_camouflage_sample_ms >= CAMOUFLAGE_SAMPLE_MS:
             self._last_camouflage_sample_ms = current_ms
@@ -892,7 +932,15 @@ class OverlayWindow(_OverlayBase):
         # manager returns the overlay-local position the pointer should be forced
         # to this frame (or None to leave it alone). Only the engine can move the
         # real OS pointer, so apply it here, converting back to global pixels.
-        desired = self.manager.update(dt, mx, my, mouse_down=mouse_down, mouse_pressed=mouse_pressed, mouse_released=mouse_released)
+        desired = self.manager.update(
+            dt, mx, my,
+            mouse_down=mouse_down and self.mode != "adventure",
+            mouse_pressed=mouse_pressed and self.mode != "adventure",
+            mouse_released=mouse_released and self.mode != "adventure",
+        )
+        if self.player is not None and self.player.creature.dead:
+            self.player.release()
+            self.player = None
         if desired is not None:
             origin = self.geometry_rect.topLeft()
             logical_x = origin.x() + desired[0]
@@ -1047,6 +1095,10 @@ class OverlayWindow(_OverlayBase):
         if fly_world is not None:
             for fp in fly_world.dirty_rects():
                 region += self._rect_from_xywh(fp)
+        if self.mode == "adventure":
+            region += hud_rect(self)
+            aim = QCursor.pos() - self.geometry_rect.topLeft()
+            region += QRect(aim.x() - 16, aim.y() - 16, 32, 32)
         if self.show_profile_hud:
             # The HUD changes every frame, so its panel has to be exposed every
             # frame or the old numbers stay on the backing store underneath.
@@ -1091,6 +1143,17 @@ class OverlayWindow(_OverlayBase):
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
         self.manager.render(painter)
+        if self.mode == "adventure":
+            if self.player is not None:
+                draw_hud(painter, self, self.player)
+            else:
+                painter.setPen(QColor("#ffffff"))
+                painter.drawText(24, 42, "Click a spider to take control · Esc for menu")
+            aim = QCursor.pos() - self.geometry_rect.topLeft()
+            painter.setPen(QColor("#f7df93"))
+            painter.drawEllipse(aim, 7, 7)
+            painter.drawLine(aim.x() - 12, aim.y(), aim.x() - 4, aim.y())
+            painter.drawLine(aim.x() + 4, aim.y(), aim.x() + 12, aim.y())
         if self.show_profile_hud:
             self._draw_profile_hud(painter)
         painter.end()
@@ -1134,7 +1197,118 @@ class OverlayWindow(_OverlayBase):
     # ------------------------------------------------------------------
     # Right-click: name spiders and manage cages
     # ------------------------------------------------------------------
+    def _possess_next_spider(self, creature=None):
+        if self.player is not None:
+            self.player.release()
+        if creature is None:
+            creature = next((item for item in self.manager.creatures if not item.dead), None)
+        self.player = PlayerController(creature) if creature is not None else None
+        self._request_full_repaint()
+
+    def keyPressEvent(self, event):  # noqa: N802 - Qt API name
+        if self.mode != "adventure":
+            super().keyPressEvent(event)
+            return
+        key = event.key()
+        if key == Qt.Key_Escape:
+            self._show_adventure_pause()
+        elif key == Qt.Key_K:
+            self._show_adventure_skills()
+        elif self.player is not None and not self._adventure_paused:
+            if key in (Qt.Key_W, Qt.Key_A, Qt.Key_S, Qt.Key_D, Qt.Key_Shift):
+                self.player.set_held(key, True)
+            elif key == Qt.Key_Space and not event.isAutoRepeat():
+                self.player.jump()
+        event.accept()
+
+    def keyReleaseEvent(self, event):  # noqa: N802 - Qt API name
+        if self.mode == "adventure":
+            if self.player is not None:
+                self.player.set_held(event.key(), False)
+            event.accept()
+        else:
+            super().keyReleaseEvent(event)
+
+    def focusOutEvent(self, event):  # noqa: N802 - Qt API name
+        self._adventure_hud_drag_offset = None
+        if self.player is not None:
+            self.player.clear_keys()
+        super().focusOutEvent(event)
+
+    def _show_adventure_skills(self):
+        if self.player is None:
+            return
+        self._adventure_paused = True
+        self.player.paused = True
+        self.player.clear_keys()
+        dialog = CreatureInspectorDialog(self, self.player.creature)
+        dialog.tabs.setCurrentIndex(1)
+        dialog.exec_()
+        self._adventure_paused = False
+        if self.player is not None:
+            self.player.paused = False
+        self.setFocus()
+
+    def _show_adventure_pause(self):
+        if self._adventure_paused:
+            return
+        self._adventure_paused = True
+        if self.player is not None:
+            self.player.paused = True
+            self.player.clear_keys()
+        while True:
+            dialog = PauseDialog(self)
+            dialog.exec_()
+            choice = dialog.choice
+            if choice == "skills":
+                if self.player is not None:
+                    inspector = CreatureInspectorDialog(self, self.player.creature)
+                    inspector.tabs.setCurrentIndex(1)
+                    inspector.exec_()
+                continue
+            if choice == "settings":
+                settings = AdventureSettingsDialog(self)
+                if settings.exec_() == QDialog.Accepted:
+                    self.set_target_fps(settings.fps.currentData())
+                continue
+            if choice in ("save", "exit"):
+                self.manager.save_runtime_state()
+            if choice == "save":
+                continue
+            if choice == "release" and self.player is not None:
+                self.player.release()
+                self.player = None
+            if choice == "exit":
+                self._do_graceful_stop()
+                return
+            break
+        self._adventure_paused = False
+        if self.player is not None:
+            self.player.paused = False
+        self.setFocus()
+        self._request_full_repaint()
+
     def mousePressEvent(self, event):  # noqa: N802 - Qt API name
+        if self.mode == "adventure":
+            if self._adventure_paused:
+                return
+            local = event.globalPos() - self.geometry_rect.topLeft()
+            if (self.player is not None and event.button() == Qt.LeftButton
+                    and hud_rect(self).contains(local)):
+                self._adventure_hud_drag_offset = local - hud_rect(self).topLeft()
+                event.accept()
+                return
+            if self.player is None:
+                creature = self.manager.creature_at(float(local.x()), float(local.y()))
+                if creature is not None:
+                    self._possess_next_spider(creature)
+            elif event.button() in (Qt.LeftButton, Qt.RightButton):
+                self.player.aim = (float(local.x()), float(local.y()))
+                if event.button() == Qt.LeftButton:
+                    self.player.shoot(self.manager)
+                else:
+                    self.player.bite(self.manager)
+            return
         if event.button() != Qt.RightButton:
             super().mousePressEvent(event)
             return
@@ -1144,6 +1318,24 @@ class OverlayWindow(_OverlayBase):
         my = float(local.y())
         self._show_context_menu(gp, mx, my)
         event.accept()
+
+    def mouseMoveEvent(self, event):  # noqa: N802 - Qt API name
+        if self.mode == "adventure" and self._adventure_hud_drag_offset is not None:
+            if event.buttons() & Qt.LeftButton:
+                local = event.globalPos() - self.geometry_rect.topLeft()
+                self._adventure_hud_position = local - self._adventure_hud_drag_offset
+                self._request_full_repaint()
+                event.accept()
+                return
+            self._adventure_hud_drag_offset = None
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt API name
+        if self._adventure_hud_drag_offset is not None and event.button() == Qt.LeftButton:
+            self._adventure_hud_drag_offset = None
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
 
     def _show_context_menu(self, global_pos, mx: float, my: float) -> None:
         menu = QMenu(self)
@@ -1765,6 +1957,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Run the transparent Desktop Bug Companion overlay")
     parser.add_argument("--preset", default="presets/default.json", help="Path to preset JSON")
     parser.add_argument("--verbose", action="store_true", help="Log debug detail as well")
+    parser.add_argument("--mode", choices=("companion", "adventure"), default="companion")
     parser.add_argument(
         "--seed", type=int, default=None,
         help="Seed every spider's randomness so the run can be replayed",
@@ -1790,7 +1983,7 @@ def main(argv=None) -> int:
     # Must search the bundled data too. A one-file build keeps its presets in
     # the directory it extracts itself into, not beside the executable.
     preset = resolve_preset_path(args.preset)
-    window = OverlayWindow(preset, seed=args.seed)
+    window = OverlayWindow(preset, seed=args.seed, mode=args.mode)
     window.show()
     apply_click_through(window)
     app.aboutToQuit.connect(window.manager.save_runtime_state)
