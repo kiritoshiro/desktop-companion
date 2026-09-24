@@ -69,6 +69,9 @@ class Fly:
         self.rng = rng if rng is not None else random
         self.screen_w = float(screen_w)
         self.screen_h = float(screen_h)
+        # The monitors themselves (DC-88), handed over by FlyWorld. None, or a
+        # layout whose screens tile the window, means the window is all screen.
+        self.playfield = None
         self.scale = clamp(float(scale), 0.5, 2.2)
 
         self.x = float(x)
@@ -285,6 +288,8 @@ class Fly:
     def drag_to(self, mx: float, my: float) -> None:
         self.x = clamp(mx + self._drag_dx, FLY_EDGE_MARGIN, self.screen_w - FLY_EDGE_MARGIN)
         self.y = clamp(my + self._drag_dy, FLY_EDGE_MARGIN, self.screen_h - FLY_EDGE_MARGIN)
+        if self._split_screens():
+            self.x, self.y = self.playfield.clamp(self.x, self.y, FLY_EDGE_MARGIN)
         self._drag_hist.append((mx, my))
         if len(self._drag_hist) > 5:
             self._drag_hist = self._drag_hist[-5:]
@@ -527,6 +532,11 @@ class Fly:
                     self.target_heading = normalize_angle(
                         self.heading + self.rng.uniform(-0.42, 0.42))
 
+    def _split_screens(self) -> bool:
+        """True when the window holds space no monitor shows (DC-88)."""
+        playfield = self.playfield
+        return playfield is not None and not playfield.simple
+
     def _edge_steer(self, edge: float) -> Optional[float]:
         push_x = 0.0
         push_y = 0.0
@@ -538,6 +548,20 @@ class Fly:
             push_y += 1.0
         elif self.y > self.screen_h - edge:
             push_y -= 1.0
+        if self._split_screens():
+            # The edge of a monitor that the window's edge is not: probe one
+            # margin out on each side and turn away from whichever is off-screen.
+            contains = self.playfield.contains
+            if push_x == 0.0:
+                if not contains(self.x + edge, self.y):
+                    push_x -= 1.0
+                elif not contains(self.x - edge, self.y):
+                    push_x += 1.0
+            if push_y == 0.0:
+                if not contains(self.x, self.y + edge):
+                    push_y -= 1.0
+                elif not contains(self.x, self.y - edge):
+                    push_y += 1.0
         if push_x == 0.0 and push_y == 0.0:
             return None
         return math.atan2(push_y, push_x)
@@ -562,6 +586,15 @@ class Fly:
         elif self.y > self.screen_h - m:
             self.y = self.screen_h - m
             self.heading = self._reflect_y()
+        if self._split_screens() and not self.playfield.contains(self.x, self.y, m):
+            # Flew off a monitor into space none of them shows. Put it back on
+            # the nearest one and turn it round, the way a window edge does.
+            cx, cy = self.playfield.clamp(self.x, self.y, m)
+            if abs(cx - self.x) > 1e-6:
+                self.heading = self._reflect_x()
+            if abs(cy - self.y) > 1e-6:
+                self.heading = self._reflect_y()
+            self.x, self.y = cx, cy
 
     def _reflect_x(self) -> float:
         h = normalize_angle(math.pi - self.heading)
@@ -1067,6 +1100,8 @@ class FlyWorld:
         self.rng = rng if rng is not None else random
         self.screen_w = float(screen_w)
         self.screen_h = float(screen_h)
+        # The manager's Playfield: the monitors, not their bounding box (DC-88).
+        self.playfield = None
         self.enabled = bool(enabled)
         self.min_interval = float(min_interval)
         self.max_interval = float(max_interval)
@@ -1261,18 +1296,33 @@ class FlyWorld:
     def add_remains(self, at: Point, scale: float = 1.0) -> None:
         self.remains.append(FlyRemains(at[0], at[1], scale=scale, rng=self.rng))
 
+    def _split_screens(self) -> bool:
+        playfield = self.playfield
+        return playfield is not None and not playfield.simple
+
+    def _keep_on_screen(self, sp: "FlySpawner") -> None:
+        if self._split_screens():
+            sp.x, sp.y = self.playfield.clamp(sp.x, sp.y, sp.radius)
+
     def _spawn_edge_point(self) -> Tuple[float, float, float]:
-        """A point just inside a random screen edge, heading inward."""
-        w, h = self.screen_w, self.screen_h
+        """A point just inside a random screen edge, heading inward.
+
+        With monitors of different sizes, the edge of one real monitor
+        rather than of the window around them all (DC-88).
+        """
+        x0, y0, w, h = 0.0, 0.0, self.screen_w, self.screen_h
+        if self._split_screens() and self.playfield.rects:
+            rect = self.rng.choice(self.playfield.rects)
+            x0, y0, w, h = rect.x, rect.y, rect.w, rect.h
         m = FLY_EDGE_MARGIN + 6.0
         side = self.rng.choice(("top", "bottom", "left", "right"))
         if side == "top":
-            return self.rng.uniform(m, w - m), m, self.rng.uniform(0.2, math.pi - 0.2)
+            return x0 + self.rng.uniform(m, w - m), y0 + m, self.rng.uniform(0.2, math.pi - 0.2)
         if side == "bottom":
-            return self.rng.uniform(m, w - m), h - m, self.rng.uniform(-math.pi + 0.2, -0.2)
+            return x0 + self.rng.uniform(m, w - m), y0 + h - m, self.rng.uniform(-math.pi + 0.2, -0.2)
         if side == "left":
-            return m, self.rng.uniform(m, h - m), self.rng.uniform(-1.2, 1.2)
-        return w - m, self.rng.uniform(m, h - m), self.rng.uniform(math.pi - 1.2, math.pi + 1.2)
+            return x0 + m, y0 + self.rng.uniform(m, h - m), self.rng.uniform(-1.2, 1.2)
+        return x0 + w - m, y0 + self.rng.uniform(m, h - m), self.rng.uniform(math.pi - 1.2, math.pi + 1.2)
 
     def _spawn_origin(self) -> Tuple[float, float, float]:
         """Where a new fly appears: from a nest if one exists, else a screen edge."""
@@ -1287,6 +1337,7 @@ class FlyWorld:
         x, y, heading = self._spawn_origin()
         fly = Fly(x, y, self.screen_w, self.screen_h, heading=heading,
                   scale=self.scale, rng=self.rng)
+        fly.playfield = self.playfield
         # A fly leaving the nest starts with one short outward walking bout.
         fly.motion_mode = "walk"
         fly.motion_timer = self.rng.uniform(0.28, 0.75)
@@ -1319,8 +1370,14 @@ class FlyWorld:
         dirty: List[Tuple[float, float, float, float]] = []
 
         for sp in self.spawners:
+            if not sp.dragging:
+                self._keep_on_screen(sp)
             sp.update(dt)
             dirty.append(sp.footprint())
+        for fly in self.flies:
+            # A fly made before the monitor layout was known, or restored,
+            # picks up the current one here (the Playfield is shared).
+            fly.playfield = self.playfield
 
         # Web-shot globs in flight.
         live_proj: List[WebShotProjectile] = []

@@ -168,6 +168,7 @@ class CreatureManager(
             scale=self.size_scale,
             rng=_world_rng("flies"),
         )
+        self.fly_world.playfield = self.playfield
         self._dragged_fly = None
         self._dragged_spawner = None
         # The base being carried by the pointer, and where on it the pointer
@@ -274,6 +275,7 @@ class CreatureManager(
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
+        creature.playfield = self.playfield
         creature.base_world = getattr(self, "base_world", None)
         if pos is not None:
             creature.x, creature.y = pos
@@ -1035,6 +1037,9 @@ class CreatureManager(
             self._dragged_fly.drag_to(mx, my)
         elif mouse_down and self._dragged_spawner is not None:
             self._dragged_spawner.drag_to(mx, my, self.screen_w, self.screen_h)
+            if not self.playfield.simple:
+                spawner = self._dragged_spawner
+                spawner.x, spawner.y = self.playfield.clamp(spawner.x, spawner.y, spawner.radius)
         elif mouse_down and self._dragged_base is not None:
             self.drag_base_to(mx, my)
 

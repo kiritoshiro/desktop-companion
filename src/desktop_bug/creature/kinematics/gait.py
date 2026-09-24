@@ -515,6 +515,10 @@ class GaitConfigMixin:
                 )
             self.x, self.y, self.heading = new_x, new_y, new_heading
         self.x, self.y = clamp_point(self.x, self.y, self.margin * 0.4, self.screen_w, self.screen_h)
+        playfield = self._split_playfield()
+        if playfield is not None:
+            # The same margin the manager's backstop uses, so it never has to act (DC-88).
+            self.x, self.y = playfield.clamp(self.x, self.y, max(8.0, self.size * 0.5))
         self.vel_x = (self.x - old_x) / max(dt, 1e-4)
         self.vel_y = (self.y - old_y) / max(dt, 1e-4)
         actual_turn = ((self.heading - old_heading + math.pi) % math.tau) - math.pi
