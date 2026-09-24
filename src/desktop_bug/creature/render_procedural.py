@@ -1094,6 +1094,10 @@ class RenderProceduralMixin:
         armor_color = self._qcolor("highlight", 175)
         dark_color = self._qcolor("legs", 175)
         painter.save()
+        # DC-82: every position below is ground-level world space, drawn
+        # outside the body's transform, so without this a jumping spider left
+        # its armour on the floor under it.
+        painter.translate(0.0, -self.jump_z)
         painter.setPen(QPen(armor_color, max(1.0, self.size * 0.035), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
         if "abdomen" in equipped:
@@ -1390,6 +1394,13 @@ class RenderProceduralMixin:
             ax, ay = self._leg_attach(leg)
             foot_x, foot_y = self._leg_draw_points(leg)[2:]
             foot_x, foot_y = self._safe_sprite_leg_foot(leg, foot_x, foot_y, chain_config)
+            # DC-82: the leg pass raises the whole chain by the jump height
+            # (`leg_y_off`); this overlay has to as well. Without it the
+            # sockets, coxae and trochanters stayed on the ground while the
+            # spider was in the air -- the owner: "when spider jumps there is
+            # some weird things underneath it for a moment".
+            ay -= self.jump_z
+            foot_y -= self.jump_z
             chain_points = self._sprite_leg_chain_points(leg, ax, ay, foot_x, foot_y, chain_config)
             root_x, root_y = chain_points[0]
             first_x, first_y = chain_points[1]
