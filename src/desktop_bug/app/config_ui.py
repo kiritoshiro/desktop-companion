@@ -43,7 +43,7 @@ from ..content.discovery import app_root, discover_models, discover_personalitie
 from ..support.dpi import enable_high_dpi_scaling
 from ..support.logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
-from . import wood_theme
+from . import window_placement, wood_theme
 from .mode_menu import ModeShell
 from ..state.runtime_state import reset_saved_progress
 from .live_channel import SettingsChannelClient, channel_name
@@ -2290,6 +2290,7 @@ def main(argv=None) -> int:
 
     enable_high_dpi_scaling()
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    window_placement.install(app)
     window = ConfigWindow()
     window.show()
     return app.exec_()

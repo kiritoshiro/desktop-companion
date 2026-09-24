@@ -43,8 +43,8 @@ from ..manager import CreatureManager
 from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from .adventure import PlayerController
-from .adventure_ui import (AdventureSettingsDialog, PauseDialog, aim_region, draw_aim, draw_hud,
-                           hud_rect)
+from .adventure_ui import AdventureSettingsDialog, PauseDialog, draw_hud, hud_rect
+from . import window_placement
 from .controls import controls_path, load_controls
 from ..world.desktop_environment import snapshot_desktop_surfaces
 from ..world.playfield import ScreenRect
@@ -526,7 +526,6 @@ class OverlayWindow(_OverlayBase):
         # the settings window (or the in-game dialog) changes the file.
         self.controls = load_controls()
         self._controls_mtime = self._controls_file_mtime()
-        self._last_aim_region = QRect()
         self.setWindowTitle("Desktop Bug Companion Overlay")
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -1106,11 +1105,7 @@ class OverlayWindow(_OverlayBase):
                 region += self._rect_from_xywh(fp)
         if self.mode == "adventure":
             region += hud_rect(self)
-            if self.player is not None:
-                aim_now = aim_region(self.player)
-                region += aim_now
-                region += self._last_aim_region
-                self._last_aim_region = aim_now
+            region += self._adventure_hint_rect()
             aim = QCursor.pos() - self.geometry_rect.topLeft()
             region += QRect(aim.x() - 16, aim.y() - 16, 32, 32)
         if self.show_profile_hud:
@@ -1159,12 +1154,11 @@ class OverlayWindow(_OverlayBase):
         self.manager.render(painter)
         if self.mode == "adventure":
             if self.player is not None:
-                if not self._adventure_paused:
-                    draw_aim(painter, self.player)
                 draw_hud(painter, self, self.player)
             else:
                 painter.setPen(QColor("#ffffff"))
-                painter.drawText(24, 42, "Click a spider to take control · Esc for menu")
+                painter.drawText(self._adventure_hint_rect(), Qt.AlignCenter,
+                                 "Click a spider to take control · Esc for menu")
             aim = QCursor.pos() - self.geometry_rect.topLeft()
             painter.setPen(QColor("#f7df93"))
             painter.drawEllipse(aim, 7, 7)
@@ -1220,6 +1214,15 @@ class OverlayWindow(_OverlayBase):
             creature = next((item for item in self.manager.creatures if not item.dead), None)
         self.player = PlayerController(creature, self.controls) if creature is not None else None
         self._request_full_repaint()
+
+    @staticmethod
+    def _adventure_hint_rect(self) -> QRect:
+        """Top middle of the main monitor, where the take-control hint goes."""
+        area = window_placement.primary_rect_local(self.geometry_rect.topLeft())
+        area = area.intersected(self.rect()) if not area.isEmpty() else self.rect()
+        if area.isEmpty():
+            area = self.rect()
+        return QRect(area.center().x() - 220, area.top() + 24, 440, 30)
 
     @staticmethod
     def _controls_file_mtime():
@@ -2037,6 +2040,7 @@ def main(argv=None) -> int:
     if configure_gl_surface():
         log.info("Painting the overlay onto an OpenGL surface (DESKTOP_BUG_GL=0 to turn off)")
     app = QApplication.instance() or QApplication(sys.argv[:1])
+    window_placement.install(app)
     app.setQuitOnLastWindowClosed(False)
     # Must search the bundled data too. A one-file build keeps its presets in
     # the directory it extracts itself into, not beside the executable.
