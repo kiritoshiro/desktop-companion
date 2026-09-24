@@ -43,7 +43,9 @@ from ..manager import CreatureManager
 from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from .adventure import PlayerController
-from .adventure_ui import AdventureSettingsDialog, PauseDialog, draw_hud, hud_rect
+from .adventure_ui import (AdventureSettingsDialog, PauseDialog, aim_region, draw_aim, draw_hud,
+                           hud_rect)
+from .controls import controls_path, load_controls
 from ..world.desktop_environment import snapshot_desktop_surfaces
 from ..world.playfield import ScreenRect
 from ..support.frame_policy import FramePolicy
@@ -520,6 +522,11 @@ class OverlayWindow(_OverlayBase):
         self._adventure_paused = False
         self._adventure_hud_position = None
         self._adventure_hud_drag_offset = None
+        # Adventure bindings and aim cone, from controls.json; re-read when
+        # the settings window (or the in-game dialog) changes the file.
+        self.controls = load_controls()
+        self._controls_mtime = self._controls_file_mtime()
+        self._last_aim_region = QRect()
         self.setWindowTitle("Desktop Bug Companion Overlay")
         self.setWindowFlags(
             Qt.FramelessWindowHint
@@ -908,6 +915,8 @@ class OverlayWindow(_OverlayBase):
             if self._check_stop_request():
                 return
             self._check_preset_reload()
+            if self.mode == "adventure":
+                self._reload_controls_if_changed()
         global_pos = QCursor.pos()
         local = global_pos - self.geometry_rect.topLeft()
         mx = float(local.x())
@@ -1097,6 +1106,11 @@ class OverlayWindow(_OverlayBase):
                 region += self._rect_from_xywh(fp)
         if self.mode == "adventure":
             region += hud_rect(self)
+            if self.player is not None:
+                aim_now = aim_region(self.player)
+                region += aim_now
+                region += self._last_aim_region
+                self._last_aim_region = aim_now
             aim = QCursor.pos() - self.geometry_rect.topLeft()
             region += QRect(aim.x() - 16, aim.y() - 16, 32, 32)
         if self.show_profile_hud:
@@ -1145,6 +1159,8 @@ class OverlayWindow(_OverlayBase):
         self.manager.render(painter)
         if self.mode == "adventure":
             if self.player is not None:
+                if not self._adventure_paused:
+                    draw_aim(painter, self.player)
                 draw_hud(painter, self, self.player)
             else:
                 painter.setPen(QColor("#ffffff"))
@@ -1202,29 +1218,70 @@ class OverlayWindow(_OverlayBase):
             self.player.release()
         if creature is None:
             creature = next((item for item in self.manager.creatures if not item.dead), None)
-        self.player = PlayerController(creature) if creature is not None else None
+        self.player = PlayerController(creature, self.controls) if creature is not None else None
         self._request_full_repaint()
+
+    @staticmethod
+    def _controls_file_mtime():
+        try:
+            return controls_path().stat().st_mtime
+        except OSError:
+            return None
+
+    def _reload_controls_if_changed(self, force: bool = False) -> None:
+        mtime = self._controls_file_mtime()
+        if not force and mtime == self._controls_mtime:
+            return
+        self._controls_mtime = mtime
+        self.controls = load_controls()
+        if self.player is not None:
+            self.player.controls = self.controls
+            self.player.clear_keys()
+        self._request_full_repaint()
+
+    def _adventure_action(self, action: str | None, down: bool, repeat: bool = False) -> bool:
+        """Do what a bound key or mouse button means. True if it meant anything."""
+        if action is None:
+            return False
+        if action == "pause":
+            if down and not repeat:
+                self._show_adventure_pause()
+            return True
+        if action == "skills":
+            if down and not repeat:
+                self._show_adventure_skills()
+            return True
+        player = self.player
+        if player is None or self._adventure_paused:
+            return True
+        if action in ("move_up", "move_down", "move_left", "move_right", "sprint"):
+            player.set_held(action, down)
+        elif down and not repeat:
+            if action == "jump":
+                player.jump()
+            elif action == "shoot":
+                player.shoot(self.manager)
+            elif action == "bite":
+                player.bite(self.manager)
+        return True
 
     def keyPressEvent(self, event):  # noqa: N802 - Qt API name
         if self.mode != "adventure":
             super().keyPressEvent(event)
             return
         key = event.key()
-        if key == Qt.Key_Escape:
-            self._show_adventure_pause()
-        elif key == Qt.Key_K:
-            self._show_adventure_skills()
-        elif self.player is not None and not self._adventure_paused:
-            if key in (Qt.Key_W, Qt.Key_A, Qt.Key_S, Qt.Key_D, Qt.Key_Shift):
-                self.player.set_held(key, True)
-            elif key == Qt.Key_Space and not event.isAutoRepeat():
-                self.player.jump()
+        action = self.controls.action_for_key(key)
+        if key == Qt.Key_Escape and action is None:
+            # Esc always pauses, whatever pause is bound to, so a player who
+            # rebinds it can never lock themselves in.
+            action = "pause"
+        self._adventure_action(action, True, repeat=event.isAutoRepeat())
         event.accept()
 
     def keyReleaseEvent(self, event):  # noqa: N802 - Qt API name
         if self.mode == "adventure":
-            if self.player is not None:
-                self.player.set_held(event.key(), False)
+            if not event.isAutoRepeat():
+                self._adventure_action(self.controls.action_for_key(event.key()), False)
             event.accept()
         else:
             super().keyReleaseEvent(event)
@@ -1270,6 +1327,7 @@ class OverlayWindow(_OverlayBase):
                 settings = AdventureSettingsDialog(self)
                 if settings.exec_() == QDialog.Accepted:
                     self.set_target_fps(settings.fps.currentData())
+                self._reload_controls_if_changed(force=True)
                 continue
             if choice in ("save", "exit"):
                 self.manager.save_runtime_state()
@@ -1302,12 +1360,9 @@ class OverlayWindow(_OverlayBase):
                 creature = self.manager.creature_at(float(local.x()), float(local.y()))
                 if creature is not None:
                     self._possess_next_spider(creature)
-            elif event.button() in (Qt.LeftButton, Qt.RightButton):
+            else:
                 self.player.aim = (float(local.x()), float(local.y()))
-                if event.button() == Qt.LeftButton:
-                    self.player.shoot(self.manager)
-                else:
-                    self.player.bite(self.manager)
+                self._adventure_action(self.controls.action_for_mouse(int(event.button())), True)
             return
         if event.button() != Qt.RightButton:
             super().mousePressEvent(event)
@@ -1335,6 +1390,9 @@ class OverlayWindow(_OverlayBase):
             self._adventure_hud_drag_offset = None
             event.accept()
             return
+        if getattr(self, "mode", "companion") == "adventure" and self.player is not None:
+            # A mouse button bound to a held action (sprint, a direction).
+            self._adventure_action(self.controls.action_for_mouse(int(event.button())), False)
         super().mouseReleaseEvent(event)
 
     def _show_context_menu(self, global_pos, mx: float, my: float) -> None:

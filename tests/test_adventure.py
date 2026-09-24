@@ -54,6 +54,9 @@ def test_adventure_web_shot_uses_real_projectile_and_cooldown(state_dir):
     shooter.progression.team_id = "pack_a"
     target.progression.team_id = "rivals"
     player = PlayerController(shooter)
+    # Silk only goes out inside the aim cone in front of the spider, so face
+    # the target (it sits due east) rather than whatever way it spawned.
+    shooter.heading = shooter.target_heading = 0.0
     player.aim = (target.x, target.y)
     before = shooter.energy
     assert player.shoot(manager)

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 
+from .controls import ControlSettings, clamp_to_cone
+
+
 class PlayerController:
     WEB_RANGE = 320.0
     WEB_COOLDOWN = 1.2
@@ -12,9 +15,15 @@ class PlayerController:
     JUMP_COOLDOWN = 0.65
     SPRINT_DRAIN = 24.0
 
-    def __init__(self, creature):
+    # How far off the aim line a target may be and still be hit, at least.
+    AIM_TOLERANCE = 28.0
+
+    def __init__(self, creature, controls: ControlSettings | None = None):
         self.creature = creature
-        self.held: set[int] = set()
+        self.controls = controls if controls is not None else ControlSettings()
+        # Actions held down ("move_up", "sprint", ...), not raw keys, so a
+        # rebinding never has to reach in here.
+        self.held: set[str] = set()
         self.aim = (creature.x, creature.y)
         self.web_cooldown = 0.0
         self.jump_cooldown = 0.0
@@ -33,18 +42,54 @@ class PlayerController:
             self.creature.player_control = None
             self.creature.enter_idle()
 
-    def set_held(self, key: int, down: bool):
+    def set_held(self, key, down: bool):
+        """Hold or release an action; a Qt key code is looked up in the bindings."""
+        action = key if isinstance(key, str) else self.controls.action_for_key(int(key))
+        if action is None:
+            return
         if down:
-            self.held.add(key)
+            self.held.add(action)
         else:
-            self.held.discard(key)
+            self.held.discard(action)
+
+    # -- aiming -----------------------------------------------------------
+    def aim_angle(self) -> float:
+        """Where a shot goes: towards the pointer, inside the view cone."""
+        spider = self.creature
+        ax, ay = self.aim
+        if math.hypot(ax - spider.x, ay - spider.y) < 1.0:
+            return spider.heading
+        wanted = math.atan2(ay - spider.y, ax - spider.x)
+        return clamp_to_cone(spider.heading, wanted, self.controls.half_cone)
+
+    def _in_front(self, target, reach: float, tolerance: float):
+        """(offset from the aim line, distance) if ``target`` can be hit, else None.
+
+        It must be within ``reach``, inside the cone (allowing for its own
+        size), ahead of the spider, and within ``tolerance`` of the aim line.
+        """
+        spider = self.creature
+        dx, dy = target.x - spider.x, target.y - spider.y
+        dist = math.hypot(dx, dy)
+        if dist > reach or dist < 1e-6:
+            return None
+        body = max(8.0, float(getattr(target, "size", 10.0)))
+        off_heading = abs((math.atan2(dy, dx) - spider.heading + math.pi) % math.tau - math.pi)
+        if off_heading > self.controls.half_cone + math.atan2(body, dist):
+            return None
+        angle = self.aim_angle()
+        along = dx * math.cos(angle) + dy * math.sin(angle)
+        if along <= 0.0:
+            return None
+        across = abs(-dx * math.sin(angle) + dy * math.cos(angle))
+        if across > tolerance:
+            return None
+        return across, dist
 
     def clear_keys(self):
         self.held.clear()
 
     def update(self, dt: float):
-        from PyQt5.QtCore import Qt
-
         spider = self.creature
         self.web_cooldown = max(0.0, self.web_cooldown - dt)
         self.jump_cooldown = max(0.0, self.jump_cooldown - dt)
@@ -53,13 +98,14 @@ class PlayerController:
             spider.speed = 0.0
             spider.motion_paused = True
         else:
-            dx = int(Qt.Key_D in self.held) - int(Qt.Key_A in self.held)
-            dy = int(Qt.Key_S in self.held) - int(Qt.Key_W in self.held)
+            held = self.held
+            dx = int("move_right" in held) - int("move_left" in held)
+            dy = int("move_down" in held) - int("move_up" in held)
             length = math.hypot(dx, dy)
             moving = length > 0.0
             if self.sprint_exhausted and spider.energy >= spider.max_energy * 0.20:
                 self.sprint_exhausted = False
-            sprinting = moving and Qt.Key_Shift in self.held and not self.sprint_exhausted
+            sprinting = moving and "sprint" in held and not self.sprint_exhausted
             if sprinting:
                 spider.energy = max(0.0, spider.energy - self.SPRINT_DRAIN * dt)
                 if spider.energy <= 0.0:
@@ -73,8 +119,11 @@ class PlayerController:
                 spider.target_y = spider.y + dy / length * 100.0
             else:
                 spider.target_x, spider.target_y = spider.x, spider.y
+                # The pointer only aims (the owner's choice); turning to face
+                # it while standing is an option in the controls settings.
                 ax, ay = self.aim
-                if math.hypot(ax - spider.x, ay - spider.y) > spider.size:
+                if (self.controls.face_mouse_when_still
+                        and math.hypot(ax - spider.x, ay - spider.y) > spider.size):
                     spider.target_heading = math.atan2(ay - spider.y, ax - spider.x)
         if spider.airborne:
             spider._update_jump(dt)
@@ -114,25 +163,24 @@ class PlayerController:
         spider = self.creature
         if self.paused or spider.dead or spider.airborne or spider.attack_cooldown > 0.0:
             return False
-        ax, ay = self.aim
         reach = spider.size * 3.0
-        foes = [target for target in manager.creatures
-                if target is not spider and not target.dead
-                and spider.relation_to(target) == "foe"
-                and math.hypot(target.x - spider.x, target.y - spider.y) <= reach
-                and math.hypot(target.x - ax, target.y - ay) <= max(24.0, spider.size * 1.5)]
+        tolerance = max(self.AIM_TOLERANCE, spider.size * 1.5)
+        foes = []
+        for target in manager.creatures:
+            if target is spider or target.dead or spider.relation_to(target) != "foe":
+                continue
+            hit = self._in_front(target, reach, tolerance)
+            if hit is not None:
+                foes.append((hit, target))
         if not foes or not manager.conflict_enabled:
             return False
-        target = min(foes, key=lambda obj: math.hypot(obj.x - ax, obj.y - ay))
+        target = min(foes, key=lambda item: item[0])[1]
         manager._trade_blow(spider, target)
         return True
 
     def shoot(self, manager) -> bool:
         spider = self.creature
         if self.paused or spider.dead or spider.airborne or self.web_cooldown > 0.0:
-            return False
-        ax, ay = self.aim
-        if math.hypot(ax - spider.x, ay - spider.y) > self.WEB_RANGE:
             return False
         candidates = []
         for target in manager.creatures:
@@ -143,13 +191,17 @@ class PlayerController:
             candidates.append(target)
         candidates.extend(fly for fly in manager.fly_world.flies
                           if fly.alive and not fly.eaten and not fly.trapped)
-        candidates = [target for target in candidates
-                      if math.hypot(target.x - spider.x, target.y - spider.y) <= self.WEB_RANGE]
-        if not candidates:
+        # Anything ahead, inside the cone and near the aim line; the one
+        # closest to the line wins, then the nearer of two.
+        tolerance = max(self.AIM_TOLERANCE, spider.size * 1.4)
+        hits = []
+        for target in candidates:
+            hit = self._in_front(target, self.WEB_RANGE, tolerance)
+            if hit is not None:
+                hits.append((hit, target))
+        if not hits:
             return False
-        target = min(candidates, key=lambda obj: math.hypot(obj.x - ax, obj.y - ay))
-        if math.hypot(target.x - ax, target.y - ay) > max(20.0, spider.size * 1.4):
-            return False
+        target = min(hits, key=lambda item: item[0])[1]
         if spider.energy < self.WEB_ENERGY:
             return False
         if target in manager.creatures:

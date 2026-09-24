@@ -9,10 +9,11 @@ from __future__ import annotations
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel,
+from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLayout,
                              QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
+from .controls import instructions, load_controls
 
 MODES = (
     ("companion", "Companion",
@@ -151,12 +152,21 @@ class ModeShell(QWidget):
         plaque.setObjectName("modePlaque")
         plaque.setFixedWidth(620)
         text = QVBoxLayout(plaque)
+        # Always its full height: the scroll area shrinks the page to its
+        # minimum when space is short, and squeezed, the lines clipped.
+        text.setSizeConstraint(QLayout.SetFixedSize)
         text.setContentsMargins(0, 0, 0, 0)
         text.setSpacing(8)
+        # Wrapped text is measured at the frame's full width, not inside its
+        # 30px carved border, so it came out a line short and clipped. At a
+        # fixed inner width it measures true.
+        inner = 620 - 2 * 30
         for line in lines:
-            label = QLabel(line)
-            label.setObjectName("modeText")
-            label.setWordWrap(True)
+            label = line if isinstance(line, QWidget) else QLabel(line)
+            if isinstance(label, QLabel):
+                label.setObjectName("modeText")
+                label.setWordWrap(True)
+                label.setFixedWidth(inner)
             text.addWidget(label)
         if button is not None:
             text.addSpacing(6)
@@ -179,16 +189,61 @@ class ModeShell(QWidget):
         launch.setCursor(Qt.PointingHandCursor)
         launch.clicked.connect(start_adventure)
         self.adventure_launch = launch
+        controls = QPushButton("Controls\u2026")
+        controls.setObjectName("modeBack")
+        controls.setMinimumHeight(46)
+        controls.setCursor(Qt.PointingHandCursor)
+        controls.clicked.connect(self.open_controls)
+        self.controls_button = controls
+        buttons = QWidget()
+        row = QHBoxLayout(buttons)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.addWidget(controls)
+        row.addWidget(launch, 1)
+        # One label per line: a multi-line rich-text label inside the carved
+        # frame was measured a line short and clipped its last line.
+        self.controls_summary = QWidget()
+        lines = QVBoxLayout(self.controls_summary)
+        lines.setContentsMargins(0, 0, 0, 0)
+        lines.setSpacing(2)
+        self.controls_lines = []
+        for _ in range(3):
+            label = QLabel()
+            label.setObjectName("modeText")
+            lines.addWidget(label)
+            self.controls_lines.append(label)
+        self.controls_aim_note = QLabel()
+        self.controls_aim_note.setObjectName("modeText")
+        self.controls_aim_note.setWordWrap(True)
+        self.refresh_controls_summary()
         panel = self._plaque("skirmish", (
             "Take control of one spider from your current preset, with its saved "
             "level, health and energy. Everything it earns stays with it.",
-            "<b>WASD</b> move  ·  <b>Shift</b> sprint  ·  <b>Space</b> jump  ·  "
-            "<b>Mouse</b> aim  ·  <b>Left click</b> shoot silk  ·  "
-            "<b>Right click</b> bite",
-            "<b>K</b> skill tree  ·  <b>Esc</b> pause, save or release the spider",
+            self.controls_summary,
+            self.controls_aim_note,
             "Skirmish maps, objectives and conquest are on the way.",
-        ), launch)
+        ), buttons)
         return self._page("Adventure", "Play as your spider", panel)
+
+    def refresh_controls_summary(self) -> None:
+        """What each button does, from the saved bindings: walking, then acting."""
+        settings = load_controls()
+        rows = instructions(settings)
+        walk = [f"<b>{button}</b> {label.lower()}" for button, label, _ in rows[:6]]
+        act = [f"<b>{button}</b> {label.lower()}" for button, label, _ in rows[6:]]
+        cone = ("free aim" if settings.aim_cone >= 360
+                else f"a {settings.aim_cone}° cone in front of the spider")
+        sep = "  ·  "
+        for label, parts in zip(self.controls_lines, (walk[:4], walk[4:], act)):
+            label.setText(sep.join(parts))
+        self.controls_aim_note.setText(f"The mouse only aims, within {cone}; walk to turn.")
+
+    def open_controls(self) -> None:
+        from .controls_ui import ControlsDialog
+
+        dialog = ControlsDialog(self)
+        dialog.exec_()
+        self.refresh_controls_summary()
 
     def _strategy_page(self):
         panel = self._plaque("strategy", (
