@@ -164,6 +164,26 @@ class RuntimeStateMixin:
             )
             return
 
+    def reset_saved_progress(self) -> None:
+        """Forget every spider's stats and every base, and start fresh (DC-85).
+
+        The owner asked for a way to "remove all saved stats ... all the
+        bases" from the main menu. The colony is rebuilt from the same preset,
+        so the same spiders come back new -- level, XP, names and teams from
+        scratch -- and no base exists until a builder founds one. The scene
+        the player arranged (cages, webs, nests) is put back as it was.
+        """
+        scene = self._scene_to_dict()
+        self._progression_states = {}
+        self._base_runtime_state = []
+        self.base_world.clear()
+        self.cages.clear()
+        self.load_preset(self._preset_path)
+        self._scene_runtime_state = scene
+        self._restore_scene()
+        self.save_runtime_state()
+        log.info("Saved progress reset: stats and bases cleared")
+
     def mark_runtime_state_dirty(self) -> None:
         """Request a save without writing to disk inside the frame loop."""
         self._runtime_state_dirty = True

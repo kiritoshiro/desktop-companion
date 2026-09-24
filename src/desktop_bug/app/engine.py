@@ -1395,6 +1395,9 @@ class OverlayWindow(_OverlayBase):
             self._apply_pushed_preset(message.get("data"), message.get("preset_path"))
         elif mtype == "stop_request":
             self._do_graceful_stop()
+        elif mtype == "reset_progress":
+            self.manager.reset_saved_progress()
+            self._request_full_repaint()
         elif mtype == "hello":
             # `client_connected` already queued a fresh broadcast; nothing else to do.
             pass

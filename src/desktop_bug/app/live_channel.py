@@ -44,6 +44,7 @@ hello         C -> S      (none) sent right after connecting
 session_state S -> C      ``state``: ``CreatureManager.session_snapshot()``
 preset_update C -> S      ``preset_path``, ``data`` (a full preset dict)
 stop_request  C -> S      (none) ask the overlay to save and quit
+reset_progress C -> S     (none) forget saved stats and bases (DC-85)
 ============  ==========  ===================================================
 
 (C = settings window / client, S = overlay / server.)

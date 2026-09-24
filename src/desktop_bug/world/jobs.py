@@ -472,6 +472,9 @@ class BaseWorld:
         self._hunt_home: dict[str, tuple[float, float]] = {}
         # DC-42: where each guard is along its own stretch of the patrol line.
         self._guard_line: dict[str, dict] = {}
+        # DC-85: the real monitors, from the manager's Playfield. None means
+        # the whole window counts, as it did before.
+        self.playfield = None
         for raw in saved or ():
             site = BaseSite.from_dict(raw)
             if site is not None:
@@ -480,9 +483,38 @@ class BaseWorld:
     def set_screen(self, screen_w: int, screen_h: int) -> None:
         self.screen_w = max(200, int(screen_w))
         self.screen_h = max(200, int(screen_h))
+        self.keep_all_on_screen()
+
+    @staticmethod
+    def _screen_margin(site: BaseSite) -> float:
+        """How far a base must sit inside a monitor's edge (DC-85).
+
+        Far enough that its guards' watch posts -- a standoff past the base
+        ring -- are on the screen too. A base 42 px from the top of a monitor
+        sent its guards off the edge, where they pressed against the border
+        with their legs flailing.
+        """
+        return site.radius + GUARD_STANDOFF_PAD + 24.0
+
+    def _keep_on_screen(self, site: BaseSite) -> None:
+        margin = self._screen_margin(site)
+        playfield = self.playfield
+        if playfield is not None:
+            if not playfield.contains(site.x, site.y, margin):
+                site.x, site.y = playfield.clamp(site.x, site.y, margin)
+            return
+        site.x = max(margin, min(self.screen_w - margin, site.x))
+        site.y = max(margin, min(self.screen_h - margin, site.y))
+
+    def keep_all_on_screen(self) -> None:
+        """Move every base onto a real monitor, clear of its edges (DC-85).
+
+        The desktop's bounding box is not the desktop: with two monitors of
+        different sizes it includes a dead zone no screen shows, and bases had
+        been founded there and near the edges, where nothing could reach them.
+        """
         for site in self.bases.values():
-            site.x = max(32.0, min(self.screen_w - 32.0, site.x))
-            site.y = max(32.0, min(self.screen_h - 32.0, site.y))
+            self._keep_on_screen(site)
 
     def remove_base(self, site_id: str) -> bool:
         """Delete one base. True if there was one to delete.
@@ -512,8 +544,8 @@ class BaseWorld:
         for site in self.bases.values():
             if site.id != site_id:
                 continue
-            site.x = max(32.0, min(self.screen_w - 32.0, float(x)))
-            site.y = max(32.0, min(self.screen_h - 32.0, float(y)))
+            site.x, site.y = float(x), float(y)
+            self._keep_on_screen(site)
             return True
         return False
 
@@ -549,6 +581,7 @@ class BaseWorld:
                 y=max(42.0, min(self.screen_h - 42.0, float(creature.y))),
                 patrol_angle=(getattr(creature, "index", 0) * 0.83) % math.tau,
             )
+            self._keep_on_screen(site)
             self.bases[key] = site
         return site
 
@@ -566,10 +599,38 @@ class BaseWorld:
         nothing for these jobs to do until one exists.
         """
         team = str(getattr(creature.progression, "team_id", "neutral") or "neutral")
-        candidates = [site for site in self.bases.values() if site.team_id == team]
+        if team == "neutral":
+            # DC-85: "neutral" is not a team. It used to be treated as one, so
+            # a lone spider looked after the nearest of *every* lone spider's
+            # base -- in the owner's saved state, 25 of them, 20 never built
+            # and so invisible, left over from spiders long gone. It now looks
+            # after its own base, or, while that has nothing built on it, the
+            # nearest one that has.
+            own = self.bases.get(self._site_key(creature))
+            candidates = [own] if own is not None else []
+            if own is None or own.build_progress <= 0.0:
+                candidates += [site for site in self.bases.values()
+                               if site.team_id == "neutral" and site.build_progress > 0.0]
+        else:
+            candidates = [site for site in self.bases.values() if site.team_id == team]
         if not candidates:
             return None
-        return min(candidates, key=lambda site: math.hypot(site.x - creature.x, site.y - creature.y))
+        # A base you can see beats one you cannot: the owner watched spiders
+        # walk to invisible sites while dirt mounds sat ignored nearby.
+        built = [site for site in candidates if site.build_progress > 0.0]
+        pool = built or candidates
+        return min(pool, key=lambda site: math.hypot(site.x - creature.x, site.y - creature.y))
+
+    def _prune_orphan_sites(self, creatures) -> None:
+        """Drop lone spiders' bases that were never built and whose spider is
+        gone (DC-85). Nothing can see them and nothing will build them; they
+        only drew other spiders to empty ground. A base with earth on it stays,
+        and so does every team base."""
+        live = {self._creature_key(creature) for creature in creatures}
+        for key, site in list(self.bases.items()):
+            if (site.team_id == "neutral" and site.build_progress <= 0.0
+                    and site.owner_id not in live):
+                del self.bases[key]
 
     @staticmethod
     def _creature_key(creature) -> str:
@@ -693,6 +754,9 @@ class BaseWorld:
         self._clock += max(0.0, float(dt))
         self.ensure_team_sites(creatures)
         self._prune_duty(creatures)
+        if creatures:
+            self._prune_orphan_sites(creatures)
+        self.keep_all_on_screen()
         builders = [c for c in creatures if getattr(c, "job_id", "none") == "builder"]
         for creature in creatures:
             self._set_intent(creature, "idle")
