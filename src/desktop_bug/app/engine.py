@@ -41,7 +41,7 @@ from .session_control import clear_stop_request, consume_stop_request
 from .live_channel import OverlayChannelServer, channel_name
 from ..manager import CreatureManager
 from ..content.preset_io import load_preset
-from .overlay_win32 import apply_click_through, set_cursor_pos
+from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from ..world.desktop_environment import snapshot_desktop_surfaces
 from ..world.playfield import ScreenRect
 from ..support.frame_policy import FramePolicy
@@ -807,8 +807,24 @@ class OverlayWindow(_OverlayBase):
                 pass
         return super().nativeEvent(event_type, message)
 
+    def _update_input_transparency(self) -> None:
+        """GL overlay only: pass input through unless the cursor is over
+        something interactive (DC-79; see overlay_win32.apply_click_through).
+
+        The same question nativeEvent answers per hit-test, asked once a frame
+        from the cursor position instead -- once the window is transparent to
+        input it receives no hit-tests to answer. Written only on change.
+        """
+        if not GL_OVERLAY:
+            return
+        local = QCursor.pos() - self.geometry_rect.topLeft()
+        transparent = not self.manager.wants_mouse(float(local.x()), float(local.y()))
+        if transparent != getattr(self, "_input_transparent", None):
+            set_input_transparent(self, transparent)
+
     def tick(self) -> None:
         self.profiler.begin_frame()
+        self._update_input_transparency()
         current_ms = self.elapsed.elapsed()
         dt = max(0.001, min(0.05, (current_ms - self.last_ms) / 1000.0))
         self.last_ms = current_ms
