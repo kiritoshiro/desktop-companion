@@ -37,6 +37,7 @@ from PyQt5.QtGui import QBrush, QColor, QPainterPath, QPen
 # Draw order. The shipped renderer produces these in this sequence within a
 # single leg; flushing in the same sequence across all legs is what keeps the
 # picture's structure when the per-leg interleaving goes away.
+LAYER_SHADOW = -1   # DC-83: the legs' shadow on the ground, under everything
 LAYER_FUZZ = 0      # the legacy unsegmented fluff spline, under everything
 LAYER_HAIR = 1      # the hairy over-stroke on a segmented chain
 LAYER_SEGMENT = 2   # the segments themselves

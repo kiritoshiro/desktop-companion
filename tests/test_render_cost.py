@@ -195,6 +195,12 @@ def test_the_second_pass_reuses_the_first() -> None:
     creature = manager.creatures[0]
     legs = len(creature.legs)
     assert legs >= 4, legs
+    # DC-83 switched the tarantula's socket overlay -- the second pass --
+    # off, since its legs now come out from under the carapace rim. The pass
+    # still exists for any model that enables it; switch it on here.
+    import copy
+    creature.model = copy.deepcopy(creature.model)
+    creature.model["appearance"].setdefault("leg_connections", {})["enabled"] = True
 
     solves = [0]
     asks = [0]

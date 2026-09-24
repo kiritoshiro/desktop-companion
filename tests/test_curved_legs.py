@@ -128,11 +128,17 @@ def test_the_femurs_of_the_middle_legs_do_not_bunch(content):
 
 def test_the_knee_sits_nearer_the_body_than_the_middle(content):
     """What DC-75 claimed and, until this package, did not draw."""
+    # < 0.45 until DC-83 put the real segment shares back (knee at 41% before
+    # the curve); the curve moves the front knee to about 46%.
     for name, (_, _, knee) in _shape(content).items():
-        assert knee < 0.45, f"{name}: knee {100 * knee:.0f}% of the way out"
+        assert knee < 0.50, f"{name}: knee {100 * knee:.0f}% of the way out"
+    curved = sum(knee for _, _, knee in _shape(content).values())
     RP.CURVED_LEGS = False
-    assert min(knee for _, _, knee in _shape(content).values()) > 0.50, (
-        "with the curve off the knee should be back at main's 52-54%")
+    straight = sum(knee for _, _, knee in _shape(content).values())
+    # Pinned main's 52-54% until DC-83; that figure came from the old width
+    # list. What matters is that the curve, and the anatomical seeding that
+    # comes with it, is what brings the knee in.
+    assert curved < straight, (curved / 8, straight / 8)
 
 
 def test_left_and_right_curve_alike(content):

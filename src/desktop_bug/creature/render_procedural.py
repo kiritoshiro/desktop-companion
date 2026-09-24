@@ -23,6 +23,7 @@ from .render_batch import (
     LAYER_CORE,
     LAYER_FOOT,
     LAYER_FUZZ,
+    LAYER_SHADOW,
     LAYER_HAIR,
     LAYER_JOINT,
     LAYER_SEGMENT,
@@ -708,6 +709,22 @@ class RenderProceduralMixin:
         # Hoisted out of the loop as well as gated: the over-stroke colour does
         # not vary between segments or between legs, but the shipped code
         # rebuilt it for every one of the forty segments a tarantula has.
+        # DC-83: each leg's shadow on the ground. Seen from above, what says a
+        # knee is raised is that its shadow falls away from it; at the foot,
+        # which is on the ground, leg and shadow meet. Two segments per leg
+        # (socket, knee, foot), one colour and one width, so the whole
+        # spider's shadow is a single path in the batch.
+        shadow_cfg = self._appearance("leg_shadow", None)
+        shadow = None
+        if (isinstance(shadow_cfg, dict) and shadow_cfg.get("enabled", True)
+                and chain_config and self.jump_z <= 0.0 and not self.dragging):
+            shadow_h = self.size * clamp(float(shadow_cfg.get("knee_height", 0.30)), 0.0, 0.8)
+            shadow = (
+                shadow_h * 0.55, shadow_h * 0.80,   # light from the upper left
+                float(shadow_cfg.get("root_height", 0.35)),
+                self._qcolor_triplet((0, 0, 0), int(clamp(float(shadow_cfg.get("alpha", 46)), 0, 255))),
+                resting_leg_width * clamp(float(shadow_cfg.get("width", 1.1)), 0.3, 2.5),
+            )
         hair_color = None
         if detail.separate_hair or detail.merge_hair:
             hair_color = self._qcolor_triplet(
@@ -769,6 +786,13 @@ class RenderProceduralMixin:
                 coxa_x, coxa_y = chain_points[1]
                 kx, ky = chain_points[2]
                 tarsus_x, tarsus_y = chain_points[3]
+                if shadow is not None:
+                    sdx, sdy, root_k, shadow_color, shadow_w = shadow
+                    end_x, end_y = chain_points[-1]
+                    batch.line(LAYER_SHADOW, shadow_color, shadow_w,
+                               ax + sdx * root_k, ay + sdy * root_k, kx + sdx, ky + sdy)
+                    batch.line(LAYER_SHADOW, shadow_color, shadow_w,
+                               kx + sdx, ky + sdy, end_x, end_y)
 
             base_width = max(1.4, self.size * (0.066 + leg.lift * 0.016) * leg_width_scale) * (1.0 + startle * 0.10)
             coxa_width = max(1.2, base_width * 1.08 * coxa_width_scale)
@@ -894,6 +918,17 @@ class RenderProceduralMixin:
                         max(1.0, tarsus_width * 0.8), foot_x, foot_y)
 
         crouch_drop = self.crouch * self.size * 0.06
+        # DC-83: the body sits over the leg roots. DC-75 moved the leg pass on
+        # top of the body so the raised knee would read; the owner, with four
+        # photographs of a red-knee: "now the body seems to be below the legs?
+        # but it should be on the same height as the legs ... they should be
+        # connected". In every photograph the legs come out from *under* the
+        # carapace rim, and everything past the rim is outside the shell
+        # anyway, so the knee still shows. `legs_over_body` keeps the DC-75
+        # order for a model that wants it.
+        legs_over_body = bool(self._appearance("legs_over_body", False))
+        if not legs_over_body:
+            batch.flush(painter)
         painter.save()
         # DC-59: a landed blow throws the body over its planted feet, so the
         # legs stretch behind it. The feet are solved in world space and are
@@ -979,6 +1014,21 @@ class RenderProceduralMixin:
             painter.setBrush(QBrush(pedicel_color))
             painter.drawEllipse(QRectF(pedicel_offset_x - pedicel_w * 0.5, -pedicel_h * 0.5, pedicel_w, pedicel_h))
         painter.drawEllipse(QRectF(ceph_offset_x - ceph_w * 0.5, -ceph_h * 0.5, ceph_w, ceph_h))
+        # DC-83: a red-knee's carapace is black with a pale orange-tan rim
+        # all the way round -- the second thing you see after the knees.
+        rim_cfg = self._appearance("carapace_rim", None)
+        if isinstance(rim_cfg, dict) and rim_cfg.get("enabled", True):
+            # A broad band the black centre patch sits inside, not a ring:
+            # fill the carapace in the rim colour, then lay the patch on top.
+            rim_w = self.size * clamp(float(rim_cfg.get("width", 0.12)), 0.01, 0.25)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(self._qcolor(str(rim_cfg.get("color_key", "highlight")),
+                                                 int(rim_cfg.get("alpha", 235)))))
+            painter.drawEllipse(QRectF(ceph_offset_x - ceph_w * 0.5, -ceph_h * 0.5, ceph_w, ceph_h))
+            patch_w = max(0.0, ceph_w - 2.0 * rim_w)
+            patch_h = max(0.0, ceph_h - 2.0 * rim_w)
+            painter.setBrush(QBrush(body))
+            painter.drawEllipse(QRectF(ceph_offset_x - patch_w * 0.5, -patch_h * 0.5, patch_w, patch_h))
         if head_enabled and head_w > 0.0 and head_h > 0.0:
             head_color = self._qcolor(str(head_cfg.get("color_key", "body")), 255)
             head_outline = self._qcolor(str(head_cfg.get("outline_key", "legs")), 225)
@@ -1046,7 +1096,9 @@ class RenderProceduralMixin:
                     eyex = head_face_x - head_w * 0.20 + head_w * (0.08 + c * 0.13)
                     eyey = head_face_y + (-0.18 + r * 0.18 + (c % 2) * 0.02) * head_h
                     eyes.append((eyex, eyey, eye_r * (0.85 if c % 2 else 1.0)))
-        if head_enabled and head_w > 0.0 and head_h > 0.0:
+        # DC-83: from above a tarantula's fangs are folded under the
+        # chelicerae and not visible; `fangs: false` leaves only the lobes.
+        if head_enabled and head_w > 0.0 and head_h > 0.0 and head_cfg.get("fangs", True):
             fang_color = self._qcolor("legs", 235)
             painter.setPen(QPen(fang_color, max(1.0, self.size * 0.018), Qt.SolidLine, Qt.RoundCap))
             fang_x = head_offset_x + head_w * 0.33
@@ -1071,7 +1123,8 @@ class RenderProceduralMixin:
         # See [[Tarantula Reference - Brachypelma hamorii]], "Posture, seen
         # from the side". This costs nothing: it is the same draws in a
         # different order.
-        batch.flush(painter)
+        if legs_over_body:
+            batch.flush(painter)
         # The body above is drawn in a body-local QPainter transform.  Leg
         # connections are computed in world coordinates, so paint them only
         # after leaving that transform.  Drawing them inside it double-applied
