@@ -21,72 +21,34 @@ _CREAM = QColor(wood_theme.CREAM)
 _DIM = QColor(150, 124, 92)
 
 
+def _home_area(window) -> QRect:
+    """Where the HUD sits by default: the main monitor, in overlay pixels.
+
+    The overlay spans every monitor, so "the middle of the window" is the
+    seam between two screens. Falls back to the whole window when the main
+    monitor is unknown or not inside it (and in tests that fake a window).
+    """
+    whole = QRect(0, 0, window.width(), window.height())
+    origin = getattr(window, "geometry_rect", None)
+    if origin is None:
+        return whole
+    from .window_placement import primary_rect_local
+
+    area = primary_rect_local(origin.topLeft()).intersected(whole)
+    return area if area.width() >= 200 and area.height() >= 200 else whole
+
+
 def hud_rect(window):
     width = min(HUD_WIDTH, max(1, window.width() - 16))
     height = min(HUD_HEIGHT, max(1, window.height() - 16))
     position = getattr(window, "_adventure_hud_position", None)
     if position is None:
-        return QRect(max(8, (window.width() - width) // 2),
-                     max(8, window.height() - height - 14), width, height)
+        area = _home_area(window)
+        return QRect(max(8, area.left() + (area.width() - width) // 2),
+                     max(8, area.bottom() - height - 14), width, height)
     return QRect(max(8, min(position.x(), window.width() - width - 8)),
                  max(8, min(position.y(), window.height() - height - 8)),
                  width, height)
-
-
-AIM_REACH = 170.0
-
-
-def aim_region(controller) -> QRect:
-    """The area the aim cone and line can cover, for partial repaints."""
-    spider = controller.creature
-    r = int(AIM_REACH + 12)
-    return QRect(int(spider.x) - r, int(spider.y) - r, r * 2, r * 2)
-
-
-def draw_aim(painter, controller) -> None:
-    """A faint wedge for the aim cone in front of the spider, and the aim line.
-
-    The wedge shows where silk can go; the brass line shows where it will go
-    -- towards the pointer, held to the cone's edge when the pointer is
-    outside it. With free aim (360) only the line is drawn.
-    """
-    import math
-
-    spider = controller.creature
-    if spider.dead:
-        return
-    cx, cy = spider.x, spider.y
-    heading = spider.heading
-    half = controller.controls.half_cone
-    angle = controller.aim_angle()
-    ax, ay = controller.aim
-    length = max(spider.size * 1.5, min(AIM_REACH, math.hypot(ax - cx, ay - cy)))
-    painter.save()
-    painter.setRenderHint(painter.Antialiasing, True)
-    if half < math.pi - 1e-3:
-        wedge = QPainterPath(QPointF(cx, cy))
-        steps = 16
-        for i in range(steps + 1):
-            a = heading - half + 2 * half * i / steps
-            wedge.lineTo(QPointF(cx + math.cos(a) * AIM_REACH, cy + math.sin(a) * AIM_REACH))
-        wedge.closeSubpath()
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(246, 226, 184, 22))
-        painter.drawPath(wedge)
-        edge = QPen(QColor(246, 226, 184, 70), 1.2, Qt.DashLine)
-        painter.setPen(edge)
-        for a in (heading - half, heading + half):
-            painter.drawLine(QPointF(cx, cy), QPointF(cx + math.cos(a) * AIM_REACH,
-                                                        cy + math.sin(a) * AIM_REACH))
-    start = spider.size * 0.9
-    tip = QPointF(cx + math.cos(angle) * length, cy + math.sin(angle) * length)
-    painter.setPen(QPen(QColor(10, 4, 0, 120), 3.2, Qt.SolidLine, Qt.RoundCap))
-    painter.drawLine(QPointF(cx + math.cos(angle) * start, cy + math.sin(angle) * start), tip)
-    painter.setPen(QPen(_BRASS, 1.8, Qt.SolidLine, Qt.RoundCap))
-    painter.drawLine(QPointF(cx + math.cos(angle) * start, cy + math.sin(angle) * start), tip)
-    painter.setBrush(_BRASS)
-    painter.drawEllipse(tip, 3.2, 3.2)
-    painter.restore()
 
 
 def _board(painter, rect: QRect, radius: float) -> None:
