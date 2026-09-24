@@ -1,14 +1,24 @@
-"""Adventure HUD and pause controls for the transparent game window."""
+"""Adventure HUD and pause controls for the transparent game window.
+
+Carved-wood look (``wood_theme``): a walnut board with a raised rim, brass
+lettering, bars cut into the wood and ability slots as recessed wells.
+"""
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QRect, Qt
-from PyQt5.QtGui import QColor, QPen
+from PyQt5.QtCore import QPointF, QRect, QRectF, Qt
+from PyQt5.QtGui import QBrush, QColor, QLinearGradient, QPainterPath, QPen
 from PyQt5.QtWidgets import QComboBox, QDialog, QHBoxLayout, QLabel, QPushButton, QVBoxLayout
+
+from . import wood_theme
 
 
 HUD_WIDTH = 430
 HUD_HEIGHT = 134
+
+_BRASS = QColor(wood_theme.BRASS)
+_CREAM = QColor(wood_theme.CREAM)
+_DIM = QColor(150, 124, 92)
 
 
 def hud_rect(window):
@@ -23,38 +33,89 @@ def hud_rect(window):
                  width, height)
 
 
+def _board(painter, rect: QRect, radius: float) -> None:
+    """Walnut with a raised, lit rim and a shadow under it."""
+    outer = QRectF(rect)
+    path = QPainterPath()
+    path.addRoundedRect(outer, radius, radius)
+    painter.setPen(Qt.NoPen)
+    for i in range(4, 0, -1):
+        painter.setBrush(QColor(10, 4, 0, 30))
+        painter.drawPath(path.translated(i * 0.6, i * 1.0))
+    texture = wood_theme.texture("wood_dark_tile.png")
+    painter.setBrush(QBrush(texture) if texture is not None else QColor(wood_theme.WALNUT))
+    painter.drawPath(path)
+    painter.setBrush(QColor(20, 10, 3, 40))
+    painter.drawPath(path)
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QColor(210, 160, 100, 120), 1.4))
+    painter.drawRoundedRect(outer.adjusted(1.5, 1.5, -1.5, -1.5), radius - 1, radius - 1)
+    painter.setPen(QPen(QColor(18, 8, 2, 230), 2.0))
+    painter.drawRoundedRect(outer, radius, radius)
+    painter.setPen(QPen(QColor(18, 8, 2, 150), 1.2))
+    painter.drawRoundedRect(outer.adjusted(5, 5, -5, -5), radius - 4, radius - 4)
+
+
+def _well(painter, rect: QRect, radius: float, lit: bool = True) -> None:
+    """A recess cut into the board: dark floor, shadowed top, lit bottom lip."""
+    r = QRectF(rect)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(14, 6, 1, 150 if lit else 185))
+    painter.drawRoundedRect(r, radius, radius)
+    painter.setPen(QPen(QColor(8, 3, 0, 200), 1.6))
+    painter.drawLine(r.topLeft() + QPointF(radius, 0.8), r.topRight() + QPointF(-radius, 0.8))
+    painter.setPen(QPen(QColor(220, 170, 110, 90), 1.2))
+    painter.drawLine(r.bottomLeft() + QPointF(radius, 0.6), r.bottomRight() + QPointF(-radius, 0.6))
+
+
 def draw_hud(painter, window, controller):
     spider = controller.creature
     rect = hud_rect(window)
     painter.save()
     painter.setClipping(False)
-    painter.setPen(QPen(QColor("#8994b7"), 1))
-    painter.setBrush(QColor(19, 23, 38, 230))
-    painter.drawRoundedRect(rect, 14, 14)
-    painter.setPen(QColor("#f7f5ff"))
+    painter.setRenderHint(painter.Antialiasing, True)
+    _board(painter, rect, 14)
+
+    painter.setPen(_BRASS)
     body_font = painter.font()
-    painter.setFont(spider._label_font())
+    title_font = spider._label_font()
+    painter.setFont(title_font)
     title = f"{spider.display_name}  ·  Level {spider.level}"
     title = painter.fontMetrics().elidedText(title, Qt.ElideRight, max(1, rect.width() - 64))
-    painter.drawText(QRect(rect.left() + 16, rect.top() + 3, rect.width() - 64, 26),
-                     Qt.AlignLeft | Qt.AlignVCenter, title)
+    title_rect = QRect(rect.left() + 16, rect.top() + 5, rect.width() - 64, 26)
+    painter.setPen(QColor(10, 4, 0, 200))
+    painter.drawText(title_rect.translated(0, 1), Qt.AlignLeft | Qt.AlignVCenter, title)
+    painter.setPen(_BRASS)
+    painter.drawText(title_rect, Qt.AlignLeft | Qt.AlignVCenter, title)
     painter.setFont(body_font)
-    painter.setPen(QPen(QColor("#aab2cf"), 2, Qt.SolidLine, Qt.RoundCap))
-    for y in (11, 16, 21):
-        painter.drawLine(rect.right() - 31, rect.top() + y,
-                         rect.right() - 16, rect.top() + y)
+    # The drag handle: three grooves.
+    for y in (13, 18, 23):
+        painter.setPen(QPen(QColor(8, 3, 0, 220), 2, Qt.SolidLine, Qt.RoundCap))
+        painter.drawLine(rect.right() - 31, rect.top() + y, rect.right() - 16, rect.top() + y)
+        painter.setPen(QPen(QColor(210, 160, 100, 110), 1, Qt.SolidLine, Qt.RoundCap))
+        painter.drawLine(QPointF(rect.right() - 31, rect.top() + y + 1.5),
+                         QPointF(rect.right() - 16, rect.top() + y + 1.5))
 
     def bar(y, label, value, maximum, color):
         x = rect.left() + 16
         width = rect.width() - 32
-        painter.setPen(QColor("#dbe0ef"))
+        painter.setPen(_CREAM)
         painter.drawText(x, y, f"{label}  {value:.0f}/{maximum:.0f}")
-        fill = QRect(x, y + 5, width, 7)
-        painter.fillRect(fill, QColor("#414961"))
-        painter.fillRect(QRect(x, y + 5, int(width * max(0, min(1, value / max(1, maximum)))), 7), QColor(color))
+        track = QRect(x, y + 4, width, 9)
+        _well(painter, track, 4)
+        fraction = max(0.0, min(1.0, value / max(1, maximum)))
+        if fraction > 0.0:
+            fill = QRectF(x + 1.5, y + 5.5, max(2.0, (width - 3) * fraction), 6)
+            grad = QLinearGradient(fill.topLeft(), fill.bottomLeft())
+            base = QColor(color)
+            grad.setColorAt(0.0, base.lighter(135))
+            grad.setColorAt(1.0, base.darker(125))
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(grad))
+            painter.drawRoundedRect(fill, 3, 3)
 
-    bar(rect.top() + 42, "HEALTH", spider.hp, spider.max_hp, "#e56e83")
-    bar(rect.top() + 66, "STAMINA", spider.energy, spider.max_energy, "#5ad1bd")
+    bar(rect.top() + 44, "HEALTH", spider.hp, spider.max_hp, wood_theme.HEALTH)
+    bar(rect.top() + 68, "STAMINA", spider.energy, spider.max_energy, wood_theme.STAMINA)
     slots = (
         ("jump", "SPACE", "Jump", controller.jump_cooldown, spider.energy >= controller.JUMP_ENERGY),
         ("web", "L CLICK", "Web", controller.web_cooldown, spider.energy >= controller.WEB_ENERGY),
@@ -66,11 +127,14 @@ def draw_hud(painter, window, controller):
         card = QRect(rect.left() + 12 + index * (card_width + 5),
                      rect.top() + 84, card_width, 40)
         ready = cooldown <= 0.0 and enough_energy
-        painter.setPen(QPen(QColor("#8e9bbd" if ready else "#566077"), 1))
-        painter.setBrush(QColor("#343d60" if ready else "#293147"))
-        painter.drawRoundedRect(card, 7, 7)
-        color = QColor("#f4dda0" if ready else "#8f9aaa")
+        _well(painter, card, 7, lit=ready)
+        if ready:
+            painter.setPen(QPen(QColor(214, 164, 72, 150), 1.2))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(QRectF(card).adjusted(0.5, 0.5, -0.5, -0.5), 7, 7)
+        color = _BRASS if ready else _DIM
         painter.setPen(QPen(color, 2))
+        painter.setBrush(Qt.NoBrush)
         cx, cy = card.left() + 17, card.top() + 19
         if kind == "jump":
             painter.drawLine(cx - 8, cy + 7, cx, cy - 6)
@@ -91,8 +155,9 @@ def draw_hud(painter, window, controller):
             painter.drawLine(cx, cy - 7, cx + 7, cy + 6)
             for px, py in ((cx, cy - 7), (cx - 7, cy + 6), (cx + 7, cy + 6)):
                 painter.drawEllipse(px - 2, py - 2, 4, 4)
-        painter.setPen(color)
+        painter.setPen(_CREAM if ready else _DIM)
         painter.drawText(card.left() + 33, card.top() + 16, key)
+        painter.setPen(color)
         painter.drawText(card.left() + 33, card.top() + 31,
                          f"{cooldown:.1f}s" if cooldown > 0.0 else label)
     painter.restore()
@@ -104,15 +169,15 @@ class PauseDialog(QDialog):
         self.setWindowTitle("Adventure paused")
         self.setMinimumWidth(300)
         self.choice = "resume"
-        self.setStyleSheet("""
-            QDialog { background: #20253c; color: #f6f3ff; }
-            QLabel { color: #f6f3ff; font-size: 15pt; font-weight: bold; }
-            QPushButton { min-height: 36px; border-radius: 7px;
-                          background: #353e62; color: white; }
-            QPushButton:hover { background: #5968a3; }
-        """)
+        self.setStyleSheet(wood_theme.dialog_qss())
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Adventure paused"))
+        layout.setContentsMargins(22, 18, 22, 20)
+        layout.setSpacing(8)
+        title = QLabel("Adventure paused")
+        title.setObjectName("dialogTitle")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+        layout.addSpacing(4)
         for label, choice in (
             ("Resume", "resume"),
             ("Skill tree", "skills"),
@@ -122,6 +187,7 @@ class PauseDialog(QDialog):
             ("Save and exit", "exit"),
         ):
             button = QPushButton(label)
+            button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda _=False, value=choice: self._choose(value))
             layout.addWidget(button)
 
@@ -134,7 +200,12 @@ class AdventureSettingsDialog(QDialog):
     def __init__(self, window):
         super().__init__(window)
         self.setWindowTitle("Adventure settings")
+        self.setStyleSheet(wood_theme.dialog_qss())
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 18, 22, 20)
+        title = QLabel("Adventure settings")
+        title.setObjectName("dialogTitle")
+        layout.addWidget(title)
         layout.addWidget(QLabel("Frame rate"))
         row = QHBoxLayout()
         self.fps = QComboBox()
@@ -145,7 +216,8 @@ class AdventureSettingsDialog(QDialog):
         self.fps.setCurrentIndex(current)
         row.addWidget(self.fps)
         layout.addLayout(row)
-        controls = QLabel("WASD move · Shift sprint · Space jump · Click shoot · Drag the status panel to move it · K skills · Esc pause")
+        controls = QLabel("WASD move · Shift sprint · Space jump · Click shoot · "
+                          "Drag the status panel to move it · K skills · Esc pause")
         controls.setWordWrap(True)
         layout.addWidget(controls)
         done = QPushButton("Apply and return")

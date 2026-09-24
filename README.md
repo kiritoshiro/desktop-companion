@@ -126,6 +126,10 @@ python tools\run_all_checks.py      # compile, validate content, pytest, ruff --
 python -m pytest tests\test_tarantula.py -v
 ```
 
+The carved-wood interface art in `assets/ui/` (mode pictures, wood textures,
+card frame) is generated: `python tools\generate_ui_art.py` redraws it,
+burning the current tarantula model into the pictures.
+
 Tests are headless: `tests/conftest.py` forces Qt's offscreen platform and a
 private state folder, so a run never touches your saved spiders.
 
