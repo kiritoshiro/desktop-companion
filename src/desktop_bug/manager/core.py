@@ -210,6 +210,7 @@ class CreatureManager(
         self._state_launch = 1
         self._progression_states = self._load_progression_states()
         self.base_world = BaseWorld(screen_w, screen_h, self._base_runtime_state, rng=self._rng)
+        self.base_world.playfield = self.playfield
         self.load_preset(preset_path)
         # After the preset, never before: loading one clears the web world and
         # the cage list that the saved scene is about to refill.
@@ -356,6 +357,7 @@ class CreatureManager(
         # Case-folded: Windows paths are case-insensitive, so Default.json and
         # default.json are one preset and must share one saved profile.
         self._progression_namespace = normalize_namespace(Path(preset_path).stem)
+        self._preset_path = Path(preset_path)
         self.creatures.clear()
         if getattr(self, "web_world", None) is not None:
             self.web_world.clear()
@@ -500,6 +502,9 @@ class CreatureManager(
         monitor and for two that happen to tile.
         """
         self.playfield.set_rects(rects)
+        if getattr(self, "base_world", None) is not None:
+            self.base_world.playfield = self.playfield
+            self.base_world.keep_all_on_screen()
 
     def resize(self, screen_w: int, screen_h: int) -> None:
         self.screen_w = screen_w

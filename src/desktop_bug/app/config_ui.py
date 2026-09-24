@@ -43,6 +43,7 @@ from ..content.discovery import app_root, discover_models, discover_personalitie
 from ..support.dpi import enable_high_dpi_scaling
 from ..support.logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
+from ..state.runtime_state import reset_saved_progress
 from .live_channel import SettingsChannelClient, channel_name
 from ..content.preset_io import load_preset, save_preset, safe_preset_filename, validate_preset
 from ..world.jobs import JOB_OPTIONS, job_ability_ids, normalize_job_id
@@ -684,12 +685,17 @@ class ConfigWindow(QMainWindow):
 
         launch_row = QHBoxLayout()
         self.open_folder_btn = QPushButton("Open project folder")
+        self.reset_progress_btn = QPushButton("Reset saved progress...")
+        self.reset_progress_btn.setToolTip(
+            "Forget every spider's level, XP and name, and remove all bases. "
+            "Presets, settings, cages and webs are kept.")
         self.stop_btn = QPushButton("Stop overlay")
         self.stop_btn.setObjectName("stopButton")
         self.launch_btn = QPushButton("Save and launch overlay")
         self.launch_btn.setObjectName("primaryButton")
         self.launch_btn.setDefault(True)
         launch_row.addWidget(self.open_folder_btn)
+        launch_row.addWidget(self.reset_progress_btn)
         launch_row.addStretch(1)
         launch_row.addWidget(self.stop_btn)
         launch_row.addWidget(self.launch_btn)
@@ -703,6 +709,7 @@ class ConfigWindow(QMainWindow):
 
 
         self.add_slot_btn.clicked.connect(self.add_slot)
+        self.reset_progress_btn.clicked.connect(self.reset_saved_progress)
         self.clear_slots_btn.clicked.connect(self.clear_slots)
         self.save_btn.clicked.connect(self.save_current_preset)
         self.load_btn.clicked.connect(self.load_selected_preset)
@@ -2259,6 +2266,35 @@ class ConfigWindow(QMainWindow):
         if app is not None:
             app.processEvents()
         time.sleep(seconds)
+
+    def reset_saved_progress(self, confirm: bool = True) -> str:
+        """Forget all saved stats and bases (DC-85). Returns how it was done.
+
+        A running overlay holds the state in memory and would write it back,
+        so it is asked to reset itself over the live channel. With nothing
+        listening, the file is cleared directly.
+        """
+        if confirm:
+            answer = QMessageBox.question(
+                self, "Reset saved progress",
+                "Forget every spider's level, XP and name, and remove all bases?\n\n"
+                "Presets, settings, cages and webs are kept. This cannot be undone.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                return "cancelled"
+        if self._ensure_channel_connected():
+            self._channel_client.send({"type": "reset_progress"})
+            self.status.setText("Saved progress reset in the running overlay.")
+            return "overlay"
+        path = state_dir() / "creatures.json"
+        if reset_saved_progress(path):
+            running = bool(self.overlay_process and self.overlay_process.poll() is None)
+            self.status.setText(
+                "Saved progress reset. Restart the overlay to see it." if running
+                else "Saved progress reset.")
+            return "file"
+        self.status.setText(f"Could not write {path}.")
+        return "failed"
 
     def stop_overlay(self):
         if not (self.overlay_process and self.overlay_process.poll() is None):

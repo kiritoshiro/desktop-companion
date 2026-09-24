@@ -15,7 +15,9 @@ save, forever.
 
 from __future__ import annotations
 
+import json
 import uuid
+from pathlib import Path
 from typing import Any, Callable
 
 
@@ -277,6 +279,36 @@ def evict(states: Any, launch: int, retain: int = RETAIN_LAUNCHES) -> dict:
         if int(launch) - last_seen <= horizon:
             kept[key] = entry
     return kept
+
+
+def reset_saved_progress(path) -> bool:
+    """Forget every spider's saved stats and every base in a state file (DC-85).
+
+    For when no overlay is running to do it itself. The scene -- cages, webs
+    and nests the player placed -- and the launch counter are kept. Written
+    atomically, like a save. True if the file was written.
+    """
+    path = Path(path)
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except FileNotFoundError:
+        return True
+    except (OSError, ValueError, TypeError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    launch = int(data.get("launch", 1) or 1)
+    payload = build_payload({}, [], launch, data.get("scene"))
+    temp = path.with_suffix(".tmp")
+    try:
+        with temp.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+        temp.replace(path)
+        return True
+    except OSError:
+        return False
 
 
 def build_payload(states: dict, bases: list, launch: int,
