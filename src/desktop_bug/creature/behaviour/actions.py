@@ -218,6 +218,10 @@ class ActionMixin:
             self.jump_duration = duration if duration is not None else clamp(travel / 520.0 + 0.30, 0.32, 0.6)
 
         land_x, land_y = clamp_point(land_x, land_y, self.margin * 0.5, self.screen_w, self.screen_h)
+        playfield = self._split_playfield()
+        if playfield is not None:
+            # Land on a monitor, not in the space between them (DC-88).
+            land_x, land_y = playfield.clamp(land_x, land_y, max(8.0, self.size * 0.5))
         self.jump_from = (self.x, self.y)
         self.jump_to = (land_x, land_y)
         self.catch_point = (tx, ty)

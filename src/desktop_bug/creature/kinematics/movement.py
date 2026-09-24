@@ -59,7 +59,28 @@ class BodyMovementMixin:
         state_boost = 1.34 if self.state in ("Chase", "Retreat", "Startled") else 1.18
         return state_boost * self._skitter_burst_jitter * pulse
 
+    def _split_playfield(self):
+        """The Playfield when monitors leave space none of them shows, else None."""
+        playfield = getattr(self, "playfield", None)
+        if playfield is None or playfield.simple:
+            return None
+        return playfield
+
+    def _aim_at_a_real_screen(self) -> None:
+        """Pull this frame's destination onto a monitor before any step (DC-88).
+
+        A destination in space no monitor shows -- a patrol point, a hunt, a
+        wander picked from the window's bounding box -- had the spider walk
+        into it and the manager shove it back out every frame afterwards, the
+        body jumping and the legs thrashing. Aiming for the nearest point on a
+        real screen instead, it walks to the edge and stops there.
+        """
+        playfield = self._split_playfield()
+        if playfield is not None:
+            self.target_x, self.target_y = playfield.clamp(self.target_x, self.target_y, self.margin)
+
     def _move_body(self, dt: float) -> None:
+        playfield = self._split_playfield()
         edge_push_x = 0.0
         edge_push_y = 0.0
         edge_zone = self.margin + 30.0
@@ -96,6 +117,9 @@ class BodyMovementMixin:
             self.x += (self.inertia_vx + drift_vx) * dt
             self.y += (self.inertia_vy + drift_vy) * dt
             clamped_x, clamped_y = clamp_point(self.x, self.y, self.margin * 0.25, self.screen_w, self.screen_h)
+            if playfield is not None:
+                # Thrown towards space no monitor shows: bounce off the real edge.
+                clamped_x, clamped_y = playfield.clamp(clamped_x, clamped_y, self.margin * 0.25)
             if clamped_x != self.x:
                 self.inertia_vx *= -0.28
             if clamped_y != self.y:
@@ -257,6 +281,9 @@ class BodyMovementMixin:
             self.vel_x *= max(0.0, 1.0 - dt * 8.0)
             self.vel_y *= max(0.0, 1.0 - dt * 8.0)
         self.x, self.y = clamp_point(self.x, self.y, self.margin * 0.4, self.screen_w, self.screen_h)
+        if playfield is not None:
+            # The same margin the manager's backstop uses, so it never has to act.
+            self.x, self.y = playfield.clamp(self.x, self.y, max(8.0, self.size * 0.5))
 
         speed01 = clamp(self.current_speed / 160.0, 0.0, 1.0)
         skitter = self._uses_skitter_gait()

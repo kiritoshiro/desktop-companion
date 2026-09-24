@@ -1400,6 +1400,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self._update_jump(dt)
         else:
             self._update_state(dt, mx, my)
+            self._aim_at_a_real_screen()
             if self._spider_grounded_mode_allowed():
                 self._update_spider_grounded_frame(dt)
             else:
