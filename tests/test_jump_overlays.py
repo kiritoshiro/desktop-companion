@@ -20,6 +20,7 @@ The shadow is meant to stay on the ground, and does.
 
 from __future__ import annotations
 
+import copy
 import random
 from types import SimpleNamespace
 
@@ -65,6 +66,11 @@ def test_the_leg_roots_rise_with_the_legs(content, monkeypatch):
     """Every leg is solved twice a frame: once for the leg, once for the
     socket overlay. Airborne, both must start from the same raised socket."""
     spider = _airborne(content)
+    # DC-83 switched the tarantula's socket overlay off (its legs now come
+    # out from under the carapace rim); the overlay is still there for any
+    # model that enables it, so switch it on here to keep testing it.
+    spider.model = copy.deepcopy(spider.model)
+    spider.model["appearance"]["leg_connections"]["enabled"] = True
     ground = {id(leg): spider._leg_attach(leg)[1] for leg in spider.legs}
     roots: dict[int, list[float]] = {}
     original = type(spider)._sprite_leg_chain_points

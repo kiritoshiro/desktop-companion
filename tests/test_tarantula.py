@@ -66,8 +66,13 @@ def test_the_model_is_shaped_as_the_gait_expects(tarantula):
     assert lengths[1] == min(lengths), (
         f"the patella must be the shortest segment, got {lengths}"
     )
-    assert lengths[3] == max(lengths), (
-        f"the metatarsus must be the longest segment, got {lengths}"
+    # DC-83: the femur is the longest segment of a real leg (27.1% of leg I
+    # in the holotype). DC-75 foreshortened it to 17% for a top-down view and
+    # made the metatarsus longest; in the owner's top-down photographs the
+    # femur is a long black segment clearly seen before the orange knee, and
+    # at 17% it all but vanished under the carapace rim.
+    assert lengths[0] == max(lengths), (
+        f"the femur must be the longest segment, got {lengths}"
     )
     # and the knee therefore sits nearer the body than the midpoint, which is
     # what a raised knee looks like from directly overhead.
@@ -87,10 +92,17 @@ def test_the_model_is_shaped_as_the_gait_expects(tarantula):
         name: math.degrees(math.atan2(float(leg["rest_side"]), float(leg["rest_forward"])))
         for name, leg in leg_by_name.items()
     }
-    # Leg roots should sit near the carapace rim, not far outside it on exposed
-    # tubes and not so deep that the shell hides the proximal joints.
-    assert min(root_sides) >= float(ceph_scale[1]) * 0.58
-    assert max(root_sides) <= float(ceph_scale[1]) * 0.75
+    # DC-83: the leg roots sit *under* the carapace rim. They used to be
+    # required out at the flank (>= 58% of the carapace width), which put
+    # every socket 1.09-1.23 of the way out on the carapace outline -- just
+    # outside it -- and left a sliver of background between each leg and the
+    # body: the owner's "gaps between the legs and the body ... background
+    # dots". In the photographs every leg comes out from under the rim.
+    ceph_half_len = float(ceph_scale[0]) * 0.5
+    ceph_half_wid = float(ceph_scale[1]) * 0.5
+    for f, s in zip(root_forwards, root_sides):
+        r = math.hypot((f - ceph_offset) / ceph_half_len, s / ceph_half_wid)
+        assert 0.6 <= r <= 0.92, f"a leg root at ({f}, {s}) is {r:.2f} of the way to the rim"
     assert all(ceph_forward_min <= value <= ceph_forward_max for value in root_forwards)
     # These four bands used to be 35 / 45-60 / 120-135 / 145, drawn around the
     # shipped numbers -- and the shipped numbers were the fault. 29/52/128/151
@@ -128,7 +140,11 @@ def test_the_model_is_shaped_as_the_gait_expects(tarantula):
     assert pedicel["scale"][0] < ceph_scale[0]
     assert head["scale"][0] < ceph_scale[0]
     connections = model["appearance"]["leg_connections"]
-    assert connections["enabled"] is True
+    # DC-83: off. The painted sockets sat over the shell; the legs now come
+    # out from under the carapace rim, as in the owner's photographs, so
+    # there is nothing to paint. The geometry stays valid for re-enabling.
+    assert connections["enabled"] is False
+    assert model["appearance"]["legs_over_body"] is False
     assert connections["coxa_length"] > connections["trochanter_length"] > 0.0
     assert connections["socket_radius"] > connections["joint_radius"]
     antennae = model["appearance"]["antennae"]
@@ -136,9 +152,14 @@ def test_the_model_is_shaped_as_the_gait_expects(tarantula):
     assert antennae["segments"] == 5
     assert len(antennae["segment_lengths"]) == 5
     assert antennae["control_mode"] == "sensory_hand"
-    assert antennae["length"] < 0.50
+    # < 0.50 until DC-83. In the owner's photographs the pedipalps are
+    # leg-like and reach about 0.6 of a carapace length ahead of it; short
+    # thin palps read as fangs ("look like those teeth more than pedipalps").
+    assert antennae["length"] < 0.75
     assert 0.14 <= antennae["proximal_rise"] < 0.22
-    assert antennae["thickness"] < 0.10
+    # < 0.10 until DC-83: a real pedipalp is nearly as thick as a leg, and a
+    # thin one is what made them read as fangs.
+    assert antennae["thickness"] < 0.16
     assert antennae["leg_thickness"] < 1.0
     assert antennae["joint_scale"] < 1.15
     assert antennae["segment_widths"][0] > antennae["segment_widths"][-1]
@@ -335,9 +356,14 @@ def test_the_palps_feelers_and_leg_release_hold_together(tarantula):
     # command has had time to settle.
     for _ in range(120):
         probe._update_antennae(1.0 / 60.0)
-    assert probe.antenna_segment_angles[1][0] > 0.45
+    # 0.45 before DC-83; the palps are straighter now, as they are in the
+    # owner's photographs -- leg-like, reaching forward. The point of the
+    # check is that the proximal link stays visibly raised, and 0.30 still is.
+    assert probe.antenna_segment_angles[1][0] > 0.30
     assert probe.antenna_segment_angles[1][1] > probe.antenna_segment_angles[1][2]
-    assert probe.antenna_segment_angles[1][-1] < -0.35
+    # < -0.35 until DC-83; the photographs show the palp tip only slightly
+    # turned in, not hooked. Still inward.
+    assert probe.antenna_segment_angles[1][-1] < 0.0
     probe.start_drag(probe.x, probe.y)
     assert probe._startle_amount() == 1.0
     assert probe._startle_highlight_active(probe._startle_amount()) is False
@@ -524,3 +550,25 @@ def test_a_walk_stays_inside_its_limits(tarantula, config, speed, turn_rate):
     if turn_rate:
         final_turn = abs(((result["creature"].heading + math.pi) % math.tau) - math.pi)
         assert final_turn > 0.50
+
+
+def test_the_middle_legs_split_forward_and_back():
+    """DC-80. The owner: *"the side legs look a bit weird ... they should be
+    position one pair more to up other pair more to down side"*. At 72 and
+    108 degrees legs II and III sat 18 degrees either side of straight out
+    and read as one flat row. Seen from above, a B. hamorii's leg II angles
+    forward and leg III back, with a clear gap between them at the flank."""
+    import ast
+    import math
+    from support import ROOT
+
+    source = (ROOT / "src" / "desktop_bug" / "content" / "body_plans.py").read_text(encoding="utf-8")
+    node = next(n for n in ast.parse(source).body if isinstance(n, ast.Assign)
+                and getattr(n.targets[0], "id", None) == "_TARANTULA_LEGS")
+    bearing = {}
+    for leg in ast.literal_eval(node.value):
+        bearing[leg["name"]] = math.degrees(math.atan2(abs(leg["rest_side"]), leg["rest_forward"]))
+    for side in ("left", "right"):
+        assert bearing[f"mid_front_{side}"] <= 65.0, bearing
+        assert bearing[f"mid_rear_{side}"] >= 115.0, bearing
+        assert bearing[f"mid_rear_{side}"] - bearing[f"mid_front_{side}"] >= 50.0, bearing

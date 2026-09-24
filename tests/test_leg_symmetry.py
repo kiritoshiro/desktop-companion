@@ -185,7 +185,10 @@ def test_the_bow_is_a_knee_fold_not_a_splay(content):
         spider = _standing(content, heading_deg=heading)
         for leg in spider.legs:
             bow = _outboard(spider, leg)
-            assert 0.05 < bow < 0.30, (
+            # 0.30 until DC-83 moved the tarantula's sockets 0.09 body widths
+            # inward, under the carapace rim, so the first joint is measured
+            # from further in. The splay this guards against was 0.45.
+            assert 0.05 < bow < 0.40, (
                 f"{leg.definition['name']} at heading {heading} bows {bow:.3f}")
 
 
