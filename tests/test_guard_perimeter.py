@@ -12,6 +12,18 @@ station it faces outwards, away from what it is guarding.
 Both locomotion paths (the legacy body path and the spider gait path) have to
 agree about that, which is why they share one predicate rather than each
 deciding for themselves.
+
+DC-81 changed how it gets between posts. DC-42's guard swept back and forth
+along an arc of the standoff ring while facing outwards -- sideways to its own
+motion. The owner: *"guards move weird when defending. they shouldnt orbit
+like that, just walk in strigh line or throught the base not orbit
+sideways"*. Measured over a minute, one guard and two: on main a moving
+patrolling guard's heading was a median 89 degrees off its direction of
+travel, and over 45 degrees for 79% of moving frames. It now walks a straight
+line through the base between two ends on that same ring, facing the way it
+walks (median 0, 8% over 45 -- the turns at each end), and stands watch at
+each end facing outwards. The standoff, the alert ring and the outward watch
+below are DC-42's and still hold.
 """
 
 from __future__ import annotations
@@ -26,9 +38,7 @@ from desktop_bug.manager import CreatureManager
 from desktop_bug.world.jobs import (
     GUARD_ALERT_RADIUS_PAD,
     GUARD_FACE_OUT_DIST,
-    GUARD_POST_DRIFT,
     GUARD_STANDOFF_PAD,
-    GUARD_SWEEP_ARC,
 )
 
 DT = 1.0 / 60.0
@@ -94,6 +104,7 @@ def _on_station(manager, site, seconds: float = 30.0):
                 "facing_error": abs(math.atan2(math.sin(guard.heading - outward),
                                                math.cos(guard.heading - outward))),
                 "on_post": getattr(guard, "job_facing", None) is not None,
+                "axis": site.patrol_angle,
             })
     return samples
 
@@ -146,27 +157,62 @@ def test_a_guard_on_station_faces_outwards(monkeypatch):
 
 
 def test_a_guard_holds_its_line_rather_than_orbiting(monkeypatch):
-    """The old ring went round every ~15 s. A post should barely move."""
+    """Every place it stands watch is on one line through the base.
+
+    The two ends of the line are opposite each other, so the outward
+    direction flips by half a turn between them; modulo half a turn, all the
+    watch positions agree. An orbit would spread them all the way round.
+    """
     manager, site = _guard_colony(monkeypatch)
     _settle(manager)
-    seconds = 40.0
-    angles = [s["outward"] for s in _on_station(manager, site, seconds) if s["on_post"]]
-    assert angles
-
-    # How far round the base it got, not how much path it covered: sweeping
-    # back and forth along one line covers ground without going anywhere.
-    unwrapped = [angles[0]]
-    for current in angles[1:]:
-        step = math.atan2(math.sin(current - unwrapped[-1]), math.cos(current - unwrapped[-1]))
-        unwrapped.append(unwrapped[-1] + step)
-    extent = max(unwrapped) - min(unwrapped)
-    allowed = GUARD_POST_DRIFT * seconds + GUARD_SWEEP_ARC * 2.0
-    assert extent < allowed * 1.6, (
-        f"a guard covered {math.degrees(extent):.0f} deg of the base in {seconds:.0f} s; "
-        f"holding a line allows about {math.degrees(allowed):.0f}"
+    # The line itself turns slowly (GUARD_POST_DRIFT, about 27 degrees in
+    # 40 s) so no approach stays unwatched, so each watch is judged against
+    # the line as it stood at that moment.
+    offsets = [s["outward"] - s["axis"] for s in _on_station(manager, site, 40.0) if s["on_post"]]
+    assert offsets, "the guard never stood watch"
+    worst = max(abs(math.atan2(math.sin(2 * o), math.cos(2 * o))) / 2 for o in offsets)
+    assert worst < math.radians(12.0), (
+        f"watch positions spread {math.degrees(worst):.0f} deg off one line"
     )
-    # The ring it replaced went right round in roughly fifteen seconds.
-    assert extent < math.pi, f"{math.degrees(extent):.0f} deg is still orbiting"
+
+
+def _patrol_motion(manager, site, seconds: float = 40.0):
+    """(heading-vs-travel error in degrees, distance from centre in radii)
+    for every frame a patrolling guard is actually moving."""
+    prev = {id(c): (c.x, c.y) for c in manager.creatures}
+    out = []
+    for _ in range(int(seconds * 60)):
+        manager.update(DT, *AWAY)
+        for guard in manager.creatures:
+            px, py = prev[id(guard)]
+            vx, vy = (guard.x - px) / DT, (guard.y - py) / DT
+            prev[id(guard)] = (guard.x, guard.y)
+            if guard.state != "JobPatrol" or math.hypot(vx, vy) <= 12.0:
+                continue
+            d = math.atan2(vy, vx) - guard.heading
+            out.append((abs(math.degrees(math.atan2(math.sin(d), math.cos(d)))),
+                        math.hypot(guard.x - site.x, guard.y - site.y) / site.radius))
+    return out
+
+
+@pytest.mark.parametrize("guards", (1, 2))
+def test_a_guard_walks_the_way_it_faces(monkeypatch, guards):
+    """DC-81: the fault the owner saw. On main the median was 89 degrees."""
+    manager, site = _guard_colony(monkeypatch, guards=guards)
+    _settle(manager)
+    errors = sorted(error for error, _ in _patrol_motion(manager, site))
+    assert errors, "no guard ever walked"
+    median = errors[len(errors) // 2]
+    sideways = sum(1 for error in errors if error > 45.0) / len(errors)
+    assert median < 15.0, f"a patrolling guard typically walked {median:.0f} deg off its heading"
+    assert sideways < 0.2, f"{100 * sideways:.0f}% of its walking was sideways"
+
+
+def test_a_guard_walks_through_the_base(monkeypatch):
+    manager, site = _guard_colony(monkeypatch)
+    _settle(manager)
+    nearest = min(radius for _, radius in _patrol_motion(manager, site))
+    assert nearest < 0.35, f"it never came nearer the centre than {nearest:.2f} radii"
 
 
 def test_two_guards_watch_different_approaches(monkeypatch):

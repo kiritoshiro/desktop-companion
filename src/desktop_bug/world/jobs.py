@@ -162,16 +162,19 @@ GUARD_ALERT_RADIUS_PER_LEVEL = 15.0
 # in. It tracks a little way along that line and faces outwards, which is
 # what makes it read as watching an approach rather than pacing a boundary.
 GUARD_STANDOFF_PAD = 46.0
-# How far either side of its post a guard tracks, and how fast.
-GUARD_SWEEP_ARC = 0.34
-GUARD_SWEEP_HZ = 0.16
+# DC-81: a guard no longer sweeps along an arc of that ring. It walked the
+# arc while facing outwards -- sideways to its own motion -- which the owner
+# saw as "orbit sideways". It now walks a straight line through the base
+# between two ends on the standoff ring, facing the way it walks, and stands
+# watch at each end facing outwards for a few seconds before turning back.
+GUARD_LINE_ARRIVE = 14.0
+GUARD_LINE_DWELL = (2.5, 4.5)
 # The whole patrol line turns this slowly, so no approach stays unwatched
 # forever, but a guard is never orbiting: a full turn takes about nine
-# minutes, against the roughly fifteen seconds the old ring took. Watch a
-# guard for a minute and it is holding a line, not going round.
+# minutes. Watch a guard for a minute and it is walking one line.
 GUARD_POST_DRIFT = 0.012
-# Within this distance of its post a guard turns to face outwards; further
-# out it is still walking there, and faces the way it is going.
+# Kept for callers that ask how close counts as "on station"; the line patrol
+# itself only publishes a facing once it has stopped at an end.
 GUARD_FACE_OUT_DIST = 34.0
 
 # DC-41: a base is a pile of dirt mounds that grows one mound at a time, not a
@@ -468,7 +471,7 @@ class BaseWorld:
         self._hunt_patrol_angle: dict[str, float] = {}
         self._hunt_home: dict[str, tuple[float, float]] = {}
         # DC-42: where each guard is along its own stretch of the patrol line.
-        self._guard_sweep: dict[str, float] = {}
+        self._guard_line: dict[str, dict] = {}
         for raw in saved or ():
             site = BaseSite.from_dict(raw)
             if site is not None:
@@ -525,7 +528,7 @@ class BaseWorld:
         self._hunt_fed_seen.clear()
         self._hunt_patrol_angle.clear()
         self._hunt_home.clear()
-        self._guard_sweep.clear()
+        self._guard_line.clear()
         self._clock = 0.0
 
     def _site_key(self, creature) -> str:
@@ -617,7 +620,7 @@ class BaseWorld:
         self._hunt_fed_seen = {k: v for k, v in self._hunt_fed_seen.items() if k in live}
         self._hunt_patrol_angle = {k: v for k, v in self._hunt_patrol_angle.items() if k in live}
         self._hunt_home = {k: v for k, v in self._hunt_home.items() if k in live}
-        self._guard_sweep = {k: v for k, v in self._guard_sweep.items() if k in live}
+        self._guard_line = {k: v for k, v in self._guard_line.items() if k in live}
 
     @staticmethod
     def _can_work(creature) -> bool:
@@ -889,13 +892,13 @@ class BaseWorld:
             del site.points_of_interest[: len(site.points_of_interest) - 8]
 
     def _update_guard(self, dt: float, guard, site: BaseSite, slot: int, count: int, creatures) -> None:
-        """Hold a line at a standoff from the base, facing outwards (DC-42).
+        """Walk a straight line through the base, and watch from each end.
 
-        A guard used to orbit at 0.78 of the base radius -- inside its own
-        wall, circling continuously. It now takes a post on a ring *outside*
-        the base but inside its alert radius, so it already stands between
-        the base and anything approaching, and tracks only a little way along
-        that line rather than going round and round.
+        DC-42 moved a guard off the wall to a post on a standoff ring outside
+        the base but inside its alert radius. That is kept: the two ends of
+        the line are on that ring. DC-81 replaced the sweep along the ring --
+        the owner: *"they shouldnt orbit like that, just walk in strigh line
+        or throught the base not orbit sideways"*.
         """
         hostile = None
         hostile_dist = float("inf")
@@ -935,27 +938,47 @@ class BaseWorld:
         if not on_duty or not self._can_work(guard):
             return
 
-        # Posts are spread around the base so two guards watch different
-        # approaches instead of trailing each other round one ring.
+        # Each guard walks its own line through the centre of the base. Lines
+        # are spread over half a turn -- a line and its reverse are the same
+        # line -- so two guards cross at right angles and watch four
+        # approaches between them.
         key = self._creature_key(guard)
-        phase = self._guard_sweep.get(key)
-        if phase is None:
-            phase = self._rng.uniform(0.0, math.tau)
-        phase = (phase + dt * GUARD_SWEEP_HZ * math.tau) % math.tau
-        self._guard_sweep[key] = phase
-
-        post = site.patrol_angle + (slot / max(1, count)) * math.tau
-        angle = post + math.sin(phase) * GUARD_SWEEP_ARC
+        line = self._guard_line.get(key)
+        if line is None:
+            line = {"end": 1.0 if self._rng.random() < 0.5 else -1.0, "dwell": 0.0, "anchor": None}
+            self._guard_line[key] = line
+        axis = site.patrol_angle + (slot / max(1, count)) * math.pi
         standoff = site.radius + GUARD_STANDOFF_PAD
-        target = (site.x + math.cos(angle) * standoff, site.y + math.sin(angle) * standoff)
 
-        # Face outwards only once it is actually on station. Further out it is
-        # still walking to the post, and a spider striding along while facing
-        # square across its own path reads as broken rather than watchful.
-        facing = None
-        if math.hypot(target[0] - guard.x, target[1] - guard.y) <= GUARD_FACE_OUT_DIST:
+        if line["anchor"] is not None and math.hypot(
+                guard.x - line["anchor"][0], guard.y - line["anchor"][1]) > GUARD_LINE_ARRIVE * 2.0:
+            # It left its watch -- a break, a scuffle, a hand. Walking back
+            # to the spot with the watch's outward facing would be exactly
+            # the sideways walk this replaced, so the watch is over and it
+            # resumes the line, facing the way it goes.
+            line["anchor"] = None
+        if line["anchor"] is not None:
+            # Standing watch at an end: stay put, look outwards, then turn
+            # round and walk back through the base.
+            line["dwell"] -= dt
+            if line["dwell"] > 0.0:
+                ax, ay = line["anchor"]
+                facing = math.atan2(ay - site.y, ax - site.x)
+                self._set_intent(guard, "patrol", (ax, ay), base_id=site.id, facing=facing)
+                return
+            line["end"] = -line["end"]
+            line["anchor"] = None
+
+        end = (site.x + math.cos(axis) * standoff * line["end"],
+               site.y + math.sin(axis) * standoff * line["end"])
+        if math.hypot(end[0] - guard.x, end[1] - guard.y) <= GUARD_LINE_ARRIVE:
+            line["anchor"] = (guard.x, guard.y)
+            line["dwell"] = self._rng.uniform(*GUARD_LINE_DWELL)
             facing = math.atan2(guard.y - site.y, guard.x - site.x)
-        self._set_intent(guard, "patrol", target, base_id=site.id, facing=facing)
+            self._set_intent(guard, "patrol", line["anchor"], base_id=site.id, facing=facing)
+            return
+        # Walking: no facing, so it faces the way it goes -- never sideways.
+        self._set_intent(guard, "patrol", end, base_id=site.id, facing=None)
 
     def _update_scout(self, dt: float, scout, creatures) -> None:
         site = self._site_for_team(scout)
