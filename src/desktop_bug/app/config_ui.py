@@ -43,6 +43,7 @@ from ..content.discovery import app_root, discover_models, discover_personalitie
 from ..support.dpi import enable_high_dpi_scaling
 from ..support.logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
+from . import wood_theme
 from .mode_menu import ModeShell
 from ..state.runtime_state import reset_saved_progress
 from .live_channel import SettingsChannelClient, channel_name
@@ -336,129 +337,8 @@ class ConfigWindow(QMainWindow):
         self.status_timer.start(1000)
 
     def _build_ui(self):
-        self.setStyleSheet(
-            """
-            QWidget { font-size: 10pt; color: #1f2430; }
-            QMainWindow, QMainWindow > QWidget { background: #eef1f8; }
-            /* The panels live inside a scroll area, so they are no longer
-               direct children of the window and the rule above misses them.
-               Without these two the whole background reverted to the default
-               grey. */
-            QScrollArea { background: #eef1f8; border: none; }
-            QScrollArea > QWidget > QWidget { background: #eef1f8; }
-
-            QGroupBox {
-                font-weight: 600;
-                border: 1px solid #cdd5e3;
-                border-radius: 10px;
-                margin-top: 12px;
-                padding: 8px 8px 6px 8px;
-                background: #ffffff;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                left: 12px;
-                padding: 2px 9px;
-                border-radius: 7px;
-                color: #ffffff;
-            }
-            /* Each section gets its own accent so it is easy to scan. */
-            QGroupBox#presetGroup { border-color: #b8d0f0; }
-            QGroupBox#presetGroup::title { background: #3b82c4; }
-            QGroupBox#creaturesGroup { border-color: #cbbdf0; }
-            QGroupBox#creaturesGroup::title { background: #6d4ed6; }
-            QPushButton#removeSlotButton { padding: 0px; }
-            QGroupBox#teamsGroup { border-color: #f0c2d8; }
-            QGroupBox#teamsGroup::title { background: #b8477e; }
-            QLabel#teamsNote { color: #5d6470; }
-            QGroupBox#behaviorGroup { border-color: #a9e0d6; }
-            QGroupBox#behaviorGroup::title { background: #199e8c; }
-            QGroupBox#fliesGroup { border-color: #f2d49b; }
-            QGroupBox#fliesGroup::title { background: #d9881a; }
-            QGroupBox#launchGroup { border-color: #b3e0bd; }
-            QGroupBox#launchGroup::title { background: #2f9e44; }
-
-            QLabel#pageTitle {
-                font-size: 17pt;
-                font-weight: 800;
-                color: #3a2e7a;
-                padding: 2px 2px 2px 2px;
-            }
-            QLabel#hintLabel { color: #57606a; }
-            QLabel#summaryLabel, QLabel#statusLabel {
-                color: #24292f;
-                background: #f6f8fa;
-                border: 1px solid #d0d7de;
-                border-radius: 6px;
-                padding: 8px;
-            }
-
-            QPushButton {
-                padding: 5px 11px;
-                border-radius: 6px;
-                background: #f1f4fa;
-                border: 1px solid #c7d0de;
-                color: #25304a;
-            }
-            QPushButton:hover { background: #e4ebf6; border-color: #a9b6cc; }
-            QPushButton:pressed { background: #d6e0f0; }
-
-            QPushButton#primaryButton {
-                font-weight: 700;
-                padding: 7px 16px;
-                color: #ffffff;
-                background: #2f9e44;
-                border: 1px solid #2b8a3e;
-            }
-            QPushButton#primaryButton:hover { background: #2c903d; }
-            QPushButton#primaryButton:pressed { background: #277834; }
-            QPushButton#stopButton:hover {
-                background: #fbe4e4; border-color: #e0a3a3; color: #9c2b2b;
-            }
-
-            QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit {
-                border: 1px solid #c7d0de;
-                border-radius: 6px;
-                padding: 3px 6px;
-                background: #ffffff;
-            }
-            QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QLineEdit:focus {
-                border-color: #6d4ed6;
-            }
-            QComboBox QAbstractItemView {
-                border: 1px solid #cbbdf0;
-                background: #ffffff;
-                selection-background-color: #6d4ed6;
-                selection-color: #ffffff;
-                outline: none;
-            }
-
-            QCheckBox { spacing: 6px; }
-            QCheckBox#fliesToggle { font-weight: 700; color: #b56a12; }
-
-            QTableWidget {
-                border: 1px solid #cbbdf0;
-                border-radius: 8px;
-                background: #ffffff;
-                gridline-color: #ececf4;
-                selection-background-color: #ece7fb;
-                selection-color: #1f2430;
-            }
-            QTableWidget::item { padding: 2px; }
-            QTableWidget::item:alternate { background: #faf9fe; }
-            QHeaderView::section {
-                background: #efeafb;
-                color: #4a3da0;
-                font-weight: 600;
-                border: none;
-                border-right: 1px solid #e2dbf4;
-                padding: 6px 6px;
-            }
-
-            QStatusBar { background: #e7ebf4; }
-            """
-        )
+        # The carved-wood theme (wood_theme): parchment panels on an oak board.
+        self.setStyleSheet(wood_theme.companion_qss())
 
         # The panels scroll rather than compress. A settings window with six
         # stacked groups will always be taller than some screen, and the

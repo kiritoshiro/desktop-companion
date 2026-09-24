@@ -5,7 +5,7 @@ a = Analysis(
     ['launcher.py'],
     pathex=['src'],
     binaries=[],
-    datas=[('models', 'models'), ('personalities', 'personalities'), ('presets', 'presets')],
+    datas=[('models', 'models'), ('personalities', 'personalities'), ('presets', 'presets'), ('assets', 'assets')],
     hiddenimports=['desktop_bug.app.engine'],
     hookspath=[],
     hooksconfig={},
