@@ -73,42 +73,16 @@ def test_one_build_story() -> None:
     assert "dist\\DesktopBugCompanion.exe" in TEXT, "the README does not name the built executable"
 
 
-def test_structure_block_matches_source() -> None:
-    """The project structure must list every module, and no module that is gone."""
-    start = TEXT.index("## Project structure")
-    fence = TEXT.index("```text", start)
-    block = TEXT[fence:TEXT.index("```", fence + 7)]
-
-    # Only the src/desktop_bug portion lists modules; tools/ lists scripts, and
-    # comparing one set against the other is meaningless.
-    # Since DC-43 the package listing is grouped into folders separated by
-    # blank lines, so it runs to the next top-level entry rather than to the
-    # first blank line.
-    package = block[block.index("desktop_bug/"):]
-    package = package[:package.index("\n  models/")]
-
-    # Module names can carry digits, as overlay_win32.py does. Since DC-43 the
-    # package is a tree of folders by concern, so every module counts wherever
-    # it sits -- a module moved between folders without the README following is
-    # exactly the drift this guards against.
-    listed = set(re.findall(r"^\s+([a-z0-9_]+\.py)(?:\s+#.*)?$", package, re.MULTILINE))
-    actual = {q.name for q in SRC.rglob("*.py")}
-
-    missing = sorted(actual - listed)
-    stale = sorted(listed - actual)
-    assert not missing, "the project structure omits these modules:\n  " + "\n  ".join(missing)
-    assert not stale, "the project structure lists modules that no longer exist:\n  " + "\n  ".join(stale)
-
-    for name in sorted(set(re.findall(r"^\s+([a-z0-9_-]+\.(?:json|bat|txt|md))$", block, re.MULTILINE))):
-        # Entries under a <placeholder> folder are templates, so match them
-        # against any real instance rather than one fixed path.
-        found = (
-            (ROOT / name).exists()
-            or (PRESETS / name).exists()
-            or any(ROOT.glob(f"models/*/{name}"))
-            or any(ROOT.glob(f"personalities/{name}"))
-        )
-        assert found, f"the project structure names {name}, which does not exist"
+def test_the_package_folders_it_names_exist() -> None:
+    """DC-86 cut the README's 120-line module listing at the owner's request
+    ("readme ... getting too big, reduce unnecessary text"). That listing was
+    what this test kept in step with the code; with no listing there is
+    nothing to drift. What the README does name -- the package's folders by
+    concern -- must still be real."""
+    named = re.findall(r"`([a-z_]+)/`", TEXT[TEXT.index("Code lives in"):])
+    assert named, "the README no longer says where the code lives"
+    for folder in named:
+        assert (SRC / folder).is_dir(), f"the README names src/desktop_bug/{folder}/, which does not exist"
 
 
 def test_named_paths_exist() -> None:
