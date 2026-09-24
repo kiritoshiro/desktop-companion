@@ -410,8 +410,9 @@ def test_the_interface_says_what_hostility_does() -> None:
     assert "There is no combat yet" not in readme, (
         "the README still says combat is absent"
     )
-    assert "Foes fight, and losing is permanent" in readme, (
-        "the README does not describe what hostility now does"
+    # DC-86 shortened the README; the section heading went, the claim stays.
+    assert "Foes fight" in readme and "dies" in readme, (
+        "the README does not say that foes fight to the death"
     )
     # And it documents the block a person would otherwise have to guess at.
     assert '"teams": {' in readme, "the README does not document the teams block"
