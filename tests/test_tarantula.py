@@ -524,3 +524,25 @@ def test_a_walk_stays_inside_its_limits(tarantula, config, speed, turn_rate):
     if turn_rate:
         final_turn = abs(((result["creature"].heading + math.pi) % math.tau) - math.pi)
         assert final_turn > 0.50
+
+
+def test_the_middle_legs_split_forward_and_back():
+    """DC-80. The owner: *"the side legs look a bit weird ... they should be
+    position one pair more to up other pair more to down side"*. At 72 and
+    108 degrees legs II and III sat 18 degrees either side of straight out
+    and read as one flat row. Seen from above, a B. hamorii's leg II angles
+    forward and leg III back, with a clear gap between them at the flank."""
+    import ast
+    import math
+    from support import ROOT
+
+    source = (ROOT / "src" / "desktop_bug" / "content" / "body_plans.py").read_text(encoding="utf-8")
+    node = next(n for n in ast.parse(source).body if isinstance(n, ast.Assign)
+                and getattr(n.targets[0], "id", None) == "_TARANTULA_LEGS")
+    bearing = {}
+    for leg in ast.literal_eval(node.value):
+        bearing[leg["name"]] = math.degrees(math.atan2(abs(leg["rest_side"]), leg["rest_forward"]))
+    for side in ("left", "right"):
+        assert bearing[f"mid_front_{side}"] <= 65.0, bearing
+        assert bearing[f"mid_rear_{side}"] >= 115.0, bearing
+        assert bearing[f"mid_rear_{side}"] - bearing[f"mid_front_{side}"] >= 50.0, bearing
