@@ -130,6 +130,7 @@ class CreatureManager(
         # deliberate per-spider pin survives these being switched off.
         self.always_show_levels = False
         self.always_show_health = False
+        self.always_show_xp = False
         # Containment cages and the in-progress direct-manipulation of one.
         self.cages: List[Cage] = []
         self._cage_drag = None  # dict: {cage, mode, corner, off_x, off_y}
@@ -269,6 +270,7 @@ class CreatureManager(
         # health bar has to join it, rather than being the one that is missing.
         creature.force_show_level = getattr(self, "always_show_levels", False)
         creature.force_show_health = getattr(self, "always_show_health", False)
+        creature.force_show_xp = getattr(self, "always_show_xp", False)
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
@@ -385,7 +387,8 @@ class CreatureManager(
             self.conflict_enabled = bool(settings.get("conflict", self.conflict_enabled))
             if settings.get("gait_style") is not None:
                 self.gait_style = normalize_gait_style(settings["gait_style"])
-            for key in ("always_show_names", "always_show_levels", "always_show_health"):
+            for key in ("always_show_names", "always_show_levels", "always_show_health",
+                        "always_show_xp"):
                 if key in settings:
                     setattr(self, key, bool(settings[key]))
             self.team_stances = normalize_team_stances(settings.get("team_relations"))
@@ -825,7 +828,8 @@ class CreatureManager(
             # slider does instead of waiting for a relaunch.
             for key, setter in (("always_show_names", self.set_always_show_names),
                                 ("always_show_levels", self.set_always_show_levels),
-                                ("always_show_health", self.set_always_show_health)):
+                                ("always_show_health", self.set_always_show_health),
+                                ("always_show_xp", self.set_always_show_xp)):
                 if key in settings:
                     setter(bool(settings[key]))
             if "allow_mouse_capture" in settings:
@@ -890,6 +894,7 @@ class CreatureManager(
             "always_show_names": self.always_show_names,
             "always_show_levels": self.always_show_levels,
             "always_show_health": self.always_show_health,
+            "always_show_xp": self.always_show_xp,
             "size_scale": self.size_scale,
             "social_play": self.social_play,
             "flies_enabled": self.flies_enabled,

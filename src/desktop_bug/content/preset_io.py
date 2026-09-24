@@ -64,7 +64,8 @@ def validate_preset(data: dict) -> None:
         # still honoured, so they are still checked.
         if "social_play" in settings and not isinstance(settings["social_play"], bool):
             raise ValueError("Preset settings.social_play must be true or false")
-        for switch in ("always_show_names", "always_show_levels", "always_show_health"):
+        for switch in ("always_show_names", "always_show_levels", "always_show_health",
+                       "always_show_xp"):
             if switch in settings and not isinstance(settings[switch], bool):
                 raise ValueError(f"Preset settings.{switch} must be true or false")
         if "mood_mode" in settings:

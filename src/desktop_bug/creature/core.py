@@ -64,7 +64,11 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
 
     SPRITE_CACHE = {}
     _SIDE_SIGNS: dict = {}
-    HEALTH_BAR_MIN_WIDTH = 34.0
+    # Every spider's bars are this wide (DC-87). They used to stretch to the
+    # name box, so a long name meant a long bar and two spiders at full health
+    # looked different; the owner asked for "same width for all spiders".
+    LABEL_BAR_WIDTH = 44.0
+    XP_BAR_COLOR = (112, 156, 236)
 
     def __init__(
         self,
@@ -266,6 +270,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # than discovered by getattr, per DC-10.
         self.force_show_level = False
         self.force_show_health = False
+        self.force_show_xp = False
         # DC-50: nerve. Counts down while this spider is running from a fight;
         # the manager sets it, the behaviour acts on it, and _speed_mult reads
         # it so every state it could be in runs at the same panicked pace.
@@ -1477,6 +1482,16 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     def health_fraction(self) -> float:
         return clamp(float(self.hp) / max(1.0, float(self.max_hp)), 0.0, 1.0)
 
+    @property
+    def xp_label_pinned(self) -> bool:
+        return bool(self.force_show_xp)
+
+    def xp_fraction(self) -> float:
+        """Progress toward the next level; full at the level cap."""
+        if self.level >= MAX_LEVEL:
+            return 1.0
+        return clamp(float(self.xp) / max(1.0, float(xp_to_next_level(self.level))), 0.0, 1.0)
+
     def _label_font(self):
 
         font = QFont()
@@ -1496,7 +1511,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         still says nothing when the pointer passes over it, because that is a
         label appearing under the cursor rather than one the owner asked for.
         """
-        pinned = self.level_label_pinned or self.health_label_pinned
+        pinned = self.level_label_pinned or self.health_label_pinned or self.xp_label_pinned
         if always_show or pinned:
             return True
         return bool(self.name) and self._hovered
@@ -1579,10 +1594,8 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             fm = QFontMetrics(self._label_font())
             text = self._label_text()
             half_w = max(fm.horizontalAdvance(text) * 0.5 + 12.0,
-                         self.HEALTH_BAR_MIN_WIDTH * 0.5 + 2.0)
-            label_h = fm.height() + 12.0
-            if self.health_label_pinned:
-                label_h += self._health_bar_height() + 3.0
+                         self.LABEL_BAR_WIDTH * 0.5 + 2.0)
+            label_h = fm.height() + 12.0 + self._label_bars_height()
             min_x = min(min_x, self.x - half_w)
             max_x = max(max_x, self.x + half_w)
             # Label floats above the highest drawn point.
@@ -1593,6 +1606,18 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
 
     def _health_bar_height(self) -> float:
         return max(4.0, min(7.0, self.size * 0.20))
+
+    def _xp_bar_height(self) -> float:
+        return max(3.0, self._health_bar_height() - 1.0)
+
+    def _label_bars_height(self) -> float:
+        """Height the bars under the label add, gaps included."""
+        height = 0.0
+        if self.health_label_pinned:
+            height += self._health_bar_height() + 3.0
+        if self.xp_label_pinned:
+            height += self._xp_bar_height() + 2.0
+        return height
 
     @staticmethod
     def health_bar_color(fraction: float, QColor):
@@ -1606,14 +1631,19 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
 
     def _draw_health_bar(self, painter, left: float, top: float, width: float,
                          QRectF, Qt, QColor, QBrush, QPen) -> None:
-        width = max(width, self.HEALTH_BAR_MIN_WIDTH)
-        height = self._health_bar_height()
         fraction = self.health_fraction()
+        self._draw_label_bar(painter, left, top, width, self._health_bar_height(),
+                             fraction, self.health_bar_color(fraction, QColor),
+                             QRectF, Qt, QColor, QBrush, QPen)
+
+    def _draw_label_bar(self, painter, left: float, top: float, width: float,
+                        height: float, fraction: float, fill,
+                        QRectF, Qt, QColor, QBrush, QPen) -> None:
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(QColor(18, 18, 22, 215)))
         painter.drawRoundedRect(QRectF(left, top, width, height), 2.0, 2.0)
         if fraction > 0.0:
-            painter.setBrush(QBrush(self.health_bar_color(fraction, QColor)))
+            painter.setBrush(QBrush(fill))
             painter.drawRoundedRect(
                 QRectF(left + 1.0, top + 1.0, max(1.0, (width - 2.0) * fraction),
                        height - 2.0), 1.5, 1.5)
@@ -1633,8 +1663,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         th = fm.height()
         pad_x = 8.0
         pad_y = 4.0
-        box_w = max(tw + pad_x * 2.0,
-                    self.HEALTH_BAR_MIN_WIDTH if self.health_label_pinned else 0.0)
+        box_w = tw + pad_x * 2.0
         box_h = th + pad_y * 2.0
 
         # Sit just above the spider's body/leg cluster.
@@ -1644,7 +1673,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
                 top_extent = leg.foot_y
         top_extent -= self.size * 0.6 + self.jump_z
         box_x = self.x - box_w * 0.5
-        box_y = top_extent - box_h - 4.0
+        box_y = top_extent - box_h - 4.0 - self._label_bars_height()
 
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(QColor(18, 18, 22, 205)))
@@ -1657,9 +1686,17 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
         painter.setPen(QPen(QColor(245, 247, 250, 255)))
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
+        bar_w = self.LABEL_BAR_WIDTH
+        bar_x = self.x - bar_w * 0.5
+        bar_y = box_y + box_h + 3.0
         if self.health_label_pinned:
-            self._draw_health_bar(painter, box_x, box_y + box_h + 3.0, box_w,
+            self._draw_health_bar(painter, bar_x, bar_y, bar_w,
                                   QRectF, Qt, QColor, QBrush, QPen)
+            bar_y += self._health_bar_height() + 2.0
+        if self.xp_label_pinned:
+            self._draw_label_bar(painter, bar_x, bar_y, bar_w, self._xp_bar_height(),
+                                 self.xp_fraction(), QColor(*self.XP_BAR_COLOR, 235),
+                                 QRectF, Qt, QColor, QBrush, QPen)
 
     def render(self, painter, always_show_names: bool = False) -> None:
         # One frame's worth of solved leg chains. Cleared here rather than

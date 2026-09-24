@@ -1522,6 +1522,11 @@ class RenderProceduralMixin:
         color_key = str(cfg.get("color_key", "legs"))
         tip_color_key = str(cfg.get("tip_color_key", "highlight"))
 
+        # The legs only take the startle colour through this gate, which also
+        # holds it off for a moment after a grab ends. The palps used to test
+        # ``startle`` alone, so on the drop -- no longer dragging, still
+        # startled -- the legs stayed dark and the palps flashed pale (DC-87).
+        startle_highlight = self._startle_highlight_active(startle)
         aiming = 0.0 if self.dragging else clamp(self.aim_intent, 0.0, 1.0)
         inspecting = 0.0 if self.dragging else clamp(self.inspect_intent, 0.0, 1.0)
         cuddling = 0.0 if self.dragging else clamp(max(self.cuddle_intent, self.catch_blend), 0.0, 1.0)
@@ -1670,7 +1675,7 @@ class RenderProceduralMixin:
                         painter.setPen(QPen(hair_color, width * (1.16 + hair_scale * 0.60), Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
                         painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
                     segment_color = self._qcolor(
-                        "highlight" if startle and not self.dragging else segment_color_keys[segment_index],
+                        "highlight" if startle_highlight else segment_color_keys[segment_index],
                         240,
                     )
                     cap = Qt.FlatCap if segment_index == segments - 1 else Qt.RoundCap
@@ -1709,7 +1714,7 @@ class RenderProceduralMixin:
                         first_nail[1] + math.sin(curl_angle) * nail_length * 0.58,
                     )
                     claw_color = self._qcolor(
-                        "highlight" if startle and not self.dragging else claw_color_key,
+                        "highlight" if startle_highlight else claw_color_key,
                         245,
                     )
                     tip_radius = max(
