@@ -17,6 +17,8 @@ class PlayerController:
 
     # How far off the aim line a target may be and still be hit, at least.
     AIM_TOLERANCE = 28.0
+    # A bite that finds nothing still has to be recovered from.
+    WHIFF_RECOVERY = 0.38
 
     def __init__(self, creature, controls: ControlSettings | None = None):
         self.creature = creature
@@ -173,6 +175,12 @@ class PlayerController:
             if hit is not None:
                 foes.append((hit, target))
         if not foes or not manager.conflict_enabled:
+            # A miss still bites the air, so every press shows, and costs the
+            # same short recovery as the animation.
+            angle = self.aim_angle()
+            spider.begin_strike(spider.x + math.cos(angle) * 100.0,
+                                spider.y + math.sin(angle) * 100.0)
+            spider.attack_cooldown = max(spider.attack_cooldown, self.WHIFF_RECOVERY)
             return False
         target = min(foes, key=lambda item: item[0])[1]
         manager._trade_blow(spider, target)

@@ -35,6 +35,13 @@ def render_reference_frame() -> QImage:
     manager = CreatureManager(ROOT / "presets" / "colony.json", *SCREEN, seed=SEED)
     manager.base_world.clear()
     manager.set_flies_enabled(False)
+    # This frame pins how spiders are drawn. Labels became on by default at
+    # the owner's request; off here, their boxes would cover the spiders
+    # (and headless Qt has no fonts, so they come out as wide empty bars).
+    for setter in (manager.set_always_show_names, manager.set_always_show_levels,
+                   manager.set_always_show_health, manager.set_always_show_xp,
+                   manager.set_always_show_stamina):
+        setter(False)
     # Webs and the cursor-silk world used not to be part of DC-09's seeding,
     # so silk drawn during the run made this golden frame depend on the
     # module-level random state instead of only on `seed`. Turning off every

@@ -156,14 +156,17 @@ def test_the_three_overrides_are_gone(window):
 
 
 def test_the_label_switches_took_their_place(window):
+    # On by default since the owner asked for it; XP only on request.
     for check in (window.always_names_check, window.always_levels_check,
-                  window.always_health_check):
+                  window.always_health_check, window.always_stamina_check):
         assert check.toolTip().strip()
-        assert check.isChecked() is False
+        assert check.isChecked() is True
+    assert window.always_xp_check.isChecked() is False
 
 
 def test_the_label_switches_round_trip_through_a_preset(window):
     window.always_names_check.setChecked(True)
+    window.always_levels_check.setChecked(False)
     window.always_health_check.setChecked(True)
     saved = window.current_settings_data()
     assert saved["always_show_names"] is True

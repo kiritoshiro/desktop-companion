@@ -45,7 +45,8 @@ and name and removes all bases (presets, settings, cages and webs are kept).
 - Right-click a spider to name it, toggle its abilities, or inspect its level,
   talents, armour, team and relations. Right-click a base to remove it.
 - Tray menu: randomize, size, mood, social play, flies, cages, the
-  "always show" names/levels/health switches, and **Let spiders web-trap the
+  "always show" switches (names, levels, health and stamina are on by default;
+  XP is a thin line under the level, on request), and **Let spiders web-trap the
   mouse** (the master switch for anything that moves your pointer).
 - Wiggle the mouse to break free of a silk trap. Swipe across a web to tear it.
 

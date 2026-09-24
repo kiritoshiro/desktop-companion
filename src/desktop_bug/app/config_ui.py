@@ -44,6 +44,7 @@ from ..support.dpi import enable_high_dpi_scaling
 from ..support.logging_setup import configure_logging, get_logger
 from .session_control import clear_stop_request, stop_process
 from . import window_placement, wood_theme
+from ..content.preset_io import LABEL_SWITCH_DEFAULTS
 from .mode_menu import ModeShell
 from ..state.runtime_state import reset_saved_progress
 from .live_channel import SettingsChannelClient, channel_name
@@ -321,7 +322,8 @@ class ConfigWindow(QMainWindow):
         self.setMinimumSize(840, 560)
         self._build_ui()
         companion_page = self.takeCentralWidget()
-        self.mode_shell = ModeShell(companion_page, self.start_adventure, self)
+        self.mode_shell = ModeShell(companion_page, self.start_adventure, self,
+                                    leave_adventure=self.leave_adventure)
         self.setCentralWidget(self.mode_shell)
         self._overlay_mode = None
         self.refresh_discovery()
@@ -402,18 +404,9 @@ class ConfigWindow(QMainWindow):
         creatures_layout.setContentsMargins(6, 6, 6, 6)
         creatures_layout.setSpacing(4)
 
-        quick_row = QHBoxLayout()
-        self.random_model_btn = QPushButton("Models")
-        self.random_personality_btn = QPushButton("Temperaments")
-        self.random_count_btn = QPushButton("Counts")
-        self.random_all_btn = QPushButton("Surprise me")
-        quick_row.addWidget(QLabel("Randomize:"))
-        quick_row.addWidget(self.random_model_btn)
-        quick_row.addWidget(self.random_personality_btn)
-        quick_row.addWidget(self.random_count_btn)
-        quick_row.addWidget(self.random_all_btn)
-        quick_row.addStretch(1)
-        creatures_layout.addLayout(quick_row)
+        # The "Randomize:" row (Models, Temperaments, Counts, Surprise me) was
+        # removed at the owner's request. Its handlers stay; right-click on a
+        # slot still offers a random count.
 
         self.table = SlotTable()
         creatures_layout.addWidget(self.table, 1)
@@ -489,9 +482,12 @@ class ConfigWindow(QMainWindow):
         self.always_health_check = QCheckBox("Health")
         self.always_health_check.setToolTip(
             "Show every spider's health bar, not only ones pinned one at a time.")
+        self.always_stamina_check = QCheckBox("Stamina")
+        self.always_stamina_check.setToolTip(
+            "Show every spider's stamina (energy) under its health bar.")
         self.always_xp_check = QCheckBox("XP")
         self.always_xp_check.setToolTip(
-            "Show every spider's progress to its next level, under its health bar.")
+            "Show every spider's progress to its next level as a thin line under its level.")
         # A stretch column on the right rather than under the combo: with
         # Mood and Movement gone the size dropdown was the only thing in its
         # row and grew to 700px to fill it, which looks like a mistake.
@@ -504,7 +500,8 @@ class ConfigWindow(QMainWindow):
         switches.setContentsMargins(0, 0, 0, 0)
         switches.setSpacing(12)
         for check in (self.always_names_check, self.always_levels_check,
-                      self.always_health_check, self.always_xp_check):
+                      self.always_health_check, self.always_xp_check,
+                      self.always_stamina_check):
             switches.addWidget(check)
         switches.addStretch(1)
         switch_row = QWidget()
@@ -605,14 +602,11 @@ class ConfigWindow(QMainWindow):
         self.stop_btn.clicked.connect(self.stop_overlay)
         self.refresh_btn.clicked.connect(self.refresh_all)
         self.open_folder_btn.clicked.connect(self.open_project_folder)
-        self.random_model_btn.clicked.connect(self.set_random_model_options)
-        self.random_personality_btn.clicked.connect(self.set_random_personality_options)
-        self.random_count_btn.clicked.connect(self.set_random_count_options)
-        self.random_all_btn.clicked.connect(self.set_random_all_options)
         self.size_combo.currentIndexChanged.connect(self.update_summary)
         self.interferable_check.toggled.connect(self.update_summary)
         for check in (self.always_names_check, self.always_levels_check,
-                      self.always_health_check, self.always_xp_check):
+                      self.always_health_check, self.always_xp_check,
+                      self.always_stamina_check):
             check.toggled.connect(self.update_summary)
         self.flies_enabled_check.toggled.connect(self.update_summary)
         self.flies_enabled_check.toggled.connect(self._update_flies_details_visibility)
@@ -661,10 +655,6 @@ class ConfigWindow(QMainWindow):
         self.preset_name.setToolTip("This becomes the saved preset file name.")
         self.preset_combo.setToolTip("Choose an existing preset from the presets folder.")
         self.refresh_btn.setToolTip("Reload models, personalities, and presets from disk.")
-        self.random_model_btn.setToolTip("Set every slot to choose a random creature model when launched.")
-        self.random_personality_btn.setToolTip("Set every slot to choose a random personality when launched.")
-        self.random_count_btn.setToolTip("Roll a new count from 1 to 10 into every slot now.")
-        self.random_all_btn.setToolTip("Randomize model, personality, and count for every slot.")
         self.size_combo.setToolTip("Scale all creatures in the overlay.")
         self.interferable_check.setToolTip("When enabled, you can grab spiders; empty overlay space still remains click-through.")
         self.save_btn.setToolTip("Save the current preset. While the overlay is running, this also applies your changes to it live.")
@@ -1441,6 +1431,7 @@ class ConfigWindow(QMainWindow):
             "always_show_levels": bool(self.always_levels_check.isChecked()),
             "always_show_health": bool(self.always_health_check.isChecked()),
             "always_show_xp": bool(self.always_xp_check.isChecked()),
+            "always_show_stamina": bool(self.always_stamina_check.isChecked()),
             "teams": teams_payload(self._ensure_team_profiles()),
             # Only what was actually declared. Recomputing this from the pairs on
             # screen would drop a stance about a team no slot currently uses, and
@@ -1491,10 +1482,8 @@ class ConfigWindow(QMainWindow):
                 closest_index = idx
         self.size_combo.setCurrentIndex(closest_index)
         self.interferable_check.setChecked(bool(settings.get("interferable", True)))
-        self.always_names_check.setChecked(bool(settings.get("always_show_names", False)))
-        self.always_levels_check.setChecked(bool(settings.get("always_show_levels", False)))
-        self.always_health_check.setChecked(bool(settings.get("always_show_health", False)))
-        self.always_xp_check.setChecked(bool(settings.get("always_show_xp", False)))
+        for key, check in self._label_switches():
+            check.setChecked(bool(settings.get(key, LABEL_SWITCH_DEFAULTS[key])))
 
         flies = settings.get("flies")
         flies = flies if isinstance(flies, dict) else {}
@@ -1892,7 +1881,8 @@ class ConfigWindow(QMainWindow):
         shown = [name for name, check in (("names", self.always_names_check),
                                           ("levels", self.always_levels_check),
                                           ("health", self.always_health_check),
-                                          ("XP", self.always_xp_check))
+                                          ("XP", self.always_xp_check),
+                                          ("stamina", self.always_stamina_check))
                  if check.isChecked()]
         label_text = ("always showing " + ", ".join(shown)) if shown else "labels on hover"
         summary = (f"Preset summary: {creature_text} Size: {size_text}. "
@@ -1993,10 +1983,7 @@ class ConfigWindow(QMainWindow):
         """
         if not isinstance(state, dict):
             return
-        for key, check in (("always_show_names", self.always_names_check),
-                           ("always_show_levels", self.always_levels_check),
-                           ("always_show_health", self.always_health_check),
-                           ("always_show_xp", self.always_xp_check)):
+        for key, check in self._label_switches():
             if key in state:
                 check.setChecked(bool(state[key]))
         if "size_scale" in state:
@@ -2092,8 +2079,28 @@ class ConfigWindow(QMainWindow):
         path = user_presets_dir() / safe_preset_filename(data["name"])
         return save_preset(data, path)
 
+    def _label_switches(self):
+        return (("always_show_names", self.always_names_check),
+                ("always_show_levels", self.always_levels_check),
+                ("always_show_health", self.always_health_check),
+                ("always_show_xp", self.always_xp_check),
+                ("always_show_stamina", self.always_stamina_check))
+
     def start_adventure(self):
         self.launch_engine(mode="adventure")
+
+    def leave_adventure(self) -> bool:
+        """Close the Adventure overlay when the player leaves its page.
+
+        It used to stay running, so going back to Companion left the
+        Adventure spiders on the desktop. It saves before it quits. A
+        Companion overlay is not touched: that one is meant to keep living.
+        """
+        if self._overlay_mode != "adventure" or not self._overlay_running():
+            return False
+        self.stop_overlay()
+        self._overlay_mode = None
+        return True
 
     def launch_engine(self, _checked=False, mode="companion"):
         # If an overlay is already running, do not force a stop: rewrite its
@@ -2291,6 +2298,7 @@ def main(argv=None) -> int:
     enable_high_dpi_scaling()
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window_placement.install(app)
+    wood_theme.apply_app_theme(app)
     window = ConfigWindow()
     window.show()
     return app.exec_()

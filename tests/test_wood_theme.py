@@ -20,7 +20,19 @@ from desktop_bug.app.mode_menu import MODES, ModeShell
 from support import ROOT
 
 ASSETS = ("wood_tile.png", "wood_dark_tile.png", "card_frame.png",
-          "mode_companion.png", "mode_adventure.png", "mode_strategy.png")
+          "mode_companion.png", "mode_adventure.png", "mode_strategy.png",
+          "app_icon.png", "app_icon.ico")
+
+
+def test_the_app_icon_has_every_size_windows_asks_for():
+    """The owner: "create an icon for the app itself so that it would show a
+    tarantula". Title bar and taskbar use 16-32px, Explorer up to 256."""
+    icon = wood_theme.app_icon()
+    assert icon is not None and not icon.isNull()
+    sizes = {size.width() for size in icon.availableSizes()}
+    assert {16, 24, 32, 48, 256} <= sizes, sizes
+    spec = (ROOT / "DesktopBugCompanion.spec").read_text(encoding="utf-8")
+    assert "icon='assets/ui/app_icon.ico'" in spec
 
 
 @pytest.fixture(autouse=True, scope="module")

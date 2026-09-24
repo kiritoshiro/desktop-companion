@@ -224,6 +224,15 @@ STANCE_FALL_PER_SECOND = 1.6
 LUNGE_REACH = 0.42
 RECOIL_REACH = 0.26
 LUNGE_DECAY_PER_SECOND = 4.2
+# A bite, start to finish (the owner: "when attacking it should show attacking
+# movement, maybe the bite"). The front rises and the body draws back, then
+# snaps forward past its feet with the front legs thrown at the target, then
+# settles. Seconds.
+STRIKE_WINDUP = 0.09
+STRIKE_SNAP = 0.07
+STRIKE_DURATION = 0.38
+STRIKE_DRAW_BACK = 0.45     # of LUNGE_REACH, during the wind-up
+STRIKE_OVERSHOOT = 1.6      # of LUNGE_REACH, at the end of the snap
 
 # DC-62: how much a spider minds being picked up.
 #

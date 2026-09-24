@@ -14,6 +14,11 @@ from .constants import (
     LUNGE_DECAY_PER_SECOND,
     RECOIL_REACH,
     STANCE_FALL_PER_SECOND,
+    STRIKE_DRAW_BACK,
+    STRIKE_DURATION,
+    STRIKE_OVERSHOOT,
+    STRIKE_SNAP,
+    STRIKE_WINDUP,
     STANCE_RISE_PER_SECOND,
 )
 from ..support.math_utils import (
@@ -80,11 +85,51 @@ class ExpressionMixin:
         self.lunge -= self.lunge * min(1.0, dt * LUNGE_DECAY_PER_SECOND)
         if abs(self.lunge) < 0.002:
             self.lunge = 0.0
+        clock = getattr(self, "strike_clock", None)
+        if clock is not None:
+            clock += dt
+            self.strike_clock = clock if clock < STRIKE_DURATION else None
+            _, lift = self.strike_phase()
+            self.rear = max(self.rear, lift * 0.9)
 
     def strike_landed(self, foe) -> None:
-        """Throw this spider's body forward over its feet (DC-59)."""
+        """Bite at a foe: wind up, snap forward over the feet, settle (DC-59)."""
         self._face_for_combat(foe)
-        self.lunge = 1.0
+        self.begin_strike(foe.x, foe.y)
+
+    def begin_strike(self, tx: float, ty: float) -> None:
+        """Start the bite animation towards a point; changes nothing in a fight.
+
+        Starts one frame in, so the body has already moved on the frame of the
+        blow rather than a frame later.
+        """
+        dx, dy = tx - self.x, ty - self.y
+        span = math.hypot(dx, dy)
+        if span < 1e-6:
+            dx, dy, span = math.cos(self.heading), math.sin(self.heading), 1.0
+        self.strike_face = (dx / span, dy / span)
+        self.strike_clock = 1.0 / 60.0
+
+    def strike_phase(self) -> tuple:
+        """(push, lift) of the bite now: push along the strike line in units of
+        ``LUNGE_REACH`` (negative while drawing back), lift of the front 0..1."""
+        clock = getattr(self, "strike_clock", None)
+        if clock is None:
+            return 0.0, 0.0
+
+        def ease(u):
+            u = clamp(u, 0.0, 1.0)
+            return u * u * (3.0 - 2.0 * u)
+
+        if clock < STRIKE_WINDUP:
+            u = ease(clock / STRIKE_WINDUP)
+            return -STRIKE_DRAW_BACK * u, u
+        if clock < STRIKE_WINDUP + STRIKE_SNAP:
+            u = ease((clock - STRIKE_WINDUP) / STRIKE_SNAP)
+            return -STRIKE_DRAW_BACK + (STRIKE_OVERSHOOT + STRIKE_DRAW_BACK) * u, 1.0
+        rest = STRIKE_DURATION - STRIKE_WINDUP - STRIKE_SNAP
+        u = ease((clock - STRIKE_WINDUP - STRIKE_SNAP) / rest)
+        return STRIKE_OVERSHOOT * (1.0 - u), 1.0 - u
 
     def blow_taken(self, foe) -> None:
         """Knock this spider's body back off its feet (DC-59).
@@ -111,11 +156,18 @@ class ExpressionMixin:
         compress. That stretch is the animation -- there is no separate
         "strike" pose anywhere.
         """
-        if self.lunge == 0.0:
-            return (0.0, 0.0)
-        reach = LUNGE_REACH if self.lunge > 0.0 else RECOIL_REACH
-        push = self.lunge * reach * self.size
-        return (self.combat_face_x * push, self.combat_face_y * push)
+        ox = oy = 0.0
+        push, _ = self.strike_phase()
+        if push != 0.0:
+            fx, fy = self.strike_face
+            ox += fx * push * LUNGE_REACH * self.size
+            oy += fy * push * LUNGE_REACH * self.size
+        if self.lunge != 0.0:
+            reach = LUNGE_REACH if self.lunge > 0.0 else RECOIL_REACH
+            back = self.lunge * reach * self.size
+            ox += self.combat_face_x * back
+            oy += self.combat_face_y * back
+        return (ox, oy)
 
     def _update_posture(self, dt: float) -> None:
         m = self.mood

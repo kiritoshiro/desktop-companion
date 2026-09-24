@@ -261,6 +261,111 @@ def companion_qss() -> str:
     """
 
 
+def app_qss() -> str:
+    """Every other window of the app: inspector, skill tree, inventory, menus.
+
+    Set on the whole application, so it is scoped to dialogs, menus and
+    tooltips and never matches a bare QWidget: the overlay is a QWidget
+    covering every monitor, and a background rule reaching it would paint
+    over the desktop. Windows with their own sheet (settings, pause menu)
+    keep it, since a widget's own sheet wins over the application's.
+    """
+    d = "QDialog"
+    return f"""
+        {d} {{ {_background("wood_dark_tile.png", WALNUT)} color: {CREAM}; }}
+        {d} QLabel, {d} QCheckBox, {d} QRadioButton {{ color: {CREAM}; background: transparent; }}
+        {d} QLabel#teamNote {{ color: {CREAM_SOFT}; }}
+        {d} QTabWidget::pane {{
+            border: 2px solid {WALNUT_DEEP}; border-radius: 8px; top: -2px;
+            background: rgba(20, 10, 3, 110);
+        }}
+        {d} QTabWidget > QStackedWidget > QWidget {{ background: transparent; }}
+        {d} QTabBar::tab {{
+            /* Not bold: a tab is sized for its text before the style sheet's
+               weight applies, and bold names came out clipped. */
+            color: #fff5e0; padding: 5px 12px; margin-right: 3px;
+            border: 1px solid {WALNUT_DEEP}; border-bottom: none;
+            border-top-left-radius: 7px; border-top-right-radius: 7px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                        stop:0 {OAK_LIGHT}, stop:1 #8e5d30);
+        }}
+        {d} QTabBar::tab:selected {{
+            color: {WALNUT_DEEP};
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                        stop:0 #e8bd62, stop:1 {BRASS_DEEP});
+        }}
+        {d} QTabBar::tab:!selected {{ margin-top: 3px; }}
+        {wood_button(d + " QPushButton")}
+        {d} QPushButton {{ padding: 5px 12px; }}
+        {d} QComboBox, {d} QLineEdit, {d} QSpinBox, {d} QDoubleSpinBox, {d} QTextEdit {{
+            background: {PARCHMENT}; color: {INK}; border: 1px solid {WALNUT_DEEP};
+            border-radius: 6px; padding: 3px 6px;
+        }}
+        {d} QComboBox QAbstractItemView {{
+            background: {PARCHMENT}; color: {INK};
+            selection-background-color: {OAK}; selection-color: #fff5e0;
+        }}
+        {d} QProgressBar {{
+            background: rgba(14, 6, 1, 170); color: {CREAM}; font-weight: 700;
+            border: 1px solid {WALNUT_DEEP}; border-radius: 6px; text-align: center;
+            min-height: 16px;
+        }}
+        {d} QProgressBar::chunk {{
+            border-radius: 5px;
+            background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                        stop:0 #e8bd62, stop:1 {BRASS_DEEP});
+        }}
+        {d} QGroupBox {{ color: {BRASS}; font-weight: 700; border: 1px solid {WALNUT_DEEP};
+                         border-radius: 8px; margin-top: 12px; padding-top: 8px; }}
+        {d} QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
+        QMenu {{
+            {_background("wood_dark_tile.png", WALNUT)}
+            color: {CREAM}; border: 2px solid {WALNUT_DEEP}; border-radius: 6px; padding: 5px;
+        }}
+        QMenu::item {{ padding: 5px 22px 5px 22px; border-radius: 4px; background: transparent; }}
+        QMenu::item:selected {{ background: {OAK}; color: #fff5e0; }}
+        QMenu::item:disabled {{ color: #9c8a70; }}
+        QMenu::separator {{ height: 1px; background: {WALNUT_DEEP}; margin: 4px 8px; }}
+        QMenu::indicator {{ width: 14px; height: 14px; left: 4px; }}
+        QToolTip {{ background: {PARCHMENT}; color: {INK}; border: 1px solid {WALNUT_DEEP};
+                    padding: 4px; }}
+        {scrollbar_qss()}
+    """
+
+
+def app_icon():
+    """The app's own icon (a tarantula on a walnut medallion), or None."""
+    from PyQt5.QtGui import QIcon
+
+    for name in ("app_icon.ico", "app_icon.png"):
+        path = asset_path(name)
+        if path is not None:
+            icon = QIcon(str(path))
+            if not icon.isNull():
+                return icon
+    return None
+
+
+def apply_app_theme(app) -> None:
+    """Dress every dialog and menu of this process in wood, and give it its icon."""
+    app.setStyleSheet(app_qss())
+    icon = app_icon()
+    if icon is not None:
+        app.setWindowIcon(icon)
+    import sys
+
+    if sys.platform.startswith("win"):
+        # Run from source, the process is python.exe and the taskbar shows
+        # Python's icon; its own app id makes Windows use the window's icon.
+        try:
+            import ctypes
+
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "DesktopBugCompanion.App")
+        except (AttributeError, OSError):
+            pass
+
+
 @lru_cache(maxsize=None)
 def texture(name: str):
     """A QPixmap of a texture, or None; for code that paints its own panels."""

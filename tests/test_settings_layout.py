@@ -170,8 +170,9 @@ def test_every_shortened_control_still_explains_itself(window, qapp):
     _laid_out(window, 1000, 780, qapp)
     for control in (window.interferable_check, window.always_names_check,
                     window.always_levels_check, window.always_health_check,
-                    window.add_slot_btn, window.random_model_btn,
-                    window.random_personality_btn, window.random_count_btn):
+                    window.add_slot_btn):
+        # The Randomize buttons were here until the owner asked for that row
+        # to be removed.
         assert control.toolTip().strip(), control.text()
         assert len(control.toolTip()) > len(control.text()), control.text()
 

@@ -27,6 +27,7 @@ from ..state.progression import normalize_team_stances
 from ..state.teams import normalize_teams, teams_payload
 from ..world.jobs import BaseWorld, job_ability_ids, normalize_job_id
 from ..world.playfield import Playfield
+from ..content.preset_io import LABEL_SWITCH_DEFAULTS
 from ..content.personality_profiles import COMPACT_TEMPERAMENT_IDS
 from ..support.profiling import get_profiler
 from ..state.runtime_state import (
@@ -124,13 +125,14 @@ class CreatureManager(
         self.team_profiles: dict = {}
         # Right-click naming and the hover/always-on name label.
         self.naming_enabled = True
-        self.always_show_names = False
+        self.always_show_names = LABEL_SWITCH_DEFAULTS["always_show_names"]
         # Scene-wide "show everyone's level / health" switches, pushed onto
         # each creature by _apply_label_overrides. Not saved per spider, so a
         # deliberate per-spider pin survives these being switched off.
-        self.always_show_levels = False
-        self.always_show_health = False
-        self.always_show_xp = False
+        self.always_show_levels = LABEL_SWITCH_DEFAULTS["always_show_levels"]
+        self.always_show_health = LABEL_SWITCH_DEFAULTS["always_show_health"]
+        self.always_show_xp = LABEL_SWITCH_DEFAULTS["always_show_xp"]
+        self.always_show_stamina = LABEL_SWITCH_DEFAULTS["always_show_stamina"]
         # Containment cages and the in-progress direct-manipulation of one.
         self.cages: List[Cage] = []
         self._cage_drag = None  # dict: {cage, mode, corner, off_x, off_y}
@@ -272,6 +274,7 @@ class CreatureManager(
         creature.force_show_level = getattr(self, "always_show_levels", False)
         creature.force_show_health = getattr(self, "always_show_health", False)
         creature.force_show_xp = getattr(self, "always_show_xp", False)
+        creature.force_show_stamina = getattr(self, "always_show_stamina", False)
         creature.web_world = self.web_world
         creature.mouse_web_world = self.mouse_web_world
         creature.fly_world = self.fly_world
@@ -389,10 +392,10 @@ class CreatureManager(
             self.conflict_enabled = bool(settings.get("conflict", self.conflict_enabled))
             if settings.get("gait_style") is not None:
                 self.gait_style = normalize_gait_style(settings["gait_style"])
-            for key in ("always_show_names", "always_show_levels", "always_show_health",
-                        "always_show_xp"):
-                if key in settings:
-                    setattr(self, key, bool(settings[key]))
+            # A preset that does not mention a switch gets the default, not
+            # whatever the previous preset had left behind.
+            for key, default in LABEL_SWITCH_DEFAULTS.items():
+                setattr(self, key, bool(settings.get(key, default)))
             self.team_stances = normalize_team_stances(settings.get("team_relations"))
             # Every team a slot refers to gets an identity, even in an older
             # preset that has no `teams` block at all.
@@ -831,7 +834,8 @@ class CreatureManager(
             for key, setter in (("always_show_names", self.set_always_show_names),
                                 ("always_show_levels", self.set_always_show_levels),
                                 ("always_show_health", self.set_always_show_health),
-                                ("always_show_xp", self.set_always_show_xp)):
+                                ("always_show_xp", self.set_always_show_xp),
+                                ("always_show_stamina", self.set_always_show_stamina)):
                 if key in settings:
                     setter(bool(settings[key]))
             if "allow_mouse_capture" in settings:
@@ -897,6 +901,7 @@ class CreatureManager(
             "always_show_levels": self.always_show_levels,
             "always_show_health": self.always_show_health,
             "always_show_xp": self.always_show_xp,
+            "always_show_stamina": self.always_show_stamina,
             "size_scale": self.size_scale,
             "social_play": self.social_play,
             "flies_enabled": self.flies_enabled,

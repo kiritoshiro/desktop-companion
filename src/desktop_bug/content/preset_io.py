@@ -10,6 +10,20 @@ from ..world.jobs import JOB_BY_ID
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_. -]+")
 
 
+# The label switches and what they are when a preset does not say. All on:
+# the owner asked for names, levels, health and stamina to show by default,
+# and XP only on request. A preset that stores a value keeps it.
+LABEL_SWITCH_DEFAULTS = {
+    "always_show_names": True,
+    "always_show_levels": True,
+    "always_show_health": True,
+    # Off: XP is a thin line under "Lv N" when on, and always in the
+    # right-click inspector.
+    "always_show_xp": False,
+    "always_show_stamina": True,
+}
+
+
 def _validate_rgb_overrides(value, label: str) -> None:
     """Validate an optional preset palette without tying it to one model."""
     if not isinstance(value, dict):
@@ -64,8 +78,7 @@ def validate_preset(data: dict) -> None:
         # still honoured, so they are still checked.
         if "social_play" in settings and not isinstance(settings["social_play"], bool):
             raise ValueError("Preset settings.social_play must be true or false")
-        for switch in ("always_show_names", "always_show_levels", "always_show_health",
-                       "always_show_xp"):
+        for switch in LABEL_SWITCH_DEFAULTS:
             if switch in settings and not isinstance(settings[switch], bool):
                 raise ValueError(f"Preset settings.{switch} must be true or false")
         if "mood_mode" in settings:
