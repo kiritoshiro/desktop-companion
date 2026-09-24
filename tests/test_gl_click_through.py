@@ -12,7 +12,8 @@ overlay: the software overlay passed 245 moves through, the GL overlay 0.
 
 The fix sets WS_EX_TRANSPARENT on the GL overlay whenever the cursor is not
 over something interactive, from the same `wants_mouse` question the hit-test
-asks, once a frame and only on change. Measured the same way afterwards: 184
+asks, on its own 20 Hz timer (not the frame, which can drop to 1 FPS), only on
+change, and starting transparent the moment the window is shown. Measured the same way afterwards: 184
 moves through on empty space; hovering a spider, 0 leaked through on the run
 that was checked with diagnostics. One earlier hover run leaked, and was not
 re-run because the owner asked for the real-mouse tests to stop. That
@@ -107,11 +108,21 @@ def test_the_software_overlay_is_left_alone(rig, monkeypatch):
     assert writes == []
 
 
-def test_the_frame_asks_the_question():
-    """Prove-by-reverting guard: the per-frame call is what makes it work."""
+def test_the_question_is_asked_on_its_own_timer_not_the_frame():
+    """The frame rate can drop to 1 FPS. Asked per frame, a cursor last seen
+    over a spider would hold the whole screen for up to a second."""
     import inspect
-    source = inspect.getsource(engine.OverlayWindow.tick)
-    assert "self._update_input_transparency()" in source
+    init = inspect.getsource(engine.OverlayWindow.__init__)
+    assert "self.input_timer.timeout.connect(self._update_input_transparency)" in init
+    assert "self.input_timer.start(INPUT_CHECK_MS)" in init
+    assert engine.INPUT_CHECK_MS <= 50
+    assert "_update_input_transparency" not in inspect.getsource(engine.OverlayWindow.tick)
+
+
+def test_the_gl_overlay_starts_out_letting_the_mouse_through():
+    import inspect
+    show = inspect.getsource(engine.OverlayWindow.showEvent)
+    assert "set_input_transparent(self, True)" in show
 
 
 # ------------------------------------------- the real window style, no mouse

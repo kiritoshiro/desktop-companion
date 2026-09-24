@@ -69,6 +69,10 @@ def _target_fps() -> float:
     return max(10.0, min(60.0, fps))
 
 
+# DC-79: how often the GL overlay re-decides whether to let the mouse through.
+INPUT_CHECK_MS = 50
+
+
 def _frame_interval_ms_for_fps(fps: float) -> int:
     return max(16, int(round(1000.0 / max(1.0, fps))))
 
@@ -603,6 +607,16 @@ class OverlayWindow(_OverlayBase):
         self.timer.timeout.connect(self.tick)
         self.timer.start(FRAME_INTERVAL_MS)
 
+        # DC-79: on the GL overlay, whether the window lets the mouse through
+        # is decided on its own timer, not in `tick`. The frame rate can drop
+        # to 1 FPS (FramePolicy, e.g. under a fullscreen app); tied to the
+        # frame, a cursor last seen over a spider would leave the whole screen
+        # captured for up to a second at a time.
+        self.input_timer = QTimer(self)
+        self.input_timer.timeout.connect(self._update_input_transparency)
+        if GL_OVERLAY:
+            self.input_timer.start(INPUT_CHECK_MS)
+
         # Qt/Windows can rewrite extended styles after show/repaint. Reapply periodically.
         self.style_timer = QTimer(self)
         self.style_timer.timeout.connect(lambda: apply_click_through(self))
@@ -610,6 +624,10 @@ class OverlayWindow(_OverlayBase):
 
     def showEvent(self, event):  # noqa: N802 - Qt API name
         super().showEvent(event)
+        if GL_OVERLAY:
+            # Start out letting the desktop keep its mouse; the input timer
+            # takes it back only when the cursor is over something to grab.
+            set_input_transparent(self, True)
         QTimer.singleShot(0, lambda: apply_click_through(self))
         QTimer.singleShot(0, self._refresh_desktop_surfaces)
         QTimer.singleShot(250, lambda: apply_click_through(self))
@@ -824,7 +842,6 @@ class OverlayWindow(_OverlayBase):
 
     def tick(self) -> None:
         self.profiler.begin_frame()
-        self._update_input_transparency()
         current_ms = self.elapsed.elapsed()
         dt = max(0.001, min(0.05, (current_ms - self.last_ms) / 1000.0))
         self.last_ms = current_ms
