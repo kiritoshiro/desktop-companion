@@ -692,6 +692,8 @@ class BaseWorld:
         progress. Reading it here stops a base from gaining progress from a
         worker that is not actually working.
         """
+        if getattr(creature, "player_control", None) is not None:
+            return False
         return not (
             getattr(creature, "dragging", False)
             or getattr(creature, "airborne", False)

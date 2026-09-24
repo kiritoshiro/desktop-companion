@@ -174,6 +174,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.strafe_observe = False
         self.turn_rate = self.rng.uniform(4.0, 6.0)
         self.state = "Idle"
+        self.player_control = None
         self.state_timer = rand_range(personality.get("idle_time"), 1.0, 3.0, rng=self.rng)
         self.decision_timer = self.rng.uniform(0.2, 0.5)
         self.motion_paused = False
@@ -733,7 +734,8 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self.progression.skill_points += 1
             self._apply_progression_stats(carry_wounds=True)
             events.append(f"reached level {self.progression.level}")
-            events.extend(self._spend_skill_points())
+            if self.player_control is None:
+                events.extend(self._spend_skill_points())
         if self.progression.level >= MAX_LEVEL:
             # One large award can carry a remainder past the last threshold.
             # Leaving it unclamped overfills the inspector's XP bar.
@@ -1251,6 +1253,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             # carcass where it fell.
             self.motion_paused = True
             self.current_speed = 0.0
+            return
+        if self.player_control is not None:
+            self._regenerate_energy(dt)
+            self.player_control.update(dt)
             return
         self.perception = build_perception(self)
         if self._hunting_prey:

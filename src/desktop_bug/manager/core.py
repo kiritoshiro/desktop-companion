@@ -1098,7 +1098,7 @@ class CreatureManager(
             has_prey = getattr(creature, "_prey", None) is not None
             with desktop_span:
                 # A spider locked onto a fly should not wander off behind a window.
-                if not has_prey:
+                if not has_prey and getattr(creature, "player_control", None) is None:
                     self._maybe_seek_desktop_cover(creature, dt)
                 hidden = self._is_fully_hidden(creature)
             if hidden and not creature.dragging:

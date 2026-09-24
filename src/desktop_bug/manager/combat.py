@@ -89,7 +89,8 @@ class CombatMixin:
             if not creature.dead and not getattr(creature, "dragging", False)
         ]
         for index, attacker in enumerate(live):
-            if attacker.attack_cooldown > 0.0:
+            controlled = getattr(attacker, "player_control", None) is not None
+            if not controlled and attacker.attack_cooldown > 0.0:
                 continue
             for defender in live[index + 1:]:
                 if defender.dead:
@@ -102,7 +103,11 @@ class CombatMixin:
                 reach = (attacker.size + defender.size) * CONTACT_REACH
                 if math.hypot(attacker.x - defender.x, attacker.y - defender.y) > reach:
                     continue
-                self._trade_blow(attacker, defender)
+                if controlled:
+                    if getattr(defender, "player_control", None) is None and defender.attack_cooldown <= 0.0:
+                        self._trade_blow(defender, attacker)
+                else:
+                    self._trade_blow(attacker, defender)
                 break
 
     def _clear_foes(self) -> None:
@@ -174,6 +179,11 @@ class CombatMixin:
         live = [c for c in self.creatures if not c.dead]
         for creature in live:
             creature.engagement_timer = max(0.0, creature.engagement_timer - dt)
+            if getattr(creature, "player_control", None) is not None:
+                creature.flee_timer = 0.0
+                creature.flee_from = None
+                creature.recovering = False
+                continue
 
             if getattr(creature, "dragging", False):
                 creature.flee_timer = 0.0
@@ -312,7 +322,7 @@ class CombatMixin:
           broken, not as diligent.
         """
         # DC-50: a spider that is running is not picking anything.
-        if creature.fleeing:
+        if creature.fleeing or getattr(creature, "player_control", None) is not None:
             return False
         # A Guard's job is fighting, and so, the owner pointed out, is a
         # Hunter's: "as a hunter i would expect him to explore more and fight
@@ -350,7 +360,7 @@ class CombatMixin:
             return
         # The defender hits back, but only if it is not already mid-swing at
         # someone else -- otherwise being attacked is a free extra attack.
-        if defender.attack_cooldown <= 0.0:
+        if defender.attack_cooldown <= 0.0 and getattr(defender, "player_control", None) is None:
             defender.attack_cooldown = ATTACK_INTERVAL
             struck = attacker.take_damage(defender.damage, defender)
             if struck > 0.0:

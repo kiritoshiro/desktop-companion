@@ -37,6 +37,8 @@ class HuntingMixin:
     # ------------------------------------------------------------------
 
     def _creature_can_hunt(self, creature: Creature) -> bool:
+        if getattr(creature, "player_control", None) is not None:
+            return False
         if creature.airborne:
             return False
         if self._is_fully_hidden(creature):
