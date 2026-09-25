@@ -118,7 +118,8 @@ def test_every_piece_has_an_inventory_picture():
     for item in ARMOR_CATALOG:
         icon = armour_art.armour_icon(item.id, item.slot, 64)
         opaque = sum(icon.pixelColor(x, y).alpha() > 40 for y in range(0, 64, 2) for x in range(0, 64, 2))
-        assert opaque > 150, item.id
+        # A leg icon is one slim diagonal leg, so it covers less than a shell.
+        assert opaque > (100 if item.slot == "legs" else 150), item.id
 
 
 def test_each_part_of_the_doll_is_where_its_callout_points():
@@ -168,3 +169,64 @@ def test_skill_and_armour_tooltips_say_exactly_what_they_give():
     tip = item_tooltip(ARMOR_BY_ID["warden_carapace"], state)
     assert "+2.5 armour" in tip and "+12 max health" in tip and "-2% speed" in tip
     assert "Warden set 0/5" in tip
+
+
+# -- tiers, more sets, whole-leg armour ----------------------------------------
+# The owner: "on the whole leg an armor would be nice. also make some more
+# models of armors on various tier and quality material, looking epic some."
+
+def _set_total(set_id, key="armor"):
+    return sum(getattr(ARMOR_BY_ID[p], key) for p in ARMOR_SETS[set_id].pieces)
+
+
+def test_every_set_is_a_full_suit_with_its_own_material_and_tier():
+    from desktop_bug.state.progression import ARMOR_TIERS
+
+    looks = set()
+    for set_id, armor_set in ARMOR_SETS.items():
+        pieces = [ARMOR_BY_ID[p] for p in armor_set.pieces]
+        assert sorted(p.slot for p in pieces) == sorted(SLOT_ORDER), set_id
+        assert len({p.tier for p in pieces}) == 1, "a set is one quality"
+        assert pieces[0].tier in ARMOR_TIERS
+        looks.add(armour_art.look_for(pieces[0].id))
+    assert len(looks) == len(ARMOR_SETS), "each set has its own material"
+    tiers = {ARMOR_BY_ID[s.pieces[0]].tier for s in ARMOR_SETS.values()}
+    assert {"uncommon", "rare", "epic", "legendary"} <= tiers
+
+
+def test_better_tiers_protect_more():
+    assert _set_total("forager") < _set_total("warden") < _set_total("sun")
+    assert _set_total("warden") <= _set_total("brood") < _set_total("sun")
+
+
+def test_leg_armour_runs_down_the_whole_leg_but_leaves_the_claw_bare():
+    points = [(20, 100), (80, 100), (110, 100), (170, 100), (230, 100), (270, 100)]
+    widths = [10, 9, 8, 6, 5]
+    image = QImage(300, 200, QImage.Format_ARGB32_Premultiplied)
+    image.fill(0)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    armour_art.paint_leg_armour(painter, points, widths, armour_art.look_for("warden_greaves"))
+    painter.end()
+
+    def covered(x):
+        return any(image.pixelColor(x, y).alpha() > 100 for y in range(90, 111))
+
+    for x in (55, 95, 140, 200):   # femur, knee, tibia, metatarsus
+        assert covered(x), x
+    assert not covered(255), "the tarsus and its claws stay bare"
+
+
+def test_the_hero_carries_every_set_and_the_bag_puts_the_best_first(state_dir):
+    from desktop_bug.app.character_ui import CharacterDialog
+    from desktop_bug.state.progression import ARMOR_TIERS
+
+    state = hero_progression(fresh_profile())
+    for armor_set in ARMOR_SETS.values():
+        assert set(armor_set.pieces) <= set(state.inventory)
+    dialog = CharacterDialog()
+    order = [ARMOR_TIERS.index(ARMOR_BY_ID[i].tier) for i in dialog.bag.tiles]
+    assert order == sorted(order, reverse=True)
+    assert dialog.bag.tiles["sun_crown"].property("tier") == "legendary"
+    assert "Legendary" in item_tooltip(ARMOR_BY_ID["sun_crown"])
+    dialog.close()

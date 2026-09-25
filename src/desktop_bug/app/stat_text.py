@@ -9,7 +9,8 @@ from __future__ import annotations
 from html import escape
 
 from .adventure import PlayerController
-from ..state.progression import (ABILITY_BY_ID, ARMOR_SETS, ArmorItem, set_pieces_worn)
+from ..state.progression import (ABILITY_BY_ID, ARMOR_SETS, ARMOR_TIERS, ArmorItem,
+                                 set_pieces_worn)
 
 GOOD = "#3f6b1f"
 BAD = "#a2371f"
@@ -17,6 +18,13 @@ DIM = "#6a4a2c"
 SLOT_NAMES = {"head": "Head", "carapace": "Carapace", "abdomen": "Abdomen",
               "legs": "Legs", "pedipalps": "Pedipalps"}
 ITEM_STATS = ("armor", "max_hp", "damage", "max_energy", "speed")
+# The colours players know from other games, lowest quality first.
+TIER_COLORS = {"common": "#cfc8b8", "uncommon": "#6fc24a", "rare": "#4f9ae8",
+               "epic": "#b066f0", "legendary": "#f5a431"}
+# Darker versions, readable on the parchment tooltip.
+TIER_INK = {"common": "#6a5f4c", "uncommon": "#2f7a18", "rare": "#1f5fae",
+            "epic": "#7a2fc0", "legendary": "#b0620a"}
+TIER_NAMES = {tier: tier.capitalize() for tier in ARMOR_TIERS}
 
 
 def _num(value: float) -> str:
@@ -96,8 +104,10 @@ def set_line(set_id: str, state, dim: str = DIM, good: str = GOOD) -> str:
 
 
 def item_tooltip(item: ArmorItem, state=None) -> str:
-    parts = [f"<b style='font-size:11pt'>{escape(item.name)}</b>",
-             f"<span style='color:{DIM}'>{SLOT_NAMES.get(item.slot, item.slot)}</span>",
+    ink = TIER_INK.get(item.tier, DIM)
+    parts = [f"<b style='font-size:11pt; color:{ink}'>{escape(item.name)}</b>",
+             f"<span style='color:{ink}'><b>{TIER_NAMES.get(item.tier, item.tier)}</b></span>"
+             f"<span style='color:{DIM}'> · {SLOT_NAMES.get(item.slot, item.slot)}</span>",
              escape(item.description),
              effects_html(item_effects(item))]
     if item.set_id in ARMOR_SETS:

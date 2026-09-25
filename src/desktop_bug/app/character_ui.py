@@ -14,7 +14,7 @@ from __future__ import annotations
 from PyQt5.QtCore import QPointF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar,
-                             QPushButton, QVBoxLayout, QWidget)
+                             QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
 from .armour_ui import InventoryBag, SpiderDoll
@@ -60,6 +60,11 @@ def character_qss() -> str:
             stop:0 rgba(90, 58, 32, 230), stop:1 rgba(52, 32, 18, 230));
             border: 1px solid {t.BRASS_DEEP}; border-radius: 8px; }}
         QFrame#itemTile:hover {{ border: 2px solid {t.BRASS}; }}
+        QFrame#itemTile[tier="uncommon"] {{ border: 2px solid #6fc24a; }}
+        QFrame#itemTile[tier="rare"] {{ border: 2px solid #4f9ae8; }}
+        QFrame#itemTile[tier="epic"] {{ border: 2px solid #b066f0; }}
+        QFrame#itemTile[tier="legendary"] {{ border: 2px solid #f5a431; }}
+        QLabel#tileTier {{ font-size: 7pt; font-weight: 800; background: transparent; }}
         QLabel#tileName {{ color: {t.CREAM}; font-size: 8pt; font-weight: 700; background: transparent; }}
         QPushButton#skillNode {{ border-radius: 10px; padding: 4px; font-size: 9pt;
             text-align: center; }}
@@ -186,8 +191,9 @@ class CharacterDialog(QDialog):
         head.addLayout(name_box, 1)
         root.addLayout(head)
 
-        body = QHBoxLayout()
-        body.setSpacing(14)
+        # Skills and armour each get the whole window: with every set in the
+        # bag there is no room for both side by side.
+        self.tabs = QTabWidget()
         tree_panel = QFrame()
         tree_panel.setObjectName("sheetPanel")
         tree_col = QVBoxLayout(tree_panel)
@@ -200,40 +206,49 @@ class CharacterDialog(QDialog):
         tree_col.addWidget(self.points_label)
         self.tree = SkillTree()
         self.tree.unlock.connect(self._unlock)
-        tree_col.addWidget(self.tree)
+        tree_col.addWidget(self.tree, 0, Qt.AlignHCenter)
         tree_col.addStretch(1)
-        body.addWidget(tree_panel)
 
         armour_panel = QFrame()
         armour_panel.setObjectName("sheetPanel")
-        armour_col = QVBoxLayout(armour_panel)
-        armour_col.setContentsMargins(14, 10, 14, 14)
-        armour_col.setSpacing(6)
+        armour_row = QHBoxLayout(armour_panel)
+        armour_row.setContentsMargins(14, 10, 14, 14)
+        armour_row.setSpacing(14)
+        doll_col = QVBoxLayout()
+        doll_col.setSpacing(6)
         armour_title = QLabel("Armour")
         armour_title.setObjectName("sectionTitle")
-        armour_col.addWidget(armour_title)
+        doll_col.addWidget(armour_title)
         hint = QLabel("Drag a piece from the bag onto the spider. Drag it back, or double-click, to take it off.")
         hint.setObjectName("statLine")
         hint.setWordWrap(True)
-        armour_col.addWidget(hint)
+        doll_col.addWidget(hint)
         self.doll = SpiderDoll()
         self.doll.equip.connect(self._equip)
         self.doll.unequip.connect(self._unequip)
-        armour_col.addWidget(self.doll, 0, Qt.AlignHCenter)
-        bag_title = QLabel("Bag")
-        bag_title.setObjectName("sectionTitle")
-        armour_col.addWidget(bag_title)
-        self.bag = InventoryBag()
-        self.bag.equip.connect(self._equip)
-        self.bag.unequip.connect(self._unequip)
-        armour_col.addWidget(self.bag)
+        doll_col.addWidget(self.doll, 0, Qt.AlignHCenter)
         self.stats_label = QLabel()
         self.stats_label.setObjectName("statLine")
         self.stats_label.setWordWrap(True)
         self.stats_label.setTextFormat(Qt.RichText)
-        armour_col.addWidget(self.stats_label)
-        body.addWidget(armour_panel, 1)
-        root.addLayout(body)
+        doll_col.addStretch(1)
+        armour_row.addLayout(doll_col)
+        bag_col = QVBoxLayout()
+        bag_col.setSpacing(6)
+        bag_title = QLabel("Bag")
+        bag_title.setObjectName("sectionTitle")
+        bag_col.addWidget(bag_title)
+        self.bag = InventoryBag()
+        self.bag.equip.connect(self._equip)
+        self.bag.unequip.connect(self._unequip)
+        bag_col.addWidget(self.bag, 1)
+        self.stats_label.setMaximumWidth(self.bag.width())
+        bag_col.addWidget(self.stats_label)
+        armour_row.addLayout(bag_col)
+
+        self.tabs.addTab(armour_panel, "Armour")
+        self.tabs.addTab(tree_panel, "Skills")
+        root.addWidget(self.tabs, 1)
 
         close = QPushButton("Done")
         close.clicked.connect(self.accept)
@@ -311,6 +326,8 @@ class CharacterDialog(QDialog):
         lines = [short_effect(text) for text, _ in effect_lines(totals)]
         text = ("<b>Bonuses</b>  " + "  ·  ".join(lines)) if lines else \
             "No bonuses yet. Learn skills and wear armour to grow stronger."
+        # Only the sets being worn: five lines of 0/5 would bury the one that matters.
+        worn_sets = {ARMOR_BY_ID[i].set_id for i in self.state.equipped.values() if i in ARMOR_BY_ID}
         sets = [set_line(set_id, self.state, dim=wood_theme.CREAM_SOFT, good=wood_theme.BRASS)
-                for set_id in ARMOR_SETS]
-        return text + "<br>" + "<br>".join(sets)
+                for set_id in ARMOR_SETS if set_id in worn_sets]
+        return text + "".join("<br>" + line for line in sets)

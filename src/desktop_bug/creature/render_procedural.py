@@ -743,7 +743,7 @@ class RenderProceduralMixin:
         )
         worn = {item.slot: item for item in equipped_items(self.progression)}
         leg_armour = worn.get("legs")
-        armoured_femurs = []
+        armoured_legs = []
         # Legs first, underneath body. Segment thickness tapers from coxa to tarsus.
         for leg in self.legs:
             ax, ay, foot_x, foot_y = self._leg_draw_points(leg)
@@ -802,17 +802,12 @@ class RenderProceduralMixin:
             coxa_width = max(1.2, base_width * 1.08 * coxa_width_scale)
             femur_width = max(1.0, base_width * 0.98)
             tibia_width = max(1.0, base_width * 0.78)
-            if leg_armour is not None:
-                # The femur is the long segment before the (red) knee band: the
-                # first link of a solved chain, coxa to knee otherwise.
-                if chain_points is not None:
-                    (fx0, fy0), (fx1, fy1) = chain_points[0], chain_points[1]
-                    greave_w = femur_width * chain_config["width_scales"][0]
-                else:
-                    fx0, fy0, fx1, fy1 = coxa_x, coxa_y, kx, ky
-                    greave_w = femur_width
-                armoured_femurs.append((fx0, fy0, fx1, fy1, greave_w))
             tarsus_width = max(1.0, base_width * 0.42)
+            if leg_armour is not None and chain_points is None:
+                # Without a solved chain the leg is coxa, knee, tarsus, foot.
+                armoured_legs.append((
+                    [(coxa_x, coxa_y), (kx, ky), (tarsus_x, tarsus_y), (foot_x, foot_y)],
+                    [femur_width, tibia_width, tarsus_width]))
             # A segmented spider must remain a set of separated rods. The old
             # fuzzy spline filled the gaps between joints and made long legs
             # look like bat wings, so reserve it for legacy unsegmented legs.
@@ -848,6 +843,8 @@ class RenderProceduralMixin:
                     "segment_color_keys", ["legs"] * (len(chain_points) - 1)
                 )
                 chain_widths = [width_bases[index] * scales[index] for index in range(len(chain_points) - 1)]
+                if leg_armour is not None:
+                    armoured_legs.append((chain_points, chain_widths))
                 for index, width in enumerate(chain_widths):
                     start_x, start_y = chain_points[index]
                     end_x, end_y = chain_points[index + 1]
@@ -943,7 +940,7 @@ class RenderProceduralMixin:
         legs_over_body = bool(self._appearance("legs_over_body", False))
         if not legs_over_body:
             batch.flush(painter)
-            self._draw_greaves(painter, leg_armour, armoured_femurs)
+            self._draw_leg_armour(painter, leg_armour, armoured_legs)
         painter.save()
         # DC-59: a landed blow throws the body over its planted feet, so the
         # legs stretch behind it. The feet are solved in world space and are
@@ -1153,7 +1150,7 @@ class RenderProceduralMixin:
         # different order.
         if legs_over_body:
             batch.flush(painter)
-            self._draw_greaves(painter, leg_armour, armoured_femurs)
+            self._draw_leg_armour(painter, leg_armour, armoured_legs)
         # The body above is drawn in a body-local QPainter transform.  Leg
         # connections are computed in world coordinates, so paint them only
         # after leaving that transform.  Drawing them inside it double-applied
@@ -1161,13 +1158,13 @@ class RenderProceduralMixin:
         # or detach from the carapace.
         self._draw_leg_connections(painter, chain_config)
 
-    def _draw_greaves(self, painter, item, femurs) -> None:
-        """Femur plates, over the legs and under the body (armour_art)."""
-        if item is None or not femurs:
+    def _draw_leg_armour(self, painter, item, legs) -> None:
+        """Plates down each whole leg, over the legs and under the body."""
+        if item is None or not legs:
             return
         look = armour_art.look_for(item.id)
-        for x0, y0, x1, y1, width in femurs:
-            armour_art.paint_greave(painter, x0, y0, x1, y1, width, look)
+        for points, widths in legs:
+            armour_art.paint_leg_armour(painter, points, widths, look)
 
     def _draw_equipment(self, painter) -> None:
         """Outline accents for armour on sprite-rig models.
