@@ -9,7 +9,6 @@ from .adventure import PlayerController
 from .adventure_profile import (hero_progression, load_profile, profile_path, record_result,
                                 save_profile)
 from ..content.palettes import enemy_palette
-from ..world.aimed_silk import AimedSilk
 from ..world.playfield import Playfield, ScreenRect
 
 
@@ -28,9 +27,24 @@ class MissionSite:
 
 
 class MissionActor(PlayerController):
-    """Small combat brain using the existing procedural locomotion."""
+    """A mission spider's brain, acting through the player's own rules.
+
+    It decides what to do -- whom to chase, when to strike -- but every strike
+    goes through PlayerController's ``shoot``, ``bite`` and ``jump``: the same
+    view cone, stamina, silk, cooldowns and reach as the player's spider (the
+    owner: "enemy can shoot webs from any angle he is facing not just from
+    the front 90 degrees. make sure all spiders have the same rules").
+
+    What it keeps that the player has not: a short wind-up before each strike,
+    so the player can see it coming, and a pause after it. Both only slow it.
+    """
+
+    # Webbed, a mission spider always fights the silk, as a player holding a
+    # movement key does; it used to sit out the whole net.
+    struggling = True
+
     def __init__(self, creature, mission, role, home, raider=False):
-        super().__init__(creature)
+        super().__init__(creature, mission.controls)
         self.mission = mission
         self.role = role
         self.home = home
@@ -38,13 +52,35 @@ class MissionActor(PlayerController):
         self.windup = 0.0
         self.strike_target = None
         self.strike_point = home
+        self.strike_kind = None
         self.target = None
         self.think = creature.index * 0.013
+        self.silk_capacity = mission.silk_capacity_for(creature)
+        self.silk = float(self.silk_capacity)
+
+    def _choose_strike(self, target, gap):
+        """The strike the rules allow right now, or None."""
+        c = self.creature
+        if not self.in_cone(target):
+            return None
+        if self.role == "weaver":
+            if (gap < self.WEB_RANGE and self.web_cooldown <= 0 and self.silk >= 1
+                    and c.energy >= self.WEB_ENERGY):
+                return "shoot"
+            return "bite" if gap < self.bite_reach() else None
+        if gap < self.bite_reach():
+            return "bite"
+        if (self.role == "hunter" and gap < self.bite_reach() + self.POUNCE_DISTANCE
+                and self.jump_cooldown <= 0 and c.energy >= self.JUMP_ENERGY
+                and c.has_skill("jump")):
+            return "pounce"
+        return None
 
     def update(self, dt):
         c, m = self.creature, self.mission
         self.think -= dt
         self.web_cooldown = max(0.0, self.web_cooldown - dt)
+        self.jump_cooldown = max(0.0, self.jump_cooldown - dt)
         if self.think <= 0:
             self.think = 0.15
             targets = [s for s in m.manager.creatures if not s.dead and c.relation_to(s) == "foe"]
@@ -66,9 +102,11 @@ class MissionActor(PlayerController):
             target = self.target = None
         tx, ty = (target.x, target.y) if target is not None else self.home
         gap = math.hypot(tx-c.x, ty-c.y)
-        reach = c.size * 2.8
-        c.motion_paused = gap < (reach * 0.78 if target else 22)
-        c.speed = 95.0 if self.role == "hunter" else 68.0
+        reach = self.bite_reach()
+        c.motion_paused = gap < (reach * 0.72 if target else 22)
+        # Its own pace, never faster than the player's walk, and scaled by
+        # level and armour exactly as the player's is.
+        c.speed = (95.0 if self.role == "hunter" else 68.0) * c._speed_mult()
         if target is not None and self.role == "weaver":
             c.motion_paused = 135 < gap < 230
             if gap < 135:
@@ -80,27 +118,15 @@ class MissionActor(PlayerController):
                 self.windup = 0
                 c.attack_cooldown = 0.9
             elif self.windup <= 0:
-                victim = self.strike_target
-                if self.role == "weaver":
-                    angle = math.atan2(self.strike_point[1]-c.y, self.strike_point[0]-c.x)
-                    m.manager.fly_world.projectiles.append(AimedSilk(
-                        c, angle, 300, lambda: m.manager.creatures, lambda: []))
-                    self.web_cooldown = 3.5
-                elif (self.role == "hunter" and victim is not None
-                      and math.hypot(self.strike_point[0]-c.x, self.strike_point[1]-c.y) >= reach):
-                    c._launch_jump(*m.area.clamp(*self.strike_point, c.size*2), kind="pounce", after="idle")
-                elif victim is not None and not victim.dead and not victim.airborne:
-                    if math.hypot(victim.x-c.x, victim.y-c.y) < reach:
-                        m.manager._trade_blow(c, victim)
-                c.attack_cooldown = 1.4 if self.role != "guardian" else 1.8
+                self._release_strike()
         elif (target is not None and not c.webbed and not c.airborne
-              and c.attack_cooldown <= 0
-              and ((self.role == "weaver" and gap < 300 and self.web_cooldown <= 0)
-                   or (self.role == "hunter" and gap < 175) or gap < reach)):
+              and c.attack_cooldown <= 0):
+            kind = self._choose_strike(target, gap)
             # At most two foes commit to attacks at once; warnings remain readable.
             busy = sum(a.windup > 0 for a in m.actors if a.role != "ally")
-            if self.role == "ally" or busy < 2:
+            if kind is not None and (self.role == "ally" or busy < 2):
                 self.windup = 0.7 if self.role == "guardian" else 0.55
+                self.strike_kind = kind
                 self.strike_target = target
                 self.strike_point = (target.x, target.y)
                 c.begin_strike(target.x, target.y)
@@ -112,6 +138,20 @@ class MissionActor(PlayerController):
         if not c.airborne:
             c.state = "Player"
         self.advance_pose(dt)
+
+    def _release_strike(self):
+        """Strike where it wound up to: a target that moved away is missed."""
+        c, m = self.creature, self.mission
+        self.aim = self.strike_point
+        if self.strike_kind == "shoot":
+            self.shoot(m.manager)
+        elif self.strike_kind == "pounce":
+            c.target_x, c.target_y = m.area.clamp(*self.strike_point, c.size*2)
+            self.jump()
+        else:
+            self.bite(m.manager)
+        # The pause after a strike: this brain's pacing, not a rule.
+        c.attack_cooldown = max(c.attack_cooldown, 1.4 if self.role != "guardian" else 1.8)
 
 
 class TerritoryMission:
@@ -306,11 +346,14 @@ class TerritoryMission:
                                  and math.hypot(c.x-site.x, c.y-site.y) < 125
                                  for c in self.manager.creatures)
             near = math.hypot(self.hero.x-site.x, self.hero.y-site.y) < 92
+            # A base heals and refills whichever side holds it, while the
+            # other side keeps away: the player's bases for the player and
+            # the Scout, the rest for the enemy.
+            held_safe = (not site.contested) if site.owned else not self._adventurers_near(site)
+            if held_safe:
+                self._heal_at(site, dt)
+                self._refill_silk_at(site, dt)
             if site.owned:
-                if near and not site.contested and site.kind in ("home", "silk"):
-                    self.player.silk = min(self.player.silk_capacity, self.player.silk + dt*(3 if site.kind == "silk" else 1))
-                if not site.contested:
-                    self._heal_at(site, dt)
                 continue
             unlocked = site.kind != "nest" or (self.sites[3].owned and any(s.owned for s in self.sites[1:3])
                         and self.guardian is not None and self.guardian.dead
@@ -323,23 +366,59 @@ class TerritoryMission:
                 site.progress = max(0, site.progress - dt*.12)
         self._spawning(dt)
 
-    # How close the Scout must be to heal at a base. A little wider than the
-    # hero's 92 px, because a following Scout trails about 85 px behind.
+    # How close a spider must be to use a base. The Scout gets a little more,
+    # because a following Scout trails about 85 px behind the hero.
+    BASE_REACH = 92.0
     SCOUT_HEAL_REACH = 110.0
+    # What each base gives its holder: health and silk per second. The Thorn
+    # nest is the enemy's home burrow and serves them as the burrow serves you.
+    HEAL_RATES = {"food": 8.0, "home": 3.0, "nest": 3.0}
+    SILK_RATES = {"silk": 3.0, "home": 1.0, "nest": 1.0}
+
+    def _adventurers_near(self, site) -> bool:
+        return any(not c.dead and math.hypot(c.x-site.x, c.y-site.y) < 125
+                   for c in (self.hero, self.ally) if c is not None)
+
+    def _holders(self, site):
+        """(spider, controller, reach) for every spider of the side holding ``site``."""
+        if site.owned:
+            yield self.hero, self.player, self.BASE_REACH
+            if self.ally is not None and not self.ally.dead:
+                ally = next((a for a in self.actors if a.creature is self.ally), None)
+                yield self.ally, ally, self.SCOUT_HEAL_REACH
+            return
+        for actor in self.actors:
+            if actor.role != "ally" and not actor.creature.dead:
+                yield actor.creature, actor, self.BASE_REACH
+
+    def silk_capacity_for(self, spider) -> int:
+        """Holding the Silk loom raises the silk a side can carry, for either side."""
+        loom = next((s for s in self.sites if s.kind == "silk"), None)
+        adventurer = spider.progression.team_id == "adventurers"
+        holds = loom is not None and loom.owned == adventurer
+        return PlayerController.LOOM_SILK_CAPACITY if holds else PlayerController.SILK_CAPACITY
+
+    def _refill_silk_at(self, site, dt):
+        rate = self.SILK_RATES.get(site.kind)
+        if rate is None or (site.kind == "home" and not site.owned):
+            return
+        for spider, control, reach in self._holders(site):
+            if control is None or math.hypot(spider.x-site.x, spider.y-site.y) >= reach:
+                continue
+            control.silk = min(control.silk_capacity, control.silk + dt*rate)
 
     def _heal_at(self, site, dt):
-        """Owned Home and Food heal the hero and, since 2026-09-25, the Scout.
+        """A base heals the side that holds it, from its supply.
 
-        The owner: "companion spider should also be able to heal in the bases
-        if nearby." They draw on the same supply.
+        The hero's Home and Food heal the hero and the Scout (the owner:
+        "companion spider should also be able to heal in the bases if
+        nearby"); the enemy's Food cache and Thorn nest heal the enemy, by the
+        same rates (the owner: "make sure all spiders have the same rules").
         """
-        if site.kind not in ("home", "food"):
+        rate = self.HEAL_RATES.get(site.kind)
+        if rate is None or (site.kind == "home" and not site.owned):
             return
-        rate = 8 if site.kind == "food" else 3
-        patients = [(self.hero, 92.0)]
-        if self.ally is not None and not self.ally.dead:
-            patients.append((self.ally, self.SCOUT_HEAL_REACH))
-        for spider, reach in patients:
+        for spider, _control, reach in self._holders(site):
             if site.supply <= 0:
                 return
             if math.hypot(spider.x-site.x, spider.y-site.y) >= reach:
@@ -356,8 +435,13 @@ class TerritoryMission:
         self.hero.gain_experience(35, "territory captured")
         self.announce(f"{site.name} secured")
         if site.kind == "silk":
-            self.player.silk_capacity = 12
-            self.player.silk = 12.0
+            self.player.silk_capacity = PlayerController.LOOM_SILK_CAPACITY
+            self.player.silk = float(self.player.silk_capacity)
+            # The enemy lost the loom: back to what they can carry without it.
+            for actor in self.actors:
+                if actor.role != "ally":
+                    actor.silk_capacity = PlayerController.SILK_CAPACITY
+                    actor.silk = min(actor.silk, actor.silk_capacity)
         if site.kind == "hatchery":
             site.reserves = 0
             site.warning = 0
