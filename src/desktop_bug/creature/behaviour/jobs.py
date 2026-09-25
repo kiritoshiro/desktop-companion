@@ -380,6 +380,9 @@ class JobBehaviourMixin:
         already uses on prey and on the cursor -- a web-shooter does it
         eagerly, anyone else with the skill does it sometimes.
         """
+        # Webbed: cannot fight back (the owner, 2026-09-25).
+        if self.webbed_held:
+            return False
         if self.web_shot_cooldown > 0.0 or self.fly_world is None:
             return False
         can_trap = self.has_skill("shoot_web")

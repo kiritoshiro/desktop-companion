@@ -158,6 +158,9 @@ class ActionMixin:
         duration: float | None = None,
         reach: float = 1.0,
     ) -> None:
+        if self.webbed_held and not self.dragging:
+            # Held by silk: no pounce out of it (the owner, 2026-09-25).
+            return
         if not self.has_skill("jump"):
             if after == "wander":
                 self.enter_wander()
