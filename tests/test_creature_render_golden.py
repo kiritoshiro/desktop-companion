@@ -73,6 +73,11 @@ def render_reference_frame() -> QImage:
     # more than one manager has been built in the same run (its keys are
     # asset paths, not instance ids, but this sidesteps needing to know why).
     Creature.SPRITE_CACHE.clear()
+    # Damage numbers are text, like the labels switched off above: glyphs
+    # depend on the fonts a machine has, and this frame pins how spiders are
+    # drawn. Two spiders here are mid-fight, so clear their numbers.
+    for creature in manager.creatures:
+        creature.damage_numbers.clear()
     image = QImage(*SCREEN, QImage.Format_ARGB32_Premultiplied)
     image.fill(0)
     painter = QPainter(image)

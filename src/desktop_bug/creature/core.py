@@ -57,11 +57,12 @@ from .expression import ExpressionMixin
 from .kinematics import KinematicsMixin, LegState
 from .render_procedural import RenderProceduralMixin
 from .render_sprite import RenderSpriteMixin
+from .damage_numbers import DamageNumbersMixin
 from .web_net import WebNetMixin
 
 
 class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProceduralMixin, RenderSpriteMixin,
-               WebNetMixin):
+               WebNetMixin, DamageNumbersMixin):
     """One data-driven desktop creature with procedural or hybrid sprite-rig rendering."""
 
     SPRITE_CACHE = {}
@@ -538,6 +539,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.web_anchors = []
         self.struggle = 0.0
         self.struggle_clock = 0.0
+        # [amount, age, sideways nudge] per floating damage number
+        # (damage_numbers.py).
+        self.damage_numbers = []
         # Which foe this spider is currently fighting, published by the
         # manager the same way `_prey` is for a fly.
         self._foe = None
@@ -857,6 +861,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         if dealt > 0.0:
             self.last_attacker = source
             self.hurt_flash = 1.0
+            self._note_damage(dealt)
         if self.hp <= 0.0:
             self._die()
         return dealt
@@ -1267,6 +1272,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
         self.webbed_timer = max(0.0, self.webbed_timer - dt)
         self._update_web_struggle(dt)
+        self._update_damage_numbers(dt)
         self.flee_timer = max(0.0, self.flee_timer - dt)
         if self.flee_timer <= 0.0:
             self.flee_from = None
@@ -1643,7 +1649,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             # Label floats above the highest drawn point.
             min_y -= label_h + 6.0
 
-        self._bbox = (min_x, min_y, max_x, max_y)
+        self._bbox = self._damage_number_bounds((min_x, min_y, max_x, max_y))
         return self._bbox
 
     def _health_bar_height(self) -> float:
@@ -1789,6 +1795,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # Name labels should obey the same visibility as the spider.  Otherwise a
         # hidden Camouflage spider would still leave a floating readable label.
         self._draw_name_label(painter, always_show_names)
+        self._draw_damage_numbers(painter)
         if camouflage_saved:
             painter.restore()
 
