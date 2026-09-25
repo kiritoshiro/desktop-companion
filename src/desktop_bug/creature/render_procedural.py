@@ -315,7 +315,7 @@ class RenderProceduralMixin:
         d = leg.definition
         segment_reach = (float(d.get("upper_len", 0.85)) + float(d.get("lower_len", 1.05))) * self.size
         max_reach = min(self._leg_max_reach(leg, visual=True), segment_reach * chain_config["max_stretch"])
-        ax, ay = self._leg_attach(leg)
+        ax, ay = self._leg_attach_drawn(leg)
         dx, dy = safe_x - ax, safe_y - ay
         distance = math.hypot(dx, dy)
         if distance > max_reach and distance > 1e-5:
@@ -1057,6 +1057,8 @@ class RenderProceduralMixin:
                 cx = abdomen_offset_x - abdomen_w * (0.12 + t * 0.18)
                 painter.drawEllipse(QRectF(cx - abdomen_w * 0.08, -abdomen_h * 0.28 + t * abdomen_h * 0.16, abdomen_w * 0.16, abdomen_h * 0.10))
 
+        self._draw_abdomen_marking(painter, abdomen_offset_x, abdomen_w, abdomen_h)
+
         painter.setPen(QPen(leg_color, max(1.2, self.size * 0.045), Qt.SolidLine, Qt.RoundCap))
         antenna_cfg = self._appearance("antennae", {})
         custom_hand_palps = (
@@ -1311,6 +1313,45 @@ class RenderProceduralMixin:
         foot_y += float(getattr(leg, "held_spring_y", 0.0))
         return foot_x, foot_y
 
+    def _draw_abdomen_marking(self, painter, abdomen_x: float, abdomen_w: float,
+                              abdomen_h: float) -> None:
+        """A redback-style stripe and bars down the abdomen, in body space.
+
+        Drawn only when the palette has a ``marking`` colour, which no shipped
+        model does: `palettes.enemy_palette` adds it, so Adventure enemies
+        carry a pattern the player's spider never has (the owner: "make them
+        more black-red pattern").
+        """
+        if not self.colors.get("marking"):
+            return
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(self._qcolor("marking", 235)))
+        front = abdomen_x + abdomen_w * 0.26
+        back = abdomen_x - abdomen_w * 0.44
+        width = abdomen_h * 0.15
+        painter.drawRoundedRect(QRectF(back, -width / 2, front - back, width), width / 2, width / 2)
+        for i, reach in enumerate((0.34, 0.27, 0.19)):
+            x = abdomen_x + abdomen_w * (0.16 - i * 0.22)
+            half = abdomen_h * reach
+            bar = abdomen_w * 0.075
+            painter.drawRoundedRect(QRectF(x - bar / 2, -half, bar, half * 2), bar / 2, bar / 2)
+        painter.restore()
+
+    def _leg_attach_drawn(self, leg: LegState) -> Tuple[float, float]:
+        """Where a leg leaves the body *as drawn*.
+
+        The body is drawn shifted by `combat_body_offset` during a bite or a
+        blow taken, so its leg roots have to move with it. They used to stay
+        at `_leg_attach`, and the owner saw the body come off its back four
+        legs on every bite. The feet stay planted, so the legs stretch and
+        compress instead. Drawing only: the gait still reasons about the
+        undisplaced body.
+        """
+        ax, ay = self._leg_attach(leg)
+        ox, oy = self.combat_body_offset()
+        return ax + ox, ay + oy
+
     def _leg_draw_points(self, leg: LegState) -> Tuple[float, float, float, float]:
         """World-space (attach, foot) for rendering with catch-reach + airborne tuck.
 
@@ -1320,7 +1361,7 @@ class RenderProceduralMixin:
         jump lift is applied later as a pure draw-time screen offset so the solved
         knee geometry stays correct.
         """
-        ax, ay = self._leg_attach(leg)
+        ax, ay = self._leg_attach_drawn(leg)
         foot_x, foot_y = self._visual_foot_for_render(leg)
         front = self._leg_front_factor(leg)
         if self.dragging:
@@ -1459,7 +1500,7 @@ class RenderProceduralMixin:
         )
 
         for leg in self.legs:
-            ax, ay = self._leg_attach(leg)
+            ax, ay = self._leg_attach_drawn(leg)
             foot_x, foot_y = self._leg_draw_points(leg)[2:]
             foot_x, foot_y = self._safe_sprite_leg_foot(leg, foot_x, foot_y, chain_config)
             # DC-82: the leg pass raises the whole chain by the jump height

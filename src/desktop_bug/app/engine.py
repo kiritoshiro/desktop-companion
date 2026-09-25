@@ -1014,7 +1014,10 @@ class OverlayWindow(_OverlayBase):
     # Partial repaint
     # ------------------------------------------------------------------
     def request_repaint(self) -> None:
-        if getattr(self, "mission", None) is not None:
+        # paintGL redraws the whole framebuffer whatever region is asked for,
+        # so building one would be wasted work on the GL path; a mission
+        # repaints its whole arena every frame either way.
+        if GL_OVERLAY or getattr(self, "mission", None) is not None:
             self.update()
             return
         self._frames_since_full_repaint += 1

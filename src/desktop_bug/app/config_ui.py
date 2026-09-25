@@ -326,6 +326,8 @@ class ConfigWindow(QMainWindow):
                                     leave_adventure=self.leave_adventure)
         self.setCentralWidget(self.mode_shell)
         self._overlay_mode = None
+        # True while this window is hidden for a running Adventure.
+        self._hidden_for_adventure = False
         self.refresh_discovery()
         self.refresh_presets()
         default_path = find_data_file("presets", "default.json", root=self.root)
@@ -2087,7 +2089,25 @@ class ConfigWindow(QMainWindow):
                 ("always_show_stamina", self.always_stamina_check))
 
     def start_adventure(self):
+        """Launch Adventure and get this window out of the way.
+
+        The owner: "once clicking start adventure that whole window should
+        hide." It comes back by itself when the Adventure overlay exits
+        (`update_process_status`); a launch that failed leaves it showing
+        with the error.
+        """
         self.launch_engine(mode="adventure")
+        if self._overlay_mode == "adventure" and self._overlay_running():
+            self._hidden_for_adventure = True
+            self.hide()
+
+    def _show_after_adventure(self) -> None:
+        if not self._hidden_for_adventure or self._overlay_running():
+            return
+        self._hidden_for_adventure = False
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
 
     def leave_adventure(self) -> bool:
         """Close the Adventure overlay when the player leaves its page.
@@ -2237,6 +2257,7 @@ class ConfigWindow(QMainWindow):
             self.overlay_process = None
             self.launched_preset_path = None
             self.status.setText(f"Overlay exited with code {code}.")
+        self._show_after_adventure()
         if self._overlay_running():
             # A short, non-blocking-in-practice retry: the overlay's server
             # may not have been listening yet the moment it was launched.

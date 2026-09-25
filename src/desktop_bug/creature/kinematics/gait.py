@@ -112,6 +112,21 @@ class GaitConfigMixin:
                 # mismatch that caused most steps to start outside their phase.
                 "cycle_hz": clamp(float(raw.get("cycle_hz", 2.10)), 1.20, 4.50),
                 "speed_cycle_gain": clamp(float(raw.get("speed_cycle_gain", 1.45)), 0.0, 3.0),
+                # A real tarantula goes faster by stepping more often, not by
+                # stepping farther (tarantula reference note). With a stride
+                # length (in body sizes) the cadence becomes speed / stride,
+                # so the stride holds as the speed rises. 0 keeps the older
+                # cadence = cycle_hz + speed * speed_cycle_gain.
+                "stride_length": clamp(float(raw.get("stride_length", 0.0)), 0.0, 2.0),
+                # How much of the speed-scaled forward reach (see
+                # _leg_ideal_foot) a foot target takes. 1 is the older gait;
+                # a fixed-stride gait wants 0.
+                "stride_speed_gain": clamp(float(raw.get("stride_speed_gain", 1.0)), 0.0, 1.0),
+                # Ceilings on the cadence and floor on a swing. The defaults
+                # are the older fixed limits, which top out at about five
+                # steps a second per leg.
+                "max_cycle_hz": clamp(float(raw.get("max_cycle_hz", 4.50)), 1.20, 12.0),
+                "min_swing_time": clamp(float(raw.get("min_swing_time", 0.075)), 0.04, 0.075),
                 "step_lookahead": clamp(float(raw.get("step_lookahead", 0.72)), 0.25, 1.20),
                 "step_trigger": clamp(float(raw.get("step_trigger", 0.18)), 0.12, 0.34),
                 # Feet may remain planted inside this comfort band even when
