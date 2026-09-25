@@ -58,6 +58,20 @@ DEFAULT_BINDINGS = {
     "pause": "Esc",
 }
 
+# How W/A/S/D move the spider. "screen": up/left/down/right on the screen.
+# "turn": forward, back up, turn left, turn right -- the owner wanted to walk
+# backwards ("S would walk backwards"). A tarantula does back up, slowly and
+# for short distances, so backing is slow and cannot sprint.
+MOVEMENT_MODES = (("screen", "Screen directions"), ("turn", "Turn and walk"))
+MOVEMENT_IDS = tuple(mode for mode, _ in MOVEMENT_MODES)
+DEFAULT_MOVEMENT = "screen"
+TURN_ACTION_TEXT = {
+    "move_up": ("Forward", "Walk forward, the way your spider is facing."),
+    "move_down": ("Back up", "Walk slowly backwards, still facing forward. No sprint."),
+    "move_left": ("Turn left", "Turn anticlockwise, on the spot or while walking."),
+    "move_right": ("Turn right", "Turn clockwise, on the spot or while walking."),
+}
+
 AIM_CONES = (60, 90, 120, 180, 360)
 DEFAULT_AIM_CONE = 90
 
@@ -103,6 +117,7 @@ class ControlSettings:
     bindings: dict = field(default_factory=lambda: dict(DEFAULT_BINDINGS))
     aim_cone: int = DEFAULT_AIM_CONE
     face_mouse_when_still: bool = False
+    movement: str = DEFAULT_MOVEMENT
 
     # -- lookups ---------------------------------------------------------
     def action_for_key(self, key: int) -> str | None:
@@ -123,6 +138,19 @@ class ControlSettings:
 
     def binding(self, action: str) -> str:
         return self.bindings.get(action, DEFAULT_BINDINGS[action])
+
+    @property
+    def turn_movement(self) -> bool:
+        return self.movement == "turn"
+
+    def action_text(self, action: str) -> tuple[str, str]:
+        """(label, what it does) for ``action`` under the current movement mode."""
+        if self.turn_movement and action in TURN_ACTION_TEXT:
+            return TURN_ACTION_TEXT[action]
+        for known, label, text in ACTIONS:
+            if known == action:
+                return label, text
+        raise KeyError(action)
 
     # -- changes ---------------------------------------------------------
     def rebind(self, action: str, name: str) -> str | None:
@@ -146,6 +174,7 @@ class ControlSettings:
         self.bindings = dict(DEFAULT_BINDINGS)
         self.aim_cone = DEFAULT_AIM_CONE
         self.face_mouse_when_still = False
+        self.movement = DEFAULT_MOVEMENT
 
     @property
     def half_cone(self) -> float:
@@ -154,7 +183,8 @@ class ControlSettings:
     # -- saving ----------------------------------------------------------
     def to_dict(self) -> dict:
         return {"bindings": dict(self.bindings), "aim_cone": int(self.aim_cone),
-                "face_mouse_when_still": bool(self.face_mouse_when_still)}
+                "face_mouse_when_still": bool(self.face_mouse_when_still),
+                "movement": self.movement}
 
     @classmethod
     def from_dict(cls, data) -> "ControlSettings":
@@ -187,6 +217,8 @@ class ControlSettings:
             cone = DEFAULT_AIM_CONE
         settings.aim_cone = max(30, min(360, cone))
         settings.face_mouse_when_still = bool(data.get("face_mouse_when_still", False))
+        movement = data.get("movement", DEFAULT_MOVEMENT)
+        settings.movement = movement if movement in MOVEMENT_IDS else DEFAULT_MOVEMENT
         return settings
 
 
@@ -227,4 +259,4 @@ def clamp_to_cone(heading: float, target_angle: float, half_cone: float) -> floa
 
 def instructions(settings: ControlSettings) -> list[tuple[str, str, str]]:
     """(button, label, what it does) for every action, in list order."""
-    return [(settings.binding(action), label, text) for action, label, text in ACTIONS]
+    return [(settings.binding(action), *settings.action_text(action)) for action in ACTION_IDS]

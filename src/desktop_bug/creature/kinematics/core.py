@@ -46,6 +46,9 @@ class KinematicsMixin(
         """
         if self.state == "Observe" and self._acts_as_observer():
             return True
+        if getattr(self, "reverse_walk", False):
+            # The player backing up (turn-and-walk controls).
+            return True
         return self.state == "JobPatrol" and getattr(self, "job_facing", None) is not None
 
     def _update_legs_lively(self, dt: float) -> None:

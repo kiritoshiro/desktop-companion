@@ -249,7 +249,9 @@ class ModeShell(QWidget):
         sep = "  ·  "
         for label, parts in zip(self.controls_lines, (walk[:4], walk[4:], act)):
             label.setText(sep.join(parts))
-        self.controls_aim_note.setText(f"The mouse only aims, within {cone}; walk to turn.")
+        turning = ("turn with " + settings.binding("move_left") + "/" + settings.binding("move_right")
+                   if settings.turn_movement else "walk to turn")
+        self.controls_aim_note.setText(f"The mouse only aims, within {cone}; {turning}.")
 
     def open_controls(self) -> None:
         from .controls_ui import ControlsDialog

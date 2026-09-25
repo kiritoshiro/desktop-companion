@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLa
                              QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from . import wood_theme
-from .controls import (ACTIONS, AIM_CONES, ControlSettings, key_name, load_controls, mouse_name,
+from .controls import (ACTIONS, AIM_CONES, MOVEMENT_MODES, ControlSettings, key_name, load_controls, mouse_name,
                        save_controls)
 
 CONE_LABELS = {60: "60°  narrow", 90: "90°  (recommended)", 120: "120°  wide",
@@ -92,6 +92,19 @@ class ControlsEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
 
+        move_row = QHBoxLayout()
+        move_row.addWidget(QLabel("Movement:"))
+        self.movement = QComboBox()
+        for mode, label in MOVEMENT_MODES:
+            self.movement.addItem(label, mode)
+        self.movement.setToolTip(
+            "Screen directions: W/A/S/D walk up, left, down and right on the screen.\n"
+            "Turn and walk: W walks forward, S backs up slowly while facing forward, "
+            "A/D turn.")
+        move_row.addWidget(self.movement)
+        move_row.addStretch(1)
+        layout.addLayout(move_row)
+
         aim_row = QHBoxLayout()
         aim_row.addWidget(QLabel("Aim cone:"))
         self.cone = QComboBox()
@@ -119,6 +132,7 @@ class ControlsEditor(QWidget):
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(6)
         self.buttons: dict[str, BindingButton] = {}
+        self.action_labels: dict[str, tuple[QLabel, QLabel]] = {}
         for row, (action, label, text) in enumerate(ACTIONS):
             name_label = QLabel(f"<b>{label}</b>")
             grid.addWidget(name_label, row, 0)
@@ -130,6 +144,7 @@ class ControlsEditor(QWidget):
             what.setObjectName("controlsHint")
             grid.addWidget(what, row, 2)
             self.buttons[action] = button
+            self.action_labels[action] = (name_label, what)
         grid.setColumnStretch(2, 1)
         bindings_panel = QWidget()
         bindings_panel.setLayout(grid)
@@ -152,8 +167,19 @@ class ControlsEditor(QWidget):
         self._sync()
         self.cone.currentIndexChanged.connect(self._cone_changed)
         self.face_mouse.toggled.connect(self._face_changed)
+        self.movement.currentIndexChanged.connect(self._movement_changed)
 
     def _sync(self) -> None:
+        self.movement.blockSignals(True)
+        index = self.movement.findData(self.settings.movement)
+        self.movement.setCurrentIndex(max(0, index))
+        self.movement.blockSignals(False)
+        # Facing the mouse would fight A/D turning, so it is a screen-mode option.
+        self.face_mouse.setEnabled(not self.settings.turn_movement)
+        for action, (name_label, what) in self.action_labels.items():
+            label, text = self.settings.action_text(action)
+            name_label.setText(f"<b>{label}</b>")
+            what.setText(text)
         self.cone.blockSignals(True)
         index = self.cone.findData(int(self.settings.aim_cone))
         self.cone.setCurrentIndex(index if index >= 0 else self.cone.findData(90))
@@ -175,6 +201,11 @@ class ControlsEditor(QWidget):
 
     def _cone_changed(self) -> None:
         self.settings.aim_cone = int(self.cone.currentData())
+        self._save()
+
+    def _movement_changed(self) -> None:
+        self.settings.movement = str(self.movement.currentData())
+        self._sync()
         self._save()
 
     def _face_changed(self, checked: bool) -> None:
