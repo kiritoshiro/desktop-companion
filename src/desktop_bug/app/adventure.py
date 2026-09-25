@@ -8,12 +8,24 @@ from .controls import ControlSettings, clamp_to_cone
 
 
 class PlayerController:
+    """One spider's Adventure rules: aim cone, stamina, silk, cooldowns, reach.
+
+    The player's spider and every mission spider (MissionActor subclasses
+    this) act through the same ``shoot``, ``bite`` and ``jump``, so no spider
+    can do what the player's cannot -- the owner: "make sure all spiders have
+    the same rules ... its just that i can control mine."
+    """
+
     WEB_RANGE = 320.0
     WEB_COOLDOWN = 1.2
     WEB_ENERGY = 12.0
     JUMP_ENERGY = 18.0
     JUMP_COOLDOWN = 0.65
     SPRINT_DRAIN = 24.0
+    BITE_REACH = 3.0             # body sizes
+    POUNCE_DISTANCE = 75.0       # px a pounce carries
+    SILK_CAPACITY = 8
+    LOOM_SILK_CAPACITY = 12      # while your side holds the Silk loom
 
     # How far off the aim line a target may be and still be hit, at least.
     AIM_TOLERANCE = 28.0
@@ -34,7 +46,7 @@ class PlayerController:
         self.jump_cooldown = 0.0
         self.paused = False
         self.sprint_exhausted = False
-        self.silk_capacity = 8
+        self.silk_capacity = self.SILK_CAPACITY
         self.silk = float(self.silk_capacity)
         self.feedback = ""
         self.feedback_time = 0.0
@@ -73,6 +85,20 @@ class PlayerController:
         wanted = math.atan2(ay - spider.y, ax - spider.x)
         return clamp_to_cone(spider.heading, wanted, self.controls.half_cone)
 
+    def in_cone(self, target) -> bool:
+        """Is ``target`` inside the view cone (allowing for its own size)?"""
+        spider = self.creature
+        dx, dy = target.x - spider.x, target.y - spider.y
+        dist = math.hypot(dx, dy)
+        if dist < 1e-6:
+            return True
+        body = max(8.0, float(getattr(target, "size", 10.0)))
+        off_heading = abs((math.atan2(dy, dx) - spider.heading + math.pi) % math.tau - math.pi)
+        return off_heading <= self.controls.half_cone + math.atan2(body, dist)
+
+    def bite_reach(self) -> float:
+        return self.creature.size * self.BITE_REACH
+
     def _in_front(self, target, reach: float, tolerance: float):
         """(offset from the aim line, distance) if ``target`` can be hit, else None.
 
@@ -84,9 +110,7 @@ class PlayerController:
         dist = math.hypot(dx, dy)
         if dist > reach or dist < 1e-6:
             return None
-        body = max(8.0, float(getattr(target, "size", 10.0)))
-        off_heading = abs((math.atan2(dy, dx) - spider.heading + math.pi) % math.tau - math.pi)
-        if off_heading > self.controls.half_cone + math.atan2(body, dist):
+        if not self.in_cone(target):
             return None
         angle = self.aim_angle()
         along = dx * math.cos(angle) + dy * math.sin(angle)
@@ -227,8 +251,8 @@ class PlayerController:
             # Standing, or backing up: pounce the way the spider faces.
             dx, dy = math.cos(spider.heading), math.sin(spider.heading)
             length = 1.0
-        spider._launch_jump(spider.x + dx / length * 75.0,
-                            spider.y + dy / length * 75.0,
+        spider._launch_jump(spider.x + dx / length * self.POUNCE_DISTANCE,
+                            spider.y + dy / length * self.POUNCE_DISTANCE,
                             kind="pounce", after="idle")
         self.jump_cooldown = self.JUMP_COOLDOWN
         return True
@@ -240,7 +264,7 @@ class PlayerController:
         if spider.webbed_held:
             self._webbed_feedback()
             return False
-        reach = spider.size * 3.0
+        reach = self.bite_reach()
         tolerance = max(self.AIM_TOLERANCE, spider.size * 1.5)
         foes = []
         for target in manager.creatures:
