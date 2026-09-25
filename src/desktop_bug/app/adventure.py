@@ -38,6 +38,7 @@ class PlayerController:
         self.silk = float(self.silk_capacity)
         self.feedback = ""
         self.feedback_time = 0.0
+        self._was_webbed = False
         creature.player_control = self
         creature._prey = None
         creature._hunting_prey = False
@@ -96,12 +97,21 @@ class PlayerController:
             return None
         return across, dist
 
+    @property
+    def struggling(self) -> bool:
+        """Webbed, the player fights the silk by holding a movement key."""
+        return bool(self.held & {"move_up", "move_down", "move_left", "move_right"})
+
     def clear_keys(self):
         self.held.clear()
 
     def update(self, dt: float):
         spider = self.creature
         self.feedback_time = max(0.0, self.feedback_time - dt)
+        if spider.webbed and not self._was_webbed:
+            self.feedback = "Webbed! Hold a direction to struggle free."
+            self.feedback_time = 2.5
+        self._was_webbed = spider.webbed
         self.web_cooldown = max(0.0, self.web_cooldown - dt)
         self.jump_cooldown = max(0.0, self.jump_cooldown - dt)
         if self.paused:
