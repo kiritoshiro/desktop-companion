@@ -14,7 +14,8 @@ dist/
 
 # Runtime/user-created data
 presets/*.local.json
-state/
+# Anchored: an unanchored state/ also matched the src/desktop_bug/state package.
+/state/
 *.tmp
 
 # Editor and OS files
