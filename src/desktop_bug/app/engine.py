@@ -43,6 +43,8 @@ from ..manager import CreatureManager
 from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from .adventure import PlayerController
+from .mission import TerritoryMission
+from .mission_ui import draw_buildings, draw_mission_hud, command_rects, mission_banner_rect
 from .adventure_ui import AdventureSettingsDialog, PauseDialog, draw_hud, hud_rect
 from . import window_placement, wood_theme
 from .controls import controls_path, load_controls
@@ -519,6 +521,7 @@ class OverlayWindow(_OverlayBase):
         super().__init__(None)
         self.mode = mode
         self.player = None
+        self.mission = None
         self._adventure_paused = False
         self._adventure_hud_position = None
         self._adventure_hud_drag_offset = None
@@ -553,12 +556,12 @@ class OverlayWindow(_OverlayBase):
         self._last_camouflage_sample_ms = 0
         self.setGeometry(self.geometry_rect)
         self.manager = CreatureManager(preset_path, self.width(), self.height(), seed=seed)
-        if mode == "adventure":
-            self.manager.interferable = False
-            self.manager.naming_enabled = False
-            self.manager.allow_mouse_capture = False
-            self._possess_next_spider()
         self.manager.set_screen_rects(screen_rects_local(self.geometry_rect.topLeft()))
+        if mode == "adventure":
+            area = window_placement.primary_rect_local(self.geometry_rect.topLeft())
+            arena = ScreenRect(area.x(), area.y(), area.width(), area.height()) if not area.isEmpty() else None
+            self.mission = TerritoryMission(self.manager, self.controls, arena)
+            self.player = self.mission.player
         for warning in self.manager.warnings:
             log.warning("%s", warning)
 
@@ -940,13 +943,17 @@ class OverlayWindow(_OverlayBase):
         # manager returns the overlay-local position the pointer should be forced
         # to this frame (or None to leave it alone). Only the engine can move the
         # real OS pointer, so apply it here, converting back to global pixels.
-        desired = self.manager.update(
-            dt, mx, my,
-            mouse_down=mouse_down and self.mode != "adventure",
-            mouse_pressed=mouse_pressed and self.mode != "adventure",
-            mouse_released=mouse_released and self.mode != "adventure",
-        )
-        if self.player is not None and self.player.creature.dead:
+        if self.mission is not None:
+            self.mission.update(dt)
+            desired = None
+        else:
+            desired = self.manager.update(
+                dt, mx, my,
+                mouse_down=mouse_down and self.mode != "adventure",
+                mouse_pressed=mouse_pressed and self.mode != "adventure",
+                mouse_released=mouse_released and self.mode != "adventure",
+            )
+        if self.mission is None and self.player is not None and self.player.creature.dead:
             self.player.release()
             self.player = None
         if desired is not None:
@@ -1007,6 +1014,9 @@ class OverlayWindow(_OverlayBase):
     # Partial repaint
     # ------------------------------------------------------------------
     def request_repaint(self) -> None:
+        if getattr(self, "mission", None) is not None:
+            self.update()
+            return
         self._frames_since_full_repaint += 1
         if self._full_repaint_pending or self._frames_since_full_repaint >= FULL_REPAINT_SAFETY_FRAMES:
             self._full_repaint_pending = False
@@ -1151,6 +1161,8 @@ class OverlayWindow(_OverlayBase):
             painter.fillRect(rect, Qt.transparent)
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
+        if self.mission is not None:
+            draw_buildings(painter, self.mission)
         self.manager.render(painter)
         if self.mode == "adventure":
             if self.player is not None:
@@ -1164,6 +1176,8 @@ class OverlayWindow(_OverlayBase):
             painter.drawEllipse(aim, 7, 7)
             painter.drawLine(aim.x() - 12, aim.y(), aim.x() - 4, aim.y())
             painter.drawLine(aim.x() + 4, aim.y(), aim.x() + 12, aim.y())
+        if self.mission is not None:
+            draw_mission_hud(painter, self, self.mission)
         if self.show_profile_hud:
             self._draw_profile_hud(painter)
         painter.end()
@@ -1254,6 +1268,13 @@ class OverlayWindow(_OverlayBase):
                 self._show_adventure_skills()
             return True
         player = self.player
+        mission = getattr(self, "mission", None)
+        if mission is not None and mission.state != "active":
+            return True
+        if action.startswith("companion_") and mission is not None:
+            if down and not repeat and not self._adventure_paused:
+                mission.issue(action.removeprefix("companion_"), player.aim)
+            return True
         if player is None or self._adventure_paused:
             return True
         if action in ("move_up", "move_down", "move_left", "move_right", "sprint"):
@@ -1335,6 +1356,10 @@ class OverlayWindow(_OverlayBase):
                 self.manager.save_runtime_state()
             if choice == "save":
                 continue
+            if choice == "restart" and self.mission is not None:
+                self.mission = TerritoryMission(self.manager, self.controls, self.mission.area)
+                self.player = self.mission.player
+                break
             if choice == "release" and self.player is not None:
                 self.player.release()
                 self.player = None
@@ -1353,6 +1378,16 @@ class OverlayWindow(_OverlayBase):
             if self._adventure_paused:
                 return
             local = event.globalPos() - self.geometry_rect.topLeft()
+            mission = getattr(self, "mission", None)
+            if mission is not None and event.button() == Qt.LeftButton:
+                for command, rect in command_rects(self):
+                    if rect.contains(local):
+                        mission.issue(command, self.player.aim)
+                        event.accept()
+                        return
+                if mission_banner_rect(self).contains(local):
+                    event.accept()
+                    return
             if (self.player is not None and event.button() == Qt.LeftButton
                     and hud_rect(self).contains(local)):
                 self._adventure_hud_drag_offset = local - hud_rect(self).topLeft()
@@ -1643,6 +1678,8 @@ class OverlayWindow(_OverlayBase):
     def _on_channel_message(self, message: dict) -> None:
         """Handle a JSON message pushed by a connected settings window."""
         mtype = message.get("type")
+        if self.mode == "adventure" and mtype in ("preset_update", "reset_progress"):
+            return
         if mtype == "preset_update":
             self._apply_pushed_preset(message.get("data"), message.get("preset_path"))
         elif mtype == "stop_request":
@@ -1663,7 +1700,7 @@ class OverlayWindow(_OverlayBase):
         sync, but takes effect immediately instead of waiting up to
         PRESET_WATCH_MS for the next poll.
         """
-        if not isinstance(data, dict):
+        if self.mode == "adventure" or not isinstance(data, dict):
             return
         if preset_path:
             try:
@@ -1711,6 +1748,8 @@ class OverlayWindow(_OverlayBase):
 
     def _check_preset_reload(self) -> None:
         """Reload the launched preset if its file changed, applying edits live."""
+        if self.mode == "adventure":
+            return
         try:
             mtime = self._preset_path.stat().st_mtime
         except OSError:

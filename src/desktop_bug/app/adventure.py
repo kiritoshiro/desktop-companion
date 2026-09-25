@@ -31,6 +31,10 @@ class PlayerController:
         self.jump_cooldown = 0.0
         self.paused = False
         self.sprint_exhausted = False
+        self.silk_capacity = 8
+        self.silk = float(self.silk_capacity)
+        self.feedback = ""
+        self.feedback_time = 0.0
         creature.player_control = self
         creature._prey = None
         creature._hunting_prey = False
@@ -93,6 +97,7 @@ class PlayerController:
 
     def update(self, dt: float):
         spider = self.creature
+        self.feedback_time = max(0.0, self.feedback_time - dt)
         self.web_cooldown = max(0.0, self.web_cooldown - dt)
         self.jump_cooldown = max(0.0, self.jump_cooldown - dt)
         if self.paused:
@@ -127,6 +132,12 @@ class PlayerController:
                 if (self.controls.face_mouse_when_still
                         and math.hypot(ax - spider.x, ay - spider.y) > spider.size):
                     spider.target_heading = math.atan2(ay - spider.y, ax - spider.x)
+        if spider.webbed:
+            spider.speed *= 0.25
+        self.advance_pose(dt)
+
+    def advance_pose(self, dt: float):
+        spider = self.creature
         if spider.airborne:
             spider._update_jump(dt)
         else:
@@ -190,33 +201,17 @@ class PlayerController:
         spider = self.creature
         if self.paused or spider.dead or spider.airborne or self.web_cooldown > 0.0:
             return False
-        candidates = []
-        for target in manager.creatures:
-            if target is spider or target.dead or target.webbed:
-                continue
-            if spider.relation_to(target) != "foe":
-                continue
-            candidates.append(target)
-        candidates.extend(fly for fly in manager.fly_world.flies
-                          if fly.alive and not fly.eaten and not fly.trapped)
-        # Anything ahead, inside the cone and near the aim line; the one
-        # closest to the line wins, then the nearer of two.
-        tolerance = max(self.AIM_TOLERANCE, spider.size * 1.4)
-        hits = []
-        for target in candidates:
-            hit = self._in_front(target, self.WEB_RANGE, tolerance)
-            if hit is not None:
-                hits.append((hit, target))
-        if not hits:
+        if self.silk < 1 or spider.energy < self.WEB_ENERGY:
+            self.feedback = ("Silk empty - refill at home or a captured loom"
+                             if self.silk < 1 else "Not enough stamina")
+            self.feedback_time = 2.5
             return False
-        target = min(hits, key=lambda item: item[0])[1]
-        if spider.energy < self.WEB_ENERGY:
-            return False
-        if target in manager.creatures:
-            launched = manager.fly_world.launch_web_shot_at_creature(spider, target)
-        else:
-            launched = manager.fly_world.launch_web_shot(spider, target)
-        if launched:
-            spider.spend_energy(self.WEB_ENERGY)
-            self.web_cooldown = self.WEB_COOLDOWN
-        return launched
+        from ..world.aimed_silk import AimedSilk
+
+        manager.fly_world.projectiles.append(AimedSilk(
+            spider, self.aim_angle(), self.WEB_RANGE,
+            lambda: manager.creatures, lambda: manager.fly_world.flies))
+        spider.spend_energy(self.WEB_ENERGY)
+        self.silk -= 1
+        self.web_cooldown = self.WEB_COOLDOWN
+        return True

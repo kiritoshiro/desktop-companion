@@ -15,6 +15,9 @@ window afterwards is the player's business, so it only happens once.
 
 from __future__ import annotations
 
+import atexit
+
+from PyQt5 import sip
 from PyQt5.QtCore import QEvent, QObject, QPoint, QRect, Qt
 from PyQt5.QtGui import QGuiApplication
 
@@ -71,3 +74,22 @@ def install(app) -> None:
     if _filter is None:
         _filter = PrimaryCenterFilter(app)
         app.installEventFilter(_filter)
+        app.aboutToQuit.connect(uninstall)
+
+
+def uninstall() -> None:
+    """Detach Python callbacks before Qt destroys windows during interpreter exit.
+
+    Larger Adventure dialogs exposed a Windows access violation when the global
+    Show-event filter survived into QApplication's native destruction. Normal
+    app exit uses aboutToQuit; atexit also covers headless tools and tests which
+    do not enter the event loop.
+    """
+    global _filter
+    app = QGuiApplication.instance()
+    if app is not None and _filter is not None and not sip.isdeleted(_filter):
+        app.removeEventFilter(_filter)
+    _filter = None
+
+
+atexit.register(uninstall)

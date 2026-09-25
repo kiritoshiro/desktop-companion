@@ -91,7 +91,8 @@ def test_the_hud_paints_on_wood():
         display_name="Rex", level=3, hp=40.0, max_hp=100.0, energy=20.0, max_energy=100.0,
         attack_cooldown=0.0, _label_font=QFont)
     controller = SimpleNamespace(creature=spider, jump_cooldown=0.0, web_cooldown=1.0,
-                                 JUMP_ENERGY=18.0, WEB_ENERGY=12.0)
+                                 JUMP_ENERGY=18.0, WEB_ENERGY=12.0,
+                                 silk=8.0, silk_capacity=8, feedback_time=0.0)
     window = SimpleNamespace(width=lambda: 600, height=lambda: 200, _adventure_hud_position=None)
     image = QImage(600, 200, QImage.Format_ARGB32_Premultiplied)
     image.fill(QColor(0, 0, 0, 0))

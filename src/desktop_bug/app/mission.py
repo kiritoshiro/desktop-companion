@@ -1,0 +1,391 @@
+"""A bounded, isolated territory raid. No Companion state is written here."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import copy
+import json
+import math
+
+from .adventure import PlayerController
+from ..content.discovery import state_dir
+from ..world.aimed_silk import AimedSilk
+from ..world.playfield import Playfield, ScreenRect
+from ..state.progression import ProgressionState
+
+
+@dataclass
+class MissionSite:
+    kind: str
+    name: str
+    x: float
+    y: float
+    owned: bool = False
+    progress: float = 0.0
+    contested: bool = False
+    reserves: int = 0
+    warning: float = 0.0
+    supply: float = 180.0
+
+
+class MissionActor(PlayerController):
+    """Small combat brain using the existing procedural locomotion."""
+    def __init__(self, creature, mission, role, home, raider=False):
+        super().__init__(creature)
+        self.mission = mission
+        self.role = role
+        self.home = home
+        self.raider = raider
+        self.windup = 0.0
+        self.strike_target = None
+        self.strike_point = home
+        self.target = None
+        self.think = creature.index * 0.013
+
+    def update(self, dt):
+        c, m = self.creature, self.mission
+        self.think -= dt
+        self.web_cooldown = max(0.0, self.web_cooldown - dt)
+        if self.think <= 0:
+            self.think = 0.15
+            targets = [s for s in m.manager.creatures if not s.dead and c.relation_to(s) == "foe"]
+            if self.role == "ally":
+                anchor = m.defend_point if m.command == "defend" else (m.hero.x, m.hero.y)
+                self.home = anchor if m.command == "defend" else m.area.clamp(
+                    anchor[0] - math.cos(m.hero.heading)*85,
+                    anchor[1] - math.sin(m.hero.heading)*85, c.size*2)
+                targets = [s for s in targets if math.hypot(s.x-anchor[0], s.y-anchor[1]) < 220]
+                if m.command == "attack" and m.attack_target is not None and not m.attack_target.dead:
+                    targets = [m.attack_target]
+            elif not self.raider:
+                refuge = m.sites[0]
+                targets = [s for s in targets if math.hypot(s.x-self.home[0], s.y-self.home[1]) < 260
+                           and math.hypot(s.x-refuge.x, s.y-refuge.y) > 130]
+            self.target = min(targets, key=lambda s: math.hypot(s.x-c.x, s.y-c.y), default=None)
+        target = self.target
+        if target is not None and target.dead:
+            target = self.target = None
+        tx, ty = (target.x, target.y) if target is not None else self.home
+        gap = math.hypot(tx-c.x, ty-c.y)
+        reach = c.size * 2.8
+        c.motion_paused = gap < (reach * 0.78 if target else 22)
+        c.speed = 95.0 if self.role == "hunter" else 68.0
+        if target is not None and self.role == "weaver":
+            c.motion_paused = 135 < gap < 230
+            if gap < 135:
+                tx, ty = c.x + (c.x-tx), c.y + (c.y-ty)
+        if self.windup > 0:
+            c.motion_paused = True
+            self.windup -= dt
+            if c.webbed:
+                self.windup = 0
+                c.attack_cooldown = 0.9
+            elif self.windup <= 0:
+                victim = self.strike_target
+                if self.role == "weaver":
+                    angle = math.atan2(self.strike_point[1]-c.y, self.strike_point[0]-c.x)
+                    m.manager.fly_world.projectiles.append(AimedSilk(
+                        c, angle, 300, lambda: m.manager.creatures, lambda: []))
+                    self.web_cooldown = 3.5
+                elif (self.role == "hunter" and victim is not None
+                      and math.hypot(self.strike_point[0]-c.x, self.strike_point[1]-c.y) >= reach):
+                    c._launch_jump(*m.area.clamp(*self.strike_point, c.size*2), kind="pounce", after="idle")
+                elif victim is not None and not victim.dead and not victim.airborne:
+                    if math.hypot(victim.x-c.x, victim.y-c.y) < reach:
+                        m.manager._trade_blow(c, victim)
+                c.attack_cooldown = 1.4 if self.role != "guardian" else 1.8
+        elif (target is not None and not c.webbed and not c.airborne
+              and c.attack_cooldown <= 0
+              and ((self.role == "weaver" and gap < 300 and self.web_cooldown <= 0)
+                   or (self.role == "hunter" and gap < 175) or gap < reach)):
+            # At most two foes commit to attacks at once; warnings remain readable.
+            busy = sum(a.windup > 0 for a in m.actors if a.role != "ally")
+            if self.role == "ally" or busy < 2:
+                self.windup = 0.7 if self.role == "guardian" else 0.55
+                self.strike_target = target
+                self.strike_point = (target.x, target.y)
+                c.begin_strike(target.x, target.y)
+        c.target_x, c.target_y = m.manager.playfield.clamp(tx, ty, c.size)
+        if target is not None:
+            c.target_heading = math.atan2(target.y-c.y, target.x-c.x)
+        if c.webbed:
+            c.speed *= 0.25
+        if not c.airborne:
+            c.state = "Player"
+        self.advance_pose(dt)
+
+
+class TerritoryMission:
+    CAP = 10
+    CAPTURE_SECONDS = 4.0
+
+    def __init__(self, manager, controls, area=None):
+        self.manager = manager
+        self.controls = controls
+        self.elapsed = 0.0
+        self.state = "active"
+        self.command = "follow"
+        self.attack_target = None
+        self.hover_target = None
+        self.notice = "Capture Food or Silk, then seal the Hatchery. Hold clear sites for 4 seconds."
+        self.notice_time = 9.0
+        self.wave_clock = 28.0
+        self.pending = []
+        self.counter_started = False
+        self.guardian = None
+        self.guardian_warning = None
+        self.actors = []
+        self.saved = False
+        self.save_error = ""
+        self._serial = 0
+        self.progress_path = state_dir() / "adventure-hero.json"
+        previous = getattr(manager, "mission", None)
+        source = previous.hero if previous else next((c for c in manager.creatures if not c.dead), None)
+        if source is None:
+            raise ValueError("Adventure needs at least one spider in the preset")
+        self.model = source.model
+        self.personality = source.personality
+        self.start_progress = copy.deepcopy(previous.start_progress if previous else source.progression.to_dict())
+        try:
+            saved = json.loads(self.progress_path.read_text(encoding="utf-8"))
+            if isinstance(saved.get("progression"), dict):
+                self.start_progress = ProgressionState.from_dict(saved["progression"]).to_dict()
+        except (OSError, ValueError, AttributeError):
+            pass
+        # Mission factions are fixed, regardless of Companion diplomacy.
+        self.start_progress["relation_overrides"] = {}
+        manager.mission = self
+        manager.conflict_enabled = True
+        manager.interferable = manager.naming_enabled = manager.allow_mouse_capture = False
+        manager.cages.clear()
+        manager.web_world.clear()
+        manager.fly_world.clear()
+        manager.fly_world.clear_spawners()
+        manager.fly_world.remains.clear()
+        manager.base_world.clear()
+        manager.carcasses.clear()
+        manager.creatures = []
+        manager._render_order = []
+        manager.team_stances = {"adventurers": {"rivals": "foe"}}
+        if area is None:
+            area = max(manager.playfield.rects, key=lambda r: r.w*r.h,
+                       default=ScreenRect(0, 0, manager.screen_w, manager.screen_h))
+        # One real monitor is a complete arena, avoiding disconnected screen gaps.
+        self.area = area
+        self.playfield = Playfield(manager.screen_w, manager.screen_h, [area])
+        def point(fx, fy):
+            usable_height = max(160, area.h - 360)
+            return area.clamp(area.x + area.w*fx, area.y + 115 + usable_height*fy, 85)
+        self.sites = [
+            MissionSite("home", "Home burrow", *point(.16, .57), owned=True),
+            MissionSite("food", "Food cache", *point(.39, .29)),
+            MissionSite("silk", "Silk loom", *point(.39, .70)),
+            MissionSite("hatchery", "Hatchery", *point(.64, .47), reserves=6),
+            MissionSite("nest", "Thorn nest", *point(.83, .30)),
+        ]
+        self.hero = self._spawn("hero", (self.sites[0].x, self.sites[0].y))
+        self.player = PlayerController(self.hero, controls)
+        self.ally = self._spawn("ally", (self.hero.x+45, self.hero.y+65))
+        self.defend_point = (self.ally.x, self.ally.y)
+        for site, role in zip(self.sites[1:4], ("guard", "weaver", "hunter")):
+            self._spawn(role, (site.x+35, site.y+40))
+        manager._refresh_neighbor_links()
+        manager._refresh_render_order()
+
+    def _spawn(self, role, pos, raider=False):
+        if sum(not c.dead for c in self.manager.creatures) >= self.CAP:
+            return None
+        self._serial += 1
+        progress = copy.deepcopy(self.start_progress) if role == "hero" else {"level": max(1, int(self.start_progress.get("level", 1)))}
+        c = self.manager._create_creature(
+            self.model, self.personality, self._serial, pos=pos,
+            progression_state=progress, progression_id=f"mission-{self._serial}",
+            team_id="adventurers" if role in ("hero", "ally") else "rivals",
+            skills=["jump", "shoot_web", "chase", "approach"])
+        c.set_name({"hero": "Wayfarer", "ally": "Scout", "guardian": "Thorn guardian"}.get(role, role.title()))
+        c.playfield = self.playfield
+        c.hp = c.max_hp
+        c.energy = c.max_energy
+        c.heading = c.target_heading = 0 if role in ("hero", "ally") else math.pi
+        if role == "guardian":
+            c.max_hp *= 2.5
+            c.hp = c.max_hp
+            c.damage *= 1.25
+        elif role != "hero":
+            c.max_hp *= .75 if role == "weaver" else .9
+            c.hp = c.max_hp
+            c.damage *= .65
+        self.manager.creatures.append(c)
+        if role != "hero":
+            self.actors.append(MissionActor(c, self, role, pos, raider))
+        self.manager._refresh_render_order()
+        return c
+
+    def issue(self, command, aim):
+        if self.state != "active":
+            return
+        if self.ally.dead:
+            self.announce("Scout has fallen. You can still finish the raid.")
+            return
+        if command == "attack":
+            targets = [c for c in self.manager.creatures if not c.dead and self.hero.relation_to(c) == "foe"]
+            target = min(targets, key=lambda c: math.hypot(c.x-aim[0], c.y-aim[1]), default=None)
+            if target is None or math.hypot(target.x-aim[0], target.y-aim[1]) > 100:
+                target = self.hover_target
+            if target is None or target.dead:
+                self.announce("Point at an enemy, then press Attack target.")
+                return
+            self.attack_target = target
+        self.command = command
+        if command == "defend":
+            self.defend_point = (self.ally.x, self.ally.y)
+        self.announce({"follow": "Scout: following you", "defend": "Scout: defending this position",
+                       "attack": "Scout: attacking your target"}[command])
+        for actor in self.actors:
+            if actor.role == "ally":
+                actor.think = 0
+
+    def announce(self, text):
+        self.notice, self.notice_time = text, 5.0
+
+    @property
+    def objective(self):
+        if self.state == "victory":
+            return "VICTORY - the desktop is yours"
+        if self.state == "defeat":
+            return "RAID ENDED - your spider has fallen"
+        if not any(s.owned for s in self.sites[1:3]):
+            return "01 / Capture the Food cache or Silk loom"
+        if not self.sites[3].owned:
+            return "02 / Seal the Hatchery to stop reinforcements"
+        if any(raider for _, _, raider in self.pending) or any(a.raider and not a.creature.dead for a in self.actors):
+            return "03 / Defeat the counterattack"
+        return "04 / Defeat the guardian and claim Thorn nest"
+
+    def update(self, dt):
+        if self.state != "active":
+            return
+        dt = min(.05, max(0, dt))
+        self.elapsed += dt
+        for enemy in self.manager.creatures:
+            if (not enemy.dead and self.hero.relation_to(enemy) == "foe"
+                    and math.hypot(enemy.x-self.player.aim[0], enemy.y-self.player.aim[1]) < 75):
+                self.hover_target = enemy
+        self.notice_time = max(0, self.notice_time-dt)
+        for c in list(self.manager.creatures):
+            c.update(dt, -10000, -10000, self.manager.screen_w, self.manager.screen_h)
+            c.x, c.y = self.area.clamp(c.x, c.y, c.margin)
+        for projectile in self.manager.fly_world.projectiles:
+            projectile.update(dt)
+        self.manager.fly_world.projectiles = [p for p in self.manager.fly_world.projectiles if not p.done]
+        self.manager._bury_the_dead()
+        self.actors = [a for a in self.actors if not a.creature.dead]
+        self.manager.carcasses = [c for c in self.manager.carcasses[-4:] if not c.update(dt)]
+        if self.hero.dead:
+            self.state = "defeat"
+            self.player.clear_keys()
+            return
+        if self.command == "attack" and (self.attack_target is None or self.attack_target.dead):
+            self.command = "follow"
+            self.attack_target = None
+        for site in self.sites:
+            site.contested = any(not c.dead and self.hero.relation_to(c) == "foe"
+                                 and math.hypot(c.x-site.x, c.y-site.y) < 125
+                                 for c in self.manager.creatures)
+            near = math.hypot(self.hero.x-site.x, self.hero.y-site.y) < 92
+            if site.owned:
+                if near and not site.contested:
+                    if site.kind in ("home", "silk"):
+                        self.player.silk = min(self.player.silk_capacity, self.player.silk + dt*(3 if site.kind == "silk" else 1))
+                    if site.kind in ("home", "food") and site.supply > 0:
+                        amount = min(dt*(8 if site.kind == "food" else 3), site.supply, self.hero.max_hp-self.hero.hp)
+                        self.hero.heal(amount)
+                        site.supply -= amount
+                continue
+            unlocked = site.kind != "nest" or (self.sites[3].owned and any(s.owned for s in self.sites[1:3])
+                        and self.guardian is not None and self.guardian.dead
+                        and not self.pending and not any(a.raider for a in self.actors))
+            if near and not site.contested and unlocked:
+                site.progress = min(1, site.progress + dt/self.CAPTURE_SECONDS)
+                if site.progress >= 1:
+                    self.capture(site)
+            elif not near:
+                site.progress = max(0, site.progress - dt*.12)
+        self._spawning(dt)
+
+    def capture(self, site):
+        if site.owned:
+            return
+        site.owned = True
+        self.hero.gain_experience(35, "territory captured")
+        self.announce(f"{site.name} secured")
+        if site.kind == "silk":
+            self.player.silk_capacity = 12
+            self.player.silk = 12.0
+        if site.kind == "hatchery":
+            site.reserves = 0
+            site.warning = 0
+            self.pending = [entry for entry in self.pending if entry[0] != "hatchery"]
+        if site.kind in ("food", "silk") and not self.counter_started:
+            self.counter_started = True
+            self.pending.extend([("nest", "hunter", True), ("nest", "guard", True)])
+            self.sites[4].warning = 4.0
+            self.announce("Outpost secured! Counterattack from Thorn nest in 4 seconds.")
+        if site.kind == "nest":
+            self.state = "victory"
+            self.hero.gain_experience(100, "raid complete")
+            self.player.clear_keys()
+            self.save_progress()
+
+    def _spawning(self, dt):
+        hatch = self.sites[3]
+        self.wave_clock -= dt
+        if not hatch.owned and hatch.reserves > 0 and self.wave_clock <= 0:
+            if not any(e[0] == "hatchery" for e in self.pending):
+                self.pending.append(("hatchery", "hunter", True))
+                hatch.warning = 3.0
+                self.announce("The Hatchery is stirring - a hunter is emerging")
+            self.wave_clock = 24.0
+        for site in self.sites:
+            site.warning = max(0, site.warning-dt)
+        for entry in list(self.pending):
+            source, role, raider = entry
+            site = next(s for s in self.sites if s.kind == source)
+            if site.owned or (source == "hatchery" and site.reserves <= 0):
+                self.pending.remove(entry)
+                continue
+            if site.warning > 0 or len(self.manager.creatures) >= 8:
+                continue
+            pos = self.area.clamp(site.x+50, site.y+50, 65)
+            if math.hypot(self.hero.x-pos[0], self.hero.y-pos[1]) < 150:
+                continue
+            if self._spawn(role, pos, raider) is not None:
+                self.pending.remove(entry)
+                if source == "hatchery":
+                    site.reserves -= 1
+                site.warning = 1.5 if any(e[0] == source for e in self.pending) else 0
+        if (self.guardian is None and hatch.owned and any(s.owned for s in self.sites[1:3])
+                and not self.pending and not any(a.raider for a in self.actors)):
+            nest = self.sites[4]
+            if self.guardian_warning is None:
+                self.guardian_warning = 4.0
+                self.announce("Thorn nest is stirring. The guardian will emerge in 4 seconds.")
+            self.guardian_warning = max(0.0, self.guardian_warning-dt)
+            nest.warning = self.guardian_warning
+            if self.guardian_warning <= 0 and math.hypot(self.hero.x-nest.x, self.hero.y-nest.y) >= 150:
+                self.guardian = self._spawn("guardian", (nest.x, nest.y))
+                if self.guardian is not None:
+                    self.announce("Thorn guardian awakened. Bait its strike, then counterattack.")
+
+    def save_progress(self):
+        """Bank a victory once; mission entities never enter creatures.json."""
+        if self.state != "victory" or self.saved:
+            return
+        try:
+            self.progress_path.parent.mkdir(parents=True, exist_ok=True)
+            temp = self.progress_path.with_suffix(".tmp")
+            temp.write_text(json.dumps({"version": 1, "progression": self.hero.progression.to_dict()}, indent=2), encoding="utf-8")
+            temp.replace(self.progress_path)
+            self.saved = True
+            self.save_error = ""
+        except OSError:
+            self.save_error = "Progress could not be saved. Retry from the pause menu."

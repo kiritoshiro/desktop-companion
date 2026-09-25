@@ -14,7 +14,7 @@ from . import wood_theme
 
 
 HUD_WIDTH = 430
-HUD_HEIGHT = 134
+HUD_HEIGHT = 210
 
 _BRASS = QColor(wood_theme.BRASS)
 _CREAM = QColor(wood_theme.CREAM)
@@ -141,6 +141,7 @@ def draw_hud(painter, window, controller):
 
     bar(rect.top() + 44, "HEALTH", spider.hp, spider.max_hp, wood_theme.HEALTH)
     bar(rect.top() + 68, "STAMINA", spider.energy, spider.max_energy, wood_theme.STAMINA)
+    bar(rect.top() + 92, "SILK", controller.silk, controller.silk_capacity, "#c6dfd6")
     controls = getattr(controller, "controls", None)
 
     def key(action, default):
@@ -150,14 +151,14 @@ def draw_hud(painter, window, controller):
         ("jump", key("jump", "SPACE"), "Jump", controller.jump_cooldown,
          spider.energy >= controller.JUMP_ENERGY),
         ("web", key("shoot", "L CLICK"), "Web", controller.web_cooldown,
-         spider.energy >= controller.WEB_ENERGY),
+         spider.energy >= controller.WEB_ENERGY and controller.silk >= 1),
         ("bite", key("bite", "R CLICK"), "Bite", spider.attack_cooldown, True),
         ("skills", key("skills", "K"), "Skills", 0.0, True),
     )
     card_width = (rect.width() - 38) // 4
     for index, (kind, key, label, cooldown, enough_energy) in enumerate(slots):
         card = QRect(rect.left() + 12 + index * (card_width + 5),
-                     rect.top() + 84, card_width, 40)
+                     rect.top() + 108, card_width, 40)
         ready = cooldown <= 0.0 and enough_energy
         _well(painter, card, 7, lit=ready)
         if ready:
@@ -192,6 +193,9 @@ def draw_hud(painter, window, controller):
         painter.setPen(color)
         painter.drawText(card.left() + 33, card.top() + 31,
                          f"{cooldown:.1f}s" if cooldown > 0.0 else label)
+    if controller.feedback_time > 0:
+        painter.setPen(QColor("#ffe2a5"))
+        painter.drawText(rect.adjusted(12, -25, -12, -rect.height()), Qt.AlignCenter, controller.feedback)
     painter.restore()
 
 
@@ -210,14 +214,20 @@ class PauseDialog(QDialog):
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         layout.addSpacing(4)
-        for label, choice in (
+        mission = getattr(parent, "mission", None)
+        choices = (
             ("Resume", "resume"),
             ("Skill tree", "skills"),
             ("Save", "save"),
             ("Settings", "settings"),
             ("Release spider", "release"),
             ("Save and exit", "exit"),
-        ):
+        )
+        if mission is not None:
+            choices = (("Resume", "resume"), ("Skill tree", "skills"),
+                       ("Settings", "settings"), ("Restart raid", "restart"),
+                       ("Retry saving victory", "save"), ("Exit raid", "exit"))
+        for label, choice in choices:
             button = QPushButton(label)
             button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda _=False, value=choice: self._choose(value))

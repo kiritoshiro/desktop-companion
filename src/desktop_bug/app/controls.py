@@ -32,8 +32,11 @@ ACTIONS = (
     ("move_right", "Move right", "Walk right."),
     ("sprint", "Sprint", "Hold while moving to run faster. Drains stamina."),
     ("jump", "Jump", "Pounce forward in the direction you are walking."),
-    ("shoot", "Shoot silk", "Fire a web at the fly or foe nearest your aim, inside the aim cone."),
+    ("shoot", "Shoot silk", "Fire one silk charge along your aim, even if it misses. Refill at home or the Silk loom."),
     ("bite", "Bite", "Bite a foe in front of you, inside the aim cone."),
+    ("companion_follow", "Scout: follow", "Your companion follows and fights nearby enemies."),
+    ("companion_defend", "Scout: defend here", "Your companion holds its current position and protects the area."),
+    ("companion_attack", "Scout: attack target", "Point at an enemy and order your companion to attack it."),
     ("skills", "Skill tree", "Open the skill tree to spend points."),
     ("pause", "Pause menu", "Pause, save, change settings or release the spider. Esc always pauses too."),
 )
@@ -48,6 +51,9 @@ DEFAULT_BINDINGS = {
     "jump": "Space",
     "shoot": "Mouse Left",
     "bite": "Mouse Right",
+    "companion_follow": "1",
+    "companion_defend": "2",
+    "companion_attack": "3",
     "skills": "K",
     "pause": "Esc",
 }
@@ -157,19 +163,24 @@ class ControlSettings:
             return settings
         bindings = data.get("bindings")
         if isinstance(bindings, dict):
+            # Explicit saved bindings win over defaults introduced by an update.
+            # In particular, a player may already use 1/2/3 for another action.
+            assigned = {}
+            used = set()
             for action in ACTION_IDS:
                 value = bindings.get(action)
-                if isinstance(value, str) and value and name_to_input(value) is not None:
-                    settings.bindings[action] = value
-            # A hand-edited file could bind one button twice; the first
-            # action in list order keeps it and the other gets its default
-            # back, so every action still has a button.
-            seen = {}
+                if (isinstance(value, str) and value and value not in used
+                        and name_to_input(value) is not None):
+                    assigned[action] = value
+                    used.add(value)
             for action in ACTION_IDS:
-                name = settings.bindings[action]
-                if name in seen:
-                    settings.bindings[action] = DEFAULT_BINDINGS[action]
-                seen[settings.bindings[action]] = action
+                if action in assigned:
+                    continue
+                choices = [DEFAULT_BINDINGS[action]] + [f"F{i}" for i in range(1, 25)]
+                value = next(key for key in choices if key not in used)
+                assigned[action] = value
+                used.add(value)
+            settings.bindings = assigned
         try:
             cone = int(data.get("aim_cone", DEFAULT_AIM_CONE))
         except (TypeError, ValueError):
