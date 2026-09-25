@@ -324,3 +324,22 @@ def test_enemies_are_black_and_red_and_the_heroes_are_not(state_dir):
     for c in foes:
         assert "marking" in c.colors, c.display_name
         assert max(c.colors["body"]) < 40, c.display_name
+
+
+def test_the_scout_heals_at_an_owned_base_too(state_dir):
+    """The owner: "companion spider should also be able to heal in the bases
+    if nearby." The hero always could; the Scout never did."""
+    m = make_mission()
+    home = m.sites[0]
+    clear_enemies(m)
+    m.hero.x, m.hero.y = home.x + 400, home.y
+    m.ally.hp = m.ally.max_hp * 0.4
+    m.ally.x, m.ally.y = home.x + 60, home.y + 40
+    before, supply = m.ally.hp, home.supply
+    m._heal_at(home, 1.0)
+    assert m.ally.hp > before, "a hurt Scout by the burrow should heal"
+    assert home.supply < supply, "from the same supply as the hero"
+    far = m.ally.hp
+    m.ally.x, m.ally.y = home.x + 300, home.y
+    m._heal_at(home, 1.0)
+    assert m.ally.hp == far, "not from across the arena"
