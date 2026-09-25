@@ -8,6 +8,7 @@ import math
 
 from .adventure import PlayerController
 from ..content.discovery import state_dir
+from ..content.palettes import enemy_palette
 from ..world.aimed_silk import AimedSilk
 from ..world.playfield import Playfield, ScreenRect
 from ..state.progression import ProgressionState
@@ -200,6 +201,9 @@ class TerritoryMission:
             self.model, self.personality, self._serial, pos=pos,
             progression_state=progress, progression_id=f"mission-{self._serial}",
             team_id="adventurers" if role in ("hero", "ally") else "rivals",
+            # Enemies are black and crimson with a redback marking, so they
+            # never look like the player's own spider.
+            color_overrides=None if role in ("hero", "ally") else enemy_palette(),
             skills=["jump", "shoot_web", "chase", "approach"])
         c.set_name({"hero": "Wayfarer", "ally": "Scout", "guardian": "Thorn guardian"}.get(role, role.title()))
         c.playfield = self.playfield

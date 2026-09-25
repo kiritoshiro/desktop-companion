@@ -310,3 +310,17 @@ def test_primary_monitor_arena_clamps_destination_before_movement(state_dir):
     assert m.hero.x >= area.x + m.hero.margin
     assert m.hero.target_x >= area.x + m.hero.margin
     assert m.hero.playfield.rects == (area,)
+
+
+def test_enemies_are_black_and_red_and_the_heroes_are_not(state_dir):
+    """The owner: "enemies should be of different color than my spider.
+    make them more black-red pattern." """
+    m = make_mission()
+    friends = [c for c in m.manager.creatures if m.hero.relation_to(c) != "foe"]
+    foes = [c for c in m.manager.creatures if m.hero.relation_to(c) == "foe"]
+    assert m.hero in friends and m.ally in friends and foes
+    for c in friends:
+        assert "marking" not in c.colors, c.display_name
+    for c in foes:
+        assert "marking" in c.colors, c.display_name
+        assert max(c.colors["body"]) < 40, c.display_name
