@@ -97,10 +97,17 @@ def test_a_fight_is_not_one_clump_of_bodies(brawl):
     Not an average: a mean of 1.44 hid two spiders sitting on top of each
     other for half the fight and drifting apart for the other half. What
     matters is how much of the fight is spent overlapping.
+
+    The limit was 20%, which this one seed met with 70 frames of 364 and
+    most seeds did not. Measured over seeds 1-12 on 2026-09-25: a mean of 81
+    frames (22%), 8 of 12 above 20%, the same before and after the
+    tarantula's fixed-stride gait. 25% still fails the DC-59 bug, 170 frames
+    (47%), by a wide margin; the cause itself is pinned by
+    `test_two_spiders_fighting_do_not_cuddle`.
     """
     gaps = _run(brawl, 364)
     overlapping = sum(1 for gap in gaps if gap < 1.0)
-    assert overlapping < len(gaps) * 0.2, (
+    assert overlapping < len(gaps) * 0.25, (
         f"{overlapping}/{len(gaps)} frames spent overlapping")
 
 
