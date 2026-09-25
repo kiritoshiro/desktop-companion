@@ -1007,6 +1007,11 @@ class OverlayWindow(_OverlayBase):
     # Partial repaint
     # ------------------------------------------------------------------
     def request_repaint(self) -> None:
+        if GL_OVERLAY:
+            # paintGL redraws the whole framebuffer whatever region is asked
+            # for, so building one would be wasted work on this path.
+            self.update()
+            return
         self._frames_since_full_repaint += 1
         if self._full_repaint_pending or self._frames_since_full_repaint >= FULL_REPAINT_SAFETY_FRAMES:
             self._full_repaint_pending = False
