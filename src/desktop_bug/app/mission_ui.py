@@ -3,7 +3,7 @@ from __future__ import annotations
 
 
 from PyQt5.QtCore import QPointF, QRect, QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QPen, QRadialGradient
+from PyQt5.QtGui import QColor, QFont, QPainterPath, QPen, QRadialGradient
 
 from .adventure_ui import _board, _home_area, hud_rect, short_binding
 from .mission_art import building_art
