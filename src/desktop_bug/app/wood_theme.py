@@ -135,6 +135,18 @@ def shell_qss() -> str:
                              border-radius: 12px; }}
         {brass_button("QPushButton#modeChoice")}
         QPushButton#modeChoice {{ font-size: 11pt; padding: 9px 18px; }}
+        QLabel#missionHeading {{ color: {WALNUT_DEEP}; font-size: 14pt; font-weight: 800;
+                                 background: transparent; }}
+        QFrame#missionCard {{ background: rgba(42, 24, 12, 215); border: 2px solid {BRASS_DEEP};
+                              border-radius: 10px; }}
+        QFrame#missionCard[locked="true"] {{ background: rgba(42, 24, 12, 130);
+                                             border: 2px dashed {INK_SOFT}; }}
+        QLabel#missionTitle {{ color: {CREAM}; font-size: 11pt; font-weight: 800;
+                               background: transparent; }}
+        QLabel#missionText {{ color: {CREAM_SOFT}; font-size: 9pt; background: transparent; }}
+        QLabel#missionLocked {{ color: {OAK_LIGHT}; font-size: 9pt; font-style: italic;
+                                background: transparent; }}
+        QLabel#controlsHintLine {{ color: {WALNUT_DEEP}; font-size: 9pt; background: transparent; }}
         {wood_button("QPushButton#modeBack")}
         {scrollbar_qss()}
     """

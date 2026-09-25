@@ -2276,18 +2276,13 @@ class ConfigWindow(QMainWindow):
             QMessageBox.warning(self, "Could not open folder", str(exc))
 
     def closeEvent(self, event):  # noqa: N802 - Qt API name
+        # The owner: "when exiting the program it gives me choice to close the
+        # app without closing the spiders. how am i supposed to close the
+        # spider then without the menu?" Closing the window now saves and
+        # stops the overlay, without asking: stop_overlay asks it to save its
+        # spiders first and only kills it if it does not answer.
         if self.overlay_process and self.overlay_process.poll() is None:
-            reply = QMessageBox.question(
-                self,
-                "Overlay is running",
-                "The spider overlay is still running. Stop it too?",
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-            )
-            if reply == QMessageBox.Cancel:
-                event.ignore()
-                return
-            if reply == QMessageBox.Yes:
-                self.stop_overlay()
+            self.stop_overlay()
         client = getattr(self, "_channel_client", None)
         if client is not None:
             client.close()
