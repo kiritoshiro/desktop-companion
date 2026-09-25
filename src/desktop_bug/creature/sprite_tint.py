@@ -58,6 +58,13 @@ PART_COLOR_KEYS = {
 # and make the fur look dyed rather than the body.
 NEUTRAL_SATURATION = 0.08
 
+# A palette entry that re-shades every tinted part to one dark colour instead
+# of swapping hue. The hue swap keeps each pixel's brightness, which is right
+# for recolouring but cannot turn a white plush spider black; the Adventure
+# enemies need exactly that (the owner: "make them more black-red pattern").
+# Only `palettes.enemy_palette` sets it, so no existing palette changes.
+SHADE_KEY = "shade_to"
+
 
 def _target_hue(rgb) -> float | None:
     """The hue to swap in, or None when the target itself is neutral."""
@@ -115,6 +122,41 @@ def tint_pixmap(pixmap: QPixmap, rgb) -> QPixmap:
     return QPixmap.fromImage(image)
 
 
+def shade_pixmap(pixmap: QPixmap, rgb) -> QPixmap:
+    """Return ``pixmap`` re-shaded as ``rgb`` scaled by each pixel's brightness.
+
+    The drawn form lives in luminance, so it survives: fur, highlights and
+    shading all stay readable, only far darker. Alpha is kept.
+    """
+    try:
+        tone = [max(0, min(255, int(c))) for c in rgb]
+    except (TypeError, ValueError):
+        return pixmap
+    if pixmap.isNull():
+        return pixmap
+    image = pixmap.toImage().convertToFormat(QImage.Format_ARGB32)
+    width, height = image.width(), image.height()
+    buffer = image.bits()
+    buffer.setsize(image.byteCount())
+    view = memoryview(buffer)
+    stride = image.bytesPerLine()
+    lookup: dict[int, tuple[int, int, int]] = {}
+    for y in range(height):
+        row = y * stride
+        for x in range(width):
+            i = row + x * 4
+            if view[i + 3] == 0:
+                continue
+            value = max(view[i], view[i + 1], view[i + 2])
+            shaded = lookup.get(value)
+            if shaded is None:
+                gain = 0.45 + 1.7 * (value / 255.0)
+                shaded = tuple(min(255, int(c * gain)) for c in (tone[2], tone[1], tone[0]))
+                lookup[value] = shaded
+            view[i], view[i + 1], view[i + 2] = shaded
+    return QPixmap.fromImage(image)
+
+
 def palette_signature(overrides) -> tuple:
     """A hashable key for the parts of a palette that change sprite art.
 
@@ -123,7 +165,7 @@ def palette_signature(overrides) -> tuple:
     """
     if not isinstance(overrides, dict) or not overrides:
         return ()
-    wanted = set(PART_COLOR_KEYS.values())
+    wanted = set(PART_COLOR_KEYS.values()) | {SHADE_KEY}
     return tuple(sorted(
         (str(key), tuple(int(c) for c in value))
         for key, value in overrides.items()
@@ -142,9 +184,13 @@ def tint_assets(assets: dict, overrides) -> dict:
     if not signature:
         return assets
     palette = dict(signature)
+    shade = palette.get(SHADE_KEY)
     tinted = {}
     for name, pixmap in assets.items():
         key = PART_COLOR_KEYS.get(name)
+        if shade is not None and key:
+            tinted[name] = shade_pixmap(pixmap, shade)
+            continue
         rgb = palette.get(key) if key else None
         tinted[name] = tint_pixmap(pixmap, rgb) if rgb is not None else pixmap
     return tinted

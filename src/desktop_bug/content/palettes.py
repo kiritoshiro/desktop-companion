@@ -137,6 +137,10 @@ ENEMY_COLORS = {
     # Not a model colour: its presence draws the stripe-and-bars marking on
     # the abdomen (render_procedural._draw_abdomen_marking).
     "marking": [214, 24, 34],
+    # Not a model colour either: sprite-rig art (drawn from PNGs) is
+    # re-shaded to this instead of hue-swapped, so a white plush spider
+    # still comes out black (sprite_tint.SHADE_KEY).
+    "shade_to": [34, 13, 15],
 }
 
 

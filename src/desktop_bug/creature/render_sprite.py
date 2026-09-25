@@ -177,6 +177,7 @@ class RenderSpriteMixin:
             painter.save()
             painter.rotate(math.degrees(self.abdomen_wag))
             painter.drawPixmap(QRectF(abdomen_offset_x - abdomen_w * 0.5, -abdomen_h * 0.5, abdomen_w, abdomen_h), abdomen, QRectF(abdomen.rect()))
+            self._draw_abdomen_marking(painter, abdomen_offset_x, abdomen_w, abdomen_h)
             painter.restore()
         if cephalothorax is not None:
             painter.drawPixmap(QRectF(ceph_offset_x - ceph_w * 0.5, -ceph_h * 0.5, ceph_w, ceph_h), cephalothorax, QRectF(cephalothorax.rect()))

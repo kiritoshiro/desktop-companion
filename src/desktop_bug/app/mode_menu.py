@@ -228,11 +228,13 @@ class ModeShell(QWidget):
         self.controls_aim_note.setWordWrap(True)
         self.refresh_controls_summary()
         panel = self._plaque("skirmish", (
-            "Take control of one spider from your current preset, with its saved "
-            "level, health and energy. Everything it earns stays with it.",
+            "Take back the desktop: capture Food or Silk, seal the Hatchery, "
+            "survive the counterattack and claim Thorn nest. Bring your Scout.",
             self.controls_summary,
             self.controls_aim_note,
-            "Skirmish maps, objectives and conquest are on the way.",
+            "Eight silk shots; refill at home. The Silk loom raises capacity to twelve. "
+            "Victory banks Adventure progression separately. Death ends the raid; "
+            "your Companion colony stays safe. Esc pauses or restarts.",
         ), buttons)
         return self._page("Adventure", "Play as your spider", panel)
 

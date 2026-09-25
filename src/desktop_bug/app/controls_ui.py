@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QGridLayout, QHBoxLayout, QLabel,
-                             QPushButton, QVBoxLayout, QWidget)
+                             QPushButton, QScrollArea, QVBoxLayout, QWidget)
 
 from . import wood_theme
 from .controls import (ACTIONS, AIM_CONES, ControlSettings, key_name, load_controls, mouse_name,
@@ -131,7 +131,15 @@ class ControlsEditor(QWidget):
             grid.addWidget(what, row, 2)
             self.buttons[action] = button
         grid.setColumnStretch(2, 1)
-        layout.addLayout(grid)
+        bindings_panel = QWidget()
+        bindings_panel.setLayout(grid)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setMinimumHeight(240)
+        scroll.setMaximumHeight(420)
+        scroll.setWidget(bindings_panel)
+        layout.addWidget(scroll)
 
         reset = QPushButton("Reset to defaults")
         reset.clicked.connect(self.reset)

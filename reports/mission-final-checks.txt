@@ -1,0 +1,7 @@
+PASS  compile  (0.1s)
+PASS  validate 49 models  (3.4s)
+PASS  validate 5 presets  (0.4s)
+PASS  pytest  (167.4s)
+PASS  ruff  (0.1s)
+
+5/5 checks passed in 168s (84 test modules, 49 models, 5 presets)

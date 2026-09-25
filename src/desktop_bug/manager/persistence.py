@@ -114,6 +114,9 @@ class RuntimeStateMixin:
 
     def save_runtime_state(self) -> None:
         """Persist meaningful creature state atomically beside the project/exe."""
+        if getattr(self, "mission", None) is not None:
+            self.mission.save_progress()
+            return
         states = dict(self._progression_states)
         launch = int(getattr(self, "_state_launch", 1))
         # Spiders saved for the first time are numbered in the order they were

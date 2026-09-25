@@ -68,12 +68,13 @@ Teams are named and coloured in a preset, and pairs set in `team_relations`:
 The settings window opens on a three-mode start screen:
 
 - **Companion** contains the existing preset editor and desktop overlay controls.
-- **Skirmish** previews the planned mission mode and launches the current
-  Adventure control prototype using the active preset.
+- **Adventure / Skirmish** launches **Take back the desktop**, a territory raid
+  with one controlled spider, a Scout companion and a maximum of ten spiders.
 - **Strategy** previews the planned colony command mode.
 
-Adventure takes control of the first living spider in the preset. Its current
-health, energy, level, equipment and progression are used. By default WASD
+Adventure uses the first living spider's appearance and initial progression;
+subsequent victories use the separately saved Adventure hero. Each raid starts
+with full health, stamina and eight silk charges. By default WASD
 moves, Shift sprints (draining energy), Space jumps, left-click fires a web and
 right-click bites, K opens the skill tree and Esc pauses. The mouse only aims:
 within a cone in front of the spider (90 degrees by default), and the spider
@@ -81,12 +82,22 @@ turns by walking. **Controls...** on the Adventure page, or Settings in the
 pause menu, lists what every button does, changes the aim cone, and rebinds any
 action to another key or mouse button (saved in `state\controls.json`; Esc
 always pauses). The status panel shows health,
-stamina and action cooldowns; drag it to place it on screen. Adventure captures
-mouse input while active. Releasing control lets the spider resume its ordinary
-behavior and restores clicks on desktop folders and windows; click a spider to
-take control again. Spiders at the same level use the same baseline size and
-name style, growing slightly with each level. Saving uses the same runtime
-state as Companion. Skirmish missions and Strategy orders are future features.
+stamina, silk ammunition and action cooldowns; drag its header to move it.
+Silk fires visibly along your aim even on a miss. Stand at home to refill;
+capturing the Silk loom raises capacity to twelve and refills faster.
+Companion commands are **1 Follow**, **2 Defend here**, **3 Attack target**
+(point at an enemy first), also available as HUD buttons and rebindable controls.
+Adventure captures mouse input while active; **Esc** pauses, opens settings,
+restarts or exits the raid. Spiders at the same level use the same baseline size
+and name style, growing slightly with each level.
+
+Capture Food or Silk, seal the Hatchery, survive the counterattack, defeat the
+Thorn guardian and hold the final nest. Clear defenders and stand by an entrance
+for four seconds to capture it. Orange attack rings warn of incoming strikes.
+Victory banks XP and equipment in `adventure-hero.json`; death ends the raid.
+A restarted or abandoned raid loses unbanked rewards. Companion saves remain
+separate. The arena uses the primary monitor. Strategy orders are future work.
+See [mission rules and verification](docs/adventure-mission.md).
 
 ## Saved state
 
