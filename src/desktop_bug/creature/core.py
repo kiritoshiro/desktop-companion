@@ -57,9 +57,11 @@ from .expression import ExpressionMixin
 from .kinematics import KinematicsMixin, LegState
 from .render_procedural import RenderProceduralMixin
 from .render_sprite import RenderSpriteMixin
+from .web_net import WebNetMixin
 
 
-class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProceduralMixin, RenderSpriteMixin):
+class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProceduralMixin, RenderSpriteMixin,
+               WebNetMixin):
     """One data-driven desktop creature with procedural or hybrid sprite-rig rendering."""
 
     SPRITE_CACHE = {}
@@ -531,6 +533,11 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # which is what makes trapping worth a web-shooter's time.
         self.webbed_timer = 0.0
         self.webbed_by = None
+        # The net drawn over a webbed spider and its fight against it
+        # (web_net.py): guy-line ends in world space, and 0..1 of effort.
+        self.web_anchors = []
+        self.struggle = 0.0
+        self.struggle_clock = 0.0
         # Which foe this spider is currently fighting, published by the
         # manager the same way `_prey` is for a fly.
         self._foe = None
@@ -877,8 +884,11 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         """Take a hit of trapping silk from another spider (DC-45)."""
         if self.dead:
             return
+        fresh = not self.webbed
         self.webbed_timer = max(self.webbed_timer, WEBBED_SECONDS)
         self.webbed_by = by
+        if fresh:
+            self._pin_net()
         self.mood.bump(arousal=0.3, valence=-0.25)
 
     def _die(self) -> None:
@@ -1256,6 +1266,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
         self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
         self.webbed_timer = max(0.0, self.webbed_timer - dt)
+        self._update_web_struggle(dt)
         self.flee_timer = max(0.0, self.flee_timer - dt)
         if self.flee_timer <= 0.0:
             self.flee_from = None
@@ -1774,6 +1785,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self._render_procedural(painter)
         if rolling:
             painter.restore()
+        self._draw_web_net(painter)
         # Name labels should obey the same visibility as the spider.  Otherwise a
         # hidden Camouflage spider would still leave a floating readable label.
         self._draw_name_label(painter, always_show_names)

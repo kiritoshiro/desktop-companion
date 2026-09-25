@@ -38,6 +38,13 @@ WEBBED_SPEED_MULT = 0.35
 # translate; it can still turn, flinch and be attacked, so it struggles in
 # place instead of freezing like a statue.
 WEBBED_HOLD_SECONDS = 2.2
+# Struggling against silk (web_net.py): bursts of STRUGGLE_DUTY of every
+# STRUGGLE_PERIOD seconds, each second of a burst wearing STRUGGLE_DRAIN extra
+# seconds off the pin. Struggling throughout frees a spider in about 3.1 s
+# instead of 4.6.
+STRUGGLE_PERIOD = 0.55
+STRUGGLE_DUTY = 0.62
+STRUGGLE_DRAIN = 0.75
 
 # ---------------------------------------------------------------------------
 # DC-50: nerve. A spider that fights to the death regardless of the odds reads
