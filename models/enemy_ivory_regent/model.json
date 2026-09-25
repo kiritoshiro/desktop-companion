@@ -1,0 +1,303 @@
+{
+  "id": "enemy_ivory_regent",
+  "display_name": "Ivory crab regent",
+  "base_size": 27,
+  "default_personality": "curious",
+  "render_mode": "procedural",
+  "colors": {
+    "body": [
+      24,
+      20,
+      20
+    ],
+    "legs": [
+      30,
+      26,
+      26
+    ],
+    "leg_band": [
+      226,
+      110,
+      40
+    ],
+    "leg_dark": [
+      18,
+      16,
+      16
+    ],
+    "leg_tip": [
+      20,
+      18,
+      18
+    ],
+    "highlight": [
+      150,
+      138,
+      126
+    ],
+    "eyes": [
+      70,
+      60,
+      54
+    ],
+    "rim": [
+      170,
+      108,
+      62
+    ]
+  },
+  "body_plan": "enemy_crab",
+  "appearance": {
+    "abdomen_scale": [
+      0.8,
+      1.35
+    ],
+    "cephalothorax_scale": [
+      0.82,
+      0.96
+    ],
+    "abdomen_offset_x": -0.42,
+    "cephalothorax_offset_x": 0.2,
+    "pedicel": {
+      "enabled": true,
+      "offset_x": -0.06,
+      "scale": [
+        0.18,
+        0.12
+      ],
+      "color_key": "body",
+      "outline_key": "legs",
+      "outline_width": 0.028,
+      "highlight_key": "highlight",
+      "highlight_alpha": 105
+    },
+    "head": {
+      "enabled": true,
+      "offset_x": 0.64,
+      "scale": [
+        0.26,
+        0.34
+      ],
+      "color_key": "body",
+      "outline_key": "legs",
+      "outline_width": 0.03,
+      "highlight_key": "highlight",
+      "highlight_alpha": 40,
+      "face_forward": -0.95,
+      "face_side": 0.0,
+      "fangs": false
+    },
+    "pedipalp_scale": 0.8,
+    "eye_scale": 1.05,
+    "eye_count": 8,
+    "highlight_alpha": 45,
+    "leg_thickness": 1.6,
+    "coxa_thickness_scale": 1.28,
+    "fluffiness": 0,
+    "fluff_color": [
+      92,
+      86,
+      80
+    ],
+    "antennae": {
+      "enabled": true,
+      "style": "tarantula_hand_palps",
+      "segments": 5,
+      "length": 0.4,
+      "base_forward": 0.48,
+      "base_side": 0.22,
+      "thickness": 0.13,
+      "leg_thickness": 0.9,
+      "joint_scale": 0.98,
+      "proximal_rise": 0.19,
+      "screen_lift_scale": 0.22,
+      "tip_nail_length": 0.04,
+      "tip_curl": 0.46,
+      "hairy": false,
+      "hair_scale": 0.16,
+      "color_key": "legs",
+      "tip_color_key": "legs",
+      "segment_widths": [
+        1.2,
+        1.15,
+        1.05,
+        0.92,
+        0.58
+      ],
+      "segment_color_keys": [
+        "legs",
+        "leg_band",
+        "legs",
+        "legs",
+        "leg_tip"
+      ],
+      "joint_color_key": "legs",
+      "claw_color_key": "leg_tip",
+      "control_mode": "sensory_hand",
+      "hand_rest_forward": 0.4,
+      "hand_rest_lateral": 0.2,
+      "hand_min_forward": 0.2,
+      "hand_max_forward": 0.66,
+      "hand_min_lateral": 0.12,
+      "hand_max_lateral": 0.48,
+      "min_drive_length": 0.78,
+      "max_drive_length": 1.08,
+      "max_extension": 0.04,
+      "symmetric_rest": true,
+      "rest_angles": [
+        0.6,
+        0.42,
+        0.16,
+        -0.04,
+        -0.16
+      ],
+      "free_range_of_motion": [
+        0.46,
+        0.68,
+        0.6,
+        0.48,
+        0.1
+      ],
+      "joint_angle_limits": [
+        0.46,
+        0.68,
+        0.6,
+        0.48,
+        0.1
+      ],
+      "joint_steering": [
+        0.24,
+        0.38,
+        0.34,
+        0.25,
+        0.12
+      ],
+      "joint_steering_limits": [
+        0.5,
+        0.74,
+        0.66,
+        0.52,
+        0.14
+      ],
+      "serial_follow": 0.7,
+      "rub_frequency": 0.82,
+      "rub_lateral_amount": 0.15,
+      "rub_forward_amount": 0.07,
+      "rub_joint_angle": 0.42,
+      "rub_lift_amount": 0.34,
+      "knuckle_wave_delay": 0.16,
+      "knuckle_lift_delay": 0.22,
+      "segment_lengths": [
+        0.12,
+        0.34,
+        0.21,
+        0.22,
+        0.2
+      ]
+    },
+    "leg_connections": {
+      "enabled": false,
+      "socket_radius": 0.105,
+      "socket_outline_width": 0.04,
+      "socket_core_scale": 0.76,
+      "coxa_length": 0.09,
+      "trochanter_length": 0.06,
+      "coxa_width": 0.1,
+      "trochanter_width": 0.08,
+      "joint_radius": 0.066,
+      "socket_color_key": "body",
+      "core_color_key": "legs",
+      "accent_color_key": "leg_band"
+    },
+    "segmented_legs": true,
+    "show_joint_nodes": true,
+    "joint_node_scale": 1.4,
+    "leg_chain": {
+      "enabled": true,
+      "segment_count": 5,
+      "extra_segment_asset": "leg_knuckle",
+      "knuckle_split": 0.4,
+      "knuckle_bend": 0.09,
+      "elevated_arc": 0,
+      "proximal_lift": 1,
+      "hairy": false,
+      "hair_scale": 0.42,
+      "bend_profile": [
+        0.64,
+        1.0,
+        0.78,
+        0.54
+      ],
+      "bend_directions": [
+        1.0,
+        1.08,
+        0.7,
+        -0.55
+      ],
+      "joint_phase_offsets": [
+        0.0,
+        0.46,
+        -0.31,
+        0.67
+      ],
+      "carry_bounce": 0.32,
+      "carry_joint_wave": 0.5,
+      "carry_spring": 1.12,
+      "max_stretch": 1.06,
+      "segment_lengths": [
+        1.0,
+        0.513,
+        0.771,
+        0.823,
+        0.583
+      ],
+      "segment_scales": [
+        1.18,
+        1.34,
+        1.14,
+        0.96,
+        0.72
+      ],
+      "width_scales": [
+        1.34,
+        1.3,
+        1.18,
+        1.0,
+        0.8
+      ],
+      "segment_color_keys": [
+        "legs",
+        "leg_band",
+        "legs",
+        "legs",
+        "leg_tip"
+      ],
+      "joint_color_key": "legs",
+      "tip_color_key": "leg_tip",
+      "joint_scales": [
+        1.24,
+        1.48,
+        1.24,
+        0.94
+      ],
+      "leg_curve": 0
+    },
+    "carapace_rim": {
+      "enabled": true,
+      "color_key": "rim",
+      "width": 0.095,
+      "alpha": 235
+    },
+    "legs_over_body": false,
+    "leg_shadow": {
+      "enabled": false,
+      "knee_height": 0.3,
+      "root_height": 0.35,
+      "alpha": 46,
+      "width": 1.1
+    },
+    "enemy_marking": "plates",
+    "enemy_shell": "crab",
+    "enemy_crown": true
+  }
+}

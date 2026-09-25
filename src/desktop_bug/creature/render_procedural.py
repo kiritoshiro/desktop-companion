@@ -11,6 +11,7 @@ from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtGui import QBrush, QColor, QPainterPath, QPen, QPixmap, QPolygonF
 
 import math
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -64,6 +65,25 @@ def _mix(base, other, amount: float):
         int(base.blue() * inv + other.blue() * amount),
         base.alpha(),
     )
+
+
+@lru_cache(maxsize=2)
+def _enemy_shell_path(style: str) -> QPainterPath:
+    """Unit outlines, cached once; the painter supplies body size and pulse."""
+    path = QPainterPath()
+    if style == "crab":
+        points = ((-.46, -.26), (-.22, -.50), (.23, -.47), (.50, -.25),
+                  (.50, .25), (.23, .47), (-.22, .50), (-.46, .26))
+    else:
+        points = ((.48, 0), (.31, -.30), (.42, -.67), (.10, -.44),
+                  (-.15, -.50), (-.36, -.76), (-.38, -.32), (-.68, -.20),
+                  (-.48, 0), (-.68, .20), (-.38, .32), (-.36, .76),
+                  (-.15, .50), (.10, .44), (.42, .67), (.31, .30))
+    path.moveTo(*points[0])
+    for point in points[1:]:
+        path.lineTo(*point)
+    path.closeSubpath()
+    return path
 
 
 class RenderProceduralMixin:
@@ -1017,7 +1037,16 @@ class RenderProceduralMixin:
 
         painter.setPen(QPen(leg_color, max(1.0, self.size * 0.035), Qt.SolidLine, Qt.RoundCap))
         painter.setBrush(QBrush(body))
-        painter.drawEllipse(QRectF(abdomen_offset_x - abdomen_w * 0.5, -abdomen_h * 0.5 + abdo_wag, abdomen_w, abdomen_h))
+        shell = self._appearance("enemy_shell", "")
+        if shell in ("crab", "spiny"):
+            painter.save()
+            painter.translate(abdomen_offset_x, abdo_wag)
+            painter.scale(abdomen_w, abdomen_h)
+            painter.setPen(QPen(leg_color, 0.025))
+            painter.drawPath(_enemy_shell_path(shell))
+            painter.restore()
+        else:
+            painter.drawEllipse(QRectF(abdomen_offset_x - abdomen_w * 0.5, -abdomen_h * 0.5 + abdo_wag, abdomen_w, abdomen_h))
         if pedicel_enabled and pedicel_w > 0.0 and pedicel_h > 0.0:
             pedicel_color = self._qcolor(str(pedicel_cfg.get("color_key", "body")), 255)
             pedicel_outline = self._qcolor(str(pedicel_cfg.get("outline_key", "legs")), 210)
@@ -1069,7 +1098,19 @@ class RenderProceduralMixin:
                 cx = abdomen_offset_x - abdomen_w * (0.12 + t * 0.18)
                 painter.drawEllipse(QRectF(cx - abdomen_w * 0.08, -abdomen_h * 0.28 + t * abdomen_h * 0.16, abdomen_w * 0.16, abdomen_h * 0.10))
 
+        if self._appearance("enemy_crown", False):
+            painter.setPen(QPen(self._qcolor("leg_band"), max(1.0, self.size * .035)))
+            for side in (-1, 1):
+                painter.drawLine(QPointF(ceph_offset_x, side * ceph_h * .37),
+                                 QPointF(ceph_offset_x + ceph_w * .44, side * ceph_h * .68))
+                painter.drawLine(QPointF(ceph_offset_x + ceph_w * .44, side * ceph_h * .68),
+                                 QPointF(ceph_offset_x + ceph_w * .38, side * ceph_h * .25))
+        painter.save()
+        # New markings follow the abdomen's wag; legacy enemy art is unchanged.
+        if self._appearance("enemy_marking", ""):
+            painter.translate(0, abdo_wag)
         self._draw_abdomen_marking(painter, abdomen_offset_x, abdomen_w, abdomen_h)
+        painter.restore()
         # Worn armour, in the body's own frame so it moves, leans and jumps
         # with the shell; the eyes are drawn after it and stay visible.
         if "abdomen" in worn:
@@ -1108,7 +1149,12 @@ class RenderProceduralMixin:
         eye_startle = self._eye_startle_amount(startle)
         eye_r = max(1.0, self.size * 0.035 * eye_scale) * (1.0 + eye_startle * 0.72)
         eyes = []
-        if eye_count <= 2:
+        if self._appearance("eye_layout", "") == "enemy_jumper":
+            # Two large forward eyes and two tiny lateral eyes, on the head.
+            for side in (-1, 1):
+                eyes.append((head_face_x + head_w * .08, side * head_h * .19, eye_r * 1.35))
+                eyes.append((head_face_x - head_w * .22, side * head_h * .39, eye_r * .55))
+        elif eye_count <= 2:
             eyes.append((head_face_x, head_face_y - head_h * 0.16, eye_r))
             eyes.append((head_face_x, head_face_y + head_h * 0.16, eye_r))
         else:
@@ -1361,6 +1407,31 @@ class RenderProceduralMixin:
         painter.save()
         painter.setPen(Qt.NoPen)
         painter.setBrush(QBrush(self._qcolor("marking", 235)))
+        style = self._appearance("enemy_marking", "")
+        if style:
+            if style == "stripe":
+                painter.drawRoundedRect(QRectF(abdomen_x - abdomen_w * .36, -abdomen_h * .085,
+                                               abdomen_w * .70, abdomen_h * .17), 2, 2)
+            elif style == "spots":
+                for offset in (-.23, .03, .26):
+                    for side in (-1, 1):
+                        painter.drawEllipse(QRectF(abdomen_x + abdomen_w * (offset - .055),
+                                                   abdomen_h * (side * .23 - .065),
+                                                   abdomen_w * .11, abdomen_h * .13))
+            elif style == "plates":
+                painter.setBrush(Qt.NoBrush)
+                painter.setPen(QPen(self._qcolor("marking", 220), max(1.0, abdomen_w * .055)))
+                for offset in (-.23, .0, .23):
+                    painter.drawLine(QPointF(abdomen_x + abdomen_w * offset, -abdomen_h * .32),
+                                     QPointF(abdomen_x + abdomen_w * offset, abdomen_h * .32))
+            elif style == "chevrons":
+                painter.setPen(QPen(self._qcolor("marking", 230), max(1.0, abdomen_w * .065)))
+                for offset in (-.25, 0, .25):
+                    x = abdomen_x + abdomen_w * offset
+                    painter.drawLine(QPointF(x - abdomen_w * .11, -abdomen_h * .27), QPointF(x, 0))
+                    painter.drawLine(QPointF(x, 0), QPointF(x - abdomen_w * .11, abdomen_h * .27))
+            painter.restore()
+            return
         front = abdomen_x + abdomen_w * 0.26
         back = abdomen_x - abdomen_w * 0.44
         width = abdomen_h * 0.15
