@@ -87,6 +87,24 @@ def test_victory_is_recorded_and_the_end_screen_counts_down(state_dir):
     assert mission_record(load_profile(), "territory")["victories"] == 1, "recorded once"
 
 
+@pytest.mark.parametrize("won", [True, False])
+def test_the_end_title_paints_across_the_middle(state_dir, won):
+    from PyQt5.QtGui import QColor, QImage, QPainter
+
+    from desktop_bug.app.mission_ui import draw_end_title
+
+    m = _mission()
+    m.state = "victory" if won else "defeat"
+    m.end_clock = 1.0
+    image = QImage(1600, 1000, QImage.Format_ARGB32_Premultiplied)
+    image.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(image)
+    draw_end_title(painter, m)
+    painter.end()
+    a = m.area
+    assert image.pixelColor(int(a.x + a.w / 2), int(a.y + a.h / 2)).alpha() > 100
+
+
 def test_the_overlay_closes_after_the_end_screen(state_dir, monkeypatch):
     from desktop_bug.app.engine import OverlayWindow
 
