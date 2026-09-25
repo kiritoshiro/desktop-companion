@@ -211,7 +211,12 @@ def test_the_editor_rebinds_saves_and_resets():
     assert load_controls(path).aim_cone == 90
 
 
-def test_the_adventure_page_lists_what_every_button_does(monkeypatch):
+def test_the_adventure_page_shows_the_essential_buttons(monkeypatch):
+    """One short line from the saved bindings; the full list is in Controls.
+
+    The owner: "the instructions could be smaller too, and maybe
+    unnecessary at all."
+    """
     from PyQt5.QtWidgets import QLabel
 
     from desktop_bug.app.mode_menu import ModeShell
@@ -222,8 +227,9 @@ def test_the_adventure_page_lists_what_every_button_does(monkeypatch):
     settings.rebind("shoot", "F")
     save_controls(settings)
     shell = ModeShell(QLabel("editor"), lambda: None)
-    text = " ".join(label.text() for label in shell.controls_lines)
+    text = shell.controls_line.text()
     assert "<b>F</b> shoot silk" in text
-    for label in ("move up", "sprint", "jump", "bite", "skill tree", "pause menu"):
+    assert "<b>WASD</b> walk" in text
+    for label in ("sprint", "jump", "bite", "pause menu", "90° cone"):
         assert label in text, label
-    assert "90° cone" in shell.controls_aim_note.text()
+    assert shell.controls_button.text().startswith("Controls")

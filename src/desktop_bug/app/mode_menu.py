@@ -9,11 +9,11 @@ from __future__ import annotations
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QLayout,
+from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel, QLayout,
                              QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
-from .controls import instructions, load_controls
+from .controls import load_controls
 
 MODES = (
     ("companion", "Companion",
@@ -46,6 +46,22 @@ def _art(kind: str, width: int) -> QLabel:
     if pixmap is not None:
         label.setPixmap(pixmap.scaledToWidth(width, Qt.SmoothTransformation))
     return label
+
+
+# Skirmish missions on the Adventure page. The owner: "it should list more
+# skirmish missions in smaller rectangles and player would choose one. for now
+# only one active, others placeholders." (id, title, one line, playable)
+SKIRMISH_MISSIONS = (
+    ("territory", "Take back the desktop",
+     "Capture Food or Silk, seal the Hatchery, survive the counterattack and "
+     "claim Thorn nest. Bring your Scout.", True),
+    ("swarm", "Fly swarm", "Catch a swarm before it scatters off the screens.", False),
+    ("burrow", "Hold the burrow", "Wave after wave comes for your home. Keep it.", False),
+    ("duel", "Silk duel", "One rival weaver, one arena, no Scout.", False),
+    ("crossing", "The long crossing", "Get your Scout safely across the monitors.", False),
+    ("queen", "Queen of thorns", "Face the nest mother herself.", False),
+)
+MISSION_COLUMNS = 3
 
 
 class ModeShell(QWidget):
@@ -194,64 +210,100 @@ class ModeShell(QWidget):
         return scroll
 
     def _adventure_page(self, start_adventure):
-        launch = QPushButton("Start Adventure")
-        launch.setObjectName("modeChoice")
-        launch.setMinimumHeight(46)
-        launch.setCursor(Qt.PointingHandCursor)
-        launch.clicked.connect(start_adventure)
-        self.adventure_launch = launch
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(24, 12, 24, 16)
+        layout.setSpacing(10)
+        layout.addWidget(_art("skirmish", 260), alignment=Qt.AlignHCenter)
+        heading = QLabel("Skirmish missions")
+        heading.setObjectName("missionHeading")
+        heading.setAlignment(Qt.AlignCenter)
+        layout.addWidget(_engrave(heading))
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
+        self.mission_cards = {}
+        self.adventure_launch = None
+        for index, (mission_id, title, blurb, playable) in enumerate(SKIRMISH_MISSIONS):
+            card = self._mission_card(mission_id, title, blurb, playable, start_adventure)
+            grid.addWidget(card, index // MISSION_COLUMNS, index % MISSION_COLUMNS)
+        holder = QWidget()
+        holder.setLayout(grid)
+        holder.setMaximumWidth(760)
+        layout.addWidget(holder, alignment=Qt.AlignHCenter)
+
+        # One short line instead of the old instructions (the owner: "the
+        # instructions could be smaller too, and maybe unnecessary"). The
+        # whole list lives behind Controls.
         controls = QPushButton("Controls\u2026")
         controls.setObjectName("modeBack")
-        controls.setMinimumHeight(46)
         controls.setCursor(Qt.PointingHandCursor)
         controls.clicked.connect(self.open_controls)
         self.controls_button = controls
-        buttons = QWidget()
-        row = QHBoxLayout(buttons)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(controls)
-        row.addWidget(launch, 1)
-        # One label per line: a multi-line rich-text label inside the carved
-        # frame was measured a line short and clipped its last line.
-        self.controls_summary = QWidget()
-        lines = QVBoxLayout(self.controls_summary)
-        lines.setContentsMargins(0, 0, 0, 0)
-        lines.setSpacing(2)
-        self.controls_lines = []
-        for _ in range(3):
-            label = QLabel()
-            label.setObjectName("modeText")
-            lines.addWidget(label)
-            self.controls_lines.append(label)
-        self.controls_aim_note = QLabel()
-        self.controls_aim_note.setObjectName("modeText")
-        self.controls_aim_note.setWordWrap(True)
+        self.controls_line = QLabel()
+        self.controls_line.setObjectName("controlsHintLine")
+        self.controls_line.setWordWrap(True)
+        self.controls_line.setAlignment(Qt.AlignCenter)
+        self.controls_line.setFixedWidth(740)
         self.refresh_controls_summary()
-        panel = self._plaque("skirmish", (
-            "Take back the desktop: capture Food or Silk, seal the Hatchery, "
-            "survive the counterattack and claim Thorn nest. Bring your Scout.",
-            self.controls_summary,
-            self.controls_aim_note,
-            "Eight silk shots; refill at home. The Silk loom raises capacity to twelve. "
-            "Victory banks Adventure progression separately. Death ends the raid; "
-            "your Companion colony stays safe. Esc pauses or restarts.",
-        ), buttons)
-        return self._page("Adventure", "Play as your spider", panel)
+        layout.addWidget(self.controls_line, alignment=Qt.AlignHCenter)
+        layout.addWidget(controls, alignment=Qt.AlignHCenter)
+        layout.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+        scroll.setWidget(panel)
+        return self._page("Adventure", "Play as your spider", scroll)
+
+    def _mission_card(self, mission_id, title, blurb, playable, start_adventure) -> QFrame:
+        card = QFrame()
+        card.setObjectName("missionCard")
+        card.setProperty("locked", not playable)
+        card.setMinimumWidth(220)
+        card.setMaximumWidth(240)
+        cell = QVBoxLayout(card)
+        cell.setContentsMargins(12, 10, 12, 10)
+        cell.setSpacing(6)
+        name = QLabel(title)
+        name.setObjectName("missionTitle")
+        name.setWordWrap(True)
+        cell.addWidget(name)
+        text = QLabel(blurb)
+        text.setObjectName("missionText")
+        text.setWordWrap(True)
+        text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        cell.addWidget(text, 1)
+        if playable:
+            button = QPushButton("Play")
+            button.setObjectName("modeChoice")
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(start_adventure)
+            if self.adventure_launch is None:
+                self.adventure_launch = button
+            cell.addWidget(button)
+        else:
+            soon = QLabel("Coming soon")
+            soon.setObjectName("missionLocked")
+            cell.addWidget(soon)
+        self.mission_cards[mission_id] = card
+        return card
 
     def refresh_controls_summary(self) -> None:
-        """What each button does, from the saved bindings: walking, then acting."""
+        """One line of the essentials, from the saved bindings."""
         settings = load_controls()
-        rows = instructions(settings)
-        walk = [f"<b>{button}</b> {label.lower()}" for button, label, _ in rows[:6]]
-        act = [f"<b>{button}</b> {label.lower()}" for button, label, _ in rows[6:]]
-        cone = ("free aim" if settings.aim_cone >= 360
-                else f"a {settings.aim_cone}° cone in front of the spider")
-        sep = "  ·  "
-        for label, parts in zip(self.controls_lines, (walk[:4], walk[4:], act)):
-            label.setText(sep.join(parts))
-        turning = ("turn with " + settings.binding("move_left") + "/" + settings.binding("move_right")
-                   if settings.turn_movement else "walk to turn")
-        self.controls_aim_note.setText(f"The mouse only aims, within {cone}; {turning}.")
+        keys = [settings.binding(a) for a in ("move_up", "move_left", "move_down", "move_right")]
+        walk = "".join(keys) if all(len(k) == 1 for k in keys) else "/".join(keys)
+        walking = "walk and turn" if settings.turn_movement else "walk"
+        parts = [f"<b>{walk}</b> {walking}"]
+        for action in ("sprint", "jump", "shoot", "bite", "pause"):
+            label, _ = settings.action_text(action)
+            parts.append(f"<b>{settings.binding(action)}</b> {label.lower()}")
+        cone = "free aim" if settings.aim_cone >= 360 else f"mouse aims in a {settings.aim_cone}° cone"
+        self.controls_line.setText("  ·  ".join(parts) + "  ·  " + cone)
 
     def open_controls(self) -> None:
         from .controls_ui import ControlsDialog
