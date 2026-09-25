@@ -1057,6 +1057,8 @@ class RenderProceduralMixin:
                 cx = abdomen_offset_x - abdomen_w * (0.12 + t * 0.18)
                 painter.drawEllipse(QRectF(cx - abdomen_w * 0.08, -abdomen_h * 0.28 + t * abdomen_h * 0.16, abdomen_w * 0.16, abdomen_h * 0.10))
 
+        self._draw_abdomen_marking(painter, abdomen_offset_x, abdomen_w, abdomen_h)
+
         painter.setPen(QPen(leg_color, max(1.2, self.size * 0.045), Qt.SolidLine, Qt.RoundCap))
         antenna_cfg = self._appearance("antennae", {})
         custom_hand_palps = (
@@ -1310,6 +1312,31 @@ class RenderProceduralMixin:
         foot_x += float(getattr(leg, "held_spring_x", 0.0))
         foot_y += float(getattr(leg, "held_spring_y", 0.0))
         return foot_x, foot_y
+
+    def _draw_abdomen_marking(self, painter, abdomen_x: float, abdomen_w: float,
+                              abdomen_h: float) -> None:
+        """A redback-style stripe and bars down the abdomen, in body space.
+
+        Drawn only when the palette has a ``marking`` colour, which no shipped
+        model does: `palettes.enemy_palette` adds it, so Adventure enemies
+        carry a pattern the player's spider never has (the owner: "make them
+        more black-red pattern").
+        """
+        if not self.colors.get("marking"):
+            return
+        painter.save()
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(self._qcolor("marking", 235)))
+        front = abdomen_x + abdomen_w * 0.26
+        back = abdomen_x - abdomen_w * 0.44
+        width = abdomen_h * 0.15
+        painter.drawRoundedRect(QRectF(back, -width / 2, front - back, width), width / 2, width / 2)
+        for i, reach in enumerate((0.34, 0.27, 0.19)):
+            x = abdomen_x + abdomen_w * (0.16 - i * 0.22)
+            half = abdomen_h * reach
+            bar = abdomen_w * 0.075
+            painter.drawRoundedRect(QRectF(x - bar / 2, -half, bar, half * 2), bar / 2, bar / 2)
+        painter.restore()
 
     def _leg_attach_drawn(self, leg: LegState) -> Tuple[float, float]:
         """Where a leg leaves the body *as drawn*.

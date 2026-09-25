@@ -98,3 +98,64 @@ def test_a_failed_launch_leaves_the_window_showing(window, monkeypatch):
     monkeypatch.setattr(window, "launch_engine", lambda mode="companion": None)
     window.start_adventure()
     assert window.isVisible()
+
+
+# ------------------------------------------------------------ enemy colours
+# The owner: "enemies should be of different color than my spider. make them
+# more black-red pattern."
+
+def _render(model, overrides):
+    from PyQt5.QtGui import QColor, QImage, QPainter
+
+    from desktop_bug.creature import Creature
+
+    personality = json.loads((ROOT / "personalities/bold.json").read_text())
+    random.seed(3)
+    spider = Creature(model, personality, 2000, 1400, gait_style="lively", color_overrides=overrides)
+    spider.x, spider.y = 80.0, 80.0
+    spider.heading = spider.target_heading = 0.0
+    spider._initialize_legs()
+    image = QImage(160, 160, QImage.Format_ARGB32)
+    image.fill(QColor(0, 0, 0, 0))
+    painter = QPainter(image)
+    spider.render(painter)
+    painter.end()
+    return image
+
+
+def _red_pixels(image) -> int:
+    count = 0
+    for y in range(0, image.height(), 2):
+        for x in range(0, image.width(), 2):
+            color = image.pixelColor(x, y)
+            if color.alpha() > 200 and color.red() > 150 and color.green() < 70 and color.blue() < 80:
+                count += 1
+    return count
+
+
+def test_no_shipped_model_carries_the_enemy_marking():
+    for path in ROOT.glob("models/*/model.json"):
+        model = json.loads(path.read_text(encoding="utf-8"))
+        assert "marking" not in (model.get("colors") or {}), path.parent.name
+
+
+def test_the_enemy_palette_is_a_fresh_black_and_crimson_copy():
+    from desktop_bug.content.palettes import enemy_palette
+
+    first, second = enemy_palette(), enemy_palette()
+    first["body"][0] = 255
+    assert second["body"][0] != 255, "callers must not share the palette"
+    assert max(second["body"]) < 40 and max(second["legs"]) < 40, "black body and legs"
+    for key in ("leg_band", "rim", "marking"):
+        red, green, blue = second[key]
+        assert red > 180 and green < 40 and blue < 50, key
+
+
+@pytest.mark.parametrize("model_id", ["tarantula", "plush_snow_hybrid_2"])
+def test_an_enemy_is_drawn_black_and_red(model_id):
+    from desktop_bug.content.palettes import enemy_palette
+
+    model = resolve_body_plan(json.loads((ROOT / f"models/{model_id}/model.json").read_text()))
+    own = _render(model, None)
+    enemy = _render(model, enemy_palette())
+    assert _red_pixels(enemy) > _red_pixels(own) + 25, "the enemy should read as red-marked"
