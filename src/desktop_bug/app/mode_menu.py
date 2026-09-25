@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QGridLayout, QHB
                              QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
+from .adventure_profile import hero_progression, load_profile, mission_record
 from .controls import load_controls
 
 MODES = (
@@ -214,7 +215,25 @@ class ModeShell(QWidget):
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(24, 12, 24, 16)
         layout.setSpacing(10)
-        layout.addWidget(_art("skirmish", 260), alignment=Qt.AlignHCenter)
+        layout.addWidget(_art("skirmish", 200), alignment=Qt.AlignHCenter)
+        # The hero: named and levelled in the character window (the owner).
+        hero = QFrame()
+        hero.setObjectName("heroStrip")
+        strip = QHBoxLayout(hero)
+        strip.setContentsMargins(14, 8, 10, 8)
+        self.hero_label = QLabel()
+        self.hero_label.setObjectName("missionTitle")
+        self.hero_label.setWordWrap(True)
+        strip.addWidget(self.hero_label, 1)
+        character = QPushButton("Character\u2026")
+        character.setObjectName("modeChoice")
+        character.setCursor(Qt.PointingHandCursor)
+        character.clicked.connect(self.open_character)
+        self.character_button = character
+        strip.addWidget(character)
+        hero.setMaximumWidth(740)
+        layout.addWidget(hero, alignment=Qt.AlignHCenter)
+
         heading = QLabel("Skirmish missions")
         heading.setObjectName("missionHeading")
         heading.setAlignment(Qt.AlignCenter)
@@ -224,6 +243,7 @@ class ModeShell(QWidget):
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(12)
         self.mission_cards = {}
+        self.mission_status = {}
         self.adventure_launch = None
         for index, (mission_id, title, blurb, playable) in enumerate(SKIRMISH_MISSIONS):
             card = self._mission_card(mission_id, title, blurb, playable, start_adventure)
@@ -247,6 +267,7 @@ class ModeShell(QWidget):
         self.controls_line.setAlignment(Qt.AlignCenter)
         self.controls_line.setFixedWidth(740)
         self.refresh_controls_summary()
+        self.refresh_adventure()
         layout.addWidget(self.controls_line, alignment=Qt.AlignHCenter)
         layout.addWidget(controls, alignment=Qt.AlignHCenter)
         layout.addStretch(1)
@@ -278,6 +299,11 @@ class ModeShell(QWidget):
         text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         cell.addWidget(text, 1)
         if playable:
+            status = QLabel()
+            status.setObjectName("missionDone")
+            status.setWordWrap(True)
+            cell.addWidget(status)
+            self.mission_status[mission_id] = status
             button = QPushButton("Play")
             button.setObjectName("modeChoice")
             button.setCursor(Qt.PointingHandCursor)
@@ -291,6 +317,36 @@ class ModeShell(QWidget):
             cell.addWidget(soon)
         self.mission_cards[mission_id] = card
         return card
+
+    def refresh_adventure(self) -> None:
+        """Hero name, level and mission results from adventure-hero.json."""
+        profile = load_profile()
+        state = hero_progression(profile)
+        points = state.skill_points
+        spend = f"  \u00b7  {points} point{'s' if points != 1 else ''} to spend" if points else ""
+        self.hero_label.setText(f"{profile['name']}  \u00b7  Level {state.level}{spend}")
+        for mission_id, label in self.mission_status.items():
+            record = mission_record(profile, mission_id)
+            if record["victories"]:
+                wins = record["victories"]
+                best = record["best_seconds"]
+                time = f" \u00b7 best {int(best // 60)}:{int(best % 60):02d}" if best is not None else ""
+                label.setText(f"\u2714 Won \u00d7{wins}{time}")
+                label.setProperty("won", True)
+            elif record["defeats"]:
+                label.setText("Not won yet")
+                label.setProperty("won", False)
+            else:
+                label.setText("")
+                label.setProperty("won", False)
+            label.style().unpolish(label)
+            label.style().polish(label)
+
+    def open_character(self) -> None:
+        from .character_ui import CharacterDialog
+
+        CharacterDialog(self).exec_()
+        self.refresh_adventure()
 
     def refresh_controls_summary(self) -> None:
         """One line of the essentials, from the saved bindings."""

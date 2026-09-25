@@ -3,15 +3,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import copy
-import json
 import math
 
 from .adventure import PlayerController
-from ..content.discovery import state_dir
+from .adventure_profile import (hero_progression, load_profile, profile_path, record_result,
+                                save_profile)
 from ..content.palettes import enemy_palette
 from ..world.aimed_silk import AimedSilk
 from ..world.playfield import Playfield, ScreenRect
-from ..state.progression import ProgressionState
 
 
 @dataclass
@@ -116,8 +115,12 @@ class MissionActor(PlayerController):
 
 
 class TerritoryMission:
+    MISSION_ID = "territory"
     CAP = 10
     CAPTURE_SECONDS = 4.0
+    # How long the VICTORY / DEFEAT title stays up before the overlay closes
+    # and the Adventure page comes back (the owner's request).
+    END_SCREEN_SECONDS = 4.5
 
     def __init__(self, manager, controls, area=None):
         self.manager = manager
@@ -137,21 +140,22 @@ class TerritoryMission:
         self.actors = []
         self.saved = False
         self.save_error = ""
+        self.end_clock = 0.0
         self._serial = 0
-        self.progress_path = state_dir() / "adventure-hero.json"
+        # The hero is the player's own Adventure spider: its name and
+        # progression come from adventure-hero.json, and a hero who has not
+        # played starts at level 1 (the owner) -- not as a copy of whichever
+        # Companion spider happens to be first in the preset.
+        self.progress_path = profile_path()
+        self.profile = load_profile(self.progress_path)
+        self.hero_name = self.profile["name"]
         previous = getattr(manager, "mission", None)
         source = previous.hero if previous else next((c for c in manager.creatures if not c.dead), None)
         if source is None:
             raise ValueError("Adventure needs at least one spider in the preset")
         self.model = source.model
         self.personality = source.personality
-        self.start_progress = copy.deepcopy(previous.start_progress if previous else source.progression.to_dict())
-        try:
-            saved = json.loads(self.progress_path.read_text(encoding="utf-8"))
-            if isinstance(saved.get("progression"), dict):
-                self.start_progress = ProgressionState.from_dict(saved["progression"]).to_dict()
-        except (OSError, ValueError, AttributeError):
-            pass
+        self.start_progress = hero_progression(self.profile).to_dict()
         # Mission factions are fixed, regardless of Companion diplomacy.
         self.start_progress["relation_overrides"] = {}
         manager.mission = self
@@ -205,7 +209,11 @@ class TerritoryMission:
             # never look like the player's own spider.
             color_overrides=None if role in ("hero", "ally") else enemy_palette(),
             skills=["jump", "shoot_web", "chase", "approach"])
-        c.set_name({"hero": "Wayfarer", "ally": "Scout", "guardian": "Thorn guardian"}.get(role, role.title()))
+        c.set_name({"hero": self.hero_name, "ally": "Scout", "guardian": "Thorn guardian"}.get(role, role.title()))
+        if role == "hero":
+            # The player picks the hero's skills in the character window;
+            # points are banked rather than spent automatically (DC-57).
+            c.chooses_own_skills = True
         c.playfield = self.playfield
         c.hp = c.max_hp
         c.energy = c.max_energy
@@ -267,6 +275,7 @@ class TerritoryMission:
 
     def update(self, dt):
         if self.state != "active":
+            self.end_clock += max(0.0, dt)
             return
         dt = min(.05, max(0, dt))
         self.elapsed += dt
@@ -287,6 +296,7 @@ class TerritoryMission:
         if self.hero.dead:
             self.state = "defeat"
             self.player.clear_keys()
+            self.finish(won=False)
             return
         if self.command == "attack" and (self.attack_target is None or self.attack_target.dead):
             self.command = "follow"
@@ -338,7 +348,7 @@ class TerritoryMission:
             self.state = "victory"
             self.hero.gain_experience(100, "raid complete")
             self.player.clear_keys()
-            self.save_progress()
+            self.finish(won=True)
 
     def _spawning(self, dt):
         hatch = self.sites[3]
@@ -380,16 +390,35 @@ class TerritoryMission:
                 if self.guardian is not None:
                     self.announce("Thorn guardian awakened. Bait its strike, then counterattack.")
 
-    def save_progress(self):
-        """Bank a victory once; mission entities never enter creatures.json."""
-        if self.state != "victory" or self.saved:
+    @property
+    def ended(self) -> bool:
+        return self.state != "active"
+
+    @property
+    def end_screen_done(self) -> bool:
+        return self.ended and self.end_clock >= self.END_SCREEN_SECONDS
+
+    def finish(self, won: bool) -> None:
+        """Bank the hero and record the result, once, however the raid ended.
+
+        The owner: "as progress keep it level xp and skills chosen saved."
+        A defeat keeps what the hero earned, as a win does.
+        """
+        if self.saved:
             return
-        try:
-            self.progress_path.parent.mkdir(parents=True, exist_ok=True)
-            temp = self.progress_path.with_suffix(".tmp")
-            temp.write_text(json.dumps({"version": 1, "progression": self.hero.progression.to_dict()}, indent=2), encoding="utf-8")
-            temp.replace(self.progress_path)
-            self.saved = True
+        record_result(self.profile, self.MISSION_ID, won, self.elapsed)
+        self.save_progress()
+
+    def save_progress(self) -> bool:
+        """Write the hero's progression to adventure-hero.json.
+
+        Also called when the player leaves mid-raid. Mission entities never
+        enter creatures.json.
+        """
+        self.profile["progression"] = self.hero.progression.to_dict()
+        if save_profile(self.profile, self.progress_path):
+            self.saved = self.ended
             self.save_error = ""
-        except OSError:
-            self.save_error = "Progress could not be saved. Retry from the pause menu."
+            return True
+        self.save_error = "Progress could not be saved. Retry from the pause menu."
+        return False

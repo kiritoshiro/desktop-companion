@@ -184,6 +184,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.turn_rate = self.rng.uniform(4.0, 6.0)
         self.state = "Idle"
         self.player_control = None
+        # The Adventure hero's player spends its points in the character
+        # window; every other spider spends them itself (DC-57).
+        self.chooses_own_skills = False
         # Set by the player's turn-and-walk controls while backing up: walk
         # towards the target but keep facing the other way.
         self.reverse_walk = False
@@ -762,7 +765,8 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self._apply_progression_stats(carry_wounds=True)
             events.append(f"reached level {self.progression.level}")
             if self.player_control is None:
-                events.extend(self._spend_skill_points())
+                if not self.chooses_own_skills:
+                    events.extend(self._spend_skill_points())
         if self.progression.level >= MAX_LEVEL:
             # One large award can carry a remainder past the last threshold.
             # Leaving it unclamped overfills the inspector's XP bar.

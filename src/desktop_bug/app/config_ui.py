@@ -2105,6 +2105,8 @@ class ConfigWindow(QMainWindow):
         if not self._hidden_for_adventure or self._overlay_running():
             return
         self._hidden_for_adventure = False
+        # A mission just ended: show the new level and the result.
+        self.mode_shell.refresh_adventure()
         self.showNormal()
         self.raise_()
         self.activateWindow()

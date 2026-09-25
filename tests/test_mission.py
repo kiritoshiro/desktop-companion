@@ -153,17 +153,21 @@ def test_victory_requires_guardian_and_banks_separate_progress(state_dir):
     assert m.elapsed == elapsed
 
 
-def test_defeat_and_restart_do_not_inherit_enemy_or_unsaved_xp(state_dir):
+def test_defeat_keeps_the_heros_progress_and_restart_starts_clean(state_dir):
+    """2026-09-25, the owner: "as progress keep it level xp and skills chosen
+    saved." A defeat used to throw away what the raid earned; it now keeps
+    it, as a win does. The enemies and the raid itself still start fresh."""
     m = make_mission()
-    baseline = m.start_progress.copy()
     m.hero.gain_experience(30, "test")
+    earned = m.hero.progression.total_xp
     m.hero.take_damage(100000)
     step(m, .1)
     assert m.state == "defeat"
     fresh = TerritoryMission(m.manager, m.controls, m.area)
-    assert fresh.start_progress == baseline
+    assert fresh.hero.progression.total_xp == earned
     assert fresh.hero.progression.team_id == "adventurers"
     assert fresh.state == "active"
+    assert all(not c.dead for c in fresh.manager.creatures)
 
 
 def test_mission_save_leaves_companion_file_untouched(state_dir):
