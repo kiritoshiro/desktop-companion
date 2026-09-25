@@ -15,6 +15,8 @@ from __future__ import annotations
 import math
 from typing import Tuple
 
+from ..creature.damage_numbers import DamageNumbersMixin
+
 # How long a carcass lasts with nobody eating it, and how much faster it
 # goes when somebody is. Short either way: the owner asked for it to
 # disappear soon, and a desktop littered with bodies is not the tone.
@@ -35,7 +37,7 @@ FEEDING_REACH = 1.9
 CARCASS_FOOD_AMOUNT = 9.0
 
 
-class Carcass:
+class Carcass(DamageNumbersMixin):
     """A dead spider's remains, consumed over a few seconds."""
 
     def __init__(self, x: float, y: float, size: float, team_id: str,
@@ -48,6 +50,8 @@ class Carcass:
         self.t = 0.0
         self.settle_t = 0.0
         self.being_eaten = False
+        # The killing blow's number, carried over from the spider.
+        self.damage_numbers = []
         # Legs fold under a dead spider rather than staying splayed; these are
         # fixed at death so the shape does not shimmer while it fades.
         self.legs = []
@@ -79,6 +83,7 @@ class Carcass:
         """
         self.being_eaten = eaters > 0
         step = max(0.0, float(dt))
+        self._update_damage_numbers(step)
         if self.settling and not self.being_eaten:
             # Lying there. The settle clock runs, the decay clock does not.
             self.settle_t += step
@@ -90,7 +95,13 @@ class Carcass:
 
     def footprint(self) -> Tuple[float, float, float, float]:
         reach = self.size * 1.6
-        return (self.x - reach, self.y - reach, reach * 2.0, reach * 2.0)
+        x0, y0 = self.x - reach, self.y - reach
+        x1, y1 = self.x + reach, self.y + reach
+        x0, y0, x1, y1 = self._damage_number_bounds((x0, y0, x1, y1))
+        return (x0, y0, x1 - x0, y1 - y0)
+
+    def _damage_top(self) -> float:
+        return self.y - self.size * 0.6
 
     def draw(self, painter) -> None:
         """Draw the remains: a shrinking, fading curl of legs and body."""
@@ -121,6 +132,7 @@ class Carcass:
         painter.drawEllipse(QRectF(self.x - scale * 0.36, self.y - scale * 0.28,
                                    scale * 0.72, scale * 0.56))
         painter.restore()
+        self._draw_damage_numbers(painter)
 
 
 def curled_size(creature) -> float:
@@ -136,11 +148,13 @@ def carcass_for(creature) -> Carcass:
         body = model_colors.get("body") or model_colors.get("abdomen")
         if isinstance(body, (list, tuple)) and len(body) >= 3:
             colors["body"] = tuple(int(c) for c in body[:3])
-    return Carcass(
+    carcass = Carcass(
         creature.x, creature.y, curled_size(creature),
         str(getattr(creature.progression, "team_id", "neutral")),
         colors,
     )
+    carcass.damage_numbers = [list(n) for n in getattr(creature, "damage_numbers", [])]
+    return carcass
 
 
 def eaters_near(carcass: Carcass, creatures) -> int:
