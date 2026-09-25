@@ -29,7 +29,13 @@ def test_each_building_has_its_own_picture_and_shows_who_holds_it(kind):
     art = building_art(kind, False)
     assert _opaque(art) > 1000, "a building should fill a good part of its frame"
     assert building_art(kind, False) is art, "painted once, then cached"
-    assert _differs(art, building_art(kind, True)) > 40, "claiming it should change the picture"
+    changed = _differs(art, building_art(kind, True))
+    if kind in ("hatchery", "nest"):
+        # Enemy works are redrawn when taken: sealed in silk, eyes out.
+        assert changed > 100, (kind, changed)
+    else:
+        # A friendly site only changes its pennant, as the old art did.
+        assert changed > 5, (kind, changed)
 
 
 def test_the_buildings_differ_from_one_another():
