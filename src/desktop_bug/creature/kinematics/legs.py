@@ -102,7 +102,7 @@ class LegPlacementMixin:
             speed01 = clamp(self.current_speed / 145.0, 0.0, 1.0)
             spider_gait = self._spider_gait_config()
             if spider_gait is not None and self._uses_lively_gait():
-                stride *= spider_gait["stride_gain"]
+                stride *= spider_gait["stride_gain"] * spider_gait.get("stride_speed_gain", 1.0)
             # Feet anticipate the next body position, especially during a scurry.
             # Normal personalities plant ahead of the body-facing direction. Observer
             # is special: it keeps its head aimed at its focus while the body backs

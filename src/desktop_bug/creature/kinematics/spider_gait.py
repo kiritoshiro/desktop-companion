@@ -33,10 +33,15 @@ class SpiderGaitMixin:
 
     def _spider_cycle_hz(self, config: dict, speed01: float, turn_speed: float = 0.0) -> float:
         """Return the one cadence used by both phase windows and foot swings."""
-        hz = config["cycle_hz"] + speed01 * config["speed_cycle_gain"]
+        stride = config.get("stride_length", 0.0) * self.size
+        if stride > 1.0:
+            # Speed from frequency: one stride per cycle at the body's speed.
+            hz = max(config["cycle_hz"], self.current_speed / stride)
+        else:
+            hz = config["cycle_hz"] + speed01 * config["speed_cycle_gain"]
         if turn_speed > 0.30:
             hz += min(turn_speed, 5.5) * config.get("turn_cycle_gain", 0.10)
-        return clamp(hz, 1.20, 4.50)
+        return clamp(hz, 1.20, config.get("max_cycle_hz", 4.50))
 
     def _spider_step_duration(self, config: dict, speed01: float,
                               turn_speed: float = 0.0, force_fast: bool = False) -> float:
@@ -44,7 +49,7 @@ class SpiderGaitMixin:
         duration = config["swing_fraction"] / max(0.1, hz)
         if force_fast:
             duration *= 0.86
-        return clamp(duration, 0.075, 0.18)
+        return clamp(duration, config.get("min_swing_time", 0.075), 0.18)
 
     def _spider_phase_window(self, leg: LegState, phase: float, config: dict):
         """Return whether a leg is in its shared group launch window."""
