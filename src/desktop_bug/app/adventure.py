@@ -19,6 +19,9 @@ class PlayerController:
     AIM_TOLERANCE = 28.0
     # A bite that finds nothing still has to be recovered from.
     WHIFF_RECOVERY = 0.38
+    # Turn-and-walk controls. A tarantula backs up slowly and briefly.
+    BACK_UP_SPEED = 0.40         # of the walking speed
+    TURN_LEAD = 0.6              # radians asked ahead of the body while turning
 
     def __init__(self, creature, controls: ControlSettings | None = None):
         self.creature = creature
@@ -44,6 +47,7 @@ class PlayerController:
 
     def release(self):
         self.held.clear()
+        self.creature.reverse_walk = False
         if self.creature.player_control is self:
             self.creature.player_control = None
             self.creature.enter_idle()
@@ -104,19 +108,17 @@ class PlayerController:
             spider.target_x, spider.target_y = spider.x, spider.y
             spider.speed = 0.0
             spider.motion_paused = True
+            spider.reverse_walk = False
+        elif self.controls.turn_movement:
+            self._update_turn_movement(dt)
         else:
+            spider.reverse_walk = False
             held = self.held
             dx = int("move_right" in held) - int("move_left" in held)
             dy = int("move_down" in held) - int("move_up" in held)
             length = math.hypot(dx, dy)
             moving = length > 0.0
-            if self.sprint_exhausted and spider.energy >= spider.max_energy * 0.20:
-                self.sprint_exhausted = False
-            sprinting = moving and "sprint" in held and not self.sprint_exhausted
-            if sprinting:
-                spider.energy = max(0.0, spider.energy - self.SPRINT_DRAIN * dt)
-                if spider.energy <= 0.0:
-                    self.sprint_exhausted = True
+            sprinting = self._sprinting(moving, dt)
             if not spider.airborne:
                 spider.state = "Player"
             spider.motion_paused = not moving
@@ -135,6 +137,48 @@ class PlayerController:
         if spider.webbed:
             spider.speed *= 0.25
         self.advance_pose(dt)
+
+    def _sprinting(self, moving: bool, dt: float) -> bool:
+        spider = self.creature
+        if self.sprint_exhausted and spider.energy >= spider.max_energy * 0.20:
+            self.sprint_exhausted = False
+        sprinting = moving and "sprint" in self.held and not self.sprint_exhausted
+        if sprinting:
+            spider.energy = max(0.0, spider.energy - self.SPRINT_DRAIN * dt)
+            if spider.energy <= 0.0:
+                self.sprint_exhausted = True
+        return sprinting
+
+    def _update_turn_movement(self, dt: float) -> None:
+        """W forward, S back up (still facing forward), A/D turn."""
+        spider = self.creature
+        held = self.held
+        forward = int("move_up" in held) - int("move_down" in held)
+        turn = int("move_right" in held) - int("move_left" in held)
+        backing = forward < 0
+        sprinting = self._sprinting(forward > 0, dt)
+        if not spider.airborne:
+            spider.state = "Player"
+        spider.reverse_walk = backing
+        spider.motion_paused = forward == 0
+        spider.speed = (190.0 if sprinting else 115.0) * spider._speed_mult()
+        if backing:
+            spider.speed *= self.BACK_UP_SPEED
+        # Where the body should face: ahead of it by a fixed lead while a turn
+        # is held, so the gait keeps turning at its own rate.
+        facing = spider.heading + turn * self.TURN_LEAD
+        if forward > 0:
+            spider.target_x = spider.x + math.cos(facing) * 100.0
+            spider.target_y = spider.y + math.sin(facing) * 100.0
+        elif backing:
+            # Walk away from the way it faces, and keep facing it.
+            spider.target_heading = facing
+            spider.target_x = spider.x - math.cos(spider.heading) * 100.0
+            spider.target_y = spider.y - math.sin(spider.heading) * 100.0
+        else:
+            spider.target_x, spider.target_y = spider.x, spider.y
+            if turn:
+                spider.target_heading = facing
 
     def advance_pose(self, dt: float):
         spider = self.creature
@@ -163,7 +207,8 @@ class PlayerController:
         dx = spider.target_x - spider.x
         dy = spider.target_y - spider.y
         length = math.hypot(dx, dy)
-        if length < 1.0:
+        if length < 1.0 or spider.reverse_walk:
+            # Standing, or backing up: pounce the way the spider faces.
             dx, dy = math.cos(spider.heading), math.sin(spider.heading)
             length = 1.0
         spider._launch_jump(spider.x + dx / length * 75.0,

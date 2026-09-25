@@ -181,6 +181,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.turn_rate = self.rng.uniform(4.0, 6.0)
         self.state = "Idle"
         self.player_control = None
+        # Set by the player's turn-and-walk controls while backing up: walk
+        # towards the target but keep facing the other way.
+        self.reverse_walk = False
         self.state_timer = rand_range(personality.get("idle_time"), 1.0, 3.0, rng=self.rng)
         self.decision_timer = self.rng.uniform(0.2, 0.5)
         self.motion_paused = False
