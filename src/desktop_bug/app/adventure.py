@@ -102,6 +102,11 @@ class PlayerController:
         """Webbed, the player fights the silk by holding a movement key."""
         return bool(self.held & {"move_up", "move_down", "move_left", "move_right"})
 
+    def _webbed_feedback(self) -> None:
+        """Trapped in silk, the spider cannot bite or shoot (the owner)."""
+        self.feedback = "Webbed - struggle free before you can fight."
+        self.feedback_time = 1.6
+
     def clear_keys(self):
         self.held.clear()
 
@@ -232,6 +237,9 @@ class PlayerController:
         spider = self.creature
         if self.paused or spider.dead or spider.airborne or spider.attack_cooldown > 0.0:
             return False
+        if spider.webbed_held:
+            self._webbed_feedback()
+            return False
         reach = spider.size * 3.0
         tolerance = max(self.AIM_TOLERANCE, spider.size * 1.5)
         foes = []
@@ -256,6 +264,9 @@ class PlayerController:
     def shoot(self, manager) -> bool:
         spider = self.creature
         if self.paused or spider.dead or spider.airborne or self.web_cooldown > 0.0:
+            return False
+        if spider.webbed_held:
+            self._webbed_feedback()
             return False
         if self.silk < 1 or spider.energy < self.WEB_ENERGY:
             self.feedback = ("Silk empty - refill at home or a captured loom"

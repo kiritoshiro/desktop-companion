@@ -361,6 +361,9 @@ class WebBehaviourMixin:
         Shared by the hunting states and the generic idle decision so any spider
         with the skill can use it, while a web-shooter does it eagerly.
         """
+        # Webbed: cannot fight back (the owner, 2026-09-25).
+        if self.webbed_held:
+            return False
         # When hunting a fly the "cursor" coordinates are really the prey, so the
         # pointer-capture silk must never fire here (it would grab the real
         # mouse). The manager traps flies through the fly world instead.
@@ -403,6 +406,9 @@ class WebBehaviourMixin:
         The same shot the spider uses on the cursor, aimed at prey instead. A
         web-shooter does it eagerly; any spider with the skill does it sometimes.
         """
+        # Webbed: cannot fight back (the owner, 2026-09-25).
+        if self.webbed_held:
+            return False
         if prey is None or self.web_shot_cooldown > 0.0:
             return False
         if prey.trapped or prey.dragging or not prey.alive:
@@ -458,6 +464,10 @@ class WebBehaviourMixin:
         self.mood.bump(arousal=0.2, curiosity=0.05)
 
     def _update_web_aim(self, dt: float, mx: float, my: float) -> None:
+        if self.webbed_held:
+            # Pinned mid-aim: the shot is lost (the owner, 2026-09-25).
+            self._finish_web_shot(fired=False)
+            return
         prey = self._web_shot_prey
         foe = getattr(self, "_web_shot_foe", None)
         if foe is not None:

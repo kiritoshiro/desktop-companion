@@ -90,7 +90,7 @@ class CombatMixin:
         ]
         for index, attacker in enumerate(live):
             controlled = getattr(attacker, "player_control", None) is not None
-            if not controlled and attacker.attack_cooldown > 0.0:
+            if not controlled and attacker.attack_cooldown > 0.0 and not attacker.webbed_held:
                 continue
             for defender in live[index + 1:]:
                 if defender.dead:
@@ -104,7 +104,15 @@ class CombatMixin:
                 if math.hypot(attacker.x - defender.x, attacker.y - defender.y) > reach:
                     continue
                 if controlled:
-                    if getattr(defender, "player_control", None) is None and defender.attack_cooldown <= 0.0:
+                    if (getattr(defender, "player_control", None) is None
+                            and defender.attack_cooldown <= 0.0 and not defender.webbed_held):
+                        self._trade_blow(defender, attacker)
+                elif attacker.webbed_held:
+                    # A webbed spider cannot swing (the owner, 2026-09-25), but
+                    # the pair is only visited once, so the free one gets its
+                    # turn here instead.
+                    if (getattr(defender, "player_control", None) is None
+                            and defender.attack_cooldown <= 0.0 and not defender.webbed_held):
                         self._trade_blow(defender, attacker)
                 else:
                     self._trade_blow(attacker, defender)
@@ -342,6 +350,9 @@ class CombatMixin:
         swing, so two foes in contact cannot each hit on every frame of the
         overlap and flatten one another in well under a second.
         """
+        if attacker.webbed_held:
+            # Trapped in silk: cannot fight back (the owner, 2026-09-25).
+            return
         attacker.attack_cooldown = ATTACK_INTERVAL
         # DC-59: the animation of the blow. Set here because this is the one
         # place that knows a blow happened; it changes nothing about the
@@ -360,7 +371,8 @@ class CombatMixin:
             return
         # The defender hits back, but only if it is not already mid-swing at
         # someone else -- otherwise being attacked is a free extra attack.
-        if defender.attack_cooldown <= 0.0 and getattr(defender, "player_control", None) is None:
+        if (defender.attack_cooldown <= 0.0 and getattr(defender, "player_control", None) is None
+                and not defender.webbed_held):
             defender.attack_cooldown = ATTACK_INTERVAL
             struck = attacker.take_damage(defender.damage, defender)
             if struck > 0.0:
