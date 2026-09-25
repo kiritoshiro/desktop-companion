@@ -307,13 +307,10 @@ class TerritoryMission:
                                  for c in self.manager.creatures)
             near = math.hypot(self.hero.x-site.x, self.hero.y-site.y) < 92
             if site.owned:
-                if near and not site.contested:
-                    if site.kind in ("home", "silk"):
-                        self.player.silk = min(self.player.silk_capacity, self.player.silk + dt*(3 if site.kind == "silk" else 1))
-                    if site.kind in ("home", "food") and site.supply > 0:
-                        amount = min(dt*(8 if site.kind == "food" else 3), site.supply, self.hero.max_hp-self.hero.hp)
-                        self.hero.heal(amount)
-                        site.supply -= amount
+                if near and not site.contested and site.kind in ("home", "silk"):
+                    self.player.silk = min(self.player.silk_capacity, self.player.silk + dt*(3 if site.kind == "silk" else 1))
+                if not site.contested:
+                    self._heal_at(site, dt)
                 continue
             unlocked = site.kind != "nest" or (self.sites[3].owned and any(s.owned for s in self.sites[1:3])
                         and self.guardian is not None and self.guardian.dead
@@ -325,6 +322,32 @@ class TerritoryMission:
             elif not near:
                 site.progress = max(0, site.progress - dt*.12)
         self._spawning(dt)
+
+    # How close the Scout must be to heal at a base. A little wider than the
+    # hero's 92 px, because a following Scout trails about 85 px behind.
+    SCOUT_HEAL_REACH = 110.0
+
+    def _heal_at(self, site, dt):
+        """Owned Home and Food heal the hero and, since 2026-09-25, the Scout.
+
+        The owner: "companion spider should also be able to heal in the bases
+        if nearby." They draw on the same supply.
+        """
+        if site.kind not in ("home", "food"):
+            return
+        rate = 8 if site.kind == "food" else 3
+        patients = [(self.hero, 92.0)]
+        if self.ally is not None and not self.ally.dead:
+            patients.append((self.ally, self.SCOUT_HEAL_REACH))
+        for spider, reach in patients:
+            if site.supply <= 0:
+                return
+            if math.hypot(spider.x-site.x, spider.y-site.y) >= reach:
+                continue
+            amount = min(dt*rate, site.supply, spider.max_hp-spider.hp)
+            if amount > 0:
+                spider.heal(amount)
+                site.supply -= amount
 
     def capture(self, site):
         if site.owned:
