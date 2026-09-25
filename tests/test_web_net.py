@@ -51,7 +51,7 @@ def _seconds_to_free(spider, step) -> float:
 def test_a_fresh_net_is_anchored_and_goes_when_free():
     spider = _tarantula()
     spider.web_pinned("trap")
-    assert len(spider.web_anchors) == 5
+    assert len(spider.web_anchors) == 9
     assert all(math.hypot(ax - spider.x, ay - spider.y) > spider.size for ax, ay in spider.web_anchors)
     spider.webbed_timer = DT / 2
     spider._update_web_struggle(DT)
@@ -89,16 +89,52 @@ def test_the_player_frees_itself_faster_by_struggling():
     assert fighting < waiting * 0.8, (fighting, waiting)
 
 
-def test_struggling_jerks_the_body_and_the_net_is_drawn():
+@pytest.mark.parametrize("keys", [{"move_up"}, {"move_left"}, {"move_down", "move_right"}])
+def test_a_webbed_spider_does_not_move_or_turn(keys):
+    """The owner: "the net does not stop him from turning ... he should stay
+    stationary without any movement when hit." Both movement modes."""
+    from desktop_bug.app.controls import ControlSettings
+
+    for movement in ("screen", "turn"):
+        spider = _tarantula()
+        player = PlayerController(spider, ControlSettings(movement=movement))
+        spider.web_pinned("trap")
+        player.held = set(keys)
+        x0, y0, h0 = spider.x, spider.y, spider.heading
+        offsets = []
+        while spider.webbed:
+            spider.update(DT, -9000.0, -9000.0, 2400, 1400)
+            offsets.append(math.hypot(*spider.combat_body_offset()))
+            if spider.webbed:
+                assert math.hypot(spider.x - x0, spider.y - y0) < 1e-6, (movement, keys, "walked")
+                assert abs(spider.heading - h0) < 1e-6, (movement, keys, "turned")
+        assert max(offsets) < 1e-9, "struggling strains the net, not the body"
+        assert player.jump() is False or not spider.webbed
+
+
+def test_a_computer_spider_is_held_still_too():
+    spider = _tarantula()
+    spider.web_pinned("trap")
+    spider.target_x, spider.target_y = spider.x + 300.0, spider.y + 200.0
+    spider.target_heading = spider.heading + 2.0
+    spider.speed = 120.0
+    x0, y0, h0 = spider.x, spider.y, spider.heading
+    config = spider._spider_gait_config()
+    for _ in range(60):
+        advance_controller(spider, DT, config)
+    assert math.hypot(spider.x - x0, spider.y - y0) < 1e-6
+    assert abs(spider.heading - h0) < 1e-6
+
+
+def test_the_net_is_a_web_that_tears_as_it_loosens():
     from PyQt5.QtGui import QColor, QImage, QPainter
 
     spider = _tarantula()
     spider.web_pinned("trap")
-    offsets = []
-    for _ in range(40):
-        spider._update_web_struggle(DT)
-        offsets.append(math.hypot(*spider.combat_body_offset()))
-    assert max(offsets) > spider.size * 0.03, "the body should jerk against the silk"
+    assert len(spider.web_net) == 9 and all(len(s["rings"]) == 4 for s in spider.web_net)
+    box = spider.bounding_rect()
+    for ax, ay in spider.web_anchors:
+        assert box[0] <= ax <= box[2] and box[1] <= ay <= box[3], "repaint must cover the guy lines"
 
     def white_pixels(target):
         image = QImage(240, 240, QImage.Format_ARGB32)
@@ -115,4 +151,7 @@ def test_struggling_jerks_the_body_and_the_net_is_drawn():
         return count
 
     free = _tarantula()
-    assert white_pixels(spider) > white_pixels(free) + 30, "the net should show"
+    fresh = white_pixels(spider)
+    assert fresh > white_pixels(free) + 30, "the net should show"
+    spider.webbed_timer = WEBBED_SECONDS * 0.2
+    assert white_pixels(spider) < fresh * 0.7, "a loosening net has torn strands"

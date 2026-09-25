@@ -154,6 +154,11 @@ class BodyMovementMixin:
             self.ceph_pulse = -math.sin(self.breath_phase + 0.85) * (0.018 + 0.022 * startle)
             return
 
+        if self.webbed_held and not self.dragging:
+            # Held by silk: no walking and no turning (web_net.py).
+            self.current_speed = 0.0
+            self.vel_x = self.vel_y = 0.0
+            return
         dx = self.target_x - self.x
         dy = self.target_y - self.y
         target_dist = math.hypot(dx, dy)

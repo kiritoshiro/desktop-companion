@@ -210,7 +210,8 @@ class PlayerController:
 
     def jump(self) -> bool:
         spider = self.creature
-        if self.paused or spider.dead or spider.airborne or self.jump_cooldown > 0.0 or not spider.has_skill("jump"):
+        if (self.paused or spider.dead or spider.airborne or spider.webbed_held
+                or self.jump_cooldown > 0.0 or not spider.has_skill("jump")):
             return False
         if not spider.spend_energy(self.JUMP_ENERGY):
             return False

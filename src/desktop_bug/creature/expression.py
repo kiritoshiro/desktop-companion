@@ -167,9 +167,7 @@ class ExpressionMixin:
             back = self.lunge * reach * self.size
             ox += self.combat_face_x * back
             oy += self.combat_face_y * back
-        # A webbed spider jerking against the silk (web_net.py).
-        sx, sy = self.web_struggle_offset()
-        return (ox + sx, oy + sy)
+        return (ox, oy)
 
     def _update_posture(self, dt: float) -> None:
         m = self.mood
