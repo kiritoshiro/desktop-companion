@@ -1,5 +1,8 @@
 """The Adventure hero's character window: name, skill tree and armour.
 
+Armour is worn on an anatomy doll (armour_ui); every skill and piece says on
+hover exactly what it gives (stat_text).
+
 The owner: *"in adventure window create the character whole skill tree, and
 armor, character name. all of it as a window with nice designs."* It edits
 adventure-hero.json (adventure_profile) and saves on every change. The hero
@@ -10,14 +13,16 @@ from __future__ import annotations
 
 from PyQt5.QtCore import QPointF, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
-from PyQt5.QtWidgets import (QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-                             QProgressBar, QPushButton, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar,
+                             QPushButton, QVBoxLayout, QWidget)
 
 from . import wood_theme
+from .armour_ui import InventoryBag, SpiderDoll
 from .adventure_profile import (MAX_NAME_LENGTH, clean_name, hero_progression, load_profile,
                                 save_profile)
-from ..state.progression import (ABILITY_BY_ID, ABILITY_TREE, ARMOR_CATALOG, MAX_LEVEL,
-                                 xp_to_next_level)
+from .stat_text import effect_lines, item_effects, set_line, short_effect, skill_tooltip
+from ..state.progression import (ABILITY_BY_ID, ABILITY_TREE, ARMOR_BY_ID, ARMOR_SETS, MAX_LEVEL,
+                                 set_bonus_effects, xp_to_next_level)
 
 # Where each skill sits: (column, row). One column per branch, rows by depth,
 # so a prerequisite is always drawn above what it opens. A skill added to the
@@ -30,16 +35,12 @@ TREE_LAYOUT = {
 }
 NODE_W, NODE_H = 172, 62
 COL_GAP, ROW_GAP = 22, 38
-SLOT_NAMES = {"carapace": "Carapace", "abdomen": "Abdomen", "legs": "Legs",
-              "pedipalps": "Pedipalps", "head": "Head"}
-EFFECT_NAMES = {"max_hp": "health", "armor": "armour", "damage": "damage",
-                "max_energy": "stamina", "energy_regen": "stamina regen",
-                "speed": "speed", "web_homing": "homing silk"}
 
 
 def character_qss() -> str:
     t = wood_theme
     return t.dialog_qss() + f"""
+        QWidget {{ font-family: "{t.UI_FONT}"; }}
         QLineEdit#heroName {{ background: {t.WALNUT_DEEP}; color: {t.CREAM};
             border: 2px solid {t.BRASS_DEEP}; border-radius: 8px; padding: 4px 10px;
             font-size: 16pt; font-weight: 800; }}
@@ -52,11 +53,14 @@ def character_qss() -> str:
         QLabel#statLine {{ color: {t.CREAM_SOFT}; font-size: 9pt; }}
         QFrame#sheetPanel {{ background: rgba(20, 12, 6, 150); border: 1px solid {t.BRASS_DEEP};
             border-radius: 10px; }}
-        QFrame#slotCard {{ background: rgba(63, 38, 22, 200); border: 1px solid {t.INK_SOFT};
+        QScrollArea#inventoryBag {{ background: rgba(20, 12, 6, 200); border: 1px solid {t.INK_SOFT};
             border-radius: 8px; }}
-        QLabel#slotName {{ color: {t.OAK_LIGHT}; font-size: 8pt; font-weight: 800; }}
-        QLabel#slotItem {{ color: {t.CREAM}; font-size: 10pt; font-weight: 700; }}
-        QPushButton#slotButton {{ padding: 3px 6px; min-height: 26px; font-size: 9pt; }}
+        QWidget#bagInner {{ background: transparent; }}
+        QFrame#itemTile {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 rgba(90, 58, 32, 230), stop:1 rgba(52, 32, 18, 230));
+            border: 1px solid {t.BRASS_DEEP}; border-radius: 8px; }}
+        QFrame#itemTile:hover {{ border: 2px solid {t.BRASS}; }}
+        QLabel#tileName {{ color: {t.CREAM}; font-size: 8pt; font-weight: 700; background: transparent; }}
         QPushButton#skillNode {{ border-radius: 10px; padding: 4px; font-size: 9pt;
             text-align: center; }}
         QPushButton#skillNode[state="unlocked"] {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -72,19 +76,6 @@ def character_qss() -> str:
         QProgressBar#xpBar::chunk {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
             stop:0 #c9a044, stop:1 #f2d488); border-radius: 5px; }}
     """
-
-
-def _effect_text(effects: dict) -> str:
-    parts = []
-    for key, value in effects.items():
-        name = EFFECT_NAMES.get(key, key)
-        if key == "speed":
-            parts.append(f"+{value * 100:.0f}% {name}")
-        elif key == "web_homing":
-            parts.append(name)
-        else:
-            parts.append(f"+{value:g} {name}")
-    return ", ".join(parts)
 
 
 def tree_positions() -> dict:
@@ -135,8 +126,7 @@ class SkillTree(QWidget):
                         else ("Needs " + ", ".join(missing)) if missing else f"{node.cost} pt")
             button.setProperty("state", look)
             button.setText(f"{node.name}\n{note}")
-            button.setToolTip(f"<b>{node.name}</b> (level {node.level_required})<br>"
-                              f"{node.description}<br><i>{_effect_text(node.effects)}</i>")
+            button.setToolTip(skill_tooltip(node, state))
             button.style().unpolish(button)
             button.style().polish(button)
         self.update()
@@ -218,21 +208,30 @@ class CharacterDialog(QDialog):
         armour_panel.setObjectName("sheetPanel")
         armour_col = QVBoxLayout(armour_panel)
         armour_col.setContentsMargins(14, 10, 14, 14)
+        armour_col.setSpacing(6)
         armour_title = QLabel("Armour")
         armour_title.setObjectName("sectionTitle")
         armour_col.addWidget(armour_title)
-        self.slots = QGridLayout()
-        self.slots.setSpacing(8)
-        armour_col.addLayout(self.slots)
-        stats_title = QLabel("Bonuses")
-        stats_title.setObjectName("sectionTitle")
-        armour_col.addWidget(stats_title)
+        hint = QLabel("Drag a piece from the bag onto the spider. Drag it back, or double-click, to take it off.")
+        hint.setObjectName("statLine")
+        hint.setWordWrap(True)
+        armour_col.addWidget(hint)
+        self.doll = SpiderDoll()
+        self.doll.equip.connect(self._equip)
+        self.doll.unequip.connect(self._unequip)
+        armour_col.addWidget(self.doll, 0, Qt.AlignHCenter)
+        bag_title = QLabel("Bag")
+        bag_title.setObjectName("sectionTitle")
+        armour_col.addWidget(bag_title)
+        self.bag = InventoryBag()
+        self.bag.equip.connect(self._equip)
+        self.bag.unequip.connect(self._unequip)
+        armour_col.addWidget(self.bag)
         self.stats_label = QLabel()
         self.stats_label.setObjectName("statLine")
         self.stats_label.setWordWrap(True)
+        self.stats_label.setTextFormat(Qt.RichText)
         armour_col.addWidget(self.stats_label)
-        armour_col.addStretch(1)
-        armour_panel.setMinimumWidth(360)
         body.addWidget(armour_panel, 1)
         root.addLayout(body)
 
@@ -293,62 +292,25 @@ class CharacterDialog(QDialog):
         self.stats_label.setText(self._bonus_text())
 
     def _refresh_slots(self) -> None:
-        while self.slots.count():
-            item = self.slots.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
-        for index, slot in enumerate(SLOT_NAMES):
-            equipped = self.state.equipped.get(slot)
-            for item in (i for i in ARMOR_CATALOG if i.slot == slot):
-                card = QFrame()
-                card.setObjectName("slotCard")
-                row = QHBoxLayout(card)
-                row.setContentsMargins(10, 6, 8, 6)
-                text = QVBoxLayout()
-                text.setSpacing(1)
-                name = QLabel(SLOT_NAMES[slot].upper())
-                name.setObjectName("slotName")
-                text.addWidget(name)
-                worn = item.id == equipped
-                label = QLabel(item.name)
-                label.setObjectName("slotItem" if worn else "statLine")
-                label.setToolTip(item.description)
-                text.addWidget(label)
-                row.addLayout(text, 1)
-                if worn:
-                    button = QPushButton("Take off")
-                    button.clicked.connect(lambda _=False, s=slot: self._unequip(s))
-                elif item.id in self.state.inventory:
-                    button = QPushButton("Wear")
-                    button.clicked.connect(lambda _=False, i=item.id: self._equip(i))
-                else:
-                    button = QPushButton("Not found")
-                    button.setEnabled(False)
-                button.setObjectName("slotButton")
-                button.setFixedWidth(118)
-                button.setToolTip(item.description)
-                row.addWidget(button)
-                self.slots.addWidget(card, index, 0)
+        self.doll.show_state(self.state)
+        self.bag.show_state(self.state)
 
     def _bonus_text(self) -> str:
+        """Everything skills and armour add, then how far each set is."""
         totals: dict[str, float] = {}
         for ability_id in self.state.unlocked_abilities:
             for key, value in ABILITY_BY_ID[ability_id].effects.items():
                 totals[key] = totals.get(key, 0.0) + value
-        for item in ARMOR_CATALOG:
-            if self.state.equipped.get(item.slot) == item.id:
-                for key in ("armor", "max_hp", "max_energy", "damage", "speed"):
-                    totals[key] = totals.get(key, 0.0) + getattr(item, key)
-        shown = {k: v for k, v in totals.items() if abs(v) > 1e-9}
-        if not shown:
-            return "No bonuses yet. Learn skills and wear armour to grow stronger."
-        lines = []
-        for key, value in shown.items():
-            name = EFFECT_NAMES.get(key, key)
-            if key == "speed":
-                lines.append(f"{value * 100:+.1f}% {name}")
-            elif key == "web_homing":
-                lines.append("Silk homes in on moving targets")
-            else:
-                lines.append(f"{value:+g} {name}")
-        return "  ·  ".join(lines)
+        for item_id in self.state.equipped.values():
+            item = ARMOR_BY_ID.get(item_id)
+            if item is not None:
+                for key, value in item_effects(item).items():
+                    totals[key] = totals.get(key, 0.0) + value
+        for key, value in set_bonus_effects(self.state).items():
+            totals[key] = totals.get(key, 0.0) + value
+        lines = [short_effect(text) for text, _ in effect_lines(totals)]
+        text = ("<b>Bonuses</b>  " + "  ·  ".join(lines)) if lines else \
+            "No bonuses yet. Learn skills and wear armour to grow stronger."
+        sets = [set_line(set_id, self.state, dim=wood_theme.CREAM_SOFT, good=wood_theme.BRASS)
+                for set_id in ARMOR_SETS]
+        return text + "<br>" + "<br>".join(sets)

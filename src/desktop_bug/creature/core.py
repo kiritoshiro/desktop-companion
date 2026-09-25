@@ -35,6 +35,7 @@ from ..state.progression import (
     MAX_LEVEL,
     ProgressionState,
     equipped_items,
+    set_bonus_effects,
     growth_multipliers,
     normalize_team_id,
     relation_between,
@@ -684,6 +685,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
                 value += float(node.effects.get(key, 0.0))
         for item in equipped_items(self.progression):
             value += float(getattr(item, key, 0.0))
+        value += set_bonus_effects(self.progression).get(key, 0.0)
         return value
 
     def _apply_progression_stats(self, reset_resources: bool = False,
