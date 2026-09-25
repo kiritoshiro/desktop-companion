@@ -159,3 +159,23 @@ def test_an_enemy_is_drawn_black_and_red(model_id):
     own = _render(model, None)
     enemy = _render(model, enemy_palette())
     assert _red_pixels(enemy) > _red_pixels(own) + 25, "the enemy should read as red-marked"
+
+
+def test_sprite_art_is_reshaded_dark_for_an_enemy():
+    """Sprite-rig art is PNGs; the usual hue swap keeps brightness, so a
+    white plush enemy stayed white. The enemy palette re-shades it."""
+    from PyQt5.QtGui import QColor, QImage, QPixmap
+
+    from desktop_bug.content.palettes import enemy_palette
+    from desktop_bug.creature.sprite_tint import palette_signature, tint_assets
+
+    image = QImage(8, 8, QImage.Format_ARGB32)
+    image.fill(QColor(240, 240, 236))
+    assets = {"abdomen": QPixmap.fromImage(image), "shadow": QPixmap.fromImage(image)}
+    tinted = tint_assets(assets, enemy_palette())
+    body = tinted["abdomen"].toImage().pixelColor(4, 4)
+    assert max(body.red(), body.green(), body.blue()) < 100, body.name()
+    assert body.red() > body.green() + 20, "dark red, not grey"
+    assert tinted["shadow"] is assets["shadow"], "the shadow stays neutral"
+    # An ordinary palette never re-shades.
+    assert "shade_to" not in dict(palette_signature({"body": [200, 60, 40]}))
