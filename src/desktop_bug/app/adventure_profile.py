@@ -20,7 +20,7 @@ import json
 from pathlib import Path
 
 from ..content.discovery import state_dir
-from ..state.progression import ProgressionState
+from ..state.progression import ARMOR_SETS, ProgressionState
 
 PROFILE_VERSION = 2
 DEFAULT_HERO_NAME = "Wayfarer"
@@ -93,9 +93,16 @@ def save_profile(profile: dict, path: Path | None = None) -> bool:
 
 
 def hero_progression(profile: dict) -> ProgressionState:
-    """The saved hero, or a new one at level 1."""
+    """The saved hero, or a new one at level 1.
+
+    The hero carries the Warden set in its inventory (the owner asked for one
+    armour set to equip); it is added to older saves too.
+    """
     raw = profile.get("progression")
-    return ProgressionState.from_dict(raw) if isinstance(raw, dict) else ProgressionState()
+    state = ProgressionState.from_dict(raw) if isinstance(raw, dict) else ProgressionState()
+    for piece in ARMOR_SETS["warden"].pieces:
+        state.add_item(piece)
+    return state
 
 
 def record_result(profile: dict, mission_id: str, won: bool, seconds: float) -> dict:

@@ -26,6 +26,7 @@ INK_SOFT = "#6a4a2c"
 CREAM = "#f6e2b8"
 CREAM_SOFT = "#dcc39a"
 BRASS = "#d6a448"
+UI_FONT = "Segoe UI"
 BRASS_DEEP = "#9c6d22"
 HEALTH = "#b8472f"
 STAMINA = "#7f9e43"
@@ -366,6 +367,11 @@ def app_icon():
 def apply_app_theme(app) -> None:
     """Dress every dialog and menu of this process in wood, and give it its icon."""
     app.setStyleSheet(app_qss())
+    # A named, readable face. Left to Qt's fallback, text could come out in a
+    # blocky all-capitals face (the owner: "text is difficult to read").
+    from PyQt5.QtGui import QFont
+
+    app.setFont(QFont(UI_FONT, 9))
     icon = app_icon()
     if icon is not None:
         app.setWindowIcon(icon)

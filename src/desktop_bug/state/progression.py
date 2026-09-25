@@ -44,15 +44,15 @@ class AbilityNode:
 
 
 ABILITY_TREE = (
-    AbilityNode("vitality", "Vitality", "A sturdier body with a larger health pool.", 2, effects={"max_hp": 18.0}),
-    AbilityNode("quick_step", "Quick step", "Improves grounded movement and turn recovery.", 3, effects={"speed": 0.06}),
-    AbilityNode("silk_sense", "Silk sense", "Sharper awareness and a more generous energy reserve.", 4, effects={"max_energy": 12.0, "energy_regen": 0.8}),
-    AbilityNode("carapace_harden", "Hardened carapace", "A denser spider shell that absorbs more damage.", 5, effects={"armor": 2.0}, prerequisites=("vitality",)),
-    AbilityNode("power_strike", "Power strike", "Stronger bites, pounces, and future attacks.", 6, effects={"damage": 2.0}),
-    AbilityNode("web_crafter", "Web crafter", "Unlocks a progression hook for advanced web abilities.", 8, effects={"max_energy": 8.0}, prerequisites=("silk_sense",)),
+    AbilityNode("vitality", "Vitality", "A sturdier body: you can take more hits before you fall.", 2, effects={"max_hp": 18.0}),
+    AbilityNode("quick_step", "Quick step", "Quicker legs: you walk and turn faster.", 3, effects={"speed": 0.06}),
+    AbilityNode("silk_sense", "Silk sense", "A deeper silk reserve: more stamina for webs and pounces, and it refills faster.", 4, effects={"max_energy": 12.0, "energy_regen": 0.8}),
+    AbilityNode("carapace_harden", "Hardened carapace", "A denser shell: every hit you take lands softer.", 5, effects={"armor": 2.0}, prerequisites=("vitality",)),
+    AbilityNode("power_strike", "Power strike", "Stronger chelicerae: every bite hits harder.", 6, effects={"damage": 2.0}),
+    AbilityNode("web_crafter", "Web crafter", "Practised spinning: more stamina, and it opens Silk tracking.", 8, effects={"max_energy": 8.0}, prerequisites=("silk_sense",)),
     AbilityNode("silk_tracking", "Silk tracking", "Thrown silk corrects itself in flight and follows a moving target.", 9, effects={"web_homing": 1.0}, prerequisites=("web_crafter",)),
-    AbilityNode("long_stride", "Long stride", "Uses more of the leg range before asking for another step.", 10, effects={"speed": 0.08}, prerequisites=("quick_step",)),
-    AbilityNode("apex_predator", "Apex predator", "A late-game damage and stamina improvement.", 15, effects={"damage": 4.0, "max_energy": 16.0}, prerequisites=("power_strike", "carapace_harden")),
+    AbilityNode("long_stride", "Long stride", "Each step reaches further: you move faster still.", 10, effects={"speed": 0.08}, prerequisites=("quick_step",)),
+    AbilityNode("apex_predator", "Apex predator", "The peak of the hunt: much harder bites and a deep stamina reserve.", 15, effects={"damage": 4.0, "max_energy": 16.0}, prerequisites=("power_strike", "carapace_harden")),
 )
 
 ABILITY_BY_ID = {node.id: node for node in ABILITY_TREE}
@@ -71,19 +71,75 @@ class ArmorItem:
     speed: float = 0.0
     size_min: float = 0.55
     size_max: float = 2.25
+    # Pieces of one set share an id; wearing all of them adds ARMOR_SETS' bonus.
+    set_id: str = ""
 
 
 # These are light, anatomy-aware pieces rather than generic humanoid armour.
 # ``slot`` names also provide a stable hook for future sprites or model assets.
 ARMOR_CATALOG = (
-    ArmorItem("silk_carapace", "Woven carapace", "carapace", "A flexible silk shell over the abdomen.", armor=2.0, max_hp=8.0, speed=-0.015),
+    ArmorItem("silk_carapace", "Woven carapace", "carapace", "A flexible silk shell over the carapace.", armor=2.0, max_hp=8.0, speed=-0.015),
     ArmorItem("fluffy_mantle", "Soft setae mantle", "abdomen", "A warm, light mantle that cushions impacts.", armor=1.0, max_hp=12.0, max_energy=4.0, speed=-0.02),
     ArmorItem("leg_guard_set", "Leg guard set", "legs", "Small guards fitted around the leg joints.", armor=1.0, speed=0.025),
     ArmorItem("pedipalp_cuffs", "Pedipalp cuffs", "pedipalps", "Tiny protective cuffs that leave the hands free.", armor=0.5, max_energy=5.0, damage=0.5, speed=-0.01),
     ArmorItem("chelicerae_cap", "Fang cap", "head", "A narrow guard around the small head and chelicerae.", armor=1.0, damage=2.0, speed=-0.008),
+    # The Warden set is cut from a moulted exoskeleton and follows a
+    # tarantula's own anatomy (the owner: "one armor set that would actually be
+    # logical anatomically for tarantula"). Every piece leaves free what the
+    # spider needs: the eyes, the fovea, the knees, the tarsal claws and the
+    # spinnerets. See [[Tarantula Reference - Brachypelma hamorii]].
+    ArmorItem("warden_crest", "Warden ocular crest", "head",
+              "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+              armor=1.0, damage=2.5, set_id="warden"),
+    ArmorItem("warden_carapace", "Warden carapace plate", "carapace",
+              "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
+              armor=2.5, max_hp=12.0, speed=-0.02, set_id="warden"),
+    ArmorItem("warden_tergites", "Warden tergite bands", "abdomen",
+              "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
+              armor=1.5, max_hp=20.0, speed=-0.02, set_id="warden"),
+    ArmorItem("warden_greaves", "Warden femur greaves", "legs",
+              "Plates on all eight femurs, the long upper leg; the red knees and the gripping tarsi stay bare.",
+              armor=1.0, max_hp=6.0, speed=-0.01, set_id="warden"),
+    ArmorItem("warden_bracers", "Warden palp bracers", "pedipalps",
+              "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
+              armor=0.5, damage=1.0, max_energy=6.0, set_id="warden"),
 )
 
 ARMOR_BY_ID = {item.id: item for item in ARMOR_CATALOG}
+
+
+@dataclass(frozen=True)
+class ArmorSet:
+    id: str
+    name: str
+    description: str
+    effects: dict[str, float] = field(default_factory=dict)
+
+    @property
+    def pieces(self) -> tuple[str, ...]:
+        return tuple(item.id for item in ARMOR_CATALOG if item.set_id == self.id)
+
+
+ARMOR_SETS = {
+    "warden": ArmorSet("warden", "Warden set",
+                       "Wear all five pieces: the plates brace one another.",
+                       effects={"max_hp": 10.0, "armor": 0.5, "energy_regen": 1.5}),
+}
+
+
+def set_pieces_worn(state: "ProgressionState", set_id: str) -> int:
+    worn = set(state.equipped.values())
+    return sum(piece in worn for piece in ARMOR_SETS[set_id].pieces)
+
+
+def set_bonus_effects(state: "ProgressionState") -> dict[str, float]:
+    """The bonuses of every armour set worn complete."""
+    totals: dict[str, float] = {}
+    for armor_set in ARMOR_SETS.values():
+        if armor_set.pieces and set_pieces_worn(state, armor_set.id) == len(armor_set.pieces):
+            for key, value in armor_set.effects.items():
+                totals[key] = totals.get(key, 0.0) + value
+    return totals
 
 
 def xp_to_next_level(level: int) -> int:
