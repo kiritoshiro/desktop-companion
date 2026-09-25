@@ -82,6 +82,15 @@ def render_reference_frame() -> QImage:
     return image
 
 
+# How far a live render may be from a committed PNG. The PNG round trip is not
+# quite lossless (see `max_channel_difference`), and a CI runner can round an
+# anti-aliased edge one step differently from the machine that wrote the
+# reference: three variant checks that demanded 0 failed on CI at 1/255 twice
+# on 2026-09-25 (PRs #75 and #80) and passed on rerun of the same commit. Two
+# live renders in one process are still compared exactly.
+PNG_TOLERANCE = 2
+
+
 def max_channel_difference(left: QImage, right: QImage) -> int:
     """Largest per-channel gap between two same-sized images.
 
@@ -120,7 +129,7 @@ def test_creature_render_matches_reference(monkeypatch):
     reference = QImage(str(GOLDEN))
     assert not reference.isNull(), f"could not load {GOLDEN}"
     worst = max_channel_difference(live, reference)
-    assert worst <= 2, (
+    assert worst <= PNG_TOLERANCE, (
         f"the rendered colony differs from the committed reference by up to "
         f"{worst}/255 on one channel"
     )
