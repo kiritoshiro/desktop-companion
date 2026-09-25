@@ -422,6 +422,11 @@ class GaitConfigMixin:
 
     def _spider_locomotion_intent(self, dt: float) -> Tuple[float, float, float]:
         """Convert behavior state into a local stroke and turn request."""
+        if self.webbed_held and not self.dragging:
+            # Held by silk: no stroke and no turn (web_net.py).
+            self.current_speed = 0.0
+            self._smooth_turn_step(0.0, dt, 0.0)
+            return 0.0, 0.0, 0.0
         dx = self.target_x - self.x
         dy = self.target_y - self.y
         target_dist = math.hypot(dx, dy)

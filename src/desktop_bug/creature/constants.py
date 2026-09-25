@@ -37,7 +37,10 @@ WEBBED_SPEED_MULT = 0.35
 # not immobilise it the way webbing the pointer does. A held spider cannot
 # translate; it can still turn, flinch and be attacked, so it struggles in
 # place instead of freezing like a statue.
-WEBBED_HOLD_SECONDS = 2.2
+# The owner (2026-09-25): "he should stay stationary without any movement
+# when hit". DC-50 held a spider for 2.2 s and then let it walk at
+# WEBBED_SPEED_MULT; now it is held for as long as the net lasts.
+WEBBED_HOLD_SECONDS = WEBBED_SECONDS
 # Struggling against silk (web_net.py): bursts of STRUGGLE_DUTY of every
 # STRUGGLE_PERIOD seconds, each second of a burst wearing STRUGGLE_DRAIN extra
 # seconds off the pin. Struggling throughout frees a spider in about 3.1 s

@@ -192,11 +192,15 @@ def test_being_webbed_holds_a_spider_then_slows_it():
     assert spider.webbed_held, "fresh silk should hold, not merely slow"
     assert spider._speed_mult() == 0.0
 
-    # Worked partly free: still hampered, but moving again.
-    spider.webbed_timer = WEBBED_SECONDS - WEBBED_HOLD_SECONDS - 0.01
-    assert not spider.webbed_held
-    assert spider.webbed
-    assert spider._speed_mult() == pytest.approx(free * WEBBED_SPEED_MULT)
+    # 2026-09-25, the owner: "he should stay stationary without any movement
+    # when hit". The hold now lasts the whole net; nothing is left of the
+    # slowed tail DC-50 had.
+    assert WEBBED_HOLD_SECONDS == WEBBED_SECONDS
+    spider.webbed_timer = 0.05
+    assert spider.webbed_held and spider._speed_mult() == 0.0
+    spider.webbed_timer = 0.0
+    assert not spider.webbed and spider._speed_mult() == pytest.approx(free)
+    assert 0.0 < WEBBED_SPEED_MULT < 1.0   # still used if a hold is ever shorter
 
 
 def test_silk_wears_off(monkeypatch):

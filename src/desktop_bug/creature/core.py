@@ -537,6 +537,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # The net drawn over a webbed spider and its fight against it
         # (web_net.py): guy-line ends in world space, and 0..1 of effort.
         self.web_anchors = []
+        self.web_net = []
         self.struggle = 0.0
         self.struggle_clock = 0.0
         # [amount, age, sideways nudge] per floating damage number
@@ -650,8 +651,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # remembering to ask.
         # DC-50: the first WEBBED_HOLD_SECONDS of a pin hold the spider in
         # place rather than merely slowing it, which is what the owner
-        # expected from watching silk land on the pointer. After that it
-        # works free and is only slowed for the remainder.
+        # expected from watching silk land on the pointer. Since 2026-09-25
+        # that is the whole pin (constants.WEBBED_HOLD_SECONDS); the slowed
+        # branch remains for a hold shorter than the pin.
         if self.webbed_held:
             webbed = 0.0
         elif self.webbed:
@@ -1649,6 +1651,13 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             # Label floats above the highest drawn point.
             min_y -= label_h + 6.0
 
+        if self.web_anchors:
+            # The net's guy lines reach well past the legs.
+            reach = 4.0
+            min_x = min([min_x] + [ax - reach for ax, _ in self.web_anchors])
+            max_x = max([max_x] + [ax + reach for ax, _ in self.web_anchors])
+            min_y = min([min_y] + [ay - reach for _, ay in self.web_anchors])
+            max_y = max([max_y] + [ay + reach for _, ay in self.web_anchors])
         self._bbox = self._damage_number_bounds((min_x, min_y, max_x, max_y))
         return self._bbox
 
