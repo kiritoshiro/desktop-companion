@@ -113,3 +113,37 @@ def random_palette(rng: random.Random | None = None) -> dict:
     return palette_from_hue(rng.random(),
                             rng.uniform(0.34, 0.78),
                             rng.uniform(0.62, 0.94))
+
+
+# The Adventure enemies' colours. The owner: "enemies should be of different
+# color than my spider. make them more black-red pattern." Set by hand rather
+# than from one hue, because the point is contrast: a near-black body and legs
+# with a faint red cast, and crimson where the model has markings (knee bands,
+# carapace rim, stripes, highlights). Crimson rather than orange, so an enemy
+# tarantula does not read as the player's own red-knee.
+ENEMY_COLORS = {
+    "body": [20, 11, 12],
+    "legs": [30, 14, 16],
+    "leg_band": [204, 20, 30],
+    "leg_dark": [14, 7, 8],
+    "leg_tip": [18, 8, 9],
+    "highlight": [176, 34, 40],
+    "eyes": [244, 58, 46],
+    # Keys only some models draw; an override for a key a model does not use
+    # changes nothing.
+    "rim": [190, 18, 28],
+    "stripe_color": [212, 28, 36],
+    "fluff_color": [74, 18, 22],
+    # Not a model colour: its presence draws the stripe-and-bars marking on
+    # the abdomen (render_procedural._draw_abdomen_marking).
+    "marking": [214, 24, 34],
+}
+
+
+def enemy_palette() -> dict:
+    """Colour overrides that make any model a black-and-crimson enemy.
+
+    For `CreatureManager._create_creature(color_overrides=...)`. A fresh copy,
+    because a creature keeps the dict it is given.
+    """
+    return {key: list(value) for key, value in ENEMY_COLORS.items()}
