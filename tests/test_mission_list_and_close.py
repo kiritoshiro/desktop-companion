@@ -22,18 +22,31 @@ def _qt(qapp):
     """Widgets need the one Qt application."""
 
 
-def test_missions_are_listed_and_only_the_territory_one_plays(state_dir):
+def test_missions_are_listed_and_the_maps_open_one_by_one(state_dir):
+    from desktop_bug.app.adventure_profile import load_profile, record_result, save_profile
+    from desktop_bug.app.campaign import MAPS
+
     started = []
     shell = ModeShell(QLabel("editor"), lambda: started.append(1))
     assert len(shell.mission_cards) == len(SKIRMISH_MISSIONS) >= 4
     playable = [mid for mid, _, _, ok in SKIRMISH_MISSIONS if ok]
-    assert playable == ["territory"]
+    assert playable == [m.id for m in MAPS]
+    # A new player has only the first map open; the rest wait on a win.
     for mission_id, card in shell.mission_cards.items():
         assert card.property("locked") is (mission_id != "territory")
     assert shell.adventure_launch.text() == "Play"
     assert shell.adventure_launch.parent() is shell.mission_cards["territory"]
     shell.adventure_launch.click()
     assert started == [1]
+    assert load_profile()["selected_map"] == "territory"
+    profile = load_profile()
+    record_result(profile, "territory", True, 100.0)
+    save_profile(profile)
+    shell.refresh_adventure()
+    assert shell.mission_cards["ember"].property("locked") is False
+    assert shell.mission_cards["obsidian"].property("locked") is True
+    shell.map_buttons["ember"].click()
+    assert started == [1, 1] and load_profile()["selected_map"] == "ember"
 
 
 class _Running:

@@ -11,6 +11,7 @@ also for skills also write what each skill gives when hovering mouse about it."*
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,7 @@ from PyQt5.QtCore import QMimeData, QPointF, Qt
 from PyQt5.QtGui import QColor, QDropEvent, QImage, QPainter
 
 from desktop_bug.app.adventure_profile import (fresh_profile, hero_progression, load_profile,
-                                               save_profile)
+                                               profile_path, save_profile)
 from desktop_bug.app.armour_ui import MIME, SLOT_ORDER, SpiderDoll
 from desktop_bug.app.stat_text import item_tooltip, skill_tooltip
 from desktop_bug.creature import armour_art
@@ -68,12 +69,27 @@ def test_the_worn_set_changes_the_spiders_stats(state_dir):
     assert spider.armor == pytest.approx(bare_armor + pieces_armor + bonus["armor"])
 
 
-def test_the_hero_carries_the_warden_set_even_from_an_old_save(state_dir):
-    assert set(WARDEN) <= set(hero_progression(fresh_profile()).inventory)
+def own_everything():
+    """A saved profile that owns every piece (armour is found as loot now)."""
     profile = fresh_profile()
-    profile["progression"] = {"level": 3, "inventory": ["silk_carapace"]}
+    profile["armoury"]["owned"] = [item.id for item in ARMOR_CATALOG]
     save_profile(profile)
-    state = hero_progression(load_profile())
+    return profile
+
+
+def test_an_old_saves_armour_moves_into_the_armoury(state_dir):
+    # A new hero starts with the common silk pieces; the rest is loot.
+    fresh = hero_progression(fresh_profile())
+    assert not set(WARDEN) & set(fresh.inventory)
+    # A version 2 file: the hero's own inventory, no armoury yet.
+    profile_path().write_text(json.dumps({
+        "version": 2, "name": "Old", "missions": {},
+        "progression": {"level": 3, "inventory": ["silk_carapace", *WARDEN],
+                        "equipped": {"carapace": "warden_carapace"}}}), encoding="utf-8")
+    loaded = load_profile()
+    state = hero_progression(loaded)
+    assert state.equipped == {"carapace": "warden_carapace"}, "what it wore stays on"
+    assert loaded["companions"].keys() == {"scout"} and loaded["selected_map"] == "territory"
     assert "silk_carapace" in state.inventory and set(WARDEN) <= set(state.inventory)
 
 
@@ -139,6 +155,7 @@ def _drop(widget, text):
 def test_dragging_a_piece_onto_the_doll_wears_it_and_back_to_the_bag_takes_it_off(state_dir):
     from desktop_bug.app.character_ui import CharacterDialog
 
+    own_everything()
     dialog = CharacterDialog()
     assert "warden_tergites" in dialog.bag.tiles
     _drop(dialog.doll, "warden_tergites")
@@ -217,13 +234,11 @@ def test_leg_armour_runs_down_the_whole_leg_but_leaves_the_claw_bare():
     assert not covered(255), "the tarsus and its claws stay bare"
 
 
-def test_the_hero_carries_every_set_and_the_bag_puts_the_best_first(state_dir):
+def test_the_bag_puts_the_best_first(state_dir):
     from desktop_bug.app.character_ui import CharacterDialog
     from desktop_bug.state.progression import ARMOR_TIERS
 
-    state = hero_progression(fresh_profile())
-    for armor_set in ARMOR_SETS.values():
-        assert set(armor_set.pieces) <= set(state.inventory)
+    own_everything()
     dialog = CharacterDialog()
     order = [ARMOR_TIERS.index(ARMOR_BY_ID[i].tier) for i in dialog.bag.tiles]
     assert order == sorted(order, reverse=True)

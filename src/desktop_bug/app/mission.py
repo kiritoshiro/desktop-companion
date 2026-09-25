@@ -4,12 +4,31 @@ from __future__ import annotations
 from dataclasses import dataclass
 import copy
 import math
+import random
 
 from .adventure import PlayerController
-from .adventure_profile import (hero_progression, load_profile, profile_path, record_result,
-                                save_profile)
+from .adventure_profile import (companion_progression, hero_progression, load_profile,
+                                profile_path, record_result, save_profile, store_progression,
+                                unlock_companion)
+from .armoury import add_loot
+from .campaign import (COMPANION_BY_ID, DEFAULT_MAP, MAP_BY_ID, PARTY_SIZE, enemy_loadout,
+                       map_unlocked, roll_drop)
+from ..state.progression import ARMOR_BY_ID
 from ..content.palettes import enemy_palette
 from ..world.playfield import Playfield, ScreenRect
+
+
+@dataclass
+class Loot:
+    """A piece of armour dropped by a dead enemy, waiting to be picked up."""
+    item_id: str
+    x: float
+    y: float
+    age: float = 0.0
+
+
+# How close the hero or a companion must walk to pick loot up.
+LOOT_REACH = 42.0
 
 
 @dataclass
@@ -43,10 +62,17 @@ class MissionActor(PlayerController):
     # movement key does; it used to sit out the whole net.
     struggling = True
 
-    def __init__(self, creature, mission, role, home, raider=False):
+    def __init__(self, creature, mission, role, home, raider=False, style=None, slot=0):
         super().__init__(creature, mission.controls)
         self.mission = mission
         self.role = role
+        # How it fights: an enemy by its role; a companion by its kind
+        # (the Silk weaver shoots, the Hunter pounces, the others bite).
+        self.style = style or role
+        # A companion's place in the party, so several do not stand on one spot.
+        self.slot = slot
+        self.defend_point = home
+        self.companion_id = None
         self.home = home
         self.raider = raider
         self.windup = 0.0
@@ -63,14 +89,14 @@ class MissionActor(PlayerController):
         c = self.creature
         if not self.in_cone(target):
             return None
-        if self.role == "weaver":
+        if self.style == "weaver":
             if (gap < self.WEB_RANGE and self.web_cooldown <= 0 and self.silk >= 1
                     and c.energy >= self.WEB_ENERGY):
                 return "shoot"
             return "bite" if gap < self.bite_reach() else None
         if gap < self.bite_reach():
             return "bite"
-        if (self.role == "hunter" and gap < self.bite_reach() + self.POUNCE_DISTANCE
+        if (self.style == "hunter" and gap < self.bite_reach() + self.POUNCE_DISTANCE
                 and self.jump_cooldown <= 0 and c.energy >= self.JUMP_ENERGY
                 and c.has_skill("jump")):
             return "pounce"
@@ -85,10 +111,13 @@ class MissionActor(PlayerController):
             self.think = 0.15
             targets = [s for s in m.manager.creatures if not s.dead and c.relation_to(s) == "foe"]
             if self.role == "ally":
-                anchor = m.defend_point if m.command == "defend" else (m.hero.x, m.hero.y)
+                anchor = self.defend_point if m.command == "defend" else (m.hero.x, m.hero.y)
+                # Companions trail behind the hero, fanned out by party slot.
+                spread = (self.slot - (len(m.allies) - 1) / 2) * 0.7
+                behind = m.hero.heading + math.pi + spread
                 self.home = anchor if m.command == "defend" else m.area.clamp(
-                    anchor[0] - math.cos(m.hero.heading)*85,
-                    anchor[1] - math.sin(m.hero.heading)*85, c.size*2)
+                    anchor[0] + math.cos(behind)*85,
+                    anchor[1] + math.sin(behind)*85, c.size*2)
                 targets = [s for s in targets if math.hypot(s.x-anchor[0], s.y-anchor[1]) < 220]
                 if m.command == "attack" and m.attack_target is not None and not m.attack_target.dead:
                     targets = [m.attack_target]
@@ -106,8 +135,8 @@ class MissionActor(PlayerController):
         c.motion_paused = gap < (reach * 0.72 if target else 22)
         # Its own pace, never faster than the player's walk, and scaled by
         # level and armour exactly as the player's is.
-        c.speed = (95.0 if self.role == "hunter" else 68.0) * c._speed_mult()
-        if target is not None and self.role == "weaver":
+        c.speed = (95.0 if self.style == "hunter" else 68.0) * c._speed_mult()
+        if target is not None and self.style == "weaver":
             c.motion_paused = 135 < gap < 230
             if gap < 135:
                 tx, ty = c.x + (c.x-tx), c.y + (c.y-ty)
@@ -156,7 +185,7 @@ class MissionActor(PlayerController):
 
 class TerritoryMission:
     MISSION_ID = "territory"
-    CAP = 10
+    CAP = 12
     CAPTURE_SECONDS = 4.0
     # How long the VICTORY / DEFEAT title stays up before the overlay closes
     # and the Adventure page comes back (the owner's request).
@@ -170,7 +199,7 @@ class TerritoryMission:
         self.command = "follow"
         self.attack_target = None
         self.hover_target = None
-        self.notice = "Capture Food or Silk, then seal the Hatchery. Hold clear sites for 4 seconds."
+        self.notice = ""
         self.notice_time = 9.0
         self.wave_clock = 28.0
         self.pending = []
@@ -189,6 +218,17 @@ class TerritoryMission:
         self.progress_path = profile_path()
         self.profile = load_profile(self.progress_path)
         self.hero_name = self.profile["name"]
+        # The map chosen on the Adventure page; a locked or unknown one falls
+        # back to the first. Results are recorded per map.
+        chosen = self.profile.get("selected_map", DEFAULT_MAP)
+        if not map_unlocked(self.profile.get("missions") or {}, chosen):
+            chosen = DEFAULT_MAP
+        self.map_info = MAP_BY_ID[chosen]
+        self.MISSION_ID = self.map_info.id
+        self.rng = random.Random()
+        self.loot = []
+        self.found = []           # (item id, "new" or "spare") picked up this raid
+        self.reward_text = ""
         previous = getattr(manager, "mission", None)
         source = previous.hero if previous else next((c for c in manager.creatures if not c.dead), None)
         if source is None:
@@ -229,18 +269,40 @@ class TerritoryMission:
         ]
         self.hero = self._spawn("hero", (self.sites[0].x, self.sites[0].y))
         self.player = PlayerController(self.hero, controls)
-        self.ally = self._spawn("ally", (self.hero.x+45, self.hero.y+65))
-        self.defend_point = (self.ally.x, self.ally.y)
+        # The party: the first PARTY_SIZE companions unlocked, each with its
+        # own level, skills and armour from the profile.
+        self.allies = []
+        for slot, companion_id in enumerate(list(self.profile.get("companions") or {})[:PARTY_SIZE]):
+            ally = self._spawn("ally", (self.hero.x+45, self.hero.y+65+slot*40), companion=companion_id)
+            if ally is not None:
+                self.allies.append(ally)
+        self.ally = self.allies[0] if self.allies else None
+        self.defend_point = (self.ally.x, self.ally.y) if self.ally else (self.hero.x, self.hero.y)
+        self.notice = (f"{self.map_info.title}: capture Food or Silk, then seal the Hatchery. "
+                       "Hold clear sites for 4 seconds.")
         for site, role in zip(self.sites[1:4], ("guard", "weaver", "hunter")):
             self._spawn(role, (site.x+35, site.y+40))
         manager._refresh_neighbor_links()
         manager._refresh_render_order()
 
-    def _spawn(self, role, pos, raider=False):
+    def _spawn(self, role, pos, raider=False, companion=None):
         if sum(not c.dead for c in self.manager.creatures) >= self.CAP:
             return None
         self._serial += 1
-        progress = copy.deepcopy(self.start_progress) if role == "hero" else {"level": max(1, int(self.start_progress.get("level", 1)))}
+        hero_level = max(1, int(self.start_progress.get("level", 1)))
+        worn = []
+        if role == "hero":
+            progress = copy.deepcopy(self.start_progress)
+        elif role == "ally":
+            progress = companion_progression(self.profile, companion).to_dict()
+            progress["relation_overrides"] = {}
+        else:
+            # Enemies wear the map's armour -- the guardian its whole set --
+            # and are a little stronger on later maps.
+            worn, item_level = enemy_loadout(self.map_info, role, self.rng)
+            progress = {"level": hero_level + self.map_info.tier - 1, "inventory": list(worn),
+                        "equipped": {ARMOR_BY_ID[i].slot: i for i in worn},
+                        "item_levels": {i: item_level for i in worn}}
         c = self.manager._create_creature(
             self.model, self.personality, self._serial, pos=pos,
             progression_state=progress, progression_id=f"mission-{self._serial}",
@@ -249,7 +311,14 @@ class TerritoryMission:
             # never look like the player's own spider.
             color_overrides=None if role in ("hero", "ally") else enemy_palette(),
             skills=["jump", "shoot_web", "chase", "approach"])
-        c.set_name({"hero": self.hero_name, "ally": "Scout", "guardian": "Thorn guardian"}.get(role, role.title()))
+        if role == "ally":
+            name = ((self.profile.get("companions") or {}).get(companion) or {}).get("name") \
+                or COMPANION_BY_ID[companion].name
+        else:
+            name = {"hero": self.hero_name, "guardian": self.map_info.guardian}.get(role, role.title())
+        c.set_name(name)
+        c.mission_loot = list(worn)      # what it can drop when it dies
+        c.loot_rolled = role in ("hero", "ally")
         if role == "hero":
             # The player picks the hero's skills in the character window;
             # points are banked rather than spent automatically (DC-57).
@@ -262,21 +331,25 @@ class TerritoryMission:
             c.max_hp *= 2.5
             c.hp = c.max_hp
             c.damage *= 1.25
-        elif role != "hero":
+        elif role not in ("hero", "ally"):
             c.max_hp *= .75 if role == "weaver" else .9
             c.hp = c.max_hp
             c.damage *= .65
         self.manager.creatures.append(c)
         if role != "hero":
-            self.actors.append(MissionActor(c, self, role, pos, raider))
+            style = COMPANION_BY_ID[companion].style if role == "ally" else None
+            slot = len(getattr(self, "allies", [])) if role == "ally" else 0
+            actor = MissionActor(c, self, role, pos, raider, style=style, slot=slot)
+            actor.companion_id = companion
+            self.actors.append(actor)
         self.manager._refresh_render_order()
         return c
 
     def issue(self, command, aim):
         if self.state != "active":
             return
-        if self.ally.dead:
-            self.announce("Scout has fallen. You can still finish the raid.")
+        if not any(not a.dead for a in self.allies):
+            self.announce("Your companions have fallen. You can still finish the raid.")
             return
         if command == "attack":
             targets = [c for c in self.manager.creatures if not c.dead and self.hero.relation_to(c) == "foe"]
@@ -288,13 +361,16 @@ class TerritoryMission:
                 return
             self.attack_target = target
         self.command = command
-        if command == "defend":
-            self.defend_point = (self.ally.x, self.ally.y)
-        self.announce({"follow": "Scout: following you", "defend": "Scout: defending this position",
-                       "attack": "Scout: attacking your target"}[command])
         for actor in self.actors:
             if actor.role == "ally":
                 actor.think = 0
+                if command == "defend":
+                    actor.defend_point = (actor.creature.x, actor.creature.y)
+        if command == "defend" and self.ally is not None:
+            self.defend_point = (self.ally.x, self.ally.y)
+        who = "Scout" if len(self.allies) <= 1 else "Companions"
+        self.announce({"follow": f"{who}: following you", "defend": f"{who}: defending this position",
+                       "attack": f"{who}: attacking your target"}[command])
 
     def announce(self, text):
         self.notice, self.notice_time = text, 5.0
@@ -330,7 +406,9 @@ class TerritoryMission:
         for projectile in self.manager.fly_world.projectiles:
             projectile.update(dt)
         self.manager.fly_world.projectiles = [p for p in self.manager.fly_world.projectiles if not p.done]
+        self._drop_loot()
         self.manager._bury_the_dead()
+        self._collect_loot(dt)
         self.actors = [a for a in self.actors if not a.creature.dead]
         self.manager.carcasses = [c for c in self.manager.carcasses[-4:] if not c.update(dt)]
         if self.hero.dead:
@@ -377,15 +455,15 @@ class TerritoryMission:
 
     def _adventurers_near(self, site) -> bool:
         return any(not c.dead and math.hypot(c.x-site.x, c.y-site.y) < 125
-                   for c in (self.hero, self.ally) if c is not None)
+                   for c in [self.hero] + self.allies)
 
     def _holders(self, site):
         """(spider, controller, reach) for every spider of the side holding ``site``."""
         if site.owned:
             yield self.hero, self.player, self.BASE_REACH
-            if self.ally is not None and not self.ally.dead:
-                ally = next((a for a in self.actors if a.creature is self.ally), None)
-                yield self.ally, ally, self.SCOUT_HEAL_REACH
+            for actor in self.actors:
+                if actor.role == "ally" and not actor.creature.dead:
+                    yield actor.creature, actor, self.SCOUT_HEAL_REACH
             return
         for actor in self.actors:
             if actor.role != "ally" and not actor.creature.dead:
@@ -457,6 +535,30 @@ class TerritoryMission:
             self.player.clear_keys()
             self.finish(won=True)
 
+    def _drop_loot(self):
+        """A dead enemy may leave one piece it wore; a guardian leaves two."""
+        for c in self.manager.creatures:
+            if not c.dead or getattr(c, "loot_rolled", True):
+                continue
+            c.loot_rolled = True
+            for index, item_id in enumerate(roll_drop(c.mission_loot, c is self.guardian, self.rng)):
+                x, y = self.area.clamp(c.x + index * 30.0, c.y + index * 12.0, 30)
+                self.loot.append(Loot(item_id, x, y))
+
+    def _collect_loot(self, dt):
+        """Walk over loot to take it: the hero or any companion."""
+        pickers = [s for s in [self.hero] + self.allies if not s.dead]
+        for loot in list(self.loot):
+            loot.age += dt
+            if not any(math.hypot(s.x-loot.x, s.y-loot.y) < LOOT_REACH for s in pickers):
+                continue
+            self.loot.remove(loot)
+            result = add_loot(self.profile, loot.item_id)
+            self.found.append((loot.item_id, result))
+            item = ARMOR_BY_ID[loot.item_id]
+            extra = " (spare - stack it to upgrade)" if result == "spare" else ""
+            self.announce(f"Found {item.name} - {item.tier.capitalize()}{extra}")
+
     def _spawning(self, dt):
         hatch = self.sites[3]
         self.wave_clock -= dt
@@ -513,7 +615,11 @@ class TerritoryMission:
         """
         if self.saved:
             return
+        first_win = won and not (self.profile.get("missions") or {}).get(self.MISSION_ID, {}).get("victories")
         record_result(self.profile, self.MISSION_ID, won, self.elapsed)
+        reward = self.map_info.reward_companion
+        if first_win and reward and unlock_companion(self.profile, reward):
+            self.reward_text = f"{COMPANION_BY_ID[reward].name} joins you"
         self.save_progress()
 
     def save_progress(self) -> bool:
@@ -523,6 +629,11 @@ class TerritoryMission:
         enter creatures.json.
         """
         self.profile["progression"] = self.hero.progression.to_dict()
+        # Companions keep what they earned, like the hero; loot is already
+        # in the profile's armoury (add_loot).
+        for actor in self.actors:
+            if actor.role == "ally" and actor.companion_id:
+                store_progression(self.profile, actor.companion_id, actor.creature.progression)
         if save_profile(self.profile, self.progress_path):
             self.saved = self.ended
             self.save_error = ""

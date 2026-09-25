@@ -5,8 +5,13 @@ from __future__ import annotations
 from PyQt5.QtCore import QPointF, QRect, QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QPainterPath, QPen, QRadialGradient
 
+import math
+
 from .adventure_ui import _board, _home_area, hud_rect, short_binding
 from .mission_art import building_art
+from .stat_text import TIER_COLORS
+from ..creature.armour_art import armour_icon
+from ..state.progression import ARMOR_BY_ID
 
 
 def draw_buildings(painter, mission):
@@ -66,6 +71,32 @@ def draw_buildings(painter, mission):
             painter.setPen(QPen(QColor("#ffb77a"), 2.5, Qt.DashLine))
             painter.drawEllipse(QPointF(c.x, c.y), c.size*2.8, c.size*2.8)
     painter.restore()
+    draw_loot(painter, mission)
+
+
+def draw_loot(painter, mission):
+    """Dropped armour: its picture, bobbing in a glow of its quality's colour."""
+    if not mission.loot:
+        return
+    painter.save()
+    for loot in mission.loot:
+        item = ARMOR_BY_ID[loot.item_id]
+        colour = QColor(TIER_COLORS.get(item.tier, "#cfc8b8"))
+        pulse = 0.5 + 0.5 * math.sin(loot.age * 4.0)
+        bob = math.sin(loot.age * 3.0) * 3.0
+        glow = QRadialGradient(QPointF(loot.x, loot.y + bob), 30)
+        centre = QColor(colour)
+        centre.setAlpha(int(120 + 80 * pulse))
+        outer = QColor(colour)
+        outer.setAlpha(0)
+        glow.setColorAt(0.0, centre)
+        glow.setColorAt(1.0, outer)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(glow)
+        painter.drawEllipse(QPointF(loot.x, loot.y + bob), 30, 30)
+        painter.drawImage(QRectF(loot.x - 17, loot.y - 17 + bob, 34, 34),
+                          armour_icon(item.id, item.slot, 64))
+    painter.restore()
 
 
 def command_rects(window):
@@ -99,8 +130,9 @@ def draw_mission_hud(painter, window, mission):
     painter.drawText(r.adjusted(14, 33, -14, -9), Qt.TextWordWrap | Qt.AlignLeft, detail)
     if window.player is not None:
         hr = hud_rect(window)
+        living = [a for a in mission.allies if not a.dead]
         for command, rect in command_rects(window):
-            active = command == mission.command and not mission.ally.dead
+            active = command == mission.command and bool(living)
             painter.setPen(QPen(QColor("#8bd9bd" if active else "#95794e"), 1.5))
             painter.setBrush(QColor("#29463d" if active else "#312820"))
             painter.drawRoundedRect(rect, 5, 5)
@@ -108,8 +140,10 @@ def draw_mission_hud(painter, window, mission):
             key = short_binding(window.controls.binding("companion_"+command))
             painter.drawText(rect, Qt.AlignCenter, f"{key}  {command.title()}")
         painter.setPen(QColor("#e7d4ac"))
+        party = "  ".join(f"{a.display_name} {a.hp:.0f}/{a.max_hp:.0f}" for a in living)
         painter.drawText(hr.adjusted(14, 186, -14, -3), Qt.AlignLeft | Qt.AlignVCenter,
-                         "Scout fallen" if mission.ally.dead else f"Scout {mission.ally.hp:.0f}/{mission.ally.max_hp:.0f} HP | Defend holds here; Attack aims at foe")
+                         painter.fontMetrics().elidedText(party or "Companions fallen", Qt.ElideRight,
+                                                          hr.width() - 28))
     painter.restore()
     if mission.ended:
         draw_end_title(painter, mission)
@@ -118,9 +152,16 @@ def draw_mission_hud(painter, window, mission):
 def end_title_text(mission):
     """(title, subtitle) for the end screen."""
     hero = mission.hero
+    extras = []
+    found = len(getattr(mission, "found", []))
+    if found:
+        extras.append(f"found {found} piece{'s' if found != 1 else ''} of armour")
+    if getattr(mission, "reward_text", ""):
+        extras.append(mission.reward_text)
+    tail = "".join(f"  \u00b7  {e}" for e in extras)
     if mission.state == "victory":
-        return "VICTORY", f"The desktop is yours  \u00b7  {hero.display_name} reached level {hero.level}"
-    return "DEFEAT", f"{hero.display_name} has fallen  \u00b7  level and XP are kept"
+        return "VICTORY", f"The desktop is yours  \u00b7  {hero.display_name} reached level {hero.level}{tail}"
+    return "DEFEAT", f"{hero.display_name} has fallen  \u00b7  level, XP and loot are kept{tail}"
 
 
 def draw_end_title(painter, mission):

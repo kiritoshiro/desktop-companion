@@ -18,11 +18,14 @@ from PyQt5.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QP
 
 from . import wood_theme
 from .armour_ui import InventoryBag, SpiderDoll
-from .adventure_profile import (MAX_NAME_LENGTH, clean_name, hero_progression, load_profile,
-                                save_profile)
-from .stat_text import effect_lines, item_effects, set_line, short_effect, skill_tooltip
-from ..state.progression import (ABILITY_BY_ID, ABILITY_TREE, ARMOR_BY_ID, ARMOR_SETS, MAX_LEVEL,
-                                 set_bonus_effects, xp_to_next_level)
+from .armoury import (armoury, can_upgrade, level_of, party, sell_price, sell_spares, spares_of,
+                      take_off, upgrade, wear, worn_by)
+from .adventure_profile import (HERO, MAX_NAME_LENGTH, clean_name, hero_progression, load_profile,
+                                save_profile, spider_progression, store_progression)
+from .stat_text import (TIER_COLORS, effect_lines, item_effects, set_line, short_effect,
+                        skill_tooltip)
+from ..state.progression import (ABILITY_BY_ID, ABILITY_TREE, ARMOR_BY_ID, ARMOR_SETS, MAX_ITEM_LEVEL,
+                                 MAX_LEVEL, equipped_items, set_bonus_effects, xp_to_next_level)
 
 # Where each skill sits: (column, row). One column per branch, rows by depth,
 # so a prerequisite is always drawn above what it opens. A skill added to the
@@ -66,6 +69,13 @@ def character_qss() -> str:
         QFrame#itemTile[tier="legendary"] {{ border: 2px solid #f5a431; }}
         QLabel#tileTier {{ font-size: 7pt; font-weight: 800; background: transparent; }}
         QLabel#tileName {{ color: {t.CREAM}; font-size: 8pt; font-weight: 700; background: transparent; }}
+        QLabel#tileBadge {{ color: {t.WALNUT_DEEP}; background: {t.BRASS}; border-radius: 6px;
+            font-size: 7pt; font-weight: 900; padding: 0px 4px; }}
+        QLabel#amberLabel {{ color: #f5b041; font-size: 10pt; }}
+        QFrame#itemPanel {{ background: rgba(63, 38, 22, 210); border: 1px solid {t.BRASS_DEEP};
+            border-radius: 8px; }}
+        QPushButton#whoButton {{ padding: 3px 10px; }}
+        QPushButton#whoButton:checked {{ background: {t.BRASS}; color: {t.WALNUT_DEEP}; }}
         QPushButton#skillNode {{ border-radius: 10px; padding: 4px; font-size: 9pt;
             text-align: center; }}
         QPushButton#skillNode[state="unlocked"] {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -167,6 +177,11 @@ class CharacterDialog(QDialog):
         self.path = path
         self.profile = load_profile(path)
         self.state = hero_progression(self.profile)
+        # Whose armour the Armour tab dresses: the hero or a companion (the
+        # owner: "also ability to put armor on companion/s").
+        self.who = HERO
+        self.dress = self.state
+        self.selected = None      # the piece shown in the item panel
         self.setWindowTitle("Your Adventure spider")
         self.setStyleSheet(character_qss())
         root = QVBoxLayout(self)
@@ -219,6 +234,10 @@ class CharacterDialog(QDialog):
         armour_title = QLabel("Armour")
         armour_title.setObjectName("sectionTitle")
         doll_col.addWidget(armour_title)
+        self.who_row = QHBoxLayout()
+        self.who_row.setSpacing(6)
+        self.who_buttons = {}
+        doll_col.addLayout(self.who_row)
         hint = QLabel("Drag a piece from the bag onto the spider. Drag it back, or double-click, to take it off.")
         hint.setObjectName("statLine")
         hint.setWordWrap(True)
@@ -226,6 +245,7 @@ class CharacterDialog(QDialog):
         self.doll = SpiderDoll()
         self.doll.equip.connect(self._equip)
         self.doll.unequip.connect(self._unequip)
+        self.doll.picked.connect(self._select)
         doll_col.addWidget(self.doll, 0, Qt.AlignHCenter)
         self.stats_label = QLabel()
         self.stats_label.setObjectName("statLine")
@@ -235,13 +255,46 @@ class CharacterDialog(QDialog):
         armour_row.addLayout(doll_col)
         bag_col = QVBoxLayout()
         bag_col.setSpacing(6)
+        bag_head = QHBoxLayout()
         bag_title = QLabel("Bag")
         bag_title.setObjectName("sectionTitle")
-        bag_col.addWidget(bag_title)
+        bag_head.addWidget(bag_title)
+        bag_head.addStretch(1)
+        self.amber_label = QLabel()
+        self.amber_label.setObjectName("amberLabel")
+        bag_head.addWidget(self.amber_label)
+        # The owner: "at some point a shop could be made where something to buy".
+        self.shop_button = QPushButton("Shop")
+        self.shop_button.setEnabled(False)
+        self.shop_button.setToolTip("Coming later: spend amber on armour and more.")
+        bag_head.addWidget(self.shop_button)
+        bag_col.addLayout(bag_head)
         self.bag = InventoryBag()
         self.bag.equip.connect(self._equip)
         self.bag.unequip.connect(self._unequip)
+        self.bag.picked.connect(self._select)
         bag_col.addWidget(self.bag, 1)
+        # The selected piece: its level and spares, and what can be done with them.
+        self.item_panel = QFrame()
+        self.item_panel.setObjectName("itemPanel")
+        panel = QHBoxLayout(self.item_panel)
+        panel.setContentsMargins(10, 6, 10, 6)
+        self.item_label = QLabel()
+        self.item_label.setObjectName("statLine")
+        self.item_label.setTextFormat(Qt.RichText)
+        self.item_label.setWordWrap(True)
+        panel.addWidget(self.item_label, 1)
+        self.upgrade_button = QPushButton("Upgrade")
+        self.upgrade_button.clicked.connect(self._upgrade)
+        panel.addWidget(self.upgrade_button)
+        self.sell_button = QPushButton("Sell spare")
+        self.sell_button.clicked.connect(lambda: self._sell(1))
+        panel.addWidget(self.sell_button)
+        self.sell_all_button = QPushButton("Sell all spares")
+        self.sell_all_button.clicked.connect(lambda: self._sell(10 ** 6))
+        panel.addWidget(self.sell_all_button)
+        self.item_panel.setMaximumWidth(self.bag.width())
+        bag_col.addWidget(self.item_panel)
         self.stats_label.setMaximumWidth(self.bag.width())
         bag_col.addWidget(self.stats_label)
         armour_row.addLayout(bag_col)
@@ -260,8 +313,30 @@ class CharacterDialog(QDialog):
 
     # -- changes -----------------------------------------------------------
     def _save(self) -> None:
-        self.profile["progression"] = self.state.to_dict()
+        store_progression(self.profile, HERO, self.state)
         save_profile(self.profile, self.path)
+
+    def _commit(self) -> None:
+        """Save a change made straight to the profile (armoury, who wears what)."""
+        save_profile(self.profile, self.path)
+        self.refresh()
+
+    def choose_spider(self, who: str) -> None:
+        if who in party(self.profile):
+            self.who = who
+            self.refresh()
+
+    def _select(self, item_id: str) -> None:
+        self.selected = item_id if item_id in ARMOR_BY_ID else None
+        self._refresh_item_panel()
+
+    def _upgrade(self) -> None:
+        if self.selected and upgrade(self.profile, self.selected):
+            self._commit()
+
+    def _sell(self, count: int) -> None:
+        if self.selected and sell_spares(self.profile, self.selected, count):
+            self._commit()
 
     def _rename(self) -> None:
         name = clean_name(self.name_edit.text())
@@ -280,17 +355,21 @@ class CharacterDialog(QDialog):
         self.refresh()
 
     def _equip(self, item_id: str) -> None:
-        if self.state.equip(item_id):
-            self._save()
-            self.refresh()
+        """Put a piece on the spider being dressed; whoever wore it takes it off."""
+        if wear(self.profile, self.who, item_id):
+            self.selected = item_id
+            self._commit()
 
     def _unequip(self, slot: str) -> None:
-        if self.state.unequip(slot):
-            self._save()
-            self.refresh()
+        if take_off(self.profile, self.who, slot):
+            self._commit()
 
     # -- display -----------------------------------------------------------
     def refresh(self) -> None:
+        self.state = hero_progression(self.profile)
+        if self.who not in party(self.profile):
+            self.who = HERO
+        self.dress = spider_progression(self.profile, self.who)
         state = self.state
         self.level_badge.setText(str(state.level))
         need = xp_to_next_level(state.level)
@@ -307,27 +386,75 @@ class CharacterDialog(QDialog):
         self.stats_label.setText(self._bonus_text())
 
     def _refresh_slots(self) -> None:
-        self.doll.show_state(self.state)
-        self.bag.show_state(self.state)
+        self._refresh_who()
+        self.doll.show_state(self.dress)
+        worn = worn_by(self.profile)
+        self.bag.show_state(self.dress, worn=set(worn), spares=armoury(self.profile)["spares"])
+        self.amber_label.setText(f"<b>{armoury(self.profile)['amber']}</b> amber")
+        self._refresh_item_panel()
+
+    def _refresh_who(self) -> None:
+        """One button per spider that can wear armour."""
+        names = {HERO: self.profile["name"]}
+        for cid, entry in (self.profile.get("companions") or {}).items():
+            names[cid] = entry.get("name") or cid
+        if list(self.who_buttons) != list(names):
+            while self.who_row.count():
+                entry = self.who_row.takeAt(0)
+                if entry.widget() is not None:
+                    entry.widget().setParent(None)
+            self.who_buttons = {}
+            for who, name in names.items():
+                button = QPushButton(name)
+                button.setObjectName("whoButton")
+                button.setCheckable(True)
+                button.clicked.connect(lambda _=False, w=who: self.choose_spider(w))
+                self.who_row.addWidget(button)
+                self.who_buttons[who] = button
+            self.who_row.addStretch(1)
+        for who, button in self.who_buttons.items():
+            button.setChecked(who == self.who)
+
+    def _refresh_item_panel(self) -> None:
+        item = ARMOR_BY_ID.get(self.selected or "")
+        owned = item is not None and item.id in armoury(self.profile)["owned"]
+        self.item_panel.setVisible(owned)
+        if not owned:
+            return
+        level, spares = level_of(self.profile, item.id), spares_of(self.profile, item.id)
+        wearer = worn_by(self.profile).get(item.id)
+        names = {HERO: self.profile["name"]}
+        names.update({cid: e.get("name") or cid for cid, e in (self.profile.get("companions") or {}).items()})
+        worn = f" · worn by {names.get(wearer, wearer)}" if wearer else ""
+        colour = TIER_COLORS.get(item.tier, wood_theme.CREAM)
+        self.item_label.setText(
+            f"<b style='color:{colour}'>{item.name}</b><br>Level {level}/{MAX_ITEM_LEVEL}"
+            f" · {spares} spare{'s' if spares != 1 else ''}{worn}")
+        self.upgrade_button.setEnabled(can_upgrade(self.profile, item.id))
+        self.upgrade_button.setToolTip("Stack one spare onto it: +1 level, +20% of its stats."
+                                       if level < MAX_ITEM_LEVEL else "Already at the highest level.")
+        price = sell_price(item.id)
+        self.sell_button.setEnabled(spares > 0)
+        self.sell_button.setText(f"Sell spare (+{price})")
+        self.sell_all_button.setEnabled(spares > 1)
 
     def _bonus_text(self) -> str:
-        """Everything skills and armour add, then how far each set is."""
+        """Everything skills and armour add to the spider being dressed, then its sets."""
+        dress = self.dress
         totals: dict[str, float] = {}
-        for ability_id in self.state.unlocked_abilities:
+        for ability_id in dress.unlocked_abilities:
             for key, value in ABILITY_BY_ID[ability_id].effects.items():
                 totals[key] = totals.get(key, 0.0) + value
-        for item_id in self.state.equipped.values():
-            item = ARMOR_BY_ID.get(item_id)
-            if item is not None:
-                for key, value in item_effects(item).items():
-                    totals[key] = totals.get(key, 0.0) + value
-        for key, value in set_bonus_effects(self.state).items():
+        for item in equipped_items(dress):
+            for key, value in item_effects(item).items():
+                totals[key] = totals.get(key, 0.0) + value
+        for key, value in set_bonus_effects(dress).items():
             totals[key] = totals.get(key, 0.0) + value
         lines = [short_effect(text) for text, _ in effect_lines(totals)]
         text = ("<b>Bonuses</b>  " + "  ·  ".join(lines)) if lines else \
             "No bonuses yet. Learn skills and wear armour to grow stronger."
         # Only the sets being worn: five lines of 0/5 would bury the one that matters.
-        worn_sets = {ARMOR_BY_ID[i].set_id for i in self.state.equipped.values() if i in ARMOR_BY_ID}
-        sets = [set_line(set_id, self.state, dim=wood_theme.CREAM_SOFT, good=wood_theme.BRASS)
+        worn_sets = {ARMOR_BY_ID[i].set_id for i in dress.equipped.values() if i in ARMOR_BY_ID}
+        sets = [set_line(set_id, dress, dim=wood_theme.CREAM_SOFT, good=wood_theme.BRASS)
                 for set_id in ARMOR_SETS if set_id in worn_sets]
         return text + "".join("<br>" + line for line in sets)

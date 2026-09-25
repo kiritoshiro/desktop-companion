@@ -13,7 +13,8 @@ from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QGridLayout, QHB
                              QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
-from .adventure_profile import hero_progression, load_profile, mission_record
+from .adventure_profile import hero_progression, load_profile, mission_record, save_profile
+from .campaign import MAP_BY_ID, MAPS, map_unlocked
 from .controls import load_controls
 
 MODES = (
@@ -50,17 +51,13 @@ def _art(kind: str, width: int) -> QLabel:
 
 
 # Skirmish missions on the Adventure page. The owner: "it should list more
-# skirmish missions in smaller rectangles and player would choose one. for now
-# only one active, others placeholders." (id, title, one line, playable)
-SKIRMISH_MISSIONS = (
-    ("territory", "Take back the desktop",
-     "Capture Food or Silk, seal the Hatchery, survive the counterattack and "
-     "claim Thorn nest. Bring your Scout.", True),
+# skirmish missions in smaller rectangles and player would choose one." The
+# campaign's maps come first, each unlocked by winning the one before (the
+# owner: "on other maps better armor"); the rest are placeholders.
+# (id, title, one line, playable)
+SKIRMISH_MISSIONS = tuple((m.id, m.title, m.blurb, True) for m in MAPS) + (
     ("swarm", "Fly swarm", "Catch a swarm before it scatters off the screens.", False),
     ("burrow", "Hold the burrow", "Wave after wave comes for your home. Keep it.", False),
-    ("duel", "Silk duel", "One rival weaver, one arena, no Scout.", False),
-    ("crossing", "The long crossing", "Get your Scout safely across the monitors.", False),
-    ("queen", "Queen of thorns", "Face the nest mother herself.", False),
 )
 MISSION_COLUMNS = 3
 
@@ -244,6 +241,8 @@ class ModeShell(QWidget):
         grid.setVerticalSpacing(12)
         self.mission_cards = {}
         self.mission_status = {}
+        self.map_buttons = {}
+        self.map_locks = {}
         self.adventure_launch = None
         for index, (mission_id, title, blurb, playable) in enumerate(SKIRMISH_MISSIONS):
             card = self._mission_card(mission_id, title, blurb, playable, start_adventure)
@@ -307,10 +306,16 @@ class ModeShell(QWidget):
             button = QPushButton("Play")
             button.setObjectName("modeChoice")
             button.setCursor(Qt.PointingHandCursor)
-            button.clicked.connect(start_adventure)
+            button.clicked.connect(lambda _=False, mid=mission_id: self.play_map(mid, start_adventure))
             if self.adventure_launch is None:
                 self.adventure_launch = button
             cell.addWidget(button)
+            self.map_buttons[mission_id] = button
+            lock = QLabel()
+            lock.setObjectName("missionLocked")
+            lock.setWordWrap(True)
+            cell.addWidget(lock)
+            self.map_locks[mission_id] = lock
         else:
             soon = QLabel("Coming soon")
             soon.setObjectName("missionLocked")
@@ -324,7 +329,23 @@ class ModeShell(QWidget):
         state = hero_progression(profile)
         points = state.skill_points
         spend = f"  \u00b7  {points} point{'s' if points != 1 else ''} to spend" if points else ""
-        self.hero_label.setText(f"{profile['name']}  \u00b7  Level {state.level}{spend}")
+        companions = len(profile.get("companions") or {})
+        amber = int((profile.get("armoury") or {}).get("amber", 0))
+        self.hero_label.setText(f"{profile['name']}  \u00b7  Level {state.level}{spend}"
+                                f"  \u00b7  {companions} companion{'s' if companions != 1 else ''}"
+                                f"  \u00b7  {amber} amber")
+        records = profile.get("missions") or {}
+        for mission_id, button in self.map_buttons.items():
+            open_ = map_unlocked(records, mission_id)
+            button.setVisible(open_)
+            lock = self.map_locks[mission_id]
+            before = MAP_BY_ID[mission_id].unlock_after
+            lock.setText("" if open_ else f"Win \u201c{MAP_BY_ID[before].title}\u201d to unlock")
+            lock.setVisible(not open_)
+            card = self.mission_cards[mission_id]
+            card.setProperty("locked", not open_)
+            card.style().unpolish(card)
+            card.style().polish(card)
         for mission_id, label in self.mission_status.items():
             record = mission_record(profile, mission_id)
             if record["victories"]:
@@ -341,6 +362,15 @@ class ModeShell(QWidget):
                 label.setProperty("won", False)
             label.style().unpolish(label)
             label.style().polish(label)
+
+    def play_map(self, map_id: str, start_adventure) -> None:
+        """Remember the chosen map for the overlay, then launch it."""
+        profile = load_profile()
+        if not map_unlocked(profile.get("missions") or {}, map_id):
+            return
+        profile["selected_map"] = map_id
+        save_profile(profile)
+        start_adventure()
 
     def open_character(self) -> None:
         from .character_ui import CharacterDialog

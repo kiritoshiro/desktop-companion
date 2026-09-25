@@ -9,8 +9,8 @@ from __future__ import annotations
 from html import escape
 
 from .adventure import PlayerController
-from ..state.progression import (ABILITY_BY_ID, ARMOR_SETS, ARMOR_TIERS, ArmorItem,
-                                 set_pieces_worn)
+from ..state.progression import (ABILITY_BY_ID, ARMOR_SETS, ARMOR_TIERS, MAX_ITEM_LEVEL,
+                                 ArmorItem, item_at_level, set_pieces_worn)
 
 GOOD = "#3f6b1f"
 BAD = "#a2371f"
@@ -103,13 +103,16 @@ def set_line(set_id: str, state, dim: str = DIM, good: str = GOOD) -> str:
             f" · all {total}: {escape(bonus)}</span>")
 
 
-def item_tooltip(item: ArmorItem, state=None) -> str:
+def item_tooltip(item: ArmorItem, state=None, level: int = 1) -> str:
+    """Name, quality, slot, what it is, and its stats at ``level``."""
     ink = TIER_INK.get(item.tier, DIM)
+    shown = item_at_level(item, level)
+    rank = f" · Level {level}/{MAX_ITEM_LEVEL}" if level > 1 else ""
     parts = [f"<b style='font-size:11pt; color:{ink}'>{escape(item.name)}</b>",
              f"<span style='color:{ink}'><b>{TIER_NAMES.get(item.tier, item.tier)}</b></span>"
-             f"<span style='color:{DIM}'> · {SLOT_NAMES.get(item.slot, item.slot)}</span>",
+             f"<span style='color:{DIM}'> · {SLOT_NAMES.get(item.slot, item.slot)}{rank}</span>",
              escape(item.description),
-             effects_html(item_effects(item))]
+             effects_html(item_effects(shown))]
     if item.set_id in ARMOR_SETS:
         parts.append(set_line(item.set_id, state))
     return "<p>" + "<br>".join(parts) + "</p>"
