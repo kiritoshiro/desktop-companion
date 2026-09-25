@@ -95,13 +95,14 @@ def save_profile(profile: dict, path: Path | None = None) -> bool:
 def hero_progression(profile: dict) -> ProgressionState:
     """The saved hero, or a new one at level 1.
 
-    The hero carries the Warden set in its inventory (the owner asked for one
-    armour set to equip); it is added to older saves too.
+    The hero carries every armour set in its inventory until the game has a
+    way to earn them (the owner asked to see them); older saves get them too.
     """
     raw = profile.get("progression")
     state = ProgressionState.from_dict(raw) if isinstance(raw, dict) else ProgressionState()
-    for piece in ARMOR_SETS["warden"].pieces:
-        state.add_item(piece)
+    for armor_set in ARMOR_SETS.values():
+        for piece in armor_set.pieces:
+            state.add_item(piece)
     return state
 
 

@@ -73,7 +73,13 @@ class ArmorItem:
     size_max: float = 2.25
     # Pieces of one set share an id; wearing all of them adds ARMOR_SETS' bonus.
     set_id: str = ""
+    # Quality, lowest first: see ARMOR_TIERS.
+    tier: str = "common"
 
+
+# Quality of an armour piece, lowest first. The owner: "make some more models
+# of armors on various tier and quality material, looking epic some."
+ARMOR_TIERS = ("common", "uncommon", "rare", "epic", "legendary")
 
 # These are light, anatomy-aware pieces rather than generic humanoid armour.
 # ``slot`` names also provide a stable hook for future sprites or model assets.
@@ -90,19 +96,83 @@ ARMOR_CATALOG = (
     # spinnerets. See [[Tarantula Reference - Brachypelma hamorii]].
     ArmorItem("warden_crest", "Warden ocular crest", "head",
               "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
-              armor=1.0, damage=2.5, set_id="warden"),
+              armor=1.0, damage=2.5, set_id="warden", tier="rare"),
     ArmorItem("warden_carapace", "Warden carapace plate", "carapace",
               "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
-              armor=2.5, max_hp=12.0, speed=-0.02, set_id="warden"),
+              armor=2.5, max_hp=12.0, speed=-0.02, set_id="warden", tier="rare"),
     ArmorItem("warden_tergites", "Warden tergite bands", "abdomen",
               "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
-              armor=1.5, max_hp=20.0, speed=-0.02, set_id="warden"),
-    ArmorItem("warden_greaves", "Warden femur greaves", "legs",
-              "Plates on all eight femurs, the long upper leg; the red knees and the gripping tarsi stay bare.",
-              armor=1.0, max_hp=6.0, speed=-0.01, set_id="warden"),
+              armor=1.5, max_hp=20.0, speed=-0.02, set_id="warden", tier="rare"),
+    ArmorItem("warden_greaves", "Warden leg plates", "legs",
+              "Plates down all eight legs, femur to metatarsus, with a cop over each knee; the clawed tarsi stay bare to grip.",
+              armor=1.0, max_hp=6.0, speed=-0.01, set_id="warden", tier="rare"),
     ArmorItem("warden_bracers", "Warden palp bracers", "pedipalps",
               "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
-              armor=0.5, damage=1.0, max_energy=6.0, set_id="warden"),
+              armor=0.5, damage=1.0, max_energy=6.0, set_id="warden", tier="rare"),
+    # Forager: wing cases of beetles the spider has eaten, lashed on with silk.
+    ArmorItem("forager_hood", "Forager elytra hood", "head",
+              "A beetle's wing case bent over the eye mound and lashed with silk.",
+              armor=0.5, damage=1.0, set_id="forager", tier="uncommon"),
+    ArmorItem("forager_shell", "Forager shell", "carapace",
+              "Two elytra halves over the carapace, still green-bronze where the light hits.",
+              armor=1.2, max_hp=8.0, set_id="forager", tier="uncommon"),
+    ArmorItem("forager_mantle", "Forager mantle", "abdomen",
+              "Wing-case scales sewn on silk over the abdomen.",
+              armor=0.8, max_hp=12.0, speed=-0.01, set_id="forager", tier="uncommon"),
+    ArmorItem("forager_leggings", "Forager leggings", "legs",
+              "Light chitin splints down each leg; barely heavier than bare legs.",
+              armor=0.6, speed=0.02, set_id="forager", tier="uncommon"),
+    ArmorItem("forager_wraps", "Forager palp wraps", "pedipalps",
+              "Chitin slivers wrapped round the palps.",
+              armor=0.3, max_energy=4.0, set_id="forager", tier="uncommon"),
+    # Frostglass: crystal grown in silk moulds on a cold night; light and quick.
+    ArmorItem("frost_diadem", "Frostglass diadem", "head",
+              "A ring of ice-clear crystal round the eye mound; the eyes look out through it.",
+              armor=1.0, damage=2.0, speed=0.01, set_id="frost", tier="epic"),
+    ArmorItem("frost_aegis", "Frostglass aegis", "carapace",
+              "A faceted crystal shield over the carapace, light as frost.",
+              armor=2.0, max_hp=12.0, speed=0.01, set_id="frost", tier="epic"),
+    ArmorItem("frost_scales", "Frostglass scales", "abdomen",
+              "Overlapping crystal scales that ring faintly as the spider walks.",
+              armor=1.5, max_hp=18.0, set_id="frost", tier="epic"),
+    ArmorItem("frost_shards", "Frostglass leg shards", "legs",
+              "Crystal sheaths down every leg; they shed the air like ice on a blade.",
+              armor=1.2, speed=0.04, set_id="frost", tier="epic"),
+    ArmorItem("frost_talons", "Frostglass talons", "pedipalps",
+              "Crystal points over the palps, cold enough to numb what they touch.",
+              armor=0.5, damage=1.5, max_energy=8.0, set_id="frost", tier="epic"),
+    # Obsidian Brood: volcanic glass carved by a brood mother, cut with violet runes.
+    ArmorItem("brood_crown", "Brood obsidian crown", "head",
+              "A spiked crown of black glass; the runes on it glow when the spider bites.",
+              armor=1.2, damage=4.0, set_id="brood", tier="epic"),
+    ArmorItem("brood_bulwark", "Brood obsidian bulwark", "carapace",
+              "A heavy plate of black glass over the carapace, veined with violet runes.",
+              armor=2.8, max_hp=16.0, speed=-0.02, set_id="brood", tier="epic"),
+    ArmorItem("brood_plates", "Brood obsidian plates", "abdomen",
+              "Rune-cut obsidian bands over the abdomen.",
+              armor=2.0, max_hp=24.0, speed=-0.02, set_id="brood", tier="epic"),
+    ArmorItem("brood_spurs", "Brood obsidian leg spurs", "legs",
+              "Black-glass plates down each leg, spurred at the knee.",
+              armor=1.2, damage=1.0, speed=-0.01, set_id="brood", tier="epic"),
+    ArmorItem("brood_claws", "Brood obsidian claws", "pedipalps",
+              "Glass-edged palp claws that cut as they grip.",
+              armor=0.6, damage=2.0, set_id="brood", tier="epic"),
+    # Sunforged: gold hammered in a forge-crack of the earth, embers still in it.
+    ArmorItem("sun_crown", "Sunforged crown", "head",
+              "A gold crown over the eye mound set with an ember-red stone.",
+              armor=1.5, damage=3.5, max_energy=6.0, set_id="sun", tier="legendary"),
+    ArmorItem("sun_aegis", "Sunforged aegis", "carapace",
+              "A gold shield over the carapace with ember veins that never cool.",
+              armor=3.0, max_hp=20.0, set_id="sun", tier="legendary"),
+    ArmorItem("sun_scales", "Sunforged scales", "abdomen",
+              "Gold bands over the abdomen, each lit from within.",
+              armor=2.2, max_hp=30.0, set_id="sun", tier="legendary"),
+    ArmorItem("sun_legs", "Sunforged leg plates", "legs",
+              "Gold plates down every leg; they hold their warmth, and the legs stay quick.",
+              armor=1.5, max_hp=8.0, speed=0.02, set_id="sun", tier="legendary"),
+    ArmorItem("sun_gauntlets", "Sunforged palp gauntlets", "pedipalps",
+              "Gold gauntlets over the palps, ember-hot at the tips.",
+              armor=0.8, damage=2.5, max_energy=10.0, set_id="sun", tier="legendary"),
 )
 
 ARMOR_BY_ID = {item.id: item for item in ARMOR_CATALOG}
@@ -121,9 +191,21 @@ class ArmorSet:
 
 
 ARMOR_SETS = {
+    "forager": ArmorSet("forager", "Forager set",
+                        "Wear all five pieces: light enough to hunt all day.",
+                        effects={"max_energy": 8.0, "energy_regen": 0.5}),
     "warden": ArmorSet("warden", "Warden set",
                        "Wear all five pieces: the plates brace one another.",
                        effects={"max_hp": 10.0, "armor": 0.5, "energy_regen": 1.5}),
+    "frost": ArmorSet("frost", "Frostglass set",
+                      "Wear all five pieces: the crystal hums and the spider flies over the ground.",
+                      effects={"speed": 0.06, "max_energy": 10.0, "energy_regen": 2.0}),
+    "brood": ArmorSet("brood", "Obsidian Brood set",
+                      "Wear all five pieces: every rune wakes at once.",
+                      effects={"damage": 3.0, "max_hp": 15.0}),
+    "sun": ArmorSet("sun", "Sunforged regalia",
+                    "Wear all five pieces: the embers join into one fire.",
+                    effects={"max_hp": 20.0, "armor": 1.0, "damage": 2.0, "energy_regen": 2.0}),
 }
 
 

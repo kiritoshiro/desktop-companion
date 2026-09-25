@@ -20,13 +20,13 @@ import random
 from PyQt5.QtCore import QMimeData, QPoint, QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import (QBrush, QColor, QDrag, QFont, QPainter, QPainterPath,
                          QPainterPathStroker, QPen, QPixmap, QRadialGradient, QTransform)
-from PyQt5.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel, QScrollArea, QToolTip,
+from PyQt5.QtWidgets import (QApplication, QFrame, QGridLayout, QLabel, QScrollArea, QToolTip,
                              QVBoxLayout, QWidget)
 
 from . import wood_theme
-from .stat_text import SLOT_NAMES, item_tooltip
+from .stat_text import SLOT_NAMES, TIER_COLORS, TIER_NAMES, item_tooltip
 from ..creature import armour_art
-from ..state.progression import ARMOR_BY_ID
+from ..state.progression import ARMOR_BY_ID, ARMOR_TIERS
 
 MIME = "application/x-desktop-companion-armour"
 SLOT_ORDER = ("head", "pedipalps", "carapace", "abdomen", "legs")
@@ -51,8 +51,12 @@ RIM = QColor(200, 124, 66)
 
 
 def short_name(item) -> str:
-    """"Warden ocular crest" -> "Ocular crest": the set is named in the tooltip."""
-    name = item.name.removeprefix("Warden ")
+    """"Sunforged palp gauntlets" -> "Palp gauntlets".
+
+    A set piece's first word is its set, which its colours and the tooltip
+    already say; without it the name fits on a plaque and a tile.
+    """
+    name = item.name.split(" ", 1)[1] if item.set_id and " " in item.name else item.name
     return name[:1].upper() + name[1:]
 
 
@@ -128,7 +132,7 @@ class SpiderDoll(QWidget):
         zones["abdomen"] = self._ellipse(ABDOMEN[0] * s, 0.0, ABDOMEN[1] * s, ABDOMEN[2] * s)
         zones["carapace"] = self._ellipse(CEPH[0] * s, 0.0, CEPH[1] * s, CEPH[2] * s)
         zones["head"] = self._ellipse(0.7 * s, 0.0, 0.4 * s, 0.42 * s)
-        zones["legs"] = self._strokes([pts[:3] for pts in self.legs], 0.2 * s)
+        zones["legs"] = self._strokes(self.legs, 0.2 * s)
         zones["pedipalps"] = self._strokes(self.palps, 0.18 * s)
         self.zones = {slot: self.transform.map(path) for slot, path in zones.items()}
         anchors = {
@@ -253,9 +257,9 @@ class SpiderDoll(QWidget):
         legs = self._worn("legs")
         if legs is not None:
             look = armour_art.look_for(legs.id)
+            widths = [width * s for width in LEG_WIDTHS]
             for points in self.legs:
-                (x0, y0), (x1, y1) = points[0], points[1]
-                armour_art.paint_greave(p, x0, y0, x1, y1, LEG_WIDTHS[0] * s, look)
+                armour_art.paint_leg_armour(p, points, widths, look)
         for points in self.palps:
             self._limb(p, points, PALP_WIDTHS, band_index=1)
         palps = self._worn("pedipalps")
@@ -351,7 +355,8 @@ class SpiderDoll(QWidget):
             p.setBrush(QBrush(QColor(wood_theme.BRASS)))
             p.drawEllipse(anchor, 3.0, 3.0)
             p.setBrush(QBrush(QColor(42, 24, 12, 235)))
-            border = QColor(wood_theme.BRASS if lit else wood_theme.BRASS_DEEP)
+            border = QColor(TIER_COLORS.get(item.tier) if item else
+                            (wood_theme.BRASS if lit else wood_theme.BRASS_DEEP))
             p.setPen(QPen(border, 2.0 if lit else 1.2))
             p.drawRoundedRect(rect, 8, 8)
             socket = QRectF(rect.left() + 6, rect.top() + 6, rect.height() - 12, rect.height() - 12)
@@ -449,12 +454,14 @@ class ItemTile(QFrame):
     """One piece in the bag: its picture and name. Drag it onto the doll."""
 
     equip = pyqtSignal(str)
+    HEIGHT = 124
 
     def __init__(self, item, state, parent=None):
         super().__init__(parent)
         self.item = item
         self.setObjectName("itemTile")
-        self.setFixedSize(96, 112)
+        self.setProperty("tier", item.tier)
+        self.setFixedSize(100, self.HEIGHT)
         self.setCursor(Qt.OpenHandCursor)
         self.setToolTip(item_tooltip(item, state) + "<p><i>Drag onto the spider, or double-click</i></p>")
         self._press = None
@@ -470,6 +477,11 @@ class ItemTile(QFrame):
         name.setAlignment(Qt.AlignCenter)
         name.setWordWrap(True)
         layout.addWidget(name)
+        tier = QLabel(TIER_NAMES.get(item.tier, item.tier))
+        tier.setObjectName("tileTier")
+        tier.setAlignment(Qt.AlignCenter)
+        tier.setStyleSheet(f"color: {TIER_COLORS.get(item.tier, '#cfc8b8')};")
+        layout.addWidget(tier)
 
     def mousePressEvent(self, event):  # noqa: N802
         if event.button() == Qt.LeftButton:
@@ -486,7 +498,12 @@ class ItemTile(QFrame):
 
 
 class InventoryBag(QScrollArea):
-    """The pieces the hero owns and is not wearing. A worn piece dropped here comes off."""
+    """The pieces the hero owns and is not wearing, best first, in a grid.
+
+    A worn piece dropped here comes off.
+    """
+
+    COLUMNS = 5
 
     equip = pyqtSignal(str)
     unequip = pyqtSignal(str)
@@ -496,14 +513,15 @@ class InventoryBag(QScrollArea):
         self.setObjectName("inventoryBag")
         self.setAcceptDrops(True)
         self.setWidgetResizable(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setFixedHeight(134)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setFixedWidth(self.COLUMNS * 108 + 34)
         self.inner = QWidget()
         self.inner.setObjectName("bagInner")
-        self.row = QHBoxLayout(self.inner)
+        self.row = QGridLayout(self.inner)
         self.row.setContentsMargins(8, 8, 8, 8)
         self.row.setSpacing(8)
+        self.row.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self.setWidget(self.inner)
         self.tiles = {}
 
@@ -517,22 +535,26 @@ class InventoryBag(QScrollArea):
                 entry.widget().deleteLater()
         self.tiles = {}
         worn = set(state.equipped.values())
-        for item_id in state.inventory:
-            item = ARMOR_BY_ID.get(item_id)
-            if item is None or item_id in worn:
-                continue
+        owned = [ARMOR_BY_ID[i] for i in state.inventory if i in ARMOR_BY_ID and i not in worn]
+        owned.sort(key=lambda item: (-ARMOR_TIERS.index(item.tier), item.set_id,
+                                     SLOT_ORDER.index(item.slot)))
+        for index, item in enumerate(owned):
             tile = ItemTile(item, state)
             tile.equip.connect(self.equip)
-            self.row.addWidget(tile)
-            self.tiles[item_id] = tile
+            self.row.addWidget(tile, index // self.COLUMNS, index % self.COLUMNS)
+            self.tiles[item.id] = tile
         if not self.tiles:
             empty = QLabel("Everything you own is worn. Drag a piece off the spider to put it back.")
             empty.setObjectName("statLine")
-            self.row.addWidget(empty)
-        self.row.addStretch(1)
+            empty.setWordWrap(True)
+            self.row.addWidget(empty, 0, 0, 1, self.COLUMNS)
+        # Tiles have a fixed size; the grid must be given room for every row or
+        # the scroll area squeezes the rows over one another.
+        rows = max(1, -(-len(self.tiles) // self.COLUMNS))
+        self.inner.setMinimumHeight(rows * (ItemTile.HEIGHT + self.row.spacing()) + 16)
 
     def sizeHint(self):  # noqa: N802
-        return QSize(600, 134)
+        return QSize(self.COLUMNS * 108 + 34, 440)
 
     def dragEnterEvent(self, event):  # noqa: N802
         if event.mimeData().hasFormat(MIME) and _payload(event).startswith("worn:"):
