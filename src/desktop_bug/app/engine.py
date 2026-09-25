@@ -1215,7 +1215,6 @@ class OverlayWindow(_OverlayBase):
         self.player = PlayerController(creature, self.controls) if creature is not None else None
         self._request_full_repaint()
 
-    @staticmethod
     def _adventure_hint_rect(self) -> QRect:
         """Top middle of the main monitor, where the take-control hint goes."""
         area = window_placement.primary_rect_local(self.geometry_rect.topLeft())
