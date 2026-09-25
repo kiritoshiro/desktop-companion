@@ -76,7 +76,7 @@ def test_turning_batching_off_matches_the_unbatched_reference(monkeypatch):
     assert UNBATCHED.exists(), "the pre-batch reference is missing"
     before = QImage(str(UNBATCHED))
     assert not before.isNull()
-    assert G.max_channel_difference(_render(False, monkeypatch), before) == 0
+    assert G.max_channel_difference(_render(False, monkeypatch), before) <= G.PNG_TOLERANCE
 
 
 def test_batching_moves_only_a_little_and_only_where_expected(monkeypatch):

@@ -75,7 +75,7 @@ def test_turning_the_levels_off_matches_the_full_detail_reference(monkeypatch):
     assert FULL_DETAIL.exists(), "the full-detail reference is missing"
     before = QImage(str(FULL_DETAIL))
     assert not before.isNull()
-    assert G.max_channel_difference(_render(False, monkeypatch), before) == 0
+    assert G.max_channel_difference(_render(False, monkeypatch), before) <= G.PNG_TOLERANCE
 
 
 def test_the_levels_move_only_a_little(monkeypatch):

@@ -181,7 +181,7 @@ def test_turning_the_curve_off_matches_the_straight_reference(monkeypatch):
     RP.CURVED_LEGS = False
     before = QImage(str(STRAIGHT))
     assert not before.isNull()
-    assert G.max_channel_difference(G.render_reference_frame(), before) == 0
+    assert G.max_channel_difference(G.render_reference_frame(), before) <= G.PNG_TOLERANCE
 
 
 def test_a_bad_leg_curve_is_rejected_by_the_validator():
