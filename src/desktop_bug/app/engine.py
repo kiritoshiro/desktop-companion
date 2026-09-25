@@ -946,6 +946,10 @@ class OverlayWindow(_OverlayBase):
         if self.mission is not None:
             self.mission.update(dt)
             desired = None
+            if self.mission.end_screen_done:
+                # The VICTORY / DEFEAT title has had its moment: close, and the
+                # settings window comes back on the Adventure page (the owner).
+                self._do_graceful_stop()
         else:
             desired = self.manager.update(
                 dt, mx, my,
@@ -1651,6 +1655,13 @@ class OverlayWindow(_OverlayBase):
             return
         self._stop_requested = True
         self.timer.stop()
+        mission = getattr(self, "mission", None)
+        if mission is not None and not mission.saved:
+            # Leaving mid-raid keeps what the hero has earned so far.
+            try:
+                mission.save_progress()
+            except Exception:
+                log.exception("Could not save the Adventure hero while stopping")
         # Save here rather than relying only on aboutToQuit, so the state is on
         # disk even if the event loop never gets to shut down cleanly.
         try:

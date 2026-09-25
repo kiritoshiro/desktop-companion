@@ -207,3 +207,58 @@ def draw_mission_hud(painter, window, mission):
         painter.drawText(hr.adjusted(14, 186, -14, -3), Qt.AlignLeft | Qt.AlignVCenter,
                          "Scout fallen" if mission.ally.dead else f"Scout {mission.ally.hp:.0f}/{mission.ally.max_hp:.0f} HP | Defend holds here; Attack aims at foe")
     painter.restore()
+    if mission.ended:
+        draw_end_title(painter, mission)
+
+
+def end_title_text(mission):
+    """(title, subtitle) for the end screen."""
+    hero = mission.hero
+    if mission.state == "victory":
+        return "VICTORY", f"The desktop is yours  \u00b7  {hero.display_name} reached level {hero.level}"
+    return "DEFEAT", f"{hero.display_name} has fallen  \u00b7  level and XP are kept"
+
+
+def draw_end_title(painter, mission):
+    """A large VICTORY or DEFEAT across the middle of the arena (the owner)."""
+    area = mission.area
+    fade = min(1.0, mission.end_clock / 0.4)
+    won = mission.state == "victory"
+    title, subtitle = end_title_text(mission)
+    cx, cy = area.x + area.w / 2.0, area.y + area.h / 2.0
+    band = QRectF(area.x, cy - 120, area.w, 240)
+    painter.save()
+    painter.setClipping(False)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(18, 12, 8, int(200 * fade)))
+    painter.drawRect(band)
+    edge = QColor("#d6a448" if won else "#b8472f")
+    edge.setAlpha(int(255 * fade))
+    painter.setPen(QPen(edge, 3))
+    painter.drawLine(QPointF(band.left(), band.top()), QPointF(band.right(), band.top()))
+    painter.drawLine(QPointF(band.left(), band.bottom()), QPointF(band.right(), band.bottom()))
+    font = QFont("Segoe UI", 12, QFont.Black)
+    font.setPixelSize(int(min(110, max(56, area.w * 0.075))))
+    font.setLetterSpacing(QFont.AbsoluteSpacing, 6)
+    path = QPainterPath()
+    path.addText(0, 0, font, title)
+    box = path.boundingRect()
+    path.translate(cx - box.center().x(), cy - 18 - box.center().y())
+    painter.setPen(QPen(QColor(10, 6, 4, int(230 * fade)), 6, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    painter.setBrush(Qt.NoBrush)
+    painter.drawPath(path)
+    painter.setPen(Qt.NoPen)
+    fill = QColor("#f6cf6a" if won else "#e0604a")
+    fill.setAlpha(int(255 * fade))
+    painter.setBrush(fill)
+    painter.drawPath(path)
+    small = QFont("Segoe UI", 15, QFont.Bold)
+    painter.setFont(small)
+    painter.setPen(QColor(246, 226, 184, int(255 * fade)))
+    painter.drawText(QRectF(area.x, cy + 38, area.w, 30), Qt.AlignCenter, subtitle)
+    left = max(0.0, mission.END_SCREEN_SECONDS - mission.end_clock)
+    painter.setFont(QFont("Segoe UI", 10))
+    painter.setPen(QColor(220, 195, 154, int(220 * fade)))
+    painter.drawText(QRectF(area.x, cy + 72, area.w, 24), Qt.AlignCenter,
+                     f"Back to Adventure in {left:.0f}s")
+    painter.restore()

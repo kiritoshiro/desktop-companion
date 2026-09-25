@@ -1,0 +1,354 @@
+"""The Adventure hero's character window: name, skill tree and armour.
+
+The owner: *"in adventure window create the character whole skill tree, and
+armor, character name. all of it as a window with nice designs."* It edits
+adventure-hero.json (adventure_profile) and saves on every change. The hero
+banks its skill points while it plays (``chooses_own_skills``), so this is
+where they are spent.
+"""
+from __future__ import annotations
+
+from PyQt5.QtCore import QPointF, Qt, pyqtSignal
+from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
+from PyQt5.QtWidgets import (QDialog, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+                             QProgressBar, QPushButton, QVBoxLayout, QWidget)
+
+from . import wood_theme
+from .adventure_profile import (MAX_NAME_LENGTH, clean_name, hero_progression, load_profile,
+                                save_profile)
+from ..state.progression import (ABILITY_BY_ID, ABILITY_TREE, ARMOR_CATALOG, MAX_LEVEL,
+                                 xp_to_next_level)
+
+# Where each skill sits: (column, row). One column per branch, rows by depth,
+# so a prerequisite is always drawn above what it opens. A skill added to the
+# tree later without a place here goes in a spare column rather than vanishing.
+TREE_LAYOUT = {
+    "vitality": (0, 0), "carapace_harden": (0, 1),
+    "power_strike": (1, 0), "apex_predator": (1, 2),
+    "quick_step": (2, 0), "long_stride": (2, 1),
+    "silk_sense": (3, 0), "web_crafter": (3, 1), "silk_tracking": (3, 2),
+}
+NODE_W, NODE_H = 172, 62
+COL_GAP, ROW_GAP = 22, 38
+SLOT_NAMES = {"carapace": "Carapace", "abdomen": "Abdomen", "legs": "Legs",
+              "pedipalps": "Pedipalps", "head": "Head"}
+EFFECT_NAMES = {"max_hp": "health", "armor": "armour", "damage": "damage",
+                "max_energy": "stamina", "energy_regen": "stamina regen",
+                "speed": "speed", "web_homing": "homing silk"}
+
+
+def character_qss() -> str:
+    t = wood_theme
+    return t.dialog_qss() + f"""
+        QLineEdit#heroName {{ background: {t.WALNUT_DEEP}; color: {t.CREAM};
+            border: 2px solid {t.BRASS_DEEP}; border-radius: 8px; padding: 4px 10px;
+            font-size: 16pt; font-weight: 800; }}
+        QLabel#levelBadge {{ background: qradialgradient(cx:0.5, cy:0.4, radius:0.7,
+            stop:0 {t.BRASS}, stop:1 {t.BRASS_DEEP}); color: {t.WALNUT_DEEP};
+            border: 2px solid {t.WALNUT_DEEP}; border-radius: 26px; font-size: 16pt;
+            font-weight: 900; min-width: 52px; max-width: 52px; min-height: 52px; max-height: 52px; }}
+        QLabel#sectionTitle {{ color: {t.BRASS}; font-size: 13pt; font-weight: 800; }}
+        QLabel#pointsLabel {{ color: {t.CREAM}; font-size: 10pt; font-weight: 700; }}
+        QLabel#statLine {{ color: {t.CREAM_SOFT}; font-size: 9pt; }}
+        QFrame#sheetPanel {{ background: rgba(20, 12, 6, 150); border: 1px solid {t.BRASS_DEEP};
+            border-radius: 10px; }}
+        QFrame#slotCard {{ background: rgba(63, 38, 22, 200); border: 1px solid {t.INK_SOFT};
+            border-radius: 8px; }}
+        QLabel#slotName {{ color: {t.OAK_LIGHT}; font-size: 8pt; font-weight: 800; }}
+        QLabel#slotItem {{ color: {t.CREAM}; font-size: 10pt; font-weight: 700; }}
+        QPushButton#slotButton {{ padding: 3px 6px; min-height: 26px; font-size: 9pt; }}
+        QPushButton#skillNode {{ border-radius: 10px; padding: 4px; font-size: 9pt;
+            text-align: center; }}
+        QPushButton#skillNode[state="unlocked"] {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 {t.BRASS}, stop:1 {t.BRASS_DEEP}); color: {t.WALNUT_DEEP};
+            border: 2px solid {t.WALNUT_DEEP}; font-weight: 800; }}
+        QPushButton#skillNode[state="available"] {{ background: {t.WALNUT}; color: {t.CREAM};
+            border: 2px solid {t.BRASS}; font-weight: 800; }}
+        QPushButton#skillNode[state="available"]:hover {{ background: #5a3820; }}
+        QPushButton#skillNode[state="locked"] {{ background: rgba(42, 24, 12, 170); color: {t.INK_SOFT};
+            border: 2px dashed {t.INK_SOFT}; }}
+        QProgressBar#xpBar {{ background: {t.WALNUT_DEEP}; border: 1px solid {t.BRASS_DEEP};
+            border-radius: 6px; color: {t.CREAM}; text-align: center; height: 16px; }}
+        QProgressBar#xpBar::chunk {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 #c9a044, stop:1 #f2d488); border-radius: 5px; }}
+    """
+
+
+def _effect_text(effects: dict) -> str:
+    parts = []
+    for key, value in effects.items():
+        name = EFFECT_NAMES.get(key, key)
+        if key == "speed":
+            parts.append(f"+{value * 100:.0f}% {name}")
+        elif key == "web_homing":
+            parts.append(name)
+        else:
+            parts.append(f"+{value:g} {name}")
+    return ", ".join(parts)
+
+
+def tree_positions() -> dict:
+    """(x, y) of every skill node, including any the layout does not name."""
+    positions = {}
+    spare = max((col for col, _ in TREE_LAYOUT.values()), default=-1) + 1
+    for index, node in enumerate(ABILITY_TREE):
+        col, row = TREE_LAYOUT.get(node.id, (spare + index // 3, index % 3))
+        positions[node.id] = (col * (NODE_W + COL_GAP), row * (NODE_H + ROW_GAP))
+    return positions
+
+
+class SkillTree(QWidget):
+    """Skill nodes placed by branch, with carved links from each prerequisite."""
+
+    unlock = pyqtSignal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.positions = tree_positions()
+        width = max(x for x, _ in self.positions.values()) + NODE_W
+        height = max(y for _, y in self.positions.values()) + NODE_H
+        self.setFixedSize(width + 8, height + 8)
+        self.buttons = {}
+        for node in ABILITY_TREE:
+            x, y = self.positions[node.id]
+            button = QPushButton(self)
+            button.setObjectName("skillNode")
+            button.setGeometry(x + 4, y + 4, NODE_W, NODE_H)
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(lambda _=False, aid=node.id: self.unlock.emit(aid))
+            self.buttons[node.id] = button
+        self.state = None
+
+    def show_state(self, state) -> None:
+        self.state = state
+        for node in ABILITY_TREE:
+            button = self.buttons[node.id]
+            if node.id in state.unlocked_abilities:
+                look, note = "unlocked", "Learned"
+            elif state.can_unlock(node.id):
+                look, note = "available", f"Learn · {node.cost} pt"
+            else:
+                look = "locked"
+                missing = [ABILITY_BY_ID[r].name for r in node.prerequisites
+                           if r not in state.unlocked_abilities]
+                note = (f"Level {node.level_required}" if state.level < node.level_required
+                        else ("Needs " + ", ".join(missing)) if missing else f"{node.cost} pt")
+            button.setProperty("state", look)
+            button.setText(f"{node.name}\n{note}")
+            button.setToolTip(f"<b>{node.name}</b> (level {node.level_required})<br>"
+                              f"{node.description}<br><i>{_effect_text(node.effects)}</i>")
+            button.style().unpolish(button)
+            button.style().polish(button)
+        self.update()
+
+    def paintEvent(self, event):  # noqa: N802 - Qt API name
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        unlocked = set(self.state.unlocked_abilities) if self.state else set()
+        for node in ABILITY_TREE:
+            for required in node.prerequisites:
+                if required not in self.positions:
+                    continue
+                x0, y0 = self.positions[required]
+                x1, y1 = self.positions[node.id]
+                start = QPointF(x0 + 4 + NODE_W / 2, y0 + 4 + NODE_H)
+                end = QPointF(x1 + 4 + NODE_W / 2, y1 + 4)
+                path = QPainterPath(start)
+                mid = (start.y() + end.y()) / 2
+                path.cubicTo(QPointF(start.x(), mid), QPointF(end.x(), mid), end)
+                lit = required in unlocked
+                painter.setPen(QPen(QColor(20, 12, 6, 200), 7, Qt.SolidLine, Qt.RoundCap))
+                painter.drawPath(path)
+                painter.setPen(QPen(QColor(wood_theme.BRASS if lit else wood_theme.INK_SOFT), 3,
+                                    Qt.SolidLine, Qt.RoundCap))
+                painter.drawPath(path)
+
+
+class CharacterDialog(QDialog):
+    """Name, level, skill tree and armour of the Adventure hero."""
+
+    def __init__(self, parent=None, path=None):
+        super().__init__(parent)
+        self.path = path
+        self.profile = load_profile(path)
+        self.state = hero_progression(self.profile)
+        self.setWindowTitle("Your Adventure spider")
+        self.setStyleSheet(character_qss())
+        root = QVBoxLayout(self)
+        root.setContentsMargins(18, 16, 18, 16)
+        root.setSpacing(12)
+
+        head = QHBoxLayout()
+        self.level_badge = QLabel()
+        self.level_badge.setObjectName("levelBadge")
+        self.level_badge.setAlignment(Qt.AlignCenter)
+        head.addWidget(self.level_badge)
+        name_box = QVBoxLayout()
+        self.name_edit = QLineEdit(self.profile["name"])
+        self.name_edit.setObjectName("heroName")
+        self.name_edit.setMaxLength(MAX_NAME_LENGTH)
+        self.name_edit.setPlaceholderText("Name your spider")
+        self.name_edit.editingFinished.connect(self._rename)
+        name_box.addWidget(self.name_edit)
+        self.xp_bar = QProgressBar()
+        self.xp_bar.setObjectName("xpBar")
+        name_box.addWidget(self.xp_bar)
+        head.addLayout(name_box, 1)
+        root.addLayout(head)
+
+        body = QHBoxLayout()
+        body.setSpacing(14)
+        tree_panel = QFrame()
+        tree_panel.setObjectName("sheetPanel")
+        tree_col = QVBoxLayout(tree_panel)
+        tree_col.setContentsMargins(14, 10, 14, 14)
+        title = QLabel("Skill tree")
+        title.setObjectName("sectionTitle")
+        tree_col.addWidget(title)
+        self.points_label = QLabel()
+        self.points_label.setObjectName("pointsLabel")
+        tree_col.addWidget(self.points_label)
+        self.tree = SkillTree()
+        self.tree.unlock.connect(self._unlock)
+        tree_col.addWidget(self.tree)
+        tree_col.addStretch(1)
+        body.addWidget(tree_panel)
+
+        armour_panel = QFrame()
+        armour_panel.setObjectName("sheetPanel")
+        armour_col = QVBoxLayout(armour_panel)
+        armour_col.setContentsMargins(14, 10, 14, 14)
+        armour_title = QLabel("Armour")
+        armour_title.setObjectName("sectionTitle")
+        armour_col.addWidget(armour_title)
+        self.slots = QGridLayout()
+        self.slots.setSpacing(8)
+        armour_col.addLayout(self.slots)
+        stats_title = QLabel("Bonuses")
+        stats_title.setObjectName("sectionTitle")
+        armour_col.addWidget(stats_title)
+        self.stats_label = QLabel()
+        self.stats_label.setObjectName("statLine")
+        self.stats_label.setWordWrap(True)
+        armour_col.addWidget(self.stats_label)
+        armour_col.addStretch(1)
+        armour_panel.setMinimumWidth(360)
+        body.addWidget(armour_panel, 1)
+        root.addLayout(body)
+
+        close = QPushButton("Done")
+        close.clicked.connect(self.accept)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        row.addWidget(close)
+        root.addLayout(row)
+        self.refresh()
+
+    # -- changes -----------------------------------------------------------
+    def _save(self) -> None:
+        self.profile["progression"] = self.state.to_dict()
+        save_profile(self.profile, self.path)
+
+    def _rename(self) -> None:
+        name = clean_name(self.name_edit.text())
+        self.name_edit.setText(name)
+        if name != self.profile["name"]:
+            self.profile["name"] = name
+            self._save()
+
+    def _unlock(self, ability_id: str) -> None:
+        if not self.state.can_unlock(ability_id):
+            return
+        node = ABILITY_BY_ID[ability_id]
+        self.state.skill_points -= node.cost
+        self.state.unlocked_abilities.append(ability_id)
+        self._save()
+        self.refresh()
+
+    def _equip(self, item_id: str) -> None:
+        if self.state.equip(item_id):
+            self._save()
+            self.refresh()
+
+    def _unequip(self, slot: str) -> None:
+        if self.state.unequip(slot):
+            self._save()
+            self.refresh()
+
+    # -- display -----------------------------------------------------------
+    def refresh(self) -> None:
+        state = self.state
+        self.level_badge.setText(str(state.level))
+        need = xp_to_next_level(state.level)
+        self.xp_bar.setRange(0, need)
+        self.xp_bar.setValue(min(state.xp, need))
+        self.xp_bar.setFormat("Max level" if state.level >= MAX_LEVEL
+                              else f"Level {state.level}  ·  {state.xp} / {need} XP")
+        points = state.skill_points
+        self.points_label.setText(
+            f"{points} skill point{'s' if points != 1 else ''} to spend · one per level"
+            if points else "No points to spend · you earn one each level")
+        self.tree.show_state(state)
+        self._refresh_slots()
+        self.stats_label.setText(self._bonus_text())
+
+    def _refresh_slots(self) -> None:
+        while self.slots.count():
+            item = self.slots.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        for index, slot in enumerate(SLOT_NAMES):
+            equipped = self.state.equipped.get(slot)
+            for item in (i for i in ARMOR_CATALOG if i.slot == slot):
+                card = QFrame()
+                card.setObjectName("slotCard")
+                row = QHBoxLayout(card)
+                row.setContentsMargins(10, 6, 8, 6)
+                text = QVBoxLayout()
+                text.setSpacing(1)
+                name = QLabel(SLOT_NAMES[slot].upper())
+                name.setObjectName("slotName")
+                text.addWidget(name)
+                worn = item.id == equipped
+                label = QLabel(item.name)
+                label.setObjectName("slotItem" if worn else "statLine")
+                label.setToolTip(item.description)
+                text.addWidget(label)
+                row.addLayout(text, 1)
+                if worn:
+                    button = QPushButton("Take off")
+                    button.clicked.connect(lambda _=False, s=slot: self._unequip(s))
+                elif item.id in self.state.inventory:
+                    button = QPushButton("Wear")
+                    button.clicked.connect(lambda _=False, i=item.id: self._equip(i))
+                else:
+                    button = QPushButton("Not found")
+                    button.setEnabled(False)
+                button.setObjectName("slotButton")
+                button.setFixedWidth(118)
+                button.setToolTip(item.description)
+                row.addWidget(button)
+                self.slots.addWidget(card, index, 0)
+
+    def _bonus_text(self) -> str:
+        totals: dict[str, float] = {}
+        for ability_id in self.state.unlocked_abilities:
+            for key, value in ABILITY_BY_ID[ability_id].effects.items():
+                totals[key] = totals.get(key, 0.0) + value
+        for item in ARMOR_CATALOG:
+            if self.state.equipped.get(item.slot) == item.id:
+                for key in ("armor", "max_hp", "max_energy", "damage", "speed"):
+                    totals[key] = totals.get(key, 0.0) + getattr(item, key)
+        shown = {k: v for k, v in totals.items() if abs(v) > 1e-9}
+        if not shown:
+            return "No bonuses yet. Learn skills and wear armour to grow stronger."
+        lines = []
+        for key, value in shown.items():
+            name = EFFECT_NAMES.get(key, key)
+            if key == "speed":
+                lines.append(f"{value * 100:+.1f}% {name}")
+            elif key == "web_homing":
+                lines.append("Silk homes in on moving targets")
+            else:
+                lines.append(f"{value:+g} {name}")
+        return "  ·  ".join(lines)

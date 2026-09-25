@@ -146,6 +146,11 @@ def shell_qss() -> str:
         QLabel#missionText {{ color: {CREAM_SOFT}; font-size: 9pt; background: transparent; }}
         QLabel#missionLocked {{ color: {OAK_LIGHT}; font-size: 9pt; font-style: italic;
                                 background: transparent; }}
+        QFrame#heroStrip {{ background: rgba(42, 24, 12, 215); border: 2px solid {BRASS};
+                            border-radius: 12px; }}
+        QLabel#missionDone {{ color: #9fdcbf; font-size: 9pt; font-weight: 800;
+                              background: transparent; }}
+        QLabel#missionDone[won="false"] {{ color: {OAK_LIGHT}; font-weight: 600; }}
         QLabel#controlsHintLine {{ color: {WALNUT_DEEP}; font-size: 9pt; background: transparent; }}
         {wood_button("QPushButton#modeBack")}
         {scrollbar_qss()}
