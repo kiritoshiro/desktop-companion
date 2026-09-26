@@ -153,7 +153,7 @@ def draw_hud(painter, window, controller):
         ("web", key("shoot", "L CLICK"), "Web", controller.web_cooldown,
          spider.energy >= controller.WEB_ENERGY and controller.silk >= 1),
         ("bite", key("bite", "R CLICK"), "Bite", spider.attack_cooldown, True),
-        ("skills", key("skills", "K"), "Skills", 0.0, True),
+        ("skills", key("skills", "K"), "Gear", 0.0, True),
     )
     card_width = (rect.width() - 38) // 4
     for index, (kind, key, label, cooldown, enough_energy) in enumerate(slots):
@@ -217,14 +217,14 @@ class PauseDialog(QDialog):
         mission = getattr(parent, "mission", None)
         choices = (
             ("Resume", "resume"),
-            ("Skill tree", "skills"),
+            ("Character & armour", "skills"),
             ("Save", "save"),
             ("Settings", "settings"),
             ("Release spider", "release"),
             ("Save and exit", "exit"),
         )
         if mission is not None:
-            choices = (("Resume", "resume"), ("Skill tree", "skills"),
+            choices = (("Resume", "resume"), ("Character & armour", "skills"),
                        ("Settings", "settings"), ("Restart raid", "restart"),
                        ("Retry saving victory", "save"), ("Exit raid", "exit"))
         for label, choice in choices:

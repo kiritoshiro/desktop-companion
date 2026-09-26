@@ -1357,15 +1357,31 @@ class OverlayWindow(_OverlayBase):
             self.player.clear_keys()
         super().focusOutEvent(event)
 
+    def _open_character_window(self) -> None:
+        """In a mission, the same Character window as before the raid: the
+        anatomy doll, armour icons, the bag and skills (the owner: "when in
+        game and opened inventory it should also allow to change armor and
+        show that visual of spider anatomy as in pregame"). The raid's
+        progress is saved first, and what is changed is put on the living
+        spiders after. Outside a mission, the old inspector."""
+        if self.mission is None:
+            dialog = CreatureInspectorDialog(self, self.player.creature)
+            dialog.tabs.setCurrentIndex(1)
+            dialog.exec_()
+            return
+        from .character_ui import CharacterDialog
+
+        self.mission.save_progress()
+        CharacterDialog(self, path=self.mission.progress_path).exec_()
+        self.mission.refresh_from_profile()
+
     def _show_adventure_skills(self):
         if self.player is None:
             return
         self._adventure_paused = True
         self.player.paused = True
         self.player.clear_keys()
-        dialog = CreatureInspectorDialog(self, self.player.creature)
-        dialog.tabs.setCurrentIndex(1)
-        dialog.exec_()
+        self._open_character_window()
         self._adventure_paused = False
         if self.player is not None:
             self.player.paused = False
@@ -1384,9 +1400,7 @@ class OverlayWindow(_OverlayBase):
             choice = dialog.choice
             if choice == "skills":
                 if self.player is not None:
-                    inspector = CreatureInspectorDialog(self, self.player.creature)
-                    inspector.tabs.setCurrentIndex(1)
-                    inspector.exec_()
+                    self._open_character_window()
                 continue
             if choice == "settings":
                 settings = AdventureSettingsDialog(self)

@@ -37,7 +37,7 @@ ACTIONS = (
     ("companion_follow", "Scout: follow", "Your companion follows and fights nearby enemies."),
     ("companion_defend", "Scout: defend here", "Your companion holds its current position and protects the area."),
     ("companion_attack", "Scout: attack target", "Point at an enemy and order your companion to attack it."),
-    ("skills", "Skill tree", "Open the skill tree to spend points."),
+    ("skills", "Character & armour", "Open your character: armour, skills and upgrades."),
     ("pause", "Pause menu", "Pause, save, change settings or release the spider. Esc always pauses too."),
 )
 ACTION_IDS = tuple(action for action, _, _ in ACTIONS)

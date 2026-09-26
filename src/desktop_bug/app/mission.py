@@ -113,6 +113,9 @@ class MissionActor(PlayerController):
     # Sent by an outpost on another screen: it hunts the hero, but it is not
     # the Thorn nest's counterattack the objective waits on.
     from_outpost = False
+    # A roamer (a fly hunter) fights any foe this close to it, wherever it is;
+    # None: a defender, who fights what comes near its post.
+    aggro_range = None
 
     def __init__(self, creature, mission, role, home, raider=False, style=None, slot=0):
         super().__init__(creature, mission.controls)
@@ -183,6 +186,8 @@ class MissionActor(PlayerController):
                 targets = [s for s in targets if math.hypot(s.x-anchor[0], s.y-anchor[1]) < 220]
                 if m.command == "attack" and m.attack_target is not None and not m.attack_target.dead:
                     targets = [m.attack_target]
+            elif self.aggro_range is not None:
+                targets = [s for s in targets if math.hypot(s.x-c.x, s.y-c.y) < self.aggro_range]
             elif not self.raider:
                 refuge = m.sites[0]
                 targets = [s for s in targets if math.hypot(s.x-self.home[0], s.y-self.home[1]) < 260
@@ -192,11 +197,11 @@ class MissionActor(PlayerController):
         if target is not None and target.dead:
             target = self.target = None
         tx, ty = (target.x, target.y) if target is not None else self.home
-        # Something the mission wants done more than a distant fight: a fly
-        # to catch, say. A foe close by still comes first.
-        goal = m.actor_goal(self)
-        if goal is not None and (target is None or math.hypot(target.x-c.x, target.y-c.y) > 140):
-            target = None
+        # A side job the mission offers (a fly to catch) only when there is
+        # no foe to fight: the owner, "attacking me is their priority, flies
+        # are a side quest ... if they are defenders they should defend first".
+        goal = m.actor_goal(self) if target is None else None
+        if goal is not None:
             tx, ty = goal
         gap = math.hypot(tx-c.x, ty-c.y)
         reach = self.bite_reach()
@@ -438,9 +443,9 @@ class TerritoryMission:
     def _opening_spawns(self):
         for site in self.sites:
             for index, guard in enumerate(site.guards):
-                angle = index * 2.3
-                pos = self.layout.clamp(site.x + 35 + math.cos(angle)*index*45,
-                                        site.y + 40 + math.sin(angle)*index*30, 40)
+                # Beside the building, never on its name plate below it.
+                dx, dy = self.GUARD_SPOTS[index % len(self.GUARD_SPOTS)]
+                pos = self.layout.clamp(site.x + dx, site.y + dy, 40)
                 # A guard is a role, or (on an editor map) a whole spec.
                 if isinstance(guard, dict):
                     self._spawn(guard["role"], pos, spec=guard)
@@ -453,6 +458,9 @@ class TerritoryMission:
                 r = screen.rect
                 pos = r.clamp(r.x + r.w*spec["fx"], r.y + 115 + max(160, r.h - 360)*spec["fy"], 60)
                 self._spawn(spec["role"], pos, spec=spec)
+
+    # Where a building's guards stand, round its sides and back.
+    GUARD_SPOTS = ((88, -6), (-88, -6), (72, -48), (-72, -48), (104, 24), (-104, 24), (0, -78), (40, -80))
 
     # -- the buildings, by kind ------------------------------------------------
     NOT_FOOTHOLDS = ("home", "hatchery", "nest", "outpost", "infestation", "flynest")
@@ -545,6 +553,8 @@ class TerritoryMission:
         else:
             name = kind.name if kind is not None else role.title()
         c.set_name(name)
+        # Only your own spider's name stands out; the rest are quiet.
+        c.label_style = "hero" if role == "hero" else "quiet"
         c.mission_loot = list(worn)      # what it can drop when it dies
         c.loot_rolled = role in ("hero", "ally")
         if role == "hero":
@@ -886,6 +896,23 @@ class TerritoryMission:
     def actor_goal(self, actor):
         """Where a mission would send an actor instead of fighting; None in a raid."""
         return None
+
+    def refresh_from_profile(self):
+        """Take in what the Character window changed mid-raid -- armour worn,
+        skills learned, upgrades -- onto the living hero and companions,
+        keeping their wounds as a share of their health."""
+        self.profile = load_profile(self.progress_path)
+        pairs = [(self.hero, hero_progression(self.profile))]
+        for actor in self.actors:
+            if actor.role == "ally" and actor.companion_id and not actor.creature.dead:
+                pairs.append((actor.creature, companion_progression(self.profile, actor.companion_id)))
+        for spider, state in pairs:
+            live = spider.progression
+            for name in ("level", "xp", "total_xp", "skill_points", "unlocked_abilities", "inventory",
+                         "equipped", "item_levels"):
+                setattr(live, name, copy.deepcopy(getattr(state, name)))
+            spider._apply_progression_stats()
+        self._apply_building_bonuses()
 
     def _holds(self, kind, adventurers: bool) -> bool:
         return any(s.kind == kind and s.owned == adventurers for s in self.sites)
