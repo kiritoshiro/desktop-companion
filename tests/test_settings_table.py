@@ -173,14 +173,17 @@ def test_a_saved_preset_still_loads_every_slot_field(window, scratch):
 
 def test_the_category_column_lists_only_the_body_plans(window):
     from desktop_bug.content.body_plans import BODY_PLAN_IDS
+    from desktop_bug.content.enemy_kinds import ENEMY_BODY_PLANS
 
     window.table.setRowCount(0)
     window.add_slot(None, None, 1, False)
     box = window.table.cellWidget(0, COL_CATEGORY)
     offered = [box.itemData(i) for i in range(box.count())]
+    # Adventure's enemy-only body plans are not Companion categories.
+    companion_plans = set(BODY_PLAN_IDS) - ENEMY_BODY_PLANS
     assert offered[0] == RANDOM_CATEGORY_ID
-    assert set(offered[1:]) == set(BODY_PLAN_IDS)
-    assert len(offered) == len(BODY_PLAN_IDS) + 1
+    assert set(offered[1:]) == companion_plans
+    assert len(offered) == len(companion_plans) + 1
 
 
 def test_the_skin_column_only_offers_that_category(window):
@@ -215,8 +218,12 @@ def test_any_kind_offers_every_skin(window):
     category = window.table.cellWidget(0, COL_CATEGORY)
     skin = window.table.cellWidget(0, COL_SKIN)
     category.setCurrentIndex(category.findData(RANDOM_CATEGORY_ID))
+    from desktop_bug.content.enemy_kinds import is_enemy_model
+
     offered = {skin.itemData(i) for i in range(skin.count())} - {RANDOM_MODEL_ID}
-    assert offered == set(window.models), sorted(set(window.models) - offered)
+    # Every Companion skin; Adventure's enemy kinds are left out.
+    wanted = {mid for mid in window.models if not is_enemy_model(mid)}
+    assert offered == wanted, sorted(wanted ^ offered)
 
 
 def test_the_preset_still_stores_a_model_not_a_category(window):

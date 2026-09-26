@@ -39,6 +39,7 @@ from PyQt5.QtWidgets import (
 )
 
 from .. import __version__
+from ..content.enemy_kinds import ENEMY_BODY_PLANS, is_enemy_model
 from ..content.discovery import app_root, discover_models, discover_personalities, discover_presets, find_data_file, migrate_legacy_state_dir, state_dir, user_presets_dir
 from ..support.dpi import enable_high_dpi_scaling
 from ..support.logging_setup import configure_logging, get_logger
@@ -718,6 +719,8 @@ class ConfigWindow(QMainWindow):
         category_box.setMinimumWidth(84)
         category_box.addItem("Any kind", RANDOM_CATEGORY_ID)
         for plan in BODY_PLAN_IDS:
+            if plan in ENEMY_BODY_PLANS:
+                continue      # Adventure enemies only
             category_box.addItem(BODY_PLAN_LABELS.get(plan, plan.title()), plan)
         category_box.setToolTip(
             "The spider's body plan: how it is built and how it walks. "
@@ -1177,6 +1180,8 @@ class ConfigWindow(QMainWindow):
             return (-added, model.get("display_name", model.get("id", "")).casefold())
 
         for model in sorted(self.models.values(), key=newest_first):
+            if is_enemy_model(model.get("id")):
+                continue      # Adventure enemies are not Companion skins
             if wanted != RANDOM_CATEGORY_ID and model.get("body_plan") != wanted:
                 continue
             model_box.addItem(self._model_icon(model),
