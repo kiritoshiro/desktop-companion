@@ -29,6 +29,9 @@ class MapInfo:
     guardian: str                   # the boss at the Thorn nest
     guardian_set: str               # the armour set it wears complete
     reward_companion: str | None    # joins you the first time the map is won
+    # "raid": the woodland buildings; "reclaim": the frozen desktop itself,
+    # which acid melts and heavy spiders crack (app/reclaim.py).
+    kind: str = "raid"
 
 
 MAPS = (
@@ -40,6 +43,10 @@ MAPS = (
             "Raiders in bronze hold the hollow. Their warden wears the full "
             "Warden plate.",
             2, "territory", ("uncommon", "rare"), "Hollow warden", "warden", "hunter"),
+    MapInfo("reclaim", "Reclaim the desktop",
+            "Your desktop is frozen and infested. Destroy the nest on every screen "
+            "before the acid eats it. Esc gives it back at once.",
+            2, "territory", ("uncommon", "rare"), "The Devourer", "brood", None, kind="reclaim"),
     MapInfo("obsidian", "Obsidian deep",
             "Rune-cut raiders and a brood matriarch in black glass.",
             3, "ember", ("rare", "epic"), "Brood matriarch", "brood", "sentinel"),
@@ -75,6 +82,15 @@ PARTY_SIZE = 3
 SELL_PRICES = {"common": 5, "uncommon": 12, "rare": 30, "epic": 70, "legendary": 160}
 # Chance an enemy drops one of the pieces it wore when it dies.
 DROP_CHANCE = 0.35
+
+
+def chosen_map(profile: dict) -> MapInfo:
+    """The map the next raid is played on: the one chosen on the Adventure
+    page, or the first when that one is unknown or still locked."""
+    chosen = profile.get("selected_map", DEFAULT_MAP)
+    if not map_unlocked(profile.get("missions") or {}, chosen):
+        chosen = DEFAULT_MAP
+    return MAP_BY_ID[chosen]
 
 
 def map_unlocked(records: dict, map_id: str) -> bool:

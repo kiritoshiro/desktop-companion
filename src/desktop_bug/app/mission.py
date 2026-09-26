@@ -11,12 +11,14 @@ from .adventure_profile import (companion_progression, hero_progression, load_pr
                                 profile_path, record_result, save_profile, store_progression,
                                 unlock_companion)
 from .armoury import add_loot
-from .campaign import (COMPANION_BY_ID, DEFAULT_MAP, MAP_BY_ID, PARTY_SIZE, enemy_loadout,
-                       map_unlocked, roll_drop)
+from .campaign import (COMPANION_BY_ID, PARTY_SIZE, chosen_map, enemy_loadout,
+                       roll_drop)
 from ..state.progression import ARMOR_BY_ID
 from ..content.enemy_kinds import kinds_for_tier, pick_skin
 from ..content.palettes import enemy_palette
-from ..world.playfield import Playfield, ScreenRect
+from ..world.playfield import ScreenRect
+from ..world.screen_layout import ScreenLayout
+from .encounters import PROFILES, EncounterDirector
 
 
 @dataclass
@@ -44,6 +46,48 @@ class MissionSite:
     reserves: int = 0
     warning: float = 0.0
     supply: float = 180.0
+    screen: int = 0
+
+
+@dataclass
+class AcidGlob:
+    """A spat gob of acid, arcing from the spitter to where it aimed.
+
+    It lands where it was aimed, not on whoever stood there: a spider that
+    moves after the wind-up is missed. On landing it burns every foe of the
+    spitter in the splash, and the mission is told where it fell (the frozen
+    desktop melts there, in Reclaim the desktop).
+    """
+    shooter: object
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+    flight: float
+    age: float = 0.0
+    done: bool = False
+
+    SPEED = 430.0
+    SPLASH = 38.0
+
+    @property
+    def t(self) -> float:
+        return min(1.0, self.age / max(0.05, self.flight))
+
+    @property
+    def position(self) -> tuple[float, float, float]:
+        """(x, y, height above the ground)."""
+        t = self.t
+        return (self.x0 + (self.x1 - self.x0) * t, self.y0 + (self.y1 - self.y0) * t,
+                math.sin(t * math.pi) * min(90.0, self.flight * 120.0))
+
+
+@dataclass
+class Splash:
+    """The short-lived look of acid landing."""
+    x: float
+    y: float
+    age: float = 0.0
 
 
 class MissionActor(PlayerController):
@@ -62,6 +106,9 @@ class MissionActor(PlayerController):
     # Webbed, a mission spider always fights the silk, as a player holding a
     # movement key does; it used to sit out the whole net.
     struggling = True
+    # Sent by an outpost on another screen: it hunts the hero, but it is not
+    # the Thorn nest's counterattack the objective waits on.
+    from_outpost = False
 
     def __init__(self, creature, mission, role, home, raider=False, style=None, slot=0):
         super().__init__(creature, mission.controls)
@@ -85,11 +132,21 @@ class MissionActor(PlayerController):
         self.silk_capacity = mission.silk_capacity_for(creature)
         self.silk = float(self.silk_capacity)
 
+    # Acid: the spitter's ranged strike. The same cone and stamina rules as
+    # silk, with its own range and a longer cooldown; it needs no silk.
+    SPIT_RANGE = 290.0
+    SPIT_ENERGY = 14.0
+    SPIT_COOLDOWN = 2.2
+
     def _choose_strike(self, target, gap):
         """The strike the rules allow right now, or None."""
         c = self.creature
         if not self.in_cone(target):
             return None
+        if self.style == "spitter":
+            if gap < self.SPIT_RANGE and self.web_cooldown <= 0 and c.energy >= self.SPIT_ENERGY:
+                return "spit"
+            return "bite" if gap < self.bite_reach() else None
         if self.style == "weaver":
             if (gap < self.WEB_RANGE and self.web_cooldown <= 0 and self.silk >= 1
                     and c.energy >= self.WEB_ENERGY):
@@ -116,7 +173,7 @@ class MissionActor(PlayerController):
                 # Companions trail behind the hero, fanned out by party slot.
                 spread = (self.slot - (len(m.allies) - 1) / 2) * 0.7
                 behind = m.hero.heading + math.pi + spread
-                self.home = anchor if m.command == "defend" else m.area.clamp(
+                self.home = anchor if m.command == "defend" else m.layout.clamp(
                     anchor[0] + math.cos(behind)*85,
                     anchor[1] + math.sin(behind)*85, c.size*2)
                 targets = [s for s in targets if math.hypot(s.x-anchor[0], s.y-anchor[1]) < 220]
@@ -137,7 +194,7 @@ class MissionActor(PlayerController):
         # Its own pace, never faster than the player's walk, and scaled by
         # level and armour exactly as the player's is.
         c.speed = (95.0 if self.style == "hunter" else 68.0) * c._speed_mult()
-        if target is not None and self.style == "weaver":
+        if target is not None and self.style in ("weaver", "spitter"):
             c.motion_paused = 135 < gap < 230
             if gap < 135:
                 tx, ty = c.x + (c.x-tx), c.y + (c.y-ty)
@@ -160,7 +217,10 @@ class MissionActor(PlayerController):
                 self.strike_target = target
                 self.strike_point = (target.x, target.y)
                 c.begin_strike(target.x, target.y)
-        c.target_x, c.target_y = m.manager.playfield.clamp(tx, ty, c.size)
+        # Across screens: the next door or tunnel on the way, not a straight
+        # line into the dead corner between monitors.
+        tx, ty = m.layout.route(c.x, c.y, tx, ty)
+        c.target_x, c.target_y = m.layout.clamp(tx, ty, c.size)
         if target is not None:
             c.target_heading = math.atan2(target.y-c.y, target.x-c.x)
         if c.webbed:
@@ -175,13 +235,30 @@ class MissionActor(PlayerController):
         self.aim = self.strike_point
         if self.strike_kind == "shoot":
             self.shoot(m.manager)
+        elif self.strike_kind == "spit":
+            self.spit(self.strike_point)
         elif self.strike_kind == "pounce":
-            c.target_x, c.target_y = m.area.clamp(*self.strike_point, c.size*2)
+            c.target_x, c.target_y = m.layout.clamp(*self.strike_point, c.size*2)
             self.jump()
         else:
             self.bite(m.manager)
         # The pause after a strike: this brain's pacing, not a rule.
         c.attack_cooldown = max(c.attack_cooldown, 1.4 if self.role != "guardian" else 1.8)
+
+    def spit(self, point) -> bool:
+        """Spit acid at a point, under the same cone and stamina rules as silk."""
+        c = self.creature
+        if c.dead or c.airborne or c.webbed_held or self.web_cooldown > 0:
+            return False
+        angle = math.atan2(point[1]-c.y, point[0]-c.x)
+        off = abs((angle - c.heading + math.pi) % math.tau - math.pi)
+        if self.controls.aim_cone < 360 and off > math.radians(self.controls.aim_cone) / 2 + 0.05:
+            return False
+        if not c.spend_energy(self.SPIT_ENERGY):
+            return False
+        self.web_cooldown = self.SPIT_COOLDOWN
+        self.mission.spit_acid(c, point)
+        return True
 
 
 class TerritoryMission:
@@ -192,7 +269,21 @@ class TerritoryMission:
     # and the Adventure page comes back (the owner's request).
     END_SCREEN_SECONDS = 4.5
 
-    def __init__(self, manager, controls, area=None):
+    # Which encounter profile (encounters.py) places the extra enemies.
+    ENCOUNTER = "raid"
+    # Reclaim the desktop covers every screen and takes all input.
+    FREEZES_DESKTOP = False
+
+    @staticmethod
+    def _map_for(profile):
+        # Which class plays a map's kind is create_mission's choice.
+        return chosen_map(profile)
+
+    def restarted(self):
+        """A fresh copy of this raid on the same screens, for Retry."""
+        return type(self)(self.manager, self.controls, layout=self.layout)
+
+    def __init__(self, manager, controls, area=None, layout=None):
         self.manager = manager
         self.controls = controls
         self.elapsed = 0.0
@@ -221,12 +312,11 @@ class TerritoryMission:
         self.hero_name = self.profile["name"]
         # The map chosen on the Adventure page; a locked or unknown one falls
         # back to the first. Results are recorded per map.
-        chosen = self.profile.get("selected_map", DEFAULT_MAP)
-        if not map_unlocked(self.profile.get("missions") or {}, chosen):
-            chosen = DEFAULT_MAP
-        self.map_info = MAP_BY_ID[chosen]
+        self.map_info = self._map_for(self.profile)
         self.MISSION_ID = self.map_info.id
         self.rng = random.Random()
+        self.hazards = []         # acid in flight
+        self.splashes = []
         self.loot = []
         self.found = []           # (item id, "new" or "spare") picked up this raid
         self.reward_text = ""
@@ -252,22 +342,18 @@ class TerritoryMission:
         manager.creatures = []
         manager._render_order = []
         manager.team_stances = {"adventurers": {"rivals": "foe"}}
-        if area is None:
-            area = max(manager.playfield.rects, key=lambda r: r.w*r.h,
-                       default=ScreenRect(0, 0, manager.screen_w, manager.screen_h))
-        # One real monitor is a complete arena, avoiding disconnected screen gaps.
-        self.area = area
-        self.playfield = Playfield(manager.screen_w, manager.screen_h, [area])
-        def point(fx, fy):
-            usable_height = max(160, area.h - 360)
-            return area.clamp(area.x + area.w*fx, area.y + 115 + usable_height*fy, 85)
-        self.sites = [
-            MissionSite("home", "Home burrow", *point(.16, .57), owned=True),
-            MissionSite("food", "Food cache", *point(.39, .29)),
-            MissionSite("silk", "Silk loom", *point(.39, .70)),
-            MissionSite("hatchery", "Hatchery", *point(.64, .47), reserves=6),
-            MissionSite("nest", "Thorn nest", *point(.83, .30)),
-        ]
+        if layout is None:
+            if area is None:
+                area = max(manager.playfield.rects, key=lambda r: r.w*r.h,
+                           default=ScreenRect(0, 0, manager.screen_w, manager.screen_h))
+            layout = ScreenLayout.single(area)
+        # The screens the raid is fought on (world/screen_layout.py): the main
+        # one holds the buildings; any others are reached through the doors
+        # where monitors meet, or through tunnels where they do not.
+        self.layout = layout
+        self.area = area = layout.primary.rect
+        self.playfield = layout.playfield
+        self.sites = self._build_sites(area)
         self.hero = self._spawn("hero", (self.sites[0].x, self.sites[0].y))
         self.player = PlayerController(self.hero, controls)
         # The party: the first PARTY_SIZE companions unlocked, each with its
@@ -279,12 +365,47 @@ class TerritoryMission:
                 self.allies.append(ally)
         self.ally = self.allies[0] if self.allies else None
         self.defend_point = (self.ally.x, self.ally.y) if self.ally else (self.hero.x, self.hero.y)
-        self.notice = (f"{self.map_info.title}: capture Food or Silk, then seal the Hatchery. "
-                       "Hold clear sites for 4 seconds.")
-        for site, role in zip(self.sites[1:4], ("guard", "weaver", "hunter")):
-            self._spawn(role, (site.x+35, site.y+40))
+        self.notice = self._opening_notice()
+        self._opening_spawns()
+        # Extra enemies by the kind of mission and the screens there are
+        # (encounters.py): an outpost on every other screen.
+        self.director = EncounterDirector(PROFILES[self.ENCOUNTER], layout, self.map_info.tier, self.rng)
+        self.outposts = []
+        for plan in self.director.outposts([(s.x, s.y) for s in self.sites]):
+            site = MissionSite(plan.kind, plan.name, plan.x, plan.y, reserves=plan.reserves, screen=plan.screen)
+            self.outposts.append(site)
+            self.sites.append(site)
+            for index, role in enumerate(plan.defenders):
+                # A ring round the building, not on top of its name plate.
+                angle = 0.6 + index * (math.tau / max(3, len(plan.defenders)))
+                self._spawn(role, layout.clamp(plan.x + math.cos(angle)*135, plan.y + 10 + math.sin(angle)*80, 40))
+        if self.outposts and self.ENCOUNTER == "raid":
+            self.notice += f" Outposts wait on your other screen{'s' if len(self.outposts) > 1 else ''}."
         manager._refresh_neighbor_links()
         manager._refresh_render_order()
+
+    def _build_sites(self, area):
+        """The mission's buildings on the main screen."""
+        main = self.layout.primary.index
+
+        def point(fx, fy):
+            usable_height = max(160, area.h - 360)
+            return area.clamp(area.x + area.w*fx, area.y + 115 + usable_height*fy, 85)
+        return [
+            MissionSite("home", "Home burrow", *point(.16, .57), owned=True, screen=main),
+            MissionSite("food", "Food cache", *point(.39, .29), screen=main),
+            MissionSite("silk", "Silk loom", *point(.39, .70), screen=main),
+            MissionSite("hatchery", "Hatchery", *point(.64, .47), reserves=6, screen=main),
+            MissionSite("nest", "Thorn nest", *point(.83, .30), screen=main),
+        ]
+
+    def _opening_notice(self):
+        return (f"{self.map_info.title}: capture Food or Silk, then seal the Hatchery. "
+                "Hold clear sites for 4 seconds.")
+
+    def _opening_spawns(self):
+        for site, role in zip(self.sites[1:4], ("guard", "weaver", "hunter")):
+            self._spawn(role, (site.x+35, site.y+40))
 
     def _spawn(self, role, pos, raider=False, companion=None):
         if sum(not c.dead for c in self.manager.creatures) >= self.CAP:
@@ -365,7 +486,8 @@ class TerritoryMission:
 
     # Which enemy kinds suit a role: a weaver keeps its distance, a hunter
     # closes in, a guard holds ground.
-    ROLE_TAGS = {"weaver": ("ranged",), "hunter": ("hunter", "fast"), "guard": ("heavy",)}
+    ROLE_TAGS = {"weaver": ("ranged",), "spitter": ("ranged",), "hunter": ("hunter", "fast"),
+                 "guard": ("heavy",)}
 
     def _enemy_kind(self, role):
         """An enemy kind for this map (content/enemy_kinds). The guardian is
@@ -426,7 +548,7 @@ class TerritoryMission:
             return "01 / Capture the Food cache or Silk loom"
         if not self.sites[3].owned:
             return "02 / Seal the Hatchery to stop reinforcements"
-        if any(raider for _, _, raider in self.pending) or any(a.raider and not a.creature.dead for a in self.actors):
+        if any(raider for _, _, raider in self.pending) or any(a.raider and not a.from_outpost and not a.creature.dead for a in self.actors):
             return "03 / Defeat the counterattack"
         return "04 / Defeat the guardian and claim Thorn nest"
 
@@ -442,11 +564,19 @@ class TerritoryMission:
                 self.hover_target = enemy
         self.notice_time = max(0, self.notice_time-dt)
         for c in list(self.manager.creatures):
+            was_airborne, before = c.airborne, (c.x, c.y)
             c.update(dt, -10000, -10000, self.manager.screen_w, self.manager.screen_h)
-            c.x, c.y = self.area.clamp(c.x, c.y, c.margin)
+            c.x, c.y = self.layout.clamp(c.x, c.y, c.margin)
+            if not c.dead:
+                self._through_tunnel(c, dt)
+                if was_airborne and not c.airborne:
+                    self.on_landing(c)
+                elif not c.airborne:
+                    self._heavy_steps(c, math.hypot(c.x-before[0], c.y-before[1]))
         for projectile in self.manager.fly_world.projectiles:
             projectile.update(dt)
         self.manager.fly_world.projectiles = [p for p in self.manager.fly_world.projectiles if not p.done]
+        self._update_hazards(dt)
         self._drop_loot()
         self.manager._bury_the_dead()
         self._collect_loot(dt)
@@ -476,7 +606,7 @@ class TerritoryMission:
                 continue
             unlocked = site.kind != "nest" or (self.sites[3].owned and any(s.owned for s in self.sites[1:3])
                         and self.guardian is not None and self.guardian.dead
-                        and not self.pending and not any(a.raider for a in self.actors))
+                        and not self.pending and not any(a.raider and not a.from_outpost for a in self.actors))
             if near and not site.contested and unlocked:
                 site.progress = min(1, site.progress + dt/self.CAPTURE_SECONDS)
                 if site.progress >= 1:
@@ -484,6 +614,7 @@ class TerritoryMission:
             elif not near:
                 site.progress = max(0, site.progress - dt*.12)
         self._spawning(dt)
+        self._outpost_waves(dt)
 
     # How close a spider must be to use a base. The Scout gets a little more,
     # because a following Scout trails about 85 px behind the hero.
@@ -570,6 +701,11 @@ class TerritoryMission:
             self.pending.extend([("nest", "hunter", True), ("nest", "guard", True)])
             self.sites[4].warning = 4.0
             self.announce("Outpost secured! Counterattack from Thorn nest in 4 seconds.")
+        if site.kind in ("outpost", "infestation"):
+            site.reserves = 0
+            site.warning = 0
+            self.hero.gain_experience(25, "outpost taken")
+            self.announce(f"{site.name} taken on {self.layout.screens[site.screen].name} - no more raids from it")
         if site.kind == "nest":
             self.state = "victory"
             self.hero.gain_experience(100, "raid complete")
@@ -583,7 +719,7 @@ class TerritoryMission:
                 continue
             c.loot_rolled = True
             for index, item_id in enumerate(roll_drop(c.mission_loot, c is self.guardian, self.rng)):
-                x, y = self.area.clamp(c.x + index * 30.0, c.y + index * 12.0, 30)
+                x, y = self.layout.clamp(c.x + index * 30.0, c.y + index * 12.0, 30)
                 self.loot.append(Loot(item_id, x, y))
 
     def _collect_loot(self, dt):
@@ -619,7 +755,7 @@ class TerritoryMission:
                 continue
             if site.warning > 0 or len(self.manager.creatures) >= 8:
                 continue
-            pos = self.area.clamp(site.x+50, site.y+50, 65)
+            pos = self.layout.clamp(site.x+50, site.y+50, 65)
             if math.hypot(self.hero.x-pos[0], self.hero.y-pos[1]) < 150:
                 continue
             if self._spawn(role, pos, raider) is not None:
@@ -628,7 +764,7 @@ class TerritoryMission:
                     site.reserves -= 1
                 site.warning = 1.5 if any(e[0] == source for e in self.pending) else 0
         if (self.guardian is None and hatch.owned and any(s.owned for s in self.sites[1:3])
-                and not self.pending and not any(a.raider for a in self.actors)):
+                and not self.pending and not any(a.raider and not a.from_outpost for a in self.actors)):
             nest = self.sites[4]
             if self.guardian_warning is None:
                 self.guardian_warning = 4.0
@@ -639,6 +775,95 @@ class TerritoryMission:
                 self.guardian = self._spawn("guardian", (nest.x, nest.y))
                 if self.guardian is not None:
                     self.announce("Thorn guardian awakened. Bait its strike, then counterattack.")
+
+    # -- screens, outposts, acid, heavy feet ---------------------------------
+    TUNNEL_COOLDOWN = 1.2
+
+    def _through_tunnel(self, c, dt):
+        """A spider standing in a tunnel mouth comes out of the other one."""
+        cool = getattr(c, "tunnel_cooldown", 0.0)
+        if cool > 0:
+            c.tunnel_cooldown = max(0.0, cool - dt)
+            return
+        found = self.layout.tunnel_at(c.x, c.y)
+        if found is None:
+            return
+        _link, (fx, fy) = found
+        # Step out towards the far screen's middle, so it does not fall
+        # straight back in.
+        cx, cy = self.layout.screen_at(fx, fy).centre
+        d = max(1.0, math.hypot(cx-fx, cy-fy))
+        c.x, c.y = self.layout.clamp(fx + (cx-fx)/d*48, fy + (cy-fy)/d*48, c.margin)
+        c.target_x, c.target_y = c.x, c.y
+        c.tunnel_cooldown = self.TUNNEL_COOLDOWN
+        if c is self.hero:
+            self.announce(f"Through the tunnel to {self.layout.screen_at(c.x, c.y).name}")
+
+    def _outpost_waves(self, dt):
+        """Outposts send raiders on the director's schedule until taken."""
+        for index, role in self.director.update(dt, self.outposts):
+            site = self.outposts[index]
+            if len(self.manager.creatures) >= self.CAP - 1:
+                self.director.retry(index)
+                continue
+            pos = self.layout.clamp(site.x + 45, site.y + 55, 60)
+            if self._spawn(role, pos, raider=True) is None:
+                self.director.retry(index)
+                continue
+            self.actors[-1].from_outpost = True
+            site.reserves -= 1
+            self.announce(f"Raiders from {site.name} on {self.layout.screens[site.screen].name}")
+
+    def spit_acid(self, shooter, point):
+        x1, y1 = self.layout.clamp(point[0], point[1], 8)
+        distance = math.hypot(x1-shooter.x, y1-shooter.y)
+        self.hazards.append(AcidGlob(shooter, shooter.x, shooter.y, x1, y1, distance / AcidGlob.SPEED))
+        shooter.begin_strike(x1, y1)
+
+    def _update_hazards(self, dt):
+        for glob in self.hazards:
+            glob.age += dt
+            if glob.age >= glob.flight and not glob.done:
+                glob.done = True
+                self._acid_lands(glob)
+        self.hazards = [g for g in self.hazards if not g.done]
+        for splash in self.splashes:
+            splash.age += dt
+        self.splashes = [s for s in self.splashes if s.age < 0.9]
+
+    def _acid_lands(self, glob):
+        shooter = glob.shooter
+        self.splashes.append(Splash(glob.x1, glob.y1))
+        for target in list(self.manager.creatures):
+            if (target.dead or target is shooter or target.airborne
+                    or shooter.relation_to(target) != "foe"
+                    or math.hypot(target.x-glob.x1, target.y-glob.y1) > AcidGlob.SPLASH + target.size*0.5):
+                continue
+            self.manager._splash(shooter, target, shooter.damage * 1.1)
+        self.on_acid(glob.x1, glob.y1)
+
+    def on_acid(self, x, y):
+        """Acid landed at a point. A plain raid leaves nothing behind."""
+
+    # Spiders at least this much bigger than normal crack the ground when they
+    # land from a jump; bosses (much bigger) crack it as they walk.
+    HEAVY_LANDING = 1.12
+    HEAVY_WALK = 1.5
+    STEP_EVERY = 110.0
+
+    def _heavy_steps(self, c, moved):
+        if c.size_scale < self.HEAVY_WALK or moved <= 0:
+            return
+        c.heavy_walked = getattr(c, "heavy_walked", 0.0) + moved
+        if c.heavy_walked >= self.STEP_EVERY:
+            c.heavy_walked = 0.0
+            self.on_heavy_step(c)
+
+    def on_landing(self, c):
+        """A spider came down from a jump. A plain raid leaves no mark."""
+
+    def on_heavy_step(self, c):
+        """A very big spider took a heavy step. A plain raid leaves no mark."""
 
     @property
     def ended(self) -> bool:

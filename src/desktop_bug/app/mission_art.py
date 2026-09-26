@@ -13,7 +13,11 @@ image files), once per building and ownership pair, then blitted every frame:
 - Hatchery: a hanging cradle of glossy egg sacs under a twig arch, one
   hatched; sealed, it is bound in grey silk with a wax seal;
 - Thorn nest: a bramble fortress of thorny branches round a maw with red
-  eyes; claimed, the eyes go out and silk covers the mouth.
+  eyes; claimed, the eyes go out and silk covers the mouth;
+- Outpost (a raid's other screens): a silk den on stakes with a lantern;
+  taken, the lantern turns green;
+- Infestation (Reclaim the desktop): swollen acid sacs dripping green over
+  a cracked pane; destroyed, the sacs are burst and grey.
 
 The anchor is the same as the old art: the site's point sits at (120, 139).
 """
@@ -376,12 +380,64 @@ def _nest(p, rng, owned):
             p.drawEllipse(QPointF(x, 118), 3.2, 2.2)
 
 
-PAINTERS = {"home": _home, "food": _food, "silk": _silk, "hatchery": _hatchery, "nest": _nest}
+def _outpost(p, rng, owned):
+    for x0, x1 in ((58, 104), (182, 136)):               # stakes
+        _twig(p, QPointF(x0, GROUND_Y + 4), QPointF(x1, 52), 5)
+    tent = QPainterPath(QPointF(46, GROUND_Y + 2))
+    tent.quadTo(QPointF(84, 70), QPointF(120, 48))
+    tent.quadTo(QPointF(156, 70), QPointF(194, GROUND_Y + 2))
+    tent.closeSubpath()
+    g = QLinearGradient(0, 48, 0, GROUND_Y)
+    g.setColorAt(0, QColor("#e8e0cc"))
+    g.setColorAt(1, QColor("#9d927c"))
+    p.fillPath(tent, QBrush(g))
+    p.setPen(_pen("#fff8e6", 1.0, 150))
+    for i in range(9):                                     # silk strands
+        p.drawLine(QPointF(120, 50), QPointF(52 + i * 17, GROUND_Y + 1))
+    door = QPainterPath(QPointF(100, GROUND_Y + 2))
+    door.quadTo(QPointF(120, 84), QPointF(140, GROUND_Y + 2))
+    door.closeSubpath()
+    p.fillPath(door, QColor("#1a120c"))
+    colour = "#7de0a8" if owned else "#ff9a3c"
+    _glow(p, 120, 44, 16, colour, 170)
+    _sphere(p, 120, 44, 6, colour)
+
+
+def _infestation(p, rng, owned):
+    pane = QRectF(34, 58, 172, GROUND_Y - 52)
+    p.setPen(_pen("#7fa6c4", 2, 160))
+    p.setBrush(QColor(20, 40, 60, 120))
+    p.drawRoundedRect(pane, 6, 6)
+    p.setPen(_pen("#d9f0ff", 1.1, 170))
+    for _ in range(9):                                     # cracks in the pane
+        x, y = rng.uniform(70, 170), rng.uniform(70, 120)
+        a = rng.uniform(0, math.tau)
+        for _step in range(4):
+            nx, ny = x + math.cos(a) * 12, y + math.sin(a) * 12
+            p.drawLine(QPointF(x, y), QPointF(nx, ny))
+            x, y, a = nx, ny, a + rng.uniform(-0.6, 0.6)
+    sacs = ((96, 104, 26), (140, 100, 30), (118, 76, 22), (72, 118, 17), (168, 120, 18))
+    for x, y, r in sacs:
+        if owned:
+            _sphere(p, x, y, r * 0.8, "#6b6f66", "#b9bcb2")
+            p.setPen(_pen("#2b2d28", 2))
+            p.drawLine(QPointF(x - r * 0.4, y - r * 0.2), QPointF(x + r * 0.3, y + r * 0.3))
+        else:
+            _glow(p, x, y, r * 1.5, "#9dff3a", 90)
+            _sphere(p, x, y, r, "#7fcf2a", "#e9ffb0", "#35610d")
+    if not owned:
+        p.setPen(_pen("#a8ff45", 3, 200))
+        for x in (92, 124, 150):                           # drips
+            p.drawLine(QPointF(x, 118), QPointF(x, GROUND_Y + rng.uniform(-6, 6)))
+
+
+PAINTERS = {"home": _home, "food": _food, "silk": _silk, "hatchery": _hatchery, "nest": _nest,
+            "outpost": _outpost, "infestation": _infestation}
 GROUND_TONES = {"home": "#6e5536", "food": "#5e5a35", "silk": "#5e5236",
-                "hatchery": "#4e5132", "nest": "#3f2f30"}
+                "hatchery": "#4e5132", "nest": "#3f2f30", "outpost": "#5a4c36", "infestation": "#2f3d2a"}
 
 
-@lru_cache(maxsize=12)
+@lru_cache(maxsize=20)
 def building_art(kind, owned):
     """Static detail is painted once per building/ownership pair, not per frame."""
     image = QImage(ART_W, ART_H, QImage.Format_ARGB32_Premultiplied)

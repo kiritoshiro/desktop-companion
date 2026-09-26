@@ -343,6 +343,18 @@ class CombatMixin:
             return True
         return str(getattr(creature, "job_mode", "idle") or "idle") == "idle"
 
+    def _splash(self, attacker, defender, amount: float) -> float:
+        """Damage that is not a blow -- acid landing -- behind the same switch.
+
+        No counter-blow (nothing touched), but it pays XP like any hit.
+        """
+        if not self.conflict_enabled or defender.dead:
+            return 0.0
+        landed = defender.take_damage(amount, attacker)
+        if landed > 0.0:
+            self._credit_fight_xp(attacker, landed, killed=defender.dead)
+        return landed
+
     def _trade_blow(self, attacker, defender) -> None:
         """One exchange: the aggressor hits, and is hit back if still standing.
 

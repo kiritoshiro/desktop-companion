@@ -43,7 +43,8 @@ from ..manager import CreatureManager
 from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from .adventure import PlayerController
-from .mission import TerritoryMission
+from .desktop_capture import capture_desktop
+from .mission_factory import create_mission
 from .mission_ui import draw_buildings, draw_mission_hud, command_rects, mission_banner_rect
 from .adventure_ui import AdventureSettingsDialog, PauseDialog, draw_hud, hud_rect
 from . import window_placement, wood_theme
@@ -197,6 +198,20 @@ def virtual_screen_geometry() -> QRect:
     for screen in screens[1:]:
         rect = rect.united(screen.geometry())
     return rect
+
+
+def available_rects_local(origin: QPoint) -> tuple[list, int]:
+    """Every monitor's usable area (without the taskbar), overlay-local, and
+    the index of the main one: the screens a multi-screen raid is fought on."""
+    screens = QGuiApplication.screens()
+    primary = QGuiApplication.primaryScreen()
+    rects = []
+    for screen in screens:
+        g = screen.availableGeometry()
+        rects.append(ScreenRect(float(g.x() - origin.x()), float(g.y() - origin.y()),
+                                float(g.width()), float(g.height())))
+    index = screens.index(primary) if primary in screens else 0
+    return rects, index
 
 
 def screen_rects_local(origin: QPoint) -> list:
@@ -558,9 +573,16 @@ class OverlayWindow(_OverlayBase):
         self.manager = CreatureManager(preset_path, self.width(), self.height(), seed=seed)
         self.manager.set_screen_rects(screen_rects_local(self.geometry_rect.topLeft()))
         if mode == "adventure":
-            area = window_placement.primary_rect_local(self.geometry_rect.topLeft())
-            arena = ScreenRect(area.x(), area.y(), area.width(), area.height()) if not area.isEmpty() else None
-            self.mission = TerritoryMission(self.manager, self.controls, arena)
+            origin = self.geometry_rect.topLeft()
+            rects, primary = available_rects_local(origin)
+            if not rects:
+                area = window_placement.primary_rect_local(origin)
+                rects, primary = [ScreenRect(area.x(), area.y(), area.width(), area.height())], 0
+            # A raid on one screen or all of them, or Reclaim the desktop on a
+            # picture of it taken now, before this window shows (the settings
+            # window hides itself first, so it is not in the picture).
+            self.mission = create_mission(self.manager, self.controls, rects, primary,
+                                          capture=lambda: capture_desktop(origin))
             self.player = self.mission.player
         for warning in self.manager.warnings:
             log.warning("%s", warning)
@@ -859,6 +881,9 @@ class OverlayWindow(_OverlayBase):
     def _adventure_captures_mouse(self, mx: float, my: float) -> bool:
         """Capture the screen while playing; after release, keep spider clicks."""
         if self.player is not None or self._adventure_paused:
+            return True
+        if getattr(self.mission, "FREEZES_DESKTOP", False):
+            # Reclaim the desktop: the desktop is frozen until the raid ends.
             return True
         return self.manager.creature_at(mx, my) is not None
 
@@ -1169,6 +1194,10 @@ class OverlayWindow(_OverlayBase):
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
         if self.mission is not None:
+            surface = getattr(self.mission, "surface", None)
+            if surface is not None:
+                # Reclaim the desktop: the frozen desktop under everything.
+                surface.paint(painter)
             draw_buildings(painter, self.mission)
         self.manager.render(painter)
         if self.mode == "adventure":
@@ -1364,7 +1393,7 @@ class OverlayWindow(_OverlayBase):
             if choice == "save":
                 continue
             if choice == "restart" and self.mission is not None:
-                self.mission = TerritoryMission(self.manager, self.controls, self.mission.area)
+                self.mission = self.mission.restarted()
                 self.player = self.mission.player
                 break
             if choice == "release" and self.player is not None:

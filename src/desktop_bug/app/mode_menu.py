@@ -8,9 +8,9 @@ later). Dressed in the carved-wood theme from ``wood_theme``.
 from __future__ import annotations
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel, QLayout,
-                             QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
+from PyQt5.QtGui import QColor, QGuiApplication
+from PyQt5.QtWidgets import (QCheckBox, QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel,
+                             QLayout, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
 from .adventure_profile import hero_progression, load_profile, mission_record, save_profile
@@ -252,6 +252,15 @@ class ModeShell(QWidget):
         holder.setMaximumWidth(760)
         layout.addWidget(holder, alignment=Qt.AlignHCenter)
 
+        # Multi-screen raids (the owner: "make multi screen missions too. to
+        # recognise automatically where are the screens"). On by default;
+        # Reclaim the desktop always freezes every screen.
+        self.all_screens_check = QCheckBox()
+        self.all_screens_check.setObjectName("allScreens")
+        self.all_screens_check.setCursor(Qt.PointingHandCursor)
+        self.all_screens_check.toggled.connect(self._set_all_screens)
+        layout.addWidget(self.all_screens_check, alignment=Qt.AlignHCenter)
+
         # One short line instead of the old instructions (the owner: "the
         # instructions could be smaller too, and maybe unnecessary"). The
         # whole list lives behind Controls.
@@ -334,6 +343,15 @@ class ModeShell(QWidget):
         self.hero_label.setText(f"{profile['name']}  \u00b7  Level {state.level}{spend}"
                                 f"  \u00b7  {companions} companion{'s' if companions != 1 else ''}"
                                 f"  \u00b7  {amber} amber")
+        screens = len(QGuiApplication.screens())
+        check = getattr(self, "all_screens_check", None)
+        if check is not None:
+            check.blockSignals(True)
+            check.setChecked(bool(profile.get("all_screens", True)))
+            check.blockSignals(False)
+            found = f"{screens} screens found" if screens != 1 else "1 screen found"
+            check.setText(f"Raids use every screen  ({found}; outposts wait on the others)")
+            check.setEnabled(screens > 1)
         records = profile.get("missions") or {}
         for mission_id, button in self.map_buttons.items():
             open_ = map_unlocked(records, mission_id)
@@ -362,6 +380,11 @@ class ModeShell(QWidget):
                 label.setProperty("won", False)
             label.style().unpolish(label)
             label.style().polish(label)
+
+    def _set_all_screens(self, on: bool) -> None:
+        profile = load_profile()
+        profile["all_screens"] = bool(on)
+        save_profile(profile)
 
     def play_map(self, map_id: str, start_adventure) -> None:
         """Remember the chosen map for the overlay, then launch it."""
