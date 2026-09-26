@@ -92,21 +92,33 @@ SELL_PRICES = {"common": 5, "uncommon": 12, "rare": 30, "epic": 70, "legendary":
 DROP_CHANCE = 0.35
 
 
+def find_map(map_id) -> MapInfo | None:
+    """A built-in map, or one made in the map editor (custom_maps.py)."""
+    if map_id in MAP_BY_ID:
+        return MAP_BY_ID[map_id]
+    from . import custom_maps
+
+    data = custom_maps.load_map(map_id)
+    return custom_maps.map_info(data) if data is not None else None
+
+
 def chosen_map(profile: dict) -> MapInfo:
     """The map the next raid is played on: the one chosen on the Adventure
     page, or the first when that one is unknown or still locked."""
     chosen = profile.get("selected_map", DEFAULT_MAP)
-    if not map_unlocked(profile.get("missions") or {}, chosen):
+    admin = bool(profile.get("admin", False))
+    if not map_unlocked(profile.get("missions") or {}, chosen, admin):
         chosen = DEFAULT_MAP
-    return MAP_BY_ID[chosen]
+    return find_map(chosen) or MAP_BY_ID[DEFAULT_MAP]
 
 
-def map_unlocked(records: dict, map_id: str) -> bool:
-    """``records``: mission id -> {"victories": n, ...} from the profile."""
-    info = MAP_BY_ID.get(map_id)
+def map_unlocked(records: dict, map_id: str, admin: bool = False) -> bool:
+    """``records``: mission id -> {"victories": n, ...} from the profile.
+    Your own maps are always open; in admin mode every map is."""
+    info = find_map(map_id)
     if info is None:
         return False
-    if info.unlock_after is None:
+    if admin or info.unlock_after is None:
         return True
     return int((records.get(info.unlock_after) or {}).get("victories", 0)) > 0
 

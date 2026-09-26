@@ -44,6 +44,8 @@ from ..content.preset_io import load_preset
 from .overlay_win32 import apply_click_through, set_cursor_pos, set_input_transparent
 from .adventure import PlayerController
 from .desktop_capture import capture_desktop
+from .adventure_profile import load_profile
+from .screen_activity import playable_screens
 from .mission_factory import create_mission
 from .mission_ui import draw_buildings, draw_mission_hud, command_rects, mission_banner_rect
 from .adventure_ui import AdventureSettingsDialog, PauseDialog, draw_hud, hud_rect
@@ -200,10 +202,10 @@ def virtual_screen_geometry() -> QRect:
     return rect
 
 
-def available_rects_local(origin: QPoint) -> tuple[list, int]:
+def available_rects_local(origin: QPoint, screens=None) -> tuple[list, int]:
     """Every monitor's usable area (without the taskbar), overlay-local, and
     the index of the main one: the screens a multi-screen raid is fought on."""
-    screens = QGuiApplication.screens()
+    screens = list(screens) if screens is not None else QGuiApplication.screens()
     primary = QGuiApplication.primaryScreen()
     rects = []
     for screen in screens:
@@ -574,7 +576,11 @@ class OverlayWindow(_OverlayBase):
         self.manager.set_screen_rects(screen_rects_local(self.geometry_rect.topLeft()))
         if mode == "adventure":
             origin = self.geometry_rect.topLeft()
-            rects, primary = available_rects_local(origin)
+            # Only monitors really in use: not asleep, off, or switched off
+            # by the player on the Adventure page (screen_activity.py).
+            playable = playable_screens(QGuiApplication.screens(), QGuiApplication.primaryScreen(),
+                                        load_profile().get("disabled_screens"))
+            rects, primary = available_rects_local(origin, playable)
             if not rects:
                 area = window_placement.primary_rect_local(origin)
                 rects, primary = [ScreenRect(area.x(), area.y(), area.width(), area.height())], 0
@@ -582,7 +588,7 @@ class OverlayWindow(_OverlayBase):
             # picture of it taken now, before this window shows (the settings
             # window hides itself first, so it is not in the picture).
             self.mission = create_mission(self.manager, self.controls, rects, primary,
-                                          capture=lambda: capture_desktop(origin))
+                                          capture=lambda: capture_desktop(origin, playable))
             self.player = self.mission.player
         for warning in self.manager.warnings:
             log.warning("%s", warning)

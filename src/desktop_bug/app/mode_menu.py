@@ -207,6 +207,7 @@ class ModeShell(QWidget):
         return scroll
 
     def _adventure_page(self, start_adventure):
+        self._start_adventure = start_adventure
         panel = QWidget()
         layout = QVBoxLayout(panel)
         layout.setContentsMargins(24, 12, 24, 16)
@@ -251,6 +252,21 @@ class ModeShell(QWidget):
         holder.setMaximumWidth(760)
         layout.addWidget(holder, alignment=Qt.AlignHCenter)
 
+        # Maps made in the map editor (the owner: "create editor tool. so i
+        # could create my self the map"). Rebuilt on every refresh.
+        self.custom_heading = QLabel("Your maps")
+        self.custom_heading.setObjectName("missionHeading")
+        self.custom_heading.setAlignment(Qt.AlignCenter)
+        layout.addWidget(_engrave(self.custom_heading))
+        self.custom_grid = QGridLayout()
+        self.custom_grid.setHorizontalSpacing(12)
+        self.custom_grid.setVerticalSpacing(12)
+        self.custom_cards = {}
+        custom_holder = QWidget()
+        custom_holder.setLayout(self.custom_grid)
+        custom_holder.setMaximumWidth(760)
+        layout.addWidget(custom_holder, alignment=Qt.AlignHCenter)
+
         # Multi-screen raids (the owner: "make multi screen missions too. to
         # recognise automatically where are the screens"). On by default;
         # Reclaim the desktop always freezes every screen.
@@ -259,6 +275,15 @@ class ModeShell(QWidget):
         self.all_screens_check.setCursor(Qt.PointingHandCursor)
         self.all_screens_check.toggled.connect(self._set_all_screens)
         layout.addWidget(self.all_screens_check, alignment=Qt.AlignHCenter)
+        # One switch per other screen: a monitor asleep or off is skipped by
+        # itself; one showing another PC can be switched off here (the owner:
+        # "only when the second/or other screens are active only then
+        # populate them").
+        self.screen_box = QVBoxLayout()
+        self.screen_checks = {}
+        screen_holder = QWidget()
+        screen_holder.setLayout(self.screen_box)
+        layout.addWidget(screen_holder, alignment=Qt.AlignHCenter)
 
         # One short line instead of the old instructions (the owner: "the
         # instructions could be smaller too, and maybe unnecessary"). The
@@ -276,7 +301,19 @@ class ModeShell(QWidget):
         self.refresh_controls_summary()
         self.refresh_adventure()
         layout.addWidget(self.controls_line, alignment=Qt.AlignHCenter)
-        layout.addWidget(controls, alignment=Qt.AlignHCenter)
+        tools = QHBoxLayout()
+        tools.addStretch(1)
+        tools.addWidget(controls)
+        for text, slot, attr in (("Map editor\u2026", self.open_editor, "editor_button"),
+                                 ("Admin\u2026", self.open_admin, "admin_button")):
+            button = QPushButton(text)
+            button.setObjectName("modeBack")
+            button.setCursor(Qt.PointingHandCursor)
+            button.clicked.connect(lambda _=False, slot=slot: slot())
+            setattr(self, attr, button)
+            tools.addWidget(button)
+        tools.addStretch(1)
+        layout.addLayout(tools)
         layout.addStretch(1)
 
         scroll = QScrollArea()
@@ -339,9 +376,10 @@ class ModeShell(QWidget):
         spend = f"  \u00b7  {points} point{'s' if points != 1 else ''} to spend" if points else ""
         companions = len(profile.get("companions") or {})
         amber = int((profile.get("armoury") or {}).get("amber", 0))
+        admin = bool(profile.get("admin", False))
         self.hero_label.setText(f"{profile['name']}  \u00b7  Level {state.level}{spend}"
                                 f"  \u00b7  {companions} companion{'s' if companions != 1 else ''}"
-                                f"  \u00b7  {amber} amber")
+                                f"  \u00b7  {amber} amber" + ("  \u00b7  ADMIN" if admin else ""))
         screens = len(QGuiApplication.screens())
         check = getattr(self, "all_screens_check", None)
         if check is not None:
@@ -353,7 +391,7 @@ class ModeShell(QWidget):
             check.setEnabled(screens > 1)
         records = profile.get("missions") or {}
         for mission_id, button in self.map_buttons.items():
-            open_ = map_unlocked(records, mission_id)
+            open_ = map_unlocked(records, mission_id, admin)
             button.setVisible(open_)
             lock = self.map_locks[mission_id]
             before = MAP_BY_ID[mission_id].unlock_after
@@ -379,6 +417,108 @@ class ModeShell(QWidget):
                 label.setProperty("won", False)
             label.style().unpolish(label)
             label.style().polish(label)
+        self._refresh_screens(profile)
+        self._refresh_custom_maps(profile)
+
+    def _refresh_screens(self, profile) -> None:
+        box = getattr(self, "screen_box", None)
+        if box is None:
+            return
+        from .screen_activity import monitor_states
+
+        while box.count():
+            item = box.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self.screen_checks = {}
+        screens = QGuiApplication.screens()
+        primary = QGuiApplication.primaryScreen()
+        if len(screens) < 2:
+            return
+        states = monitor_states()
+        disabled = set(profile.get("disabled_screens") or [])
+        for number, screen in enumerate(screens, start=1):
+            if screen is primary:
+                continue
+            g = screen.geometry()
+            state = states.get(screen.name(), "active")
+            note = {"asleep": " - asleep, skipped", "off": " - off, skipped"}.get(state, "")
+            check = QCheckBox(f"Use screen {number} ({g.width()}\u00d7{g.height()}) in missions{note}")
+            check.setChecked(screen.name() not in disabled)
+            check.setEnabled(state == "active")
+            check.setToolTip("Switch off a screen that shows another computer; asleep or off "
+                             "screens are skipped by themselves.")
+            check.toggled.connect(lambda on, name=screen.name(): self._set_screen(name, on))
+            box.addWidget(check, alignment=Qt.AlignHCenter)
+            self.screen_checks[screen.name()] = check
+
+    def _set_screen(self, name: str, on: bool) -> None:
+        profile = load_profile()
+        disabled = [n for n in (profile.get("disabled_screens") or []) if n != name]
+        if not on:
+            disabled.append(name)
+        profile["disabled_screens"] = disabled
+        save_profile(profile)
+
+    def _refresh_custom_maps(self, profile) -> None:
+        grid = getattr(self, "custom_grid", None)
+        if grid is None:
+            return
+        from . import custom_maps
+
+        while grid.count():
+            item = grid.takeAt(0)
+            if item.widget() is not None:
+                item.widget().deleteLater()
+        self.custom_cards = {}
+        maps = custom_maps.list_maps()
+        self.custom_heading.setVisible(bool(maps))
+        for index, data in enumerate(maps):
+            card = QFrame()
+            card.setObjectName("missionCard")
+            card.setMinimumWidth(220)
+            card.setMaximumWidth(240)
+            cell = QVBoxLayout(card)
+            cell.setContentsMargins(12, 10, 12, 10)
+            name = QLabel(data["title"])
+            name.setObjectName("missionTitle")
+            name.setWordWrap(True)
+            cell.addWidget(name)
+            text = QLabel(data["blurb"] or f"Tier {data['tier']}, {len(data['buildings'])} buildings")
+            text.setObjectName("missionText")
+            text.setWordWrap(True)
+            cell.addWidget(text, 1)
+            record = mission_record(profile, data["id"])
+            if record["victories"]:
+                won = QLabel(f"\u2714 Won \u00d7{record['victories']}")
+                won.setObjectName("missionDone")
+                cell.addWidget(won)
+            row = QHBoxLayout()
+            play = QPushButton("Play")
+            play.setObjectName("modeChoice")
+            play.setEnabled(not custom_maps.problems(data))
+            play.clicked.connect(lambda _=False, mid=data["id"]: self.play_map(mid, self._start_adventure))
+            edit = QPushButton("Edit")
+            edit.setObjectName("modeBack")
+            edit.clicked.connect(lambda _=False, mid=data["id"]: self.open_editor(mid))
+            row.addWidget(play)
+            row.addWidget(edit)
+            cell.addLayout(row)
+            grid.addWidget(card, index // MISSION_COLUMNS, index % MISSION_COLUMNS)
+            self.custom_cards[data["id"]] = card
+
+    def open_editor(self, map_id=None) -> None:
+        from .map_editor import MapEditor
+
+        editor = MapEditor(self, play=lambda mid: self.play_map(mid, self._start_adventure), map_id=map_id)
+        editor.exec_()
+        self.refresh_adventure()
+
+    def open_admin(self) -> None:
+        from .admin_ui import AdminDialog
+
+        AdminDialog(self).exec_()
+        self.refresh_adventure()
 
     def _set_all_screens(self, on: bool) -> None:
         profile = load_profile()
@@ -388,7 +528,7 @@ class ModeShell(QWidget):
     def play_map(self, map_id: str, start_adventure) -> None:
         """Remember the chosen map for the overlay, then launch it."""
         profile = load_profile()
-        if not map_unlocked(profile.get("missions") or {}, map_id):
+        if not map_unlocked(profile.get("missions") or {}, map_id, bool(profile.get("admin", False))):
             return
         profile["selected_map"] = map_id
         save_profile(profile)

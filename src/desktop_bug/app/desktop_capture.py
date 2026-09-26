@@ -40,10 +40,10 @@ class DesktopSnapshot:
     primary: int = 0
 
 
-def capture_desktop(origin: QPoint) -> DesktopSnapshot | None:
-    """Every monitor as it is now, in overlay-local coordinates. None when Qt
-    reports no screens (nothing to freeze)."""
-    screens = QGuiApplication.screens()
+def capture_desktop(origin: QPoint, screens=None) -> DesktopSnapshot | None:
+    """Every monitor in use as it is now, in overlay-local coordinates. None
+    when Qt reports no screens (nothing to freeze)."""
+    screens = list(screens) if screens is not None else QGuiApplication.screens()
     if not screens:
         return None
     primary = QGuiApplication.primaryScreen()

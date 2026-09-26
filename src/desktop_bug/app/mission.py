@@ -19,7 +19,9 @@ from ..content.palettes import enemy_palette
 from ..world.playfield import ScreenRect
 from ..world.screen_layout import ScreenLayout
 from .encounters import PROFILES, EncounterDirector
+from . import custom_maps
 from .map_layouts import EFFECTS, layout_for
+from ..content.enemy_kinds import ENEMY_KINDS
 
 
 @dataclass
@@ -321,6 +323,11 @@ class TerritoryMission:
         # The map chosen on the Adventure page; a locked or unknown one falls
         # back to the first. Results are recorded per map.
         self.map_info = self._map_for(self.profile)
+        # A map made in the map editor carries its own settings and spiders.
+        self.custom = custom_maps.load_map(self.map_info.id)
+        if self.custom is not None:
+            self.CAP = self.custom["cap"]
+            self.WAVE_EVERY = self.custom["wave_every"]
         self.MISSION_ID = self.map_info.id
         self.rng = random.Random()
         self.hazards = []         # acid in flight
@@ -405,7 +412,8 @@ class TerritoryMission:
             usable_height = max(160, r.h - 360)
             return r.clamp(r.x + r.w*fx, r.y + 115 + usable_height*fy, 85)
         sites = []
-        for place in layout_for(self.map_info.id):
+        places = custom_maps.placements(self.custom) if self.custom is not None else layout_for(self.map_info.id)
+        for place in places:
             if place.far and far is not None:
                 screen, (fx, fy) = far, (place.fx, place.fy)
             elif place.far:
@@ -415,7 +423,8 @@ class TerritoryMission:
             else:
                 screen, (fx, fy) = main, (place.fx, place.fy)
             sites.append(MissionSite(place.kind, place.name, *point(screen, fx, fy), owned=place.owned,
-                                     reserves=place.reserves, screen=screen.index, guards=place.guards))
+                                     reserves=place.reserves, screen=screen.index, guards=place.guards,
+                                     supply=place.supply))
         return sites
 
     def _opening_notice(self):
@@ -428,10 +437,22 @@ class TerritoryMission:
 
     def _opening_spawns(self):
         for site in self.sites:
-            for index, role in enumerate(site.guards):
+            for index, guard in enumerate(site.guards):
                 angle = index * 2.3
-                self._spawn(role, self.layout.clamp(site.x + 35 + math.cos(angle)*index*45,
-                                                    site.y + 40 + math.sin(angle)*index*30, 40))
+                pos = self.layout.clamp(site.x + 35 + math.cos(angle)*index*45,
+                                        site.y + 40 + math.sin(angle)*index*30, 40)
+                # A guard is a role, or (on an editor map) a whole spec.
+                if isinstance(guard, dict):
+                    self._spawn(guard["role"], pos, spec=guard)
+                else:
+                    self._spawn(guard, pos)
+        if self.custom is not None:
+            main, others = self.layout.primary, self.layout.others
+            for spec in self.custom["enemies"]:
+                screen = others[0] if spec["far"] and others else main
+                r = screen.rect
+                pos = r.clamp(r.x + r.w*spec["fx"], r.y + 115 + max(160, r.h - 360)*spec["fy"], 60)
+                self._spawn(spec["role"], pos, spec=spec)
 
     # -- the buildings, by kind ------------------------------------------------
     NOT_FOOTHOLDS = ("home", "hatchery", "nest", "outpost", "infestation", "flynest")
@@ -457,7 +478,9 @@ class TerritoryMission:
         kinds = {s.kind for s in self.footholds}
         return kinds <= {"food", "silk", "amber"} and {"food", "silk"} <= kinds
 
-    def _spawn(self, role, pos, raider=False, companion=None):
+    WAVE_EVERY = 24.0
+
+    def _spawn(self, role, pos, raider=False, companion=None, spec=None):
         # The cap keeps the arena readable; a boss always gets in.
         if role != "guardian" and sum(not c.dead for c in self.manager.creatures) >= self.CAP:
             return None
@@ -476,10 +499,20 @@ class TerritoryMission:
             # Enemies wear the map's armour -- the guardian its whole set --
             # and are a little stronger on later maps.
             worn, item_level = enemy_loadout(self.map_info, role, self.rng)
-            progress = {"level": hero_level + self.map_info.tier - 1, "inventory": list(worn),
+            if spec is None and role == "guardian" and self.custom is not None:
+                spec = self.custom["boss"]
+            bonus = 0
+            if spec is not None:
+                # The map editor's own choices override the map's rules.
+                if isinstance(spec.get("armor"), list):
+                    worn, item_level = list(spec["armor"]), spec.get("item_level", 1)
+                bonus = spec.get("level_bonus", 0)
+            progress = {"level": max(1, hero_level + self.map_info.tier - 1 + bonus), "inventory": list(worn),
                         "equipped": {ARMOR_BY_ID[i].slot: i for i in worn},
                         "item_levels": {i: item_level for i in worn}}
         kind = self._enemy_kind(role) if role not in ("hero", "ally") else None
+        if spec is not None and spec.get("kind") in ENEMY_KINDS:
+            kind = ENEMY_KINDS[spec["kind"]]
         model, colors = self.model, None
         if role not in ("hero", "ally"):
             # An enemy kind of this map, in one of its skins; without the
@@ -530,6 +563,9 @@ class TerritoryMission:
             c.max_hp *= .75 if role == "weaver" else .9
             c.hp = c.max_hp
             c.damage *= .65
+        if spec is not None and spec.get("hp", 1.0) != 1.0:
+            c.max_hp *= spec["hp"]
+            c.hp = c.max_hp
         self.manager.creatures.append(c)
         if role != "hero":
             style = (COMPANION_BY_ID[companion].style if companion else "scout") if role == "ally" else None
@@ -808,7 +844,7 @@ class TerritoryMission:
                 self.pending.append(("hatchery", "hunter", True))
                 hatch.warning = 3.0
                 self.announce("The Hatchery is stirring - a hunter is emerging")
-            self.wave_clock = 24.0
+            self.wave_clock = self.WAVE_EVERY
         for site in self.sites:
             site.warning = max(0, site.warning-dt)
         for entry in list(self.pending):
