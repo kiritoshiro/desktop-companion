@@ -15,7 +15,10 @@ the overlay (to play it):
 - ``companions``: the companions unlocked so far, each with its own name and
   progression (level, skills, what it wears);
 - ``selected_map``: the map the next raid is played on;
-- ``all_screens``: whether raids spread over every monitor (on by default).
+- ``all_screens``: whether raids spread over every monitor (on by default);
+- ``disabled_screens``: monitors the player switched off for missions (by
+  Qt screen name), e.g. one showing another PC;
+- ``admin``: admin mode -- every map open (the owner's testing switch).
 
 Version 1 files (the first mission build) held only ``progression``, version 2
 files had no armoury or companions; both still load. A piece is worn by one
@@ -55,7 +58,7 @@ def fresh_profile() -> dict:
             "missions": {}, "armoury": fresh_armoury(),
             "companions": {cid: {"name": COMPANION_BY_ID[cid].name, "progression": None}
                            for cid in STARTING_COMPANIONS},
-            "selected_map": DEFAULT_MAP, "all_screens": True}
+            "selected_map": DEFAULT_MAP, "all_screens": True, "disabled_screens": [], "admin": False}
 
 
 def _count(value, low=0, high=None) -> int:
@@ -119,8 +122,10 @@ def load_profile(path: Path | None = None) -> dict:
     profile["armoury"] = _clean_armoury(raw.get("armoury"), raw.get("progression"))
     profile["companions"] = _clean_companions(raw.get("companions"))
     selected = str(raw.get("selected_map") or DEFAULT_MAP)
-    profile["selected_map"] = selected if selected in MAP_BY_ID else DEFAULT_MAP
+    profile["selected_map"] = selected if selected in MAP_BY_ID or selected.startswith("custom-") else DEFAULT_MAP
     profile["all_screens"] = bool(raw.get("all_screens", True))
+    profile["disabled_screens"] = [str(n) for n in (raw.get("disabled_screens") or []) if isinstance(n, str)]
+    profile["admin"] = bool(raw.get("admin", False))
     missions = raw.get("missions")
     if isinstance(missions, dict):
         for mission_id, record in missions.items():
@@ -154,6 +159,8 @@ def save_profile(profile: dict, path: Path | None = None) -> bool:
         "companions": profile.get("companions") or _clean_companions(None),
         "selected_map": profile.get("selected_map") or DEFAULT_MAP,
         "all_screens": bool(profile.get("all_screens", True)),
+        "disabled_screens": list(profile.get("disabled_screens") or []),
+        "admin": bool(profile.get("admin", False)),
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

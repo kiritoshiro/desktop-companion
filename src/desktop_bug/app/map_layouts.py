@@ -39,6 +39,7 @@ class Placement:
     owned: bool = False
     far: bool = False                        # on the other screen when there is one
     alt: tuple[float, float] | None = None   # its main-screen place without one; None: skipped
+    supply: float = 180.0                    # healing a Food cache holds
 
 
 # What holding a building gives, for the status line under it.
