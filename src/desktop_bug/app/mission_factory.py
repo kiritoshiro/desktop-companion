@@ -14,6 +14,7 @@ from .desktop_capture import synthetic_snapshot
 from .desktop_surface import DesktopSurface
 from .mission import TerritoryMission
 from .reclaim import ReclaimMission
+from .swarm import FlySwarmMission
 from ..world.screen_layout import ScreenLayout
 
 
@@ -38,4 +39,6 @@ def create_mission(manager, controls, rects, primary: int = 0, capture=None):
         layout = ScreenLayout([shot.rect for shot in snapshot.screens], snapshot.primary)
         return ReclaimMission(manager, controls, layout, DesktopSurface(snapshot))
     layout = build_layout(rects, primary, bool(profile.get("all_screens", True)))
+    if info.kind == "swarm":
+        return FlySwarmMission(manager, controls, layout=layout)
     return TerritoryMission(manager, controls, layout=layout)

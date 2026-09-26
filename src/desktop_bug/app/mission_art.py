@@ -17,7 +17,13 @@ image files), once per building and ownership pair, then blitted every frame:
 - Outpost (a raid's other screens): a silk den on stakes with a lantern;
   taken, the lantern turns green;
 - Infestation (Reclaim the desktop): swollen acid sacs dripping green over
-  a cracked pane; destroyed, the sacs are burst and grey.
+  a cracked pane; destroyed, the sacs are burst and grey;
+- Venom den: a hollow stump with a dripping purple gland; yours, the drip
+  runs green;
+- Lookout: a twig tower with a silk platform and a lantern;
+- Amber mine: a dug pit glowing with amber lumps, a pick of twig and flint;
+- Nursery: a web cradle of tiny eggs under a leaf; yours, spiderlings on it;
+- Fly nest: a rotting fruit with a cloud of specks.
 
 The anchor is the same as the old art: the site's point sits at (120, 139).
 """
@@ -431,13 +437,128 @@ def _infestation(p, rng, owned):
             p.drawLine(QPointF(x, 118), QPointF(x, GROUND_Y + rng.uniform(-6, 6)))
 
 
+def _venom(p, rng, owned):
+    stump = QPainterPath(QPointF(62, GROUND_Y + 4))
+    stump.lineTo(QPointF(72, 66))
+    stump.quadTo(QPointF(120, 52), QPointF(168, 66))
+    stump.lineTo(QPointF(178, GROUND_Y + 4))
+    stump.closeSubpath()
+    g = QLinearGradient(60, 0, 180, 0)
+    g.setColorAt(0, QColor("#4a3322"))
+    g.setColorAt(0.5, QColor("#6d4c31"))
+    g.setColorAt(1, QColor("#3e2a1c"))
+    p.fillPath(stump, QBrush(g))
+    p.setPen(_pen("#2a1b10", 1.4, 200))
+    for x in (84, 102, 138, 156):                          # bark
+        p.drawLine(QPointF(x, 72), QPointF(x + rng.uniform(-4, 4), GROUND_Y))
+    p.setBrush(QColor("#1a0f0a"))
+    p.setPen(_pen("#8a6a48", 2))
+    p.drawEllipse(QRectF(80, 58, 80, 20))                  # the hollow top
+    colour = "#7fe06a" if owned else "#b04ad8"
+    _glow(p, 120, 96, 30, colour, 140)
+    _sphere(p, 120, 96, 16, colour, "#ffffff")
+    p.setPen(_pen(colour, 3, 220))
+    for x, length in ((112, 22), (126, 30)):               # drips
+        p.drawLine(QPointF(x, 108), QPointF(x, 108 + length))
+    for x in (104, 136):
+        _sphere(p, x, GROUND_Y - 2, 4, colour)
+
+
+def _lookout(p, rng, owned):
+    for x0, x1 in ((80, 104), (160, 136)):
+        _twig(p, QPointF(x0, GROUND_Y + 4), QPointF(x1, 58), 5)
+    _twig(p, QPointF(88, 110), QPointF(152, 110), 3)
+    _twig(p, QPointF(96, 84), QPointF(146, 84), 3)
+    deck = QRectF(92, 50, 56, 10)
+    p.setPen(_pen("#e8e0cc", 1.2))
+    p.setBrush(QColor("#cfc3a6"))
+    p.drawRoundedRect(deck, 3, 3)
+    p.setPen(_pen("#fff8e6", 0.9, 160))
+    for i in range(6):
+        p.drawLine(QPointF(94 + i * 10, 50), QPointF(120, 26))
+    colour = "#7de0a8" if owned else "#ff9a3c"
+    _glow(p, 120, 30, 18, colour, 170)
+    _sphere(p, 120, 30, 6, colour)
+
+
+def _amber(p, rng, owned):
+    pit = QRectF(58, 96, 124, 48)
+    g = QRadialGradient(120, 122, 70)
+    g.setColorAt(0, QColor("#2a1a0c"))
+    g.setColorAt(1, QColor("#5b3d22"))
+    p.setBrush(QBrush(g))
+    p.setPen(_pen("#7a5a36", 2))
+    p.drawEllipse(pit)
+    for _ in range(9):
+        x, y = rng.uniform(74, 166), rng.uniform(108, 134)
+        r = rng.uniform(5, 10)
+        _glow(p, x, y, r * 2.2, "#ffb020", 110)
+        _sphere(p, x, y, r, "#e89a1c", "#fff0b0", "#8a4a08")
+    _twig(p, QPointF(150, 70), QPointF(186, 116), 4)       # the pick
+    head = QPainterPath(QPointF(140, 64))
+    head.lineTo(QPointF(164, 74))
+    head.lineTo(QPointF(146, 80))
+    head.closeSubpath()
+    p.fillPath(head, QColor("#9aa0a8"))
+    if owned:
+        _sphere(p, 76, 80, 9, "#f2b33a", "#fff4c8")
+
+
+def _nursery(p, rng, owned):
+    leaf = QPainterPath(QPointF(46, 70))
+    leaf.cubicTo(QPointF(80, 30), QPointF(160, 30), QPointF(194, 70))
+    leaf.cubicTo(QPointF(160, 60), QPointF(80, 60), QPointF(46, 70))
+    p.fillPath(leaf, QColor("#4f7a3a"))
+    p.setPen(_pen("#2f4f22", 1.5))
+    p.drawLine(QPointF(50, 68), QPointF(190, 68))
+    _twig(p, QPointF(120, 62), QPointF(120, GROUND_Y + 2), 3)
+    p.setPen(_pen("#f4efe0", 1.0, 200))
+    for i in range(9):                                     # the cradle
+        p.drawLine(QPointF(70 + i * 12, 76), QPointF(96 + i * 6, 126))
+    p.setBrush(QColor(240, 236, 224, 120))
+    p.drawChord(QRectF(70, 80, 100, 56), 180 * 16, 180 * 16)
+    for i in range(11):
+        x, y = 88 + (i % 6) * 12 + (i // 6) * 6, 108 + (i // 6) * 10
+        _sphere(p, x, y, 4.5, "#efe6c8", "#ffffff")
+    if owned:
+        p.setPen(_pen("#2b1a10", 1.2))
+        for x in (84, 150):                                # spiderlings
+            p.setBrush(QColor("#6b3a24"))
+            p.drawEllipse(QPointF(x, 128), 4, 3)
+            for k in (-1, 1):
+                p.drawLine(QPointF(x, 128), QPointF(x + k * 7, 124))
+                p.drawLine(QPointF(x, 128), QPointF(x + k * 7, 133))
+
+
+def _flynest(p, rng, owned):
+    fruit = QRadialGradient(118, 104, 44)
+    fruit.setColorAt(0, QColor("#a4643a"))
+    fruit.setColorAt(0.7, QColor("#6b3a1e"))
+    fruit.setColorAt(1, QColor("#3a1e0e"))
+    p.setBrush(QBrush(fruit))
+    p.setPen(_pen("#2a1508", 2))
+    p.drawEllipse(QRectF(76, 72, 88, 70))
+    p.setBrush(QColor("#3d2a12"))
+    for _ in range(6):                                     # rot
+        p.drawEllipse(QPointF(rng.uniform(90, 150), rng.uniform(88, 128)), rng.uniform(4, 9), rng.uniform(3, 6))
+    p.setPen(Qt.NoPen)
+    p.setBrush(QColor("#151515"))
+    for _ in range(26):                                    # the cloud of flies
+        a = rng.uniform(0, math.tau)
+        r = rng.uniform(40, 80)
+        p.drawEllipse(QPointF(120 + math.cos(a) * r, 80 + math.sin(a) * r * 0.55), 2.2, 1.6)
+
+
 PAINTERS = {"home": _home, "food": _food, "silk": _silk, "hatchery": _hatchery, "nest": _nest,
-            "outpost": _outpost, "infestation": _infestation}
+            "outpost": _outpost, "infestation": _infestation, "venom": _venom, "lookout": _lookout,
+            "amber": _amber, "nursery": _nursery, "flynest": _flynest}
 GROUND_TONES = {"home": "#6e5536", "food": "#5e5a35", "silk": "#5e5236",
-                "hatchery": "#4e5132", "nest": "#3f2f30", "outpost": "#5a4c36", "infestation": "#2f3d2a"}
+                "hatchery": "#4e5132", "nest": "#3f2f30", "outpost": "#5a4c36", "infestation": "#2f3d2a",
+                "venom": "#43343f", "lookout": "#5a4c36", "amber": "#5e4a2c", "nursery": "#4e5a36",
+                "flynest": "#4a3a26"}
 
 
-@lru_cache(maxsize=20)
+@lru_cache(maxsize=32)
 def building_art(kind, owned):
     """Static detail is painted once per building/ownership pair, not per frame."""
     image = QImage(ART_W, ART_H, QImage.Format_ARGB32_Premultiplied)

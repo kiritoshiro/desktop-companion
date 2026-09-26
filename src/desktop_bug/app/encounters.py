@@ -57,6 +57,12 @@ PROFILES = {
         defenders=("spitter", "hunter"), tier_defenders=("spitter", "guard", "hunter"),
         wave_roles=("spitter", "hunter", "guard"), wave_every=30.0, reserves=4,
         on_main_screen=1, spots=((0.72, 0.42), (0.40, 0.62), (0.62, 0.72), (0.30, 0.35))),
+    # Fly swarms: rival dens on the other screens send more fly hunters.
+    "swarm": EncounterProfile(
+        "swarm", "outpost", ("Rival den", "Hunters' hole", "Far den"),
+        defenders=("hunter",), tier_defenders=("hunter", "weaver"),
+        wave_roles=("hunter",), wave_every=34.0, reserves=2,
+        spots=((0.30, 0.30), (0.70, 0.30), (0.50, 0.80))),
 }
 
 
