@@ -136,7 +136,7 @@ def draw_screen_links(painter, mission):
 
 
 def draw_hazards(painter, mission):
-    """Acid in flight, acid landing, and words unravelling into silk."""
+    """Acid in flight, acid landing, and words torn away by the enemy."""
     painter.save()
     for glob in getattr(mission, "hazards", ()):
         x, y, height = glob.position
@@ -159,7 +159,7 @@ def draw_hazards(painter, mission):
         spider = thread.spider
         fade = max(0.0, 1.0 - thread.age / 0.7)
         t = min(1.0, thread.age / 0.45)
-        painter.setPen(QPen(QColor(250, 246, 230, int(230 * fade)), 1.4))
+        painter.setPen(QPen(QColor(200, 40, 48, int(230 * fade)), 1.4))
         for i in range(3):
             wobble = math.sin(thread.age * 20 + i * 2) * 6
             mx = thread.x0 + (spider.x - thread.x0) * t
@@ -258,7 +258,7 @@ def draw_reclaim_extras(painter, window, mission):
     words = getattr(mission, "words_eaten", 0)
     painter.drawText(bar, Qt.AlignCenter,
                      f"Desktop left {left * 100:.0f}%  \u00b7  lost below {lost * 100:.0f}%"
-                     f"  \u00b7  words eaten {words}")
+                     f"  \u00b7  words devoured {words}")
     intro = getattr(mission, "intro_time", 0.0)
     if intro <= 0 or mission.ended:
         return
@@ -277,7 +277,7 @@ def draw_reclaim_extras(painter, window, mission):
     many = f" - all {screens} of them" if screens > 1 else ""
     text = ("Your desktop has been taken. You have no control of it now: every screen is frozen "
             f"and infested{many}.\n"
-            "Destroy the nests before their acid eats the desktop.\n"
+            "Destroy the nests before they devour its words and their acid melts it.\n"
             "Esc and Leave gives you the desktop back at once. Nothing real is harmed.")
     painter.drawText(card.adjusted(26, 78, -26, -14), Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, text)
 
@@ -381,7 +381,7 @@ def end_title_text(mission):
     words = getattr(mission, "words_eaten", 0)
     if words:
         plural = "s" if words != 1 else ""
-        tail += f"  \u00b7  {words} word{plural} eaten"
+        tail += f"  \u00b7  {words} word{plural} devoured"
     if mission.state == "victory":
         return "VICTORY", f"The desktop is yours  \u00b7  {hero.display_name} reached level {hero.level}{tail}"
     if getattr(mission, "lost_desktop", False):

@@ -166,10 +166,17 @@ def test_buildings_are_painted_at_twice_the_size_for_crisp_edges():
     assert art.devicePixelRatio() == SCALE and art.width() == 240 * SCALE
 
 
-def test_every_building_stands_on_an_earth_base_with_a_soil_face():
-    for kind in ("home", "amber", "flynest"):
+def test_every_building_stands_on_earth_and_casts_its_shadow_to_the_lower_right():
+    """The owner's reference: wooden buildings on the ground with long shadows."""
+    for kind in ("home", "lookout", "amber", "nest"):
         art = building_art(kind, False)
-        # Below the site's point, the soil face is painted in dark earth.
-        x, y = 120 * SCALE, (139 + 14) * SCALE
-        colour = QColor.fromRgba(art.pixel(x, y))
-        assert colour.alpha() > 200 and colour.red() < 140, (kind, colour.name())
+        ground = QColor.fromRgba(art.pixel(100 * SCALE, (139 + 4) * SCALE))
+        assert ground.alpha() > 120, (kind, "stands on trampled earth")
+        # Right of the building, at ground level, darker than the same spot on
+        # the left: its shadow falls that way.
+        def shade(x):
+            c = QColor.fromRgba(art.pixel(int(x * SCALE), int((139 + 10) * SCALE)))
+            return c.lightness() if c.alpha() > 60 else 255
+        right = min(shade(x) for x in range(140, 200, 4))
+        left = min(shade(x) for x in range(40, 100, 4))
+        assert right <= left, (kind, right, left)
