@@ -29,6 +29,7 @@ from desktop_bug.content.body_plans import (
     resolve_body_plan,
 )
 from desktop_bug.content.discovery import discover_models
+from desktop_bug.content.enemy_kinds import ENEMY_KINDS
 
 ROOT = Path(__file__).resolve().parents[1]
 GEOMETRY = ("attach_angle", "rest_angle", "reach", "upper_len", "lower_len",
@@ -57,7 +58,7 @@ def test_almost_no_model_still_carries_its_own_rig():
     own = {mid for mid, data in _raw_models().items() if data.get("legs")}
     assert own == KEEPS_OWN_RIG, sorted(own)
     total_rigs = len(BODY_PLANS) + len(own)
-    assert total_rigs <= 8, total_rigs
+    assert total_rigs <= 10, total_rigs
 
 
 def test_a_model_that_states_a_rig_keeps_it():
@@ -108,7 +109,7 @@ def test_an_unknown_plan_is_left_alone_rather_than_emptied():
 def test_every_shipped_model_still_loads_with_eight_legs():
     models, warnings = discover_models()
     assert not warnings, warnings
-    assert len(models) == 49, len(models)
+    assert len(models) == 49 + len(ENEMY_KINDS), len(models)
     for model_id, data in models.items():
         assert len(data["legs"]) == 8, (model_id, len(data["legs"]))
         for leg in data["legs"]:

@@ -36,6 +36,7 @@ looks; two systems granting abilities would fight over the same decision.
 from __future__ import annotations
 
 from copy import deepcopy
+import math
 
 
 # Lifted from models/spider/model.json, unchanged.
@@ -635,11 +636,34 @@ _JUMPER_GAIT = {
     "max_body_turn_rate": 3.60, "stance_deadband": 0.30,
 }
 
+# Enemy-only rigs. Roots sit underneath the carapace, while the crab's
+# first two pairs reach sideways and the orb-weaver braces its broad abdomen.
+def _enemy_legs(crab: bool) -> list:
+    legs = deepcopy(_BUG_LEGS)
+    for index, leg in enumerate(legs):
+        pair = index // 2
+        angle = (58, 82, 120, 152)[pair] if crab else (35, 66, 118, 155)[pair]
+        reach = (2.25, 2.15, 1.28, 1.15)[pair] if crab else (1.85, 1.65, 1.50, 1.95)[pair]
+        leg.update(
+            attach_forward=(0.48, 0.29, 0.09, -0.10)[pair],
+            attach_side=(0.25, 0.36, 0.36, 0.25)[pair] if crab else (0.19, 0.27, 0.27, 0.19)[pair],
+            rest_angle=angle * (-1 if leg["side"] == "left" else 1),
+            rest_forward=math.cos(math.radians(angle)) * reach,
+            rest_side=math.sin(math.radians(angle)) * reach,
+            reach=reach, upper_len=reach * 0.48, lower_len=reach * 0.62,
+        )
+    return legs
+
+
 BODY_PLANS = {
     "bug": {"legs": _BUG_LEGS, "spider_gait": _BUG_GAIT},
     "segmented": {"legs": _SEGMENTED_LEGS, "spider_gait": _SEGMENTED_GAIT},
     "tarantula": {"legs": _TARANTULA_LEGS, "spider_gait": _TARANTULA_GAIT},
     "jumper": {"legs": _JUMPER_LEGS, "spider_gait": _JUMPER_GAIT},
+    "enemy_crab": {"legs": _enemy_legs(True),
+                   "spider_gait": {**_BUG_GAIT, "cycle_hz": 2.15}},
+    "enemy_orb": {"legs": _enemy_legs(False),
+                  "spider_gait": {**_BUG_GAIT, "cycle_hz": 1.65}},
 }
 
 BODY_PLAN_IDS = tuple(BODY_PLANS)
