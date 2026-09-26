@@ -54,7 +54,15 @@ def draw_buildings(painter, mission):
         elif s.owned:
             status = {"home": "Heal + refill silk", "food": f"Healing supply {s.supply:.0f}",
                       "silk": "12 silk capacity + fast refill", "hatchery": "SEALED", "nest": "CLAIMED",
-                      "outpost": "TAKEN", "infestation": "DESTROYED"}.get(s.kind, "HELD")
+                      "outpost": "TAKEN", "infestation": "DESTROYED", "flynest": "Flies swarm from here",
+                      "venom": "+20% damage for you", "lookout": "+30% range for you",
+                      "amber": f"Mining amber ({getattr(mission, 'amber_mined', 0)})",
+                      "nursery": "Hatches your spiderlings"}.get(s.kind, "HELD")
+        elif s.kind in ("venom", "lookout", "nursery"):
+            status = {"venom": "Enemy +20% damage - take it", "lookout": "Enemy +30% range - take it",
+                      "nursery": "Hatches enemy spiderlings"}[s.kind]
+        elif s.kind == "amber":
+            status = "Hold nearby to mine amber"
         elif s.kind == "outpost":
             status = f"{s.reserves} raids left / hold to take"
         elif s.kind == "infestation":
@@ -361,6 +369,12 @@ def end_title_text(mission):
     found = len(getattr(mission, "found", []))
     if found:
         extras.append(f"found {found} piece{'s' if found != 1 else ''} of armour")
+    mined = getattr(mission, "amber_mined", 0)
+    if mined:
+        extras.append(f"mined {mined} amber")
+    caught = getattr(mission, "caught", 0)
+    if caught:
+        extras.append(f"caught {caught} flies")
     if getattr(mission, "reward_text", ""):
         extras.append(mission.reward_text)
     tail = "".join(f"  \u00b7  {e}" for e in extras)

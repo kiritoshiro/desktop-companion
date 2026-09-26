@@ -39,6 +39,10 @@ MAPS = (
             "Capture Food or Silk, seal the Hatchery, survive the counterattack "
             "and claim Thorn nest.",
             1, None, ("common", "uncommon"), "Thorn guardian", "forager", "weaver"),
+    MapInfo("swarm", "Fly swarm",
+            "Flies pour from nests on every screen. Pin them with silk and eat "
+            "them before the rivals do.",
+            1, None, ("common",), "Swarm", "forager", None, kind="swarm"),
     MapInfo("ember", "Ember hollow",
             "Raiders in bronze hold the hollow. Their warden wears the full "
             "Warden plate.",
@@ -47,6 +51,10 @@ MAPS = (
             "Your desktop is frozen and infested. Destroy the nest on every screen "
             "before the acid eats it. Esc gives it back at once.",
             2, "territory", ("uncommon", "rare"), "The Devourer", "brood", None, kind="reclaim"),
+    MapInfo("storm", "Fly storm",
+            "A storm of fast flies, more rivals, less time. Rival dens wait on "
+            "your other screens.",
+            3, "ember", ("rare", "epic"), "Storm", "brood", None, kind="swarm"),
     MapInfo("obsidian", "Obsidian deep",
             "Rune-cut raiders and a brood matriarch in black glass.",
             3, "ember", ("rare", "epic"), "Brood matriarch", "brood", "sentinel"),
@@ -115,8 +123,13 @@ def enemy_loadout(info: MapInfo, role: str, rng: random.Random) -> tuple[list[st
     """
     level = max(1, min(MAX_ITEM_LEVEL, info.tier))
     if role == "guardian":
-        return list(ARMOR_SETS[info.guardian_set].pieces), level
-    counts = {1: (0, 2), 2: (1, 3), 3: (2, 4), 4: (3, 5)}
+        # The boss wears the best there is on its map: its whole set, a
+        # level above what its guard wear (the owner: "boses wears best armor").
+        return list(ARMOR_SETS[info.guardian_set].pieces), min(MAX_ITEM_LEVEL, level + 1)
+    # The owner: "in first levels no armor on enemy ... only in higher maps
+    # should they wear better armor." Nothing on the first maps, a piece or
+    # two on the second, most of a suit by the last.
+    counts = {1: (0, 0), 2: (0, 2), 3: (2, 3), 4: (3, 5)}
     low, high = counts.get(info.tier, (1, 3))
     pool = pieces_of_tiers(info.enemy_tiers)
     rng.shuffle(pool)

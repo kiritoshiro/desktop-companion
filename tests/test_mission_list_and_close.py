@@ -31,9 +31,10 @@ def test_missions_are_listed_and_the_maps_open_one_by_one(state_dir):
     assert len(shell.mission_cards) == len(SKIRMISH_MISSIONS) >= 4
     playable = [mid for mid, _, _, ok in SKIRMISH_MISSIONS if ok]
     assert playable == [m.id for m in MAPS]
-    # A new player has only the first map open; the rest wait on a win.
+    # A new player has the first map and the Fly swarm open; the rest wait
+    # on a win (the swarm needs no win: the owner asked for fly levels).
     for mission_id, card in shell.mission_cards.items():
-        assert card.property("locked") is (mission_id != "territory")
+        assert card.property("locked") is (mission_id not in ("territory", "swarm"))
     assert shell.adventure_launch.text() == "Play"
     assert shell.adventure_launch.parent() is shell.mission_cards["territory"]
     shell.adventure_launch.click()

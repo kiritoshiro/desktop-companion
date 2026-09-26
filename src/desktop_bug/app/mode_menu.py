@@ -56,7 +56,6 @@ def _art(kind: str, width: int) -> QLabel:
 # owner: "on other maps better armor"); the rest are placeholders.
 # (id, title, one line, playable)
 SKIRMISH_MISSIONS = tuple((m.id, m.title, m.blurb, True) for m in MAPS) + (
-    ("swarm", "Fly swarm", "Catch a swarm before it scatters off the screens.", False),
     ("burrow", "Hold the burrow", "Wave after wave comes for your home. Keep it.", False),
 )
 MISSION_COLUMNS = 3

@@ -19,6 +19,7 @@ from ..content.palettes import enemy_palette
 from ..world.playfield import ScreenRect
 from ..world.screen_layout import ScreenLayout
 from .encounters import PROFILES, EncounterDirector
+from .map_layouts import EFFECTS, layout_for
 
 
 @dataclass
@@ -47,6 +48,7 @@ class MissionSite:
     warning: float = 0.0
     supply: float = 180.0
     screen: int = 0
+    guards: tuple = ()
 
 
 @dataclass
@@ -188,6 +190,12 @@ class MissionActor(PlayerController):
         if target is not None and target.dead:
             target = self.target = None
         tx, ty = (target.x, target.y) if target is not None else self.home
+        # Something the mission wants done more than a distant fight: a fly
+        # to catch, say. A foe close by still comes first.
+        goal = m.actor_goal(self)
+        if goal is not None and (target is None or math.hypot(target.x-c.x, target.y-c.y) > 140):
+            target = None
+            tx, ty = goal
         gap = math.hypot(tx-c.x, ty-c.y)
         reach = self.bite_reach()
         c.motion_paused = gap < (reach * 0.72 if target else 22)
@@ -385,36 +393,82 @@ class TerritoryMission:
         manager._refresh_render_order()
 
     def _build_sites(self, area):
-        """The mission's buildings on the main screen."""
-        main = self.layout.primary.index
+        """The map's buildings (map_layouts.py), where its layout puts them:
+        on the main screen, or across on the far one when there is one."""
+        main = self.layout.primary
+        others = self.layout.others
+        # The far screen: the other monitor furthest from the main one.
+        far = max(others, key=lambda s: math.dist(s.centre, main.centre)) if others else None
 
-        def point(fx, fy):
-            usable_height = max(160, area.h - 360)
-            return area.clamp(area.x + area.w*fx, area.y + 115 + usable_height*fy, 85)
-        return [
-            MissionSite("home", "Home burrow", *point(.16, .57), owned=True, screen=main),
-            MissionSite("food", "Food cache", *point(.39, .29), screen=main),
-            MissionSite("silk", "Silk loom", *point(.39, .70), screen=main),
-            MissionSite("hatchery", "Hatchery", *point(.64, .47), reserves=6, screen=main),
-            MissionSite("nest", "Thorn nest", *point(.83, .30), screen=main),
-        ]
+        def point(screen, fx, fy):
+            r = screen.rect
+            usable_height = max(160, r.h - 360)
+            return r.clamp(r.x + r.w*fx, r.y + 115 + usable_height*fy, 85)
+        sites = []
+        for place in layout_for(self.map_info.id):
+            if place.far and far is not None:
+                screen, (fx, fy) = far, (place.fx, place.fy)
+            elif place.far:
+                if place.alt is None:
+                    continue           # only with a second screen
+                screen, (fx, fy) = main, place.alt
+            else:
+                screen, (fx, fy) = main, (place.fx, place.fy)
+            sites.append(MissionSite(place.kind, place.name, *point(screen, fx, fy), owned=place.owned,
+                                     reserves=place.reserves, screen=screen.index, guards=place.guards))
+        return sites
 
     def _opening_notice(self):
-        return (f"{self.map_info.title}: capture Food or Silk, then seal the Hatchery. "
+        if self._classic_footholds():
+            first = "capture Food or Silk"
+        else:
+            first = "capture any building"
+        return (f"{self.map_info.title}: {first}, then seal the Hatchery. "
                 "Hold clear sites for 4 seconds.")
 
     def _opening_spawns(self):
-        for site, role in zip(self.sites[1:4], ("guard", "weaver", "hunter")):
-            self._spawn(role, (site.x+35, site.y+40))
+        for site in self.sites:
+            for index, role in enumerate(site.guards):
+                angle = index * 2.3
+                self._spawn(role, self.layout.clamp(site.x + 35 + math.cos(angle)*index*45,
+                                                    site.y + 40 + math.sin(angle)*index*30, 40))
+
+    # -- the buildings, by kind ------------------------------------------------
+    NOT_FOOTHOLDS = ("home", "hatchery", "nest", "outpost", "infestation", "flynest")
+
+    def _site(self, kind):
+        return next((s for s in self.sites if s.kind == kind), None)
+
+    @property
+    def hatchery(self):
+        return self._site("hatchery")
+
+    @property
+    def nest(self):
+        return self._site("nest")
+
+    @property
+    def footholds(self):
+        """Buildings whose capture starts the raid: anything but home, the
+        hatchery, the nest and the other screens' outposts."""
+        return [s for s in self.sites if s.kind not in self.NOT_FOOTHOLDS]
+
+    def _classic_footholds(self) -> bool:
+        kinds = {s.kind for s in self.footholds}
+        return kinds <= {"food", "silk", "amber"} and {"food", "silk"} <= kinds
 
     def _spawn(self, role, pos, raider=False, companion=None):
-        if sum(not c.dead for c in self.manager.creatures) >= self.CAP:
+        # The cap keeps the arena readable; a boss always gets in.
+        if role != "guardian" and sum(not c.dead for c in self.manager.creatures) >= self.CAP:
             return None
         self._serial += 1
         hero_level = max(1, int(self.start_progress.get("level", 1)))
         worn = []
         if role == "hero":
             progress = copy.deepcopy(self.start_progress)
+        elif role == "ally" and companion is None:
+            # A spiderling from a Nursery: a little younger than the hero.
+            progress = {"level": max(1, hero_level - 1)}
         elif role == "ally":
             progress = companion_progression(self.profile, companion).to_dict()
             progress["relation_overrides"] = {}
@@ -446,7 +500,9 @@ class TerritoryMission:
         c.enemy_kind = kind.id if kind is not None else None
         if kind is not None:
             c.set_size_scale(c.size_scale * kind.size_scale)
-        if role == "ally":
+        if role == "ally" and companion is None:
+            name = "Spiderling"
+        elif role == "ally":
             name = ((self.profile.get("companions") or {}).get(companion) or {}).get("name") \
                 or COMPANION_BY_ID[companion].name
         elif role == "guardian":
@@ -476,12 +532,13 @@ class TerritoryMission:
             c.damage *= .65
         self.manager.creatures.append(c)
         if role != "hero":
-            style = COMPANION_BY_ID[companion].style if role == "ally" else None
+            style = (COMPANION_BY_ID[companion].style if companion else "scout") if role == "ally" else None
             slot = len(getattr(self, "allies", [])) if role == "ally" else 0
             actor = MissionActor(c, self, role, pos, raider, style=style, slot=slot)
             actor.companion_id = companion
             self.actors.append(actor)
         self.manager._refresh_render_order()
+        self._apply_building_bonuses()
         return c
 
     # Which enemy kinds suit a role: a weaver keeps its distance, a hunter
@@ -544,9 +601,11 @@ class TerritoryMission:
             return "VICTORY - the desktop is yours"
         if self.state == "defeat":
             return "RAID ENDED - your spider has fallen"
-        if not any(s.owned for s in self.sites[1:3]):
-            return "01 / Capture the Food cache or Silk loom"
-        if not self.sites[3].owned:
+        if not any(s.owned for s in self.footholds):
+            if self._classic_footholds():
+                return "01 / Capture the Food cache or Silk loom"
+            return "01 / Capture any building for a foothold"
+        if not self.hatchery.owned:
             return "02 / Seal the Hatchery to stop reinforcements"
         if any(raider for _, _, raider in self.pending) or any(a.raider and not a.from_outpost and not a.creature.dead for a in self.actors):
             return "03 / Defeat the counterattack"
@@ -604,7 +663,7 @@ class TerritoryMission:
                 self._refill_silk_at(site, dt)
             if site.owned:
                 continue
-            unlocked = site.kind != "nest" or (self.sites[3].owned and any(s.owned for s in self.sites[1:3])
+            unlocked = site.kind != "nest" or (self.hatchery.owned and any(s.owned for s in self.footholds)
                         and self.guardian is not None and self.guardian.dead
                         and not self.pending and not any(a.raider and not a.from_outpost for a in self.actors))
             if near and not site.contested and unlocked:
@@ -615,6 +674,7 @@ class TerritoryMission:
                 site.progress = max(0, site.progress - dt*.12)
         self._spawning(dt)
         self._outpost_waves(dt)
+        self._building_work(dt)
 
     # How close a spider must be to use a base. The Scout gets a little more,
     # because a following Scout trails about 85 px behind the hero.
@@ -683,7 +743,9 @@ class TerritoryMission:
             return
         site.owned = True
         self.hero.gain_experience(35, "territory captured")
-        self.announce(f"{site.name} secured")
+        effect = EFFECTS.get(site.kind)
+        self.announce(f"{site.name} secured" + (f" - {effect} for your side" if effect else ""))
+        self._apply_building_bonuses()
         if site.kind == "silk":
             self.player.silk_capacity = PlayerController.LOOM_SILK_CAPACITY
             self.player.silk = float(self.player.silk_capacity)
@@ -696,10 +758,10 @@ class TerritoryMission:
             site.reserves = 0
             site.warning = 0
             self.pending = [entry for entry in self.pending if entry[0] != "hatchery"]
-        if site.kind in ("food", "silk") and not self.counter_started:
+        if site in self.footholds and not self.counter_started and self.nest is not None:
             self.counter_started = True
             self.pending.extend([("nest", "hunter", True), ("nest", "guard", True)])
-            self.sites[4].warning = 4.0
+            self.nest.warning = 4.0
             self.announce("Outpost secured! Counterattack from Thorn nest in 4 seconds.")
         if site.kind in ("outpost", "infestation"):
             site.reserves = 0
@@ -737,7 +799,9 @@ class TerritoryMission:
             self.announce(f"Found {item.name} - {item.tier.capitalize()}{extra}")
 
     def _spawning(self, dt):
-        hatch = self.sites[3]
+        hatch = self.hatchery
+        if hatch is None:
+            return
         self.wave_clock -= dt
         if not hatch.owned and hatch.reserves > 0 and self.wave_clock <= 0:
             if not any(e[0] == "hatchery" for e in self.pending):
@@ -763,9 +827,9 @@ class TerritoryMission:
                 if source == "hatchery":
                     site.reserves -= 1
                 site.warning = 1.5 if any(e[0] == source for e in self.pending) else 0
-        if (self.guardian is None and hatch.owned and any(s.owned for s in self.sites[1:3])
+        if (self.guardian is None and hatch.owned and any(s.owned for s in self.footholds)
                 and not self.pending and not any(a.raider and not a.from_outpost for a in self.actors)):
-            nest = self.sites[4]
+            nest = self.nest
             if self.guardian_warning is None:
                 self.guardian_warning = 4.0
                 self.announce("Thorn nest is stirring. The guardian will emerge in 4 seconds.")
@@ -775,6 +839,89 @@ class TerritoryMission:
                 self.guardian = self._spawn("guardian", (nest.x, nest.y))
                 if self.guardian is not None:
                     self.announce("Thorn guardian awakened. Bait its strike, then counterattack.")
+
+    # -- buildings that do something while held --------------------------------
+    VENOM_BONUS = 1.2
+    LOOKOUT_BONUS = 1.3
+    AMBER_EVERY = 6.0
+    NURSERY_EVERY = 40.0
+    NURSERY_BROOD = 2
+
+    def actor_goal(self, actor):
+        """Where a mission would send an actor instead of fighting; None in a raid."""
+        return None
+
+    def _holds(self, kind, adventurers: bool) -> bool:
+        return any(s.kind == kind and s.owned == adventurers for s in self.sites)
+
+    def _apply_building_bonuses(self):
+        """Venom den and Lookout serve whichever side holds them."""
+        if not hasattr(self, "sites"):
+            return
+        for c in self.manager.creatures:
+            ours = c.progression.team_id == "adventurers"
+            mult = self.VENOM_BONUS if self._holds("venom", ours) else 1.0
+            # Keep any change made elsewhere (a level up) as the new base.
+            applied = getattr(c, "_venom_applied", None)
+            if applied is None or abs(c.damage - applied) > 1e-6:
+                c._venom_base = c.damage
+            c.damage = c._venom_base * mult
+            c._venom_applied = c.damage
+        controllers = ([self.player] if getattr(self, "player", None) is not None else []) + list(self.actors)
+        for control in controllers:
+            ours = control.creature.progression.team_id == "adventurers"
+            reach = self.LOOKOUT_BONUS if self._holds("lookout", ours) else 1.0
+            control.WEB_RANGE = PlayerController.WEB_RANGE * reach
+            if isinstance(control, MissionActor):
+                control.SPIT_RANGE = MissionActor.SPIT_RANGE * reach
+
+    def _building_work(self, dt):
+        self.bonus_clock = getattr(self, "bonus_clock", 0.0) - dt
+        if self.bonus_clock <= 0:
+            self.bonus_clock = 0.5
+            self._apply_building_bonuses()
+        for site in self.sites:
+            if site.kind == "amber" and site.owned:
+                site.supply = getattr(site, "supply", 0.0)
+                self.amber_clock = getattr(self, "amber_clock", 0.0) + dt
+                if self.amber_clock >= self.AMBER_EVERY:
+                    self.amber_clock = 0.0
+                    armoury = self.profile.setdefault("armoury", {})
+                    armoury["amber"] = int(armoury.get("amber", 0)) + 1
+                    self.amber_mined = getattr(self, "amber_mined", 0) + 1
+            elif site.kind == "nursery":
+                self._nursery(site, dt)
+
+    def _nursery(self, site, dt):
+        """Hatches spiderlings for whoever holds it, two alive at a time."""
+        clocks = getattr(self, "nursery_clocks", None)
+        if clocks is None:
+            clocks = self.nursery_clocks = {}
+        key = (id(site), site.owned)
+        clocks[key] = clocks.get(key, self.NURSERY_EVERY * 0.5) - dt
+        if clocks[key] > 0:
+            return
+        clocks[key] = self.NURSERY_EVERY
+        ours = site.owned
+        brood = [c for c in self.manager.creatures if not c.dead and getattr(c, "spiderling", False)
+                 and (c.progression.team_id == "adventurers") == ours]
+        if len(brood) >= self.NURSERY_BROOD:
+            return
+        pos = self.layout.clamp(site.x + self.rng.uniform(-50, 50), site.y + 55, 40)
+        if ours:
+            c = self._spawn("ally", pos)
+        else:
+            c = self._spawn("hunter", pos)
+        if c is None:
+            return
+        c.spiderling = True
+        c.set_size_scale(c.size_scale * 0.62)
+        c.max_hp *= 0.5
+        c.hp = c.max_hp
+        c.mission_loot = []
+        if not ours:
+            c.set_name("Brood spiderling")
+        self.announce("A spiderling hatched for you" if ours else "The enemy's nursery hatched a spiderling")
 
     # -- screens, outposts, acid, heavy feet ---------------------------------
     TUNNEL_COOLDOWN = 1.2
