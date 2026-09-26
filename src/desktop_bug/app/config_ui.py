@@ -2101,10 +2101,17 @@ class ConfigWindow(QMainWindow):
         (`update_process_status`); a launch that failed leaves it showing
         with the error.
         """
+        # Hidden before the overlay starts, not after: Reclaim the desktop
+        # takes its picture of the desktop as it starts, and this window must
+        # not be in it.
+        was_visible = self.isVisible()
+        self.hide()
+        QApplication.processEvents()
         self.launch_engine(mode="adventure")
         if self._overlay_mode == "adventure" and self._overlay_running():
             self._hidden_for_adventure = True
-            self.hide()
+        elif was_visible:
+            self.show()
 
     def _show_after_adventure(self) -> None:
         if not self._hidden_for_adventure or self._overlay_running():

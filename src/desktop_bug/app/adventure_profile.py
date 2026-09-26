@@ -14,7 +14,8 @@ the overlay (to play it):
   companion -- which pieces, their levels, spare duplicates and amber;
 - ``companions``: the companions unlocked so far, each with its own name and
   progression (level, skills, what it wears);
-- ``selected_map``: the map the next raid is played on.
+- ``selected_map``: the map the next raid is played on;
+- ``all_screens``: whether raids spread over every monitor (on by default).
 
 Version 1 files (the first mission build) held only ``progression``, version 2
 files had no armoury or companions; both still load. A piece is worn by one
@@ -54,7 +55,7 @@ def fresh_profile() -> dict:
             "missions": {}, "armoury": fresh_armoury(),
             "companions": {cid: {"name": COMPANION_BY_ID[cid].name, "progression": None}
                            for cid in STARTING_COMPANIONS},
-            "selected_map": DEFAULT_MAP}
+            "selected_map": DEFAULT_MAP, "all_screens": True}
 
 
 def _count(value, low=0, high=None) -> int:
@@ -119,6 +120,7 @@ def load_profile(path: Path | None = None) -> dict:
     profile["companions"] = _clean_companions(raw.get("companions"))
     selected = str(raw.get("selected_map") or DEFAULT_MAP)
     profile["selected_map"] = selected if selected in MAP_BY_ID else DEFAULT_MAP
+    profile["all_screens"] = bool(raw.get("all_screens", True))
     missions = raw.get("missions")
     if isinstance(missions, dict):
         for mission_id, record in missions.items():
@@ -151,6 +153,7 @@ def save_profile(profile: dict, path: Path | None = None) -> bool:
         "armoury": profile.get("armoury") or fresh_armoury(),
         "companions": profile.get("companions") or _clean_companions(None),
         "selected_map": profile.get("selected_map") or DEFAULT_MAP,
+        "all_screens": bool(profile.get("all_screens", True)),
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
