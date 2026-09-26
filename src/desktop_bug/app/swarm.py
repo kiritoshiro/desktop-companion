@@ -86,7 +86,11 @@ class FlySwarmMission(TerritoryMission):
         main = self.layout.primary
         for i in range(rules.rivals):
             x, y = main.anchor(0.55 + 0.1 * (i % 3), 0.25 + 0.2 * (i // 3), 100)
-            self._spawn("hunter", (x, y), raider=False)
+            rival = self._spawn("hunter", (x, y), raider=False)
+            if rival is not None:
+                # A roamer: it fights you whenever you come near, and hunts
+                # flies only when you do not.
+                self.actors[-1].aggro_range = self.RIVAL_AGGRO
 
     @property
     def nests(self):
@@ -106,16 +110,26 @@ class FlySwarmMission(TerritoryMission):
         return (f"Catch flies {self.caught}/{rules.target}  ·  {left // 60}:{left % 60:02d} left"
                 f"  ·  rivals {self.rival_caught}/{rules.target}")
 
+    # A roaming rival attacks you when you come this close; a defender hunts
+    # flies only this near its post.
+    RIVAL_AGGRO = 380.0
+    DEFENDER_LEASH = 260.0
+
     def actor_goal(self, actor):
-        """Rivals hunt the nearest fly; your companions hunt pinned ones."""
+        """Flies are a side job, asked for only when there is no foe to fight
+        (MissionActor): roaming rivals hunt the nearest fly; defenders only
+        flies near what they guard; your companions pinned ones."""
         flies = [f for f in self.manager.fly_world.flies if f.alive or f.trapped]
         if not flies:
             return None
         c = actor.creature
         if actor.role == "ally":
             flies = [f for f in flies if f.trapped]
-            if not flies:
-                return None
+        elif actor.aggro_range is None:
+            hx, hy = actor.defend_point
+            flies = [f for f in flies if math.hypot(f.x - hx, f.y - hy) < self.DEFENDER_LEASH]
+        if not flies:
+            return None
         fly = min(flies, key=lambda f: math.hypot(f.x - c.x, f.y - c.y))
         if math.hypot(fly.x - c.x, fly.y - c.y) > 520:
             return None
