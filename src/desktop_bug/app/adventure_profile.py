@@ -9,10 +9,16 @@ the overlay (to play it):
 - ``name``: what the hero is called;
 - ``progression``: level, XP, unspent points, chosen skills and armour, or
   missing for a hero who has not played yet -- who then starts at level 1;
-- ``missions``: per mission, victories, defeats and the fastest win.
+- ``missions``: per mission, victories, defeats and the fastest win;
+- ``armoury``: the armour the player owns, shared by the hero and every
+  companion -- which pieces, their levels, spare duplicates and amber;
+- ``companions``: the companions unlocked so far, each with its own name and
+  progression (level, skills, what it wears);
+- ``selected_map``: the map the next raid is played on.
 
-Version 1 files (the first mission build) held only ``progression`` and still
-load.
+Version 1 files (the first mission build) held only ``progression``, version 2
+files had no armoury or companions; both still load. A piece is worn by one
+spider at a time: the armoury holds one of each, plus spares.
 """
 from __future__ import annotations
 
@@ -20,9 +26,11 @@ import json
 from pathlib import Path
 
 from ..content.discovery import state_dir
-from ..state.progression import ARMOR_SETS, ProgressionState
+from ..state.progression import ARMOR_BY_ID, MAX_ITEM_LEVEL, ProgressionState
+from .campaign import COMPANION_BY_ID, DEFAULT_MAP, MAP_BY_ID, STARTING_COMPANIONS
 
-PROFILE_VERSION = 2
+PROFILE_VERSION = 3
+HERO = "hero"
 DEFAULT_HERO_NAME = "Wayfarer"
 MAX_NAME_LENGTH = 24
 
@@ -36,8 +44,63 @@ def clean_name(value) -> str:
     return text or DEFAULT_HERO_NAME
 
 
+def fresh_armoury(owned=None) -> dict:
+    owned = list(ProgressionState().inventory if owned is None else owned)
+    return {"owned": owned, "levels": {}, "spares": {}, "amber": 0}
+
+
 def fresh_profile() -> dict:
-    return {"version": PROFILE_VERSION, "name": DEFAULT_HERO_NAME, "progression": None, "missions": {}}
+    return {"version": PROFILE_VERSION, "name": DEFAULT_HERO_NAME, "progression": None,
+            "missions": {}, "armoury": fresh_armoury(),
+            "companions": {cid: {"name": COMPANION_BY_ID[cid].name, "progression": None}
+                           for cid in STARTING_COMPANIONS},
+            "selected_map": DEFAULT_MAP}
+
+
+def _count(value, low=0, high=None) -> int:
+    try:
+        number = max(low, int(value))
+    except (TypeError, ValueError):
+        return low
+    return number if high is None else min(high, number)
+
+
+def _clean_armoury(raw, progression) -> dict:
+    """The armoury from a file; from an older file, built from the hero's inventory."""
+    if not isinstance(raw, dict):
+        owned = (progression or {}).get("inventory") if isinstance(progression, dict) else None
+        armoury = fresh_armoury(owned if isinstance(owned, list) else None)
+        if isinstance(progression, dict) and isinstance(progression.get("item_levels"), dict):
+            raw = {"levels": progression["item_levels"]}
+        else:
+            raw = {}
+    else:
+        armoury = fresh_armoury([])
+        armoury["owned"] = list(raw.get("owned") or [])
+    armoury["owned"] = list(dict.fromkeys(i for i in armoury["owned"]
+                                          if isinstance(i, str) and i in ARMOR_BY_ID))
+    armoury["levels"] = {str(k): _count(v, 1, MAX_ITEM_LEVEL) for k, v in (raw.get("levels") or {}).items()
+                         if str(k) in armoury["owned"] and _count(v, 1, MAX_ITEM_LEVEL) > 1}
+    armoury["spares"] = {str(k): _count(v) for k, v in (raw.get("spares") or {}).items()
+                         if str(k) in ARMOR_BY_ID and _count(v) > 0}
+    armoury["amber"] = _count(raw.get("amber", 0))
+    return armoury
+
+
+def _clean_companions(raw) -> dict:
+    companions = {cid: {"name": COMPANION_BY_ID[cid].name, "progression": None}
+                  for cid in STARTING_COMPANIONS}
+    if isinstance(raw, dict):
+        for cid, entry in raw.items():
+            if cid not in COMPANION_BY_ID or not isinstance(entry, dict):
+                continue
+            progression = entry.get("progression")
+            companions[cid] = {
+                "name": clean_name(entry.get("name") or COMPANION_BY_ID[cid].name),
+                "progression": (ProgressionState.from_dict(progression).to_dict()
+                                if isinstance(progression, dict) else None),
+            }
+    return companions
 
 
 def load_profile(path: Path | None = None) -> dict:
@@ -52,6 +115,10 @@ def load_profile(path: Path | None = None) -> dict:
     profile["name"] = clean_name(raw.get("name"))
     if isinstance(raw.get("progression"), dict):
         profile["progression"] = ProgressionState.from_dict(raw["progression"]).to_dict()
+    profile["armoury"] = _clean_armoury(raw.get("armoury"), raw.get("progression"))
+    profile["companions"] = _clean_companions(raw.get("companions"))
+    selected = str(raw.get("selected_map") or DEFAULT_MAP)
+    profile["selected_map"] = selected if selected in MAP_BY_ID else DEFAULT_MAP
     missions = raw.get("missions")
     if isinstance(missions, dict):
         for mission_id, record in missions.items():
@@ -81,6 +148,9 @@ def save_profile(profile: dict, path: Path | None = None) -> bool:
         "name": clean_name(profile.get("name")),
         "progression": profile.get("progression"),
         "missions": {k: _clean_record(v) for k, v in (profile.get("missions") or {}).items()},
+        "armoury": profile.get("armoury") or fresh_armoury(),
+        "companions": profile.get("companions") or _clean_companions(None),
+        "selected_map": profile.get("selected_map") or DEFAULT_MAP,
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,18 +162,56 @@ def save_profile(profile: dict, path: Path | None = None) -> bool:
         return False
 
 
-def hero_progression(profile: dict) -> ProgressionState:
-    """The saved hero, or a new one at level 1.
+def _dress(state: ProgressionState, profile: dict) -> ProgressionState:
+    """Give a spider's progression the shared armoury: what is owned and at what
+    level. Pieces it wore that are no longer owned come off."""
+    armoury = profile.get("armoury") or fresh_armoury()
+    state.inventory = list(armoury["owned"])
+    state.item_levels = dict(armoury.get("levels") or {})
+    state.equipped = {slot: item for slot, item in state.equipped.items() if item in armoury["owned"]}
+    return state
 
-    The hero carries every armour set in its inventory until the game has a
-    way to earn them (the owner asked to see them); older saves get them too.
-    """
+
+def hero_progression(profile: dict) -> ProgressionState:
+    """The saved hero, or a new one at level 1, dressed from the armoury."""
     raw = profile.get("progression")
     state = ProgressionState.from_dict(raw) if isinstance(raw, dict) else ProgressionState()
-    for armor_set in ARMOR_SETS.values():
-        for piece in armor_set.pieces:
-            state.add_item(piece)
-    return state
+    return _dress(state, profile)
+
+
+def companion_progression(profile: dict, companion_id: str) -> ProgressionState:
+    """A companion's saved progression; a new one starts at the hero's level."""
+    entry = (profile.get("companions") or {}).get(companion_id) or {}
+    raw = entry.get("progression")
+    if isinstance(raw, dict):
+        state = ProgressionState.from_dict(raw)
+    else:
+        state = ProgressionState(level=hero_progression(profile).level)
+        state.equipped = {}
+    return _dress(state, profile)
+
+
+def spider_progression(profile: dict, who: str) -> ProgressionState:
+    return hero_progression(profile) if who == HERO else companion_progression(profile, who)
+
+
+def store_progression(profile: dict, who: str, state: ProgressionState) -> None:
+    if who == HERO:
+        profile["progression"] = state.to_dict()
+    else:
+        entry = profile.setdefault("companions", {}).setdefault(
+            who, {"name": COMPANION_BY_ID[who].name, "progression": None})
+        entry["progression"] = state.to_dict()
+
+
+def unlock_companion(profile: dict, companion_id: str) -> bool:
+    """Add a companion, at the hero's level. False if it was already unlocked."""
+    companions = profile.setdefault("companions", {})
+    if companion_id in companions or companion_id not in COMPANION_BY_ID:
+        return False
+    companions[companion_id] = {"name": COMPANION_BY_ID[companion_id].name, "progression": None}
+    store_progression(profile, companion_id, companion_progression(profile, companion_id))
+    return True
 
 
 def record_result(profile: dict, mission_id: str, won: bool, seconds: float) -> dict:

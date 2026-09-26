@@ -85,6 +85,7 @@ class SpiderDoll(QWidget):
 
     equip = pyqtSignal(str)
     unequip = pyqtSignal(str)
+    picked = pyqtSignal(str)
 
     PLAQUE_W, PLAQUE_H = 156, 54
 
@@ -383,7 +384,8 @@ class SpiderDoll(QWidget):
             slot = self.slot_at(event.pos())
             item = self._worn(slot) if slot else None
             if item is not None:
-                QToolTip.showText(event.globalPos(), item_tooltip(item, self.state) +
+                QToolTip.showText(event.globalPos(),
+                                  item_tooltip(item, self.state, self.state.item_levels.get(item.id, 1)) +
                                   "<p><i>Drag to the bag or double-click to take off</i></p>", self)
             elif slot is not None:
                 QToolTip.showText(event.globalPos(),
@@ -413,6 +415,11 @@ class SpiderDoll(QWidget):
             self._press = (event.pos(), slot) if self._worn(slot) else None
 
     def mouseReleaseEvent(self, event):  # noqa: N802
+        if self._press is not None:
+            # A click without a drag picks the worn piece for the item panel.
+            item = self._worn(self._press[1])
+            if item is not None:
+                self.picked.emit(item.id)
         self._press = None
 
     def mouseDoubleClickEvent(self, event):  # noqa: N802
@@ -454,16 +461,19 @@ class ItemTile(QFrame):
     """One piece in the bag: its picture and name. Drag it onto the doll."""
 
     equip = pyqtSignal(str)
+    picked = pyqtSignal(str)
     HEIGHT = 124
 
-    def __init__(self, item, state, parent=None):
+    def __init__(self, item, state, spares: int = 0, parent=None):
         super().__init__(parent)
         self.item = item
         self.setObjectName("itemTile")
         self.setProperty("tier", item.tier)
         self.setFixedSize(100, self.HEIGHT)
         self.setCursor(Qt.OpenHandCursor)
-        self.setToolTip(item_tooltip(item, state) + "<p><i>Drag onto the spider, or double-click</i></p>")
+        level = state.item_levels.get(item.id, 1)
+        self.setToolTip(item_tooltip(item, state, level) +
+                        "<p><i>Drag onto the spider, or double-click. Click for upgrade and sell.</i></p>")
         self._press = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 6, 6, 4)
@@ -472,6 +482,16 @@ class ItemTile(QFrame):
         picture.setAlignment(Qt.AlignCenter)
         picture.setPixmap(QPixmap.fromImage(armour_art.armour_icon(item.id, item.slot, 64)))
         layout.addWidget(picture)
+        # Level and spares ride on the picture's corners.
+        self.level_badge = QLabel(f"Lv {level}", picture)
+        self.level_badge.setObjectName("tileBadge")
+        self.level_badge.move(0, 0)
+        self.level_badge.setVisible(level > 1)
+        self.spare_badge = QLabel(f"+{spares}", picture)
+        self.spare_badge.setObjectName("tileBadge")
+        self.spare_badge.setToolTip(f"{spares} spare{'s' if spares != 1 else ''}: stack to upgrade, or sell")
+        self.spare_badge.move(60, 0)
+        self.spare_badge.setVisible(spares > 0)
         name = QLabel(short_name(item))
         name.setObjectName("tileName")
         name.setAlignment(Qt.AlignCenter)
@@ -493,6 +513,11 @@ class ItemTile(QFrame):
             self._press = None
             _start_drag(self, self.item.id, armour_art.armour_icon(self.item.id, self.item.slot, 64))
 
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if self._press is not None:
+            self.picked.emit(self.item.id)
+        self._press = None
+
     def mouseDoubleClickEvent(self, event):  # noqa: N802
         self.equip.emit(self.item.id)
 
@@ -507,6 +532,7 @@ class InventoryBag(QScrollArea):
 
     equip = pyqtSignal(str)
     unequip = pyqtSignal(str)
+    picked = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -525,7 +551,10 @@ class InventoryBag(QScrollArea):
         self.setWidget(self.inner)
         self.tiles = {}
 
-    def show_state(self, state) -> None:
+    def show_state(self, state, worn=None, spares=None) -> None:
+        """Tiles for owned pieces nobody wears. ``worn``: pieces worn by any
+        spider (default: this one's); ``spares``: item id -> spare count."""
+        spares = spares or {}
         while self.row.count():
             entry = self.row.takeAt(0)
             if entry.widget() is not None:
@@ -534,13 +563,14 @@ class InventoryBag(QScrollArea):
                 entry.widget().setParent(None)
                 entry.widget().deleteLater()
         self.tiles = {}
-        worn = set(state.equipped.values())
+        worn = set(state.equipped.values()) if worn is None else set(worn)
         owned = [ARMOR_BY_ID[i] for i in state.inventory if i in ARMOR_BY_ID and i not in worn]
         owned.sort(key=lambda item: (-ARMOR_TIERS.index(item.tier), item.set_id,
                                      SLOT_ORDER.index(item.slot)))
         for index, item in enumerate(owned):
-            tile = ItemTile(item, state)
+            tile = ItemTile(item, state, spares.get(item.id, 0))
             tile.equip.connect(self.equip)
+            tile.picked.connect(self.picked)
             self.row.addWidget(tile, index // self.COLUMNS, index % self.COLUMNS)
             self.tiles[item.id] = tile
         if not self.tiles:

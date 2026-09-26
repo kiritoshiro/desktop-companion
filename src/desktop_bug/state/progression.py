@@ -7,7 +7,7 @@ feeding/combat systems without making a preset migration mandatory.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Iterable
 
 
@@ -177,6 +177,24 @@ ARMOR_CATALOG = (
 
 ARMOR_BY_ID = {item.id: item for item in ARMOR_CATALOG}
 
+# Armour levels: a duplicate stacked onto a piece raises it one level, up to
+# five (the owner: "he could stack these armor to upgrade them for 5 levels").
+MAX_ITEM_LEVEL = 5
+LEVEL_STEP = 0.2   # each level adds 20% of the piece's base stats; level 5 is 1.8x
+ITEM_STATS = ("armor", "max_hp", "max_energy", "damage", "speed")
+
+
+def level_multiplier(level: int) -> float:
+    return 1.0 + LEVEL_STEP * (max(1, min(MAX_ITEM_LEVEL, int(level))) - 1)
+
+
+def item_at_level(item: "ArmorItem", level: int) -> "ArmorItem":
+    """The piece with its stats scaled to ``level``."""
+    k = level_multiplier(level)
+    if k == 1.0:
+        return item
+    return replace(item, **{key: getattr(item, key) * k for key in ITEM_STATS})
+
 
 @dataclass(frozen=True)
 class ArmorSet:
@@ -252,6 +270,8 @@ class ProgressionState:
     relation_overrides: dict[str, str] = field(default_factory=dict)
     pin_level: bool = False
     pin_health: bool = False
+    # Level of each owned armour piece (1..MAX_ITEM_LEVEL); missing means 1.
+    item_levels: dict[str, int] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, value: dict | None) -> "ProgressionState":
@@ -287,6 +307,15 @@ class ProgressionState:
                                         if str(rel).lower() in RELATIONS}
         state.pin_level = bool(value.get("pin_level", False))
         state.pin_health = bool(value.get("pin_health", False))
+        raw_levels = value.get("item_levels", {})
+        if isinstance(raw_levels, dict):
+            for item_id, level in raw_levels.items():
+                try:
+                    level = max(1, min(MAX_ITEM_LEVEL, int(level)))
+                except (TypeError, ValueError):
+                    continue
+                if str(item_id) in ARMOR_BY_ID:
+                    state.item_levels[str(item_id)] = level
         return state
 
     def to_dict(self) -> dict:
@@ -302,6 +331,7 @@ class ProgressionState:
             "relation_overrides": dict(self.relation_overrides),
             "pin_level": bool(self.pin_level),
             "pin_health": bool(self.pin_health),
+            "item_levels": dict(self.item_levels),
         }
 
     def add_item(self, item_id: str) -> bool:
@@ -329,10 +359,11 @@ class ProgressionState:
 
 
 def equipped_items(state: ProgressionState) -> Iterable[ArmorItem]:
+    """The worn pieces, each with its stats at the level it has been raised to."""
     for item_id in state.equipped.values():
         item = ARMOR_BY_ID.get(item_id)
         if item is not None:
-            yield item
+            yield item_at_level(item, state.item_levels.get(item_id, 1))
 
 
 def normalize_team_id(value) -> str:

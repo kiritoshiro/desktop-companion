@@ -101,11 +101,11 @@ def test_spawn_budget_and_safe_emergence(state_dir):
     m = make_mission()
     for _ in range(20):
         m._spawn("guard", (800, 450))
-    assert len(m.manager.creatures) == 10
+    assert len(m.manager.creatures) == m.CAP
     m.pending = [("hatchery", "hunter", True)]
     m._spawning(.05)
     assert m.pending
-    assert len(m.manager.creatures) == 10
+    assert len(m.manager.creatures) == m.CAP
     clear_enemies(m)
     site = m.sites[3]
     stand(m, site)
