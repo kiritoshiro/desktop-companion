@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import random
 import subprocess
@@ -978,6 +979,9 @@ class ConfigWindow(QMainWindow):
             creature.y = MODEL_ICON_CANVAS * 0.50
             creature.heading = 0.0
             creature.target_heading = 0.0
+            if creature._is_regal():
+                # Present the raised face upright in the small skin swatch.
+                creature.heading = creature.target_heading = -math.pi / 2
             creature.current_speed = 0.0
             creature.speed = 0.0
             creature.body_bob = 0.0
