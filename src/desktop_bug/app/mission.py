@@ -14,6 +14,7 @@ from .armoury import add_loot
 from .campaign import (COMPANION_BY_ID, DEFAULT_MAP, MAP_BY_ID, PARTY_SIZE, enemy_loadout,
                        map_unlocked, roll_drop)
 from ..state.progression import ARMOR_BY_ID
+from ..content.enemy_kinds import kinds_for_tier, pick_skin
 from ..content.palettes import enemy_palette
 from ..world.playfield import Playfield, ScreenRect
 
@@ -303,19 +304,36 @@ class TerritoryMission:
             progress = {"level": hero_level + self.map_info.tier - 1, "inventory": list(worn),
                         "equipped": {ARMOR_BY_ID[i].slot: i for i in worn},
                         "item_levels": {i: item_level for i in worn}}
+        kind = self._enemy_kind(role) if role not in ("hero", "ally") else None
+        model, colors = self.model, None
+        if role not in ("hero", "ally"):
+            # An enemy kind of this map, in one of its skins; without the
+            # kind's model, the old black-and-crimson copy of the hero.
+            kind_model = self.manager.models.get(kind.model_id) if kind else None
+            if kind_model is None:
+                kind = None
+                colors = enemy_palette()
+            else:
+                model = kind_model
+                colors = pick_skin(kind, self.rng.randrange(1 << 30))
         c = self.manager._create_creature(
-            self.model, self.personality, self._serial, pos=pos,
+            model, self.personality, self._serial, pos=pos,
             progression_state=progress, progression_id=f"mission-{self._serial}",
             team_id="adventurers" if role in ("hero", "ally") else "rivals",
-            # Enemies are black and crimson with a redback marking, so they
-            # never look like the player's own spider.
-            color_overrides=None if role in ("hero", "ally") else enemy_palette(),
+            color_overrides=colors,
             skills=["jump", "shoot_web", "chase", "approach"])
+        c.enemy_kind = kind.id if kind is not None else None
+        if kind is not None:
+            c.set_size_scale(c.size_scale * kind.size_scale)
         if role == "ally":
             name = ((self.profile.get("companions") or {}).get(companion) or {}).get("name") \
                 or COMPANION_BY_ID[companion].name
+        elif role == "guardian":
+            name = self.map_info.guardian
+        elif role == "hero":
+            name = self.hero_name
         else:
-            name = {"hero": self.hero_name, "guardian": self.map_info.guardian}.get(role, role.title())
+            name = kind.name if kind is not None else role.title()
         c.set_name(name)
         c.mission_loot = list(worn)      # what it can drop when it dies
         c.loot_rolled = role in ("hero", "ally")
@@ -344,6 +362,29 @@ class TerritoryMission:
             self.actors.append(actor)
         self.manager._refresh_render_order()
         return c
+
+    # Which enemy kinds suit a role: a weaver keeps its distance, a hunter
+    # closes in, a guard holds ground.
+    ROLE_TAGS = {"weaver": ("ranged",), "hunter": ("hunter", "fast"), "guard": ("heavy",)}
+
+    def _enemy_kind(self, role):
+        """An enemy kind for this map (content/enemy_kinds). The guardian is
+        the strongest boss the map's tier allows."""
+        tier = self.map_info.tier
+        if role == "guardian":
+            bosses = kinds_for_tier(tier, boss=True)
+            return max(bosses, key=lambda k: k.tier) if bosses else None
+        pool = kinds_for_tier(tier)
+        if not pool:
+            return None
+        # Later maps lean on their own new kinds, with older ones mixed in.
+        top = max(k.tier for k in pool)
+        newest = [k for k in pool if k.tier == top]
+        if self.rng.random() < 0.65:
+            pool = newest
+        wanted = set(self.ROLE_TAGS.get(role, ()))
+        suited = [k for k in pool if set(k.tags) & wanted]
+        return self.rng.choice(suited or pool)
 
     def issue(self, command, aim):
         if self.state != "active":

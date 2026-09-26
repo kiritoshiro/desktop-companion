@@ -316,9 +316,10 @@ def test_primary_monitor_arena_clamps_destination_before_movement(state_dir):
     assert m.hero.playfield.rects == (area,)
 
 
-def test_enemies_are_black_and_red_and_the_heroes_are_not(state_dir):
-    """The owner: "enemies should be of different color than my spider.
-    make them more black-red pattern." """
+def test_enemies_never_look_like_the_heroes(state_dir):
+    """The owner first asked: "enemies should be of different color than my
+    spider"; later: "create more skins colors for enemies, and the way they
+    look like". So enemies are marked enemy kinds, on their own models."""
     m = make_mission()
     friends = [c for c in m.manager.creatures if m.hero.relation_to(c) != "foe"]
     foes = [c for c in m.manager.creatures if m.hero.relation_to(c) == "foe"]
@@ -327,7 +328,7 @@ def test_enemies_are_black_and_red_and_the_heroes_are_not(state_dir):
         assert "marking" not in c.colors, c.display_name
     for c in foes:
         assert "marking" in c.colors, c.display_name
-        assert max(c.colors["body"]) < 40, c.display_name
+        assert c.enemy_kind and c.model["id"] != m.hero.model["id"], c.display_name
 
 
 def test_the_scout_heals_at_an_owned_base_too(state_dir):

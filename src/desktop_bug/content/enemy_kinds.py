@@ -73,6 +73,16 @@ ENEMY_KINDS: dict[str, EnemyKind] = {
 }
 
 
+# Adventure-only: kept out of the Companion colony's skin lists and random
+# spawns, where a boss or a raider would be a surprise.
+ENEMY_MODEL_IDS = frozenset(kind.model_id for kind in ENEMY_KINDS.values())
+ENEMY_BODY_PLANS = frozenset(("enemy_crab", "enemy_orb"))
+
+
+def is_enemy_model(model_id) -> bool:
+    return str(model_id or "") in ENEMY_MODEL_IDS
+
+
 def kinds_for_tier(tier: int, boss: bool = False) -> list[EnemyKind]:
     """Kinds unlocked at or before tier, filtered to bosses or ordinary enemies."""
     return [kind for kind in ENEMY_KINDS.values() if kind.tier <= tier and kind.boss == boss]

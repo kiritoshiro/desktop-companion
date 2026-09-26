@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from ..content.enemy_kinds import is_enemy_model
 from ..content.personality_profiles import personality_gait_style
 from ..creature import Creature, GAIT_LABELS, normalize_gait_style
 from ..world.cage import Cage
@@ -472,7 +473,8 @@ class CreatureManager(
                 index += 1
         if not self.creatures and self.models and self.personalities:
             # Fallback for a bad/empty preset: spawn one default spider so the user sees something.
-            model = next(iter(self.models.values()))
+            model = next((m for mid, m in self.models.items() if not is_enemy_model(mid)),
+                         next(iter(self.models.values())))
             personality = self.personalities.get(model.get("default_personality")) or next(iter(self.personalities.values()))
             self.creatures.append(self._create_creature(
                 model, personality, 0, skills=list(DEFAULT_SKILL_IDS),
@@ -716,7 +718,10 @@ class CreatureManager(
         return f"Desktop icon awareness turned {state}."
 
     def _random_model_id(self) -> str | None:
-        return self._rng.choice(list(self.models.keys())) if self.models else None
+        # Adventure's enemy kinds live in models/ too, but a random Companion
+        # spider is never one of them.
+        pool = [mid for mid in self.models if not is_enemy_model(mid)] or list(self.models)
+        return self._rng.choice(pool) if pool else None
 
     def _random_personality_id(self) -> str | None:
         pool = [pid for pid in COMPACT_TEMPERAMENT_IDS if pid in self.personalities]
