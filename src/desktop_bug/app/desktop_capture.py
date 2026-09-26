@@ -21,7 +21,7 @@ import sys
 from dataclasses import dataclass, field
 
 from PyQt5.QtCore import QPoint, QRectF, QSize, Qt
-from PyQt5.QtGui import QColor, QFont, QGuiApplication, QImage, QLinearGradient, QPainter
+from PyQt5.QtGui import QColor, QGuiApplication, QImage, QLinearGradient, QPainter
 
 from ..world.playfield import ScreenRect
 
@@ -61,14 +61,22 @@ def capture_desktop(origin: QPoint) -> DesktopSnapshot | None:
     return DesktopSnapshot(shots, list_windows(origin, screens), index)
 
 
-_WORDS = ("silk", "spider", "desktop", "reclaim", "window", "tarantula", "amber", "web", "nest",
-          "hunter", "the", "of", "burrow", "venom", "glass", "crawl", "weaver", "scout")
+def _fake_word(p, x, y, letters, seed):
+    """Letter-like strokes a text line tall, drawn without a font: a test
+    machine may have no fonts at all, and the word finder only needs shape."""
+    for i in range(letters):
+        lx = x + i * 7
+        tall = 10 if (seed + i) % 3 == 0 else 7
+        p.fillRect(QRectF(lx, y + 10 - tall, 1.4, tall), QColor(30, 30, 30))
+        p.fillRect(QRectF(lx + 3.6, y + 3, 1.4, 7), QColor(30, 30, 30))
+        p.fillRect(QRectF(lx, y + 3 + (seed + i) % 2 * 6, 5, 1.2), QColor(30, 30, 30))
+    return letters * 7
 
 
 def synthetic_snapshot(rects: list[ScreenRect], windows: list[QRectF] = (), primary: int = 0,
                        text_rows: int = 0) -> DesktopSnapshot:
     """A made-up desktop for tests and previews: a blue desktop, pale windows,
-    and optionally rows of real text on them."""
+    and optionally rows of word-like marks on them."""
     shots = []
     for rect in rects:
         image = QImage(int(rect.w), int(rect.h), QImage.Format_ARGB32_Premultiplied)
@@ -78,15 +86,18 @@ def synthetic_snapshot(rects: list[ScreenRect], windows: list[QRectF] = (), prim
             local = win.translated(-rect.x, -rect.y)
             p.fillRect(local, QColor(236, 236, 232))
             p.fillRect(QRectF(local.x(), local.y(), local.width(), 28), QColor(52, 56, 64))
-            p.setPen(QColor(30, 30, 30))
-            p.setFont(QFont("Segoe UI", 10))
             for row in range(text_rows):
                 y = local.y() + 50 + row * 26
                 if y + 16 > local.bottom():
                     break
-                line = " ".join(_WORDS[(row * 5 + i) % len(_WORDS)] for i in range(14))
-                p.drawText(QRectF(local.x() + 20, y, local.width() - 40, 20),
-                           Qt.AlignLeft | Qt.AlignVCenter, line)
+                x = local.x() + 20
+                word = 0
+                while True:
+                    letters = 3 + (row * 7 + word * 5) % 6
+                    if x + letters * 7 > local.right() - 20:
+                        break
+                    x += _fake_word(p, x, y, letters, row + word) + 8
+                    word += 1
         p.end()
         paper = QImage(image.size(), QImage.Format_ARGB32_Premultiplied)
         gradient = QLinearGradient(0, 0, 0, image.height())
