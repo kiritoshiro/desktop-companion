@@ -180,3 +180,52 @@ def test_every_building_stands_on_earth_and_casts_its_shadow_to_the_lower_right(
         right = min(shade(x) for x in range(140, 200, 4))
         left = min(shade(x) for x in range(40, 100, 4))
         assert right <= left, (kind, right, left)
+
+
+# -- the owner's second round: the armour crash, readable text, map pictures -------
+
+def test_putting_armour_on_and_taking_it_off_again_does_not_crash(state_dir):
+    """The owner hit ``'NoneType' object has no attribute 'deleteLater'`` in
+    the bag when taking a piece off."""
+    from desktop_bug.app.character_ui import CharacterDialog
+
+    dialog = CharacterDialog()
+    item_id = next(i for i in dialog.dress.inventory if i in armoury.ARMOR_BY_ID)
+    slot = armoury.ARMOR_BY_ID[item_id].slot
+    for _ in range(3):
+        dialog._equip(item_id)
+        assert item_id not in dialog.bag.tiles, "worn: out of the bag"
+        dialog._unequip(slot)
+        assert item_id in dialog.bag.tiles, "taken off: back in the bag"
+
+
+def test_xp_is_written_above_the_bar_not_on_it(state_dir):
+    from desktop_bug.app.character_ui import CharacterDialog
+
+    dialog = CharacterDialog()
+    assert not dialog.xp_bar.isTextVisible()
+    assert "XP" in dialog.xp_label.text()
+
+
+def test_the_editor_writes_its_labels_in_cream():
+    from desktop_bug.app import map_editor
+
+    assert "QLabel" in map_editor.CHECKBOXES and "#f6e2b8" in map_editor.CHECKBOXES
+
+
+def test_every_map_card_has_its_own_picture():
+    from desktop_bug.app.campaign import MAPS
+    from desktop_bug.app.map_art import PICTURE_H, PICTURE_W, map_picture
+
+    seen = set()
+    for info in MAPS:
+        picture = map_picture(info.id, info.kind)
+        assert picture.width() == PICTURE_W * 2 and picture.height() == PICTURE_H * 2
+        image = picture.toImage()
+        seen.add(tuple(image.pixel(x, y) for x in (40, 200, 380) for y in (20, 100, 170)))
+    assert len(seen) == len(MAPS), "each map looks different"
+    # A map from the editor borrows its kind's look; a locked map is dimmed.
+    assert not map_picture("custom-x", "swarm").isNull()
+    bright = QColor.fromRgba(map_picture("territory", "raid").toImage().pixel(200, 30)).lightness()
+    dim = QColor.fromRgba(map_picture("territory", "raid", True).toImage().pixel(200, 30)).lightness()
+    assert dim < bright

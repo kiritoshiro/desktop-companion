@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (QCheckBox, QFrame, QGraphicsDropShadowEffect, QGrid
 from . import wood_theme
 from .adventure_profile import hero_progression, load_profile, mission_record, save_profile
 from .campaign import MAP_BY_ID, MAPS, map_unlocked
+from .map_art import map_picture
 from .controls import load_controls
 
 MODES = (
@@ -243,6 +244,7 @@ class ModeShell(QWidget):
         self.mission_status = {}
         self.map_buttons = {}
         self.map_locks = {}
+        self.map_pictures = {}
         self.adventure_launch = None
         for index, (mission_id, title, blurb, playable) in enumerate(SKIRMISH_MISSIONS):
             card = self._mission_card(mission_id, title, blurb, playable, start_adventure)
@@ -333,6 +335,12 @@ class ModeShell(QWidget):
         cell = QVBoxLayout(card)
         cell.setContentsMargins(12, 10, 12, 10)
         cell.setSpacing(6)
+        picture = QLabel()
+        picture.setObjectName("missionPicture")
+        picture.setPixmap(map_picture(mission_id, MAP_BY_ID[mission_id].kind if mission_id in MAP_BY_ID else "raid",
+                                      not playable))
+        cell.addWidget(picture, alignment=Qt.AlignHCenter)
+        self.map_pictures[mission_id] = picture
         name = QLabel(title)
         name.setObjectName("missionTitle")
         name.setWordWrap(True)
@@ -397,6 +405,7 @@ class ModeShell(QWidget):
             before = MAP_BY_ID[mission_id].unlock_after
             lock.setText("" if open_ else f"Win \u201c{MAP_BY_ID[before].title}\u201d to unlock")
             lock.setVisible(not open_)
+            self.map_pictures[mission_id].setPixmap(map_picture(mission_id, MAP_BY_ID[mission_id].kind, not open_))
             card = self.mission_cards[mission_id]
             card.setProperty("locked", not open_)
             card.style().unpolish(card)
@@ -480,6 +489,10 @@ class ModeShell(QWidget):
             card.setMaximumWidth(240)
             cell = QVBoxLayout(card)
             cell.setContentsMargins(12, 10, 12, 10)
+            picture = QLabel()
+            picture.setObjectName("missionPicture")
+            picture.setPixmap(map_picture(data["id"], data.get("kind", "raid")))
+            cell.addWidget(picture, alignment=Qt.AlignHCenter)
             name = QLabel(data["title"])
             name.setObjectName("missionTitle")
             name.setWordWrap(True)
