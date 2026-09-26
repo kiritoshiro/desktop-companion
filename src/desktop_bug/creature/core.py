@@ -10,8 +10,8 @@ call into the other mixins.
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QRectF, Qt
-from PyQt5.QtGui import QBrush, QColor, QFont, QFontMetrics, QPen
+from PyQt5.QtCore import QPointF, QRectF, Qt
+from PyQt5.QtGui import QBrush, QColor, QFont, QFontMetrics, QPen, QPolygonF
 
 import math
 import random
@@ -1714,8 +1714,46 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         painter.setPen(QPen(QColor(255, 255, 255, 70), 1.0))
         painter.drawRoundedRect(QRectF(left, top, width, height), 2.0, 2.0)
 
+    # How the label is drawn: "full" (the Companion's boxed label), "quiet"
+    # (a mission's other spiders: small, faint, no box, so it hides nothing
+    # underneath) or "hero" (the player's own spider in a mission, picked
+    # out in gold). The owner: "the in game spider names are taking too much
+    # space and hides what is beneath them ... only my own should be
+    # highlighted."
+    label_style = "full"
+
+    def _draw_quiet_label(self, painter) -> None:
+        font = QFont("Segoe UI")
+        font.setPointSizeF(7.5)
+        painter.setFont(font)
+        fm = QFontMetrics(font)
+        text = self.display_name
+        tw = fm.horizontalAdvance(text)
+        top_extent = min([self.y] + [leg.foot_y for leg in self.legs]) - self.size * 0.45 - self.jump_z
+        bars = self._label_bars_height() * 0.6
+        base_y = top_extent - 3.0 - bars
+        x = self.x - (tw + 8.0) * 0.5
+        dot = self._label_border_color(QColor)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(QColor(dot.red(), dot.green(), dot.blue(), 200)))
+        painter.drawEllipse(QRectF(x, base_y - fm.ascent() * 0.62, 5.0, 5.0))
+        painter.setPen(QPen(QColor(0, 0, 0, 110)))
+        painter.drawText(QPointF(x + 8.6, base_y + 0.6), text)
+        painter.setPen(QPen(QColor(240, 240, 236, 165)))
+        painter.drawText(QPointF(x + 8.0, base_y), text)
+        width = self.LABEL_BAR_WIDTH * 0.6
+        bar_x = self.x - width * 0.5
+        bar_y = base_y + 3.0
+        if self.health_label_pinned:
+            fraction = self.health_fraction()
+            self._draw_label_bar(painter, bar_x, bar_y, width, 3.0, fraction,
+                                 self.health_bar_color(fraction, QColor), QRectF, Qt, QColor, QBrush, QPen)
+
     def _draw_name_label(self, painter, always_show_names: bool) -> None:
         if not self.label_visible(always_show_names):
+            return
+        if self.label_style == "quiet":
+            self._draw_quiet_label(painter)
             return
 
         font = self._label_font()
@@ -1745,8 +1783,17 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # Two pixels, not one: this border is the only place a team's colour
         # is shown on a spider now, so it has to survive being looked at over
         # a busy desktop.
-        painter.setPen(QPen(self._label_border_color(QColor), 2.0))
+        if self.label_style == "hero":
+            painter.setPen(QPen(QColor(246, 207, 106, 255), 2.4))
+        else:
+            painter.setPen(QPen(self._label_border_color(QColor), 2.0))
         painter.drawRoundedRect(QRectF(box_x, box_y, box_w, box_h), 6.0, 6.0)
+        if self.label_style == "hero":
+            # A small gold marker over your own spider.
+            tip = QPointF(self.x, box_y - 3.0)
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor(246, 207, 106, 255)))
+            painter.drawPolygon(QPolygonF([QPointF(tip.x() - 6, tip.y() - 7), QPointF(tip.x() + 6, tip.y() - 7), tip]))
         painter.setPen(QPen(QColor(245, 247, 250, 255)))
         painter.drawText(QRectF(box_x, box_y, box_w, box_h), Qt.AlignCenter, text)
         if self.xp_label_pinned:
