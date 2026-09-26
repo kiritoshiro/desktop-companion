@@ -557,11 +557,13 @@ class InventoryBag(QScrollArea):
         spares = spares or {}
         while self.row.count():
             entry = self.row.takeAt(0)
-            if entry.widget() is not None:
+            widget = entry.widget() if entry is not None else None
+            if widget is not None:
                 # Off the screen now, not at the next event-loop pass: a worn
-                # piece must leave the bag the moment it is put on.
-                entry.widget().setParent(None)
-                entry.widget().deleteLater()
+                # piece must leave the bag the moment it is put on. Held in a
+                # local: once unparented, the layout item may no longer know it.
+                widget.setParent(None)
+                widget.deleteLater()
         self.tiles = {}
         worn = set(state.equipped.values()) if worn is None else set(worn)
         owned = [ARMOR_BY_ID[i] for i in state.inventory if i in ARMOR_BY_ID and i not in worn]

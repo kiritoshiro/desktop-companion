@@ -1,36 +1,47 @@
-"""The mission buildings, painted once like game assets and cached.
+"""The mission buildings: timber, thatch and stakes, painted once and cached.
 
-The owner: *"make nicer graphics of those buildings. like actual game asset,
-not like now mostly drawn circles."*
+The owner asked for game-asset buildings "of wood looking. more realistic",
+showing a picture of isometric wooden watchtowers, thatched roofs and
+sharpened-stake palisades casting long shadows. This draws in that style,
+from scratch, with Qt only:
 
-Every building sits on the same kind of base -- a raised slab of earth with a
-soil face, grass tufts, moss and pebbles, and a soft cast shadow -- and every
-part of it is painted the same way (``_lit``): lit from the upper left,
-textured (bark grain, stone, weave, speckle), darkened where it meets the
-ground, outlined, with a rim of light on its top edge. Pictures are painted
-at twice their size and carry a device pixel ratio of 2, so they stay crisp
-when the mission draws them.
+- **logs** (``_log``): round timber shaded across its width, bark grain along
+  its length, a pale cut end, optionally sharpened;
+- **stakes and palisades** (``_stake``, ``_palisade``): rows of pointed posts
+  on a cross rail;
+- **thatch** (``_thatch``): a straw roof built from hundreds of short straw
+  strokes in rows, with a ragged fringe;
+- **planks** (``_planks``): boards with grain, gaps and nail heads;
+- **rope** lashings where timbers meet;
+- every upright casts a **long shadow** to the lower right, as the sun in
+  the picture does, on a patch of trampled earth.
 
-- Home burrow: an earth mound with a stone-arched tunnel, silk curtain,
-  roots and two glowing mushroom lanterns;
-- Food cache: a veined leaf canopy on lashed poles over silk-wrapped prey,
-  berries and a beetle;
-- Silk loom: a lashed frame with warp threads, a woven panel and spools;
-- Hatchery: a cradle of veined egg sacs under a twig arch; sealed, bound in
-  silk under a wax seal;
-- Thorn nest: a rock-and-bramble fortress with bone spikes round a toothed
-  maw with red eyes; claimed, the eyes go out and silk covers the mouth;
-- Outpost: a stitched hide tent on stakes with guy ropes and a lantern;
-- Infestation: acid sacs dripping over a cracked, bevelled screen pane;
-  destroyed, the sacs are burst and grey;
-- Venom den: a ringed stump holding a veined venom gland over a puddle;
-- Lookout: a two-storey scaffold with a plank deck, ladder and lantern;
-- Amber mine: a stone-rimmed pit of faceted amber crystals and a pick;
-- Nursery: a leaf canopy over a silk cradle of eggs, spiderlings when yours;
-- Fly nest: a rotting, bitten fruit with a leaf and a cloud of flies.
+Buildings:
 
-A pennant on every building shows who holds it. The anchor is unchanged:
-the site's point is at (120, 139) of a 240x190 picture.
+- Home burrow: a thatched porch on log posts over a burrow door with a silk
+  curtain, a woodpile and a lantern;
+- Food cache: an open thatched shed with wicker baskets of berries and
+  silk-wrapped prey hung from the beam;
+- Silk loom: a log loom frame under a little thatch cap, warp threads, a
+  woven panel, spools on a plank bench;
+- Hatchery: a round stake pen full of veined egg sacs; sealed, boarded over,
+  bound in silk under a wax seal;
+- Thorn nest: a dark palisade fort with a thorned log gate, horned posts and
+  red eyes in the dark; claimed, the eyes go out and silk covers the gate;
+- Outpost: a palisade camp gate with a thatched lintel and a lantern;
+- Infestation: acid sacs dripping over a cracked pane in a log frame;
+  destroyed, burst and grey;
+- Venom den: a hooped wooden vat on a log stand, brimming with venom;
+- Lookout: a tall watchtower on braced legs, railed deck, ladder, conical
+  thatch roof;
+- Amber mine: a timbered mine mouth in a bank of earth, a plank cart of
+  faceted amber, a pick;
+- Nursery: a thatched hut on stilts with a silk cradle of eggs beneath;
+- Fly nest: a broken crate of rotting fruit under a cloud of flies.
+
+A pennant on every building shows who holds it (green yours, rust theirs).
+The anchor is unchanged: the site's point is at (120, 139) of a 240x190
+picture, painted at twice that size for crisp edges.
 """
 from __future__ import annotations
 
@@ -44,6 +55,14 @@ from PyQt5.QtGui import QBrush, QColor, QImage, QLinearGradient, QPainter, QPain
 ART_W, ART_H = 240, 190
 GROUND_Y = 139            # where the site's point is
 SCALE = 2                 # painted at twice the size
+# The sun is up and to the left: shadows fall this far right and down per
+# pixel of height.
+SHADOW_X, SHADOW_Y = 0.62, 0.20
+
+WOOD = "#9a7448"
+WOOD_DARK = "#5e4428"
+WOOD_OLD = "#6e5a44"
+STRAW = "#c7a462"
 
 
 def _c(color, alpha=None) -> QColor:
@@ -57,8 +76,15 @@ def _pen(color, width=1.0, alpha=255):
     return QPen(_c(color, alpha), width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
 
 
+def _poly(*points) -> QPainterPath:
+    path = QPainterPath(QPointF(*points[0]))
+    for pt in points[1:]:
+        path.lineTo(QPointF(*pt))
+    path.closeSubpath()
+    return path
+
+
 def _blob(cx, cy, rx, ry, rng, wobble=0.12, points=22) -> QPainterPath:
-    """An irregular closed shape round (cx, cy)."""
     pts = []
     for i in range(points):
         a = i * math.tau / points
@@ -72,131 +98,204 @@ def _blob(cx, cy, rx, ry, rng, wobble=0.12, points=22) -> QPainterPath:
     return path
 
 
-def _poly(*points) -> QPainterPath:
-    path = QPainterPath(QPointF(*points[0]))
-    for pt in points[1:]:
-        path.lineTo(QPointF(*pt))
-    path.closeSubpath()
-    return path
+# -- shadows ------------------------------------------------------------------
+
+def _shadow_post(p, x, y, h, w):
+    """The long shadow of an upright of height ``h`` standing at (x, y)."""
+    dx, dy = h * SHADOW_X, h * SHADOW_Y
+    p.fillPath(_poly((x - w / 2, y), (x + w / 2, y), (x + w / 2 + dx, y + dy), (x - w / 2 + dx, y + dy)),
+               _c("#1a1208", 70))
 
 
-# -- the shared way of painting a part -------------------------------------------
+def _shadow_mass(p, x, y, w, h, depth=18):
+    """The shadow of a solid block ``w`` wide and ``h`` tall on the ground at (x, y)."""
+    dx, dy = h * SHADOW_X, h * SHADOW_Y
+    path = _poly((x - w / 2, y), (x + w / 2, y), (x + w / 2 + dx, y + dy), (x - w / 2 + dx, y + dy + depth * 0.2))
+    p.fillPath(path, _c("#1a1208", 85))
 
-def _lit(p, path, base, rng=None, texture=None, outline=True, ao=True, rim=True, light=135, dark=165):
-    """Fill a part lit from the upper left, texture it, shade its foot,
-    outline it and catch the light on its upper edge."""
+
+# -- materials ----------------------------------------------------------------
+
+def _log(p, a, b, r, color=WOOD, rng=None, sharp=False, cut=True):
+    """A round log from ``a`` to ``b`` of radius ``r``: lit on its upper-left
+    side, bark grain along it, a pale cut end at ``b`` (or a point)."""
+    rng = rng or random.Random(int(a.x() * 7 + b.y() * 13))
+    ax, ay, bx, by = a.x(), a.y(), b.x(), b.y()
+    length = max(0.1, math.hypot(bx - ax, by - ay))
+    ux, uy = (bx - ax) / length, (by - ay) / length
+    nx, ny = -uy, ux
+    tip = 0.0
+    if sharp:
+        tip = min(r * 2.4, length * 0.4)
+    ex, ey = bx - ux * tip, by - uy * tip
+    body = _poly((ax + nx * r, ay + ny * r), (ex + nx * r, ey + ny * r), (bx, by) if sharp else (ex + nx * r, ey + ny * r),
+                 (ex - nx * r, ey - ny * r), (ax - nx * r, ay - ny * r))
+    g = QLinearGradient(QPointF(ax + nx * r, ay + ny * r), QPointF(ax - nx * r, ay - ny * r))
+    base = _c(color)
+    # Which side faces the light (up-left) decides where the highlight goes.
+    lit_first = (nx * -0.7 + ny * -0.7) > 0
+    light, dark = base.lighter(140), base.darker(190)
+    g.setColorAt(0.0, light if lit_first else dark)
+    g.setColorAt(0.35, base.lighter(115) if lit_first else base)
+    g.setColorAt(0.7, base.darker(120) if lit_first else base.lighter(115))
+    g.setColorAt(1.0, dark if lit_first else light)
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.fillPath(body, QBrush(g))
+    p.setClipPath(body)
+    grain = base.darker(175)
+    for k in range(int(r * 1.4) + 2):                  # bark grain along the log
+        off = rng.uniform(-r * 0.85, r * 0.85)
+        start = rng.uniform(0, length * 0.3)
+        seg = rng.uniform(length * 0.3, length)
+        wav = QPainterPath(QPointF(ax + ux * start + nx * off, ay + uy * start + ny * off))
+        t = start
+        while t < min(length, start + seg):
+            t += 5
+            jitter = rng.uniform(-0.5, 0.5)
+            wav.lineTo(QPointF(ax + ux * t + nx * (off + jitter), ay + uy * t + ny * (off + jitter)))
+        p.setPen(_pen(grain, rng.uniform(0.5, 1.0), rng.randint(90, 170)))
+        p.drawPath(wav)
+    for _ in range(int(length / 16) + 1):              # knots
+        t, off = rng.uniform(0.1, 0.9) * length, rng.uniform(-r * 0.5, r * 0.5)
+        p.setPen(_pen(base.darker(220), 0.8, 180))
+        p.setBrush(_c(base.darker(150), 200))
+        p.drawEllipse(QPointF(ax + ux * t + nx * off, ay + uy * t + ny * off), r * 0.28, r * 0.2)
+    p.restore()
+    p.setPen(_pen(base.darker(320), 1.1, 230))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(body)
+    if cut and not sharp:
+        end = QPainterPath()
+        end.addEllipse(QPointF(ex, ey), r * 0.62 if abs(uy) > 0.7 else r * 0.9, r * 0.62 if abs(uy) <= 0.7 else r * 0.4)
+        p.fillPath(end, _c("#d8b888"))
+        p.setPen(_pen("#8a6a44", 0.7, 200))
+        p.drawPath(end)
+
+
+def _stake(p, x, y, h, w=3.4, color=WOOD, rng=None, shadow=True):
+    """An upright pointed stake."""
+    if shadow:
+        _shadow_post(p, x, y, h, w)
+    _log(p, QPointF(x, y), QPointF(x, y - h), w / 2, color, rng, sharp=True)
+
+
+def _palisade(p, x0, y0, x1, y1, h, rng, color=WOOD, gap=5.0, rails=True):
+    """A row of stakes of varying height from (x0, y0) to (x1, y1)."""
+    count = max(2, int(math.hypot(x1 - x0, y1 - y0) / gap))
+    stakes = []
+    for i in range(count + 1):
+        t = i / count
+        stakes.append((x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, h * rng.uniform(0.85, 1.12)))
+    for x, y, sh in stakes:
+        _shadow_post(p, x, y, sh, 3.6)
+    for x, y, sh in stakes:
+        _stake(p, x, y, sh, 3.8, color, rng, shadow=False)
+    if rails:
+        for frac in (0.35, 0.72):
+            _log(p, QPointF(x0 - 2, y0 - h * frac), QPointF(x1 + 2, y1 - h * frac), 1.3, WOOD_DARK, rng)
+
+
+def _thatch(p, path, rng, color=STRAW, fringe=True):
+    """A straw roof: base colour, then rows of short straw strokes, then a
+    ragged fringe along the bottom edge."""
     box = path.boundingRect()
-    base = _c(base)
+    base = _c(color)
     g = QLinearGradient(box.topLeft(), box.bottomRight())
-    g.setColorAt(0.0, base.lighter(light))
-    g.setColorAt(0.55, base)
-    g.setColorAt(1.0, base.darker(dark))
+    g.setColorAt(0, base.lighter(128))
+    g.setColorAt(0.5, base)
+    g.setColorAt(1, base.darker(170))
     p.save()
     p.setPen(Qt.NoPen)
     p.fillPath(path, QBrush(g))
-    p.setClipPath(path, Qt.IntersectClip)
-    if texture is not None:
-        texture(p, box, rng or random.Random(1), base)
-    if ao:
-        shade = QLinearGradient(0, box.top() + box.height() * 0.55, 0, box.bottom())
-        shade.setColorAt(0, _c("#000000", 0))
-        shade.setColorAt(1, _c("#000000", 110))
-        p.fillRect(box, QBrush(shade))
+    p.setClipPath(path)
+    rows = max(3, int(box.height() / 5))
+    for row in range(rows):
+        y = box.top() + row * box.height() / rows
+        shade = base.darker(115 + (row % 2) * 30)
+        shade.setAlpha(120)
+        p.fillRect(QRectF(box.left(), y + box.height() / rows - 1.6, box.width(), 1.6), shade)
+    for _ in range(int(box.width() * box.height() / 5)):
+        x = rng.uniform(box.left(), box.right())
+        y = rng.uniform(box.top(), box.bottom())
+        length = rng.uniform(4, 8)
+        lean = (x - box.center().x()) / max(1.0, box.width()) * 3.0 + rng.uniform(-0.8, 0.8)
+        tone = base.lighter(rng.randint(105, 150)) if rng.random() < 0.55 else base.darker(rng.randint(120, 190))
+        p.setPen(_pen(tone, rng.uniform(0.5, 0.95), rng.randint(150, 235)))
+        p.drawLine(QPointF(x, y), QPointF(x + lean, y + length))
     p.restore()
-    if rim:
-        p.save()
-        p.setClipRect(QRectF(box.left() - 2, box.top() - 2, box.width() * 0.62, box.height() * 0.5))
-        p.setPen(_pen(base.lighter(185), 1.3, 150))
-        p.setBrush(Qt.NoBrush)
-        p.drawPath(path.translated(0.8, 0.8))
-        p.restore()
-    if outline:
-        p.setPen(_pen(base.darker(300), 1.5, 235))
-        p.setBrush(Qt.NoBrush)
-        p.drawPath(path)
+    p.setPen(_pen(base.darker(260), 1.0, 200))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+    if fringe:
+        # Straw hanging below the eave, sampled along the lower edge of the shape.
+        bottom = box.bottom()
+        x = box.left() + 2
+        while x < box.right() - 2:
+            y_edge = None
+            for step in range(int(box.height())):
+                yy = bottom - step
+                if path.contains(QPointF(x, yy)):
+                    y_edge = yy
+                    break
+            if y_edge is not None and y_edge > box.top() + box.height() * 0.5:
+                tone = base.darker(rng.randint(100, 160))
+                p.setPen(_pen(tone, 0.8, 230))
+                p.drawLine(QPointF(x, y_edge - 1), QPointF(x + rng.uniform(-1, 1), y_edge + rng.uniform(2, 5)))
+            x += rng.uniform(1.2, 2.4)
 
 
-def tex_bark(p, box, rng, base):
-    p.setPen(_pen(base.darker(190), 1.0, 170))
-    x = box.left() + 2
-    while x < box.right():
-        path = QPainterPath(QPointF(x, box.top()))
-        y, cx = box.top(), x
-        while y < box.bottom():
-            y += 6
-            cx += rng.uniform(-1.4, 1.4)
-            path.lineTo(QPointF(cx, y))
-        p.drawPath(path)
-        x += rng.uniform(3.5, 6.5)
-    p.setPen(_pen(base.lighter(150), 0.8, 90))
-    for _ in range(int(box.width() * box.height() / 250) + 2):
-        x, y = rng.uniform(box.left(), box.right()), rng.uniform(box.top(), box.bottom())
-        p.drawLine(QPointF(x, y), QPointF(x, y + rng.uniform(2, 5)))
-
-
-def tex_speckle(p, box, rng, base):
-    p.setPen(Qt.NoPen)
-    for _ in range(int(box.width() * box.height() / 18) + 4):
-        x, y = rng.uniform(box.left(), box.right()), rng.uniform(box.top(), box.bottom())
-        tone = base.lighter(rng.randint(115, 150)) if rng.random() < 0.5 else base.darker(rng.randint(125, 175))
-        tone.setAlpha(rng.randint(90, 190))
-        p.setBrush(tone)
-        s = rng.uniform(0.8, 2.2)
-        p.drawEllipse(QRectF(x, y, s, s * 0.8))
-
-
-def tex_stone(p, box, rng, base):
-    tex_speckle(p, box, rng, base)
-    p.setPen(_pen(base.darker(230), 0.9, 170))
-    for _ in range(int(box.width() / 12) + 1):
-        x, y = rng.uniform(box.left(), box.right()), rng.uniform(box.top(), box.bottom())
-        a = rng.uniform(0, math.tau)
-        for _ in range(3):
-            nx, ny = x + math.cos(a) * rng.uniform(3, 7), y + math.sin(a) * rng.uniform(3, 7)
-            p.drawLine(QPointF(x, y), QPointF(nx, ny))
-            x, y, a = nx, ny, a + rng.uniform(-0.8, 0.8)
-
-
-def tex_weave(p, box, rng, base):
-    p.setPen(_pen(base.darker(140), 0.8, 150))
-    step = 3.2
-    x = box.left()
-    while x < box.right():
-        p.drawLine(QPointF(x, box.top()), QPointF(x, box.bottom()))
-        x += step
-    p.setPen(_pen(base.lighter(130), 0.8, 130))
-    y = box.top()
-    while y < box.bottom():
-        p.drawLine(QPointF(box.left(), y), QPointF(box.right(), y))
-        y += step
-
-
-def tex_veins(p, box, rng, base):
-    p.setPen(_pen(base.darker(170), 0.9, 150))
-    for _ in range(4):
-        x, y = rng.uniform(box.left(), box.right()), box.top()
-        path = QPainterPath(QPointF(x, y))
-        while y < box.bottom():
-            y += rng.uniform(3, 6)
-            x += rng.uniform(-3, 3)
-            path.lineTo(QPointF(x, y))
-        p.drawPath(path)
-
-
-# -- small parts ----------------------------------------------------------------
-
-def _shadow(p, x, y, rx, ry, alpha=120):
-    g = QRadialGradient(QPointF(x, y), rx)
-    g.setColorAt(0, _c("#0a0604", alpha))
-    g.setColorAt(1, _c("#0a0604", 0))
+def _planks(p, path, rng, color=WOOD, horizontal=True, nails=True):
+    """Boards with grain, dark gaps between them, and nail heads."""
+    box = path.boundingRect()
+    base = _c(color)
     p.save()
-    p.translate(x, y)
-    p.scale(1.0, ry / rx)
-    p.translate(-x, -y)
-    p.setPen(Qt.NoPen)
-    p.setBrush(QBrush(g))
-    p.drawEllipse(QPointF(x, y), rx, rx)
+    p.setClipPath(path)
+    width = 6.5
+    pos = box.top() if horizontal else box.left()
+    end = box.bottom() if horizontal else box.right()
+    while pos < end:
+        tone = base.lighter(rng.randint(95, 125)) if rng.random() < 0.5 else base.darker(rng.randint(100, 125))
+        board = QRectF(box.left(), pos, box.width(), width) if horizontal else QRectF(pos, box.top(), width, box.height())
+        g = QLinearGradient(board.topLeft(), board.bottomLeft() if horizontal else board.topRight())
+        g.setColorAt(0, tone.lighter(118))
+        g.setColorAt(1, tone.darker(125))
+        p.fillRect(board, QBrush(g))
+        p.setPen(_pen(tone.darker(160), 0.6, 150))
+        for _ in range(3):
+            if horizontal:
+                y = rng.uniform(board.top() + 1, board.bottom() - 1)
+                p.drawLine(QPointF(board.left(), y), QPointF(board.right(), y + rng.uniform(-0.8, 0.8)))
+            else:
+                x = rng.uniform(board.left() + 1, board.right() - 1)
+                p.drawLine(QPointF(x, board.top()), QPointF(x + rng.uniform(-0.8, 0.8), board.bottom()))
+        p.setPen(_pen("#241808", 1.0, 220))
+        if horizontal:
+            p.drawLine(QPointF(board.left(), board.bottom()), QPointF(board.right(), board.bottom()))
+        else:
+            p.drawLine(QPointF(board.right(), board.top()), QPointF(board.right(), board.bottom()))
+        if nails:
+            p.setPen(Qt.NoPen)
+            p.setBrush(_c("#3a3632"))
+            if horizontal:
+                for x in (board.left() + 4, board.right() - 4):
+                    p.drawEllipse(QPointF(x, board.center().y()), 0.9, 0.9)
+            else:
+                for y in (board.top() + 4, board.bottom() - 4):
+                    p.drawEllipse(QPointF(board.center().x(), y), 0.9, 0.9)
+        pos += width
     p.restore()
+    p.setPen(_pen(base.darker(300), 1.1, 220))
+    p.setBrush(Qt.NoBrush)
+    p.drawPath(path)
+
+
+def _rope(p, x, y, w=7, turns=3):
+    for i in range(turns):
+        p.setPen(_pen("#4a3a22", 2.2))
+        p.drawLine(QPointF(x - w / 2, y - 2 + i * 2.0), QPointF(x + w / 2, y - 0.6 + i * 2.0))
+        p.setPen(_pen("#d8c49a", 1.2))
+        p.drawLine(QPointF(x - w / 2, y - 2.3 + i * 2.0), QPointF(x + w / 2, y - 0.9 + i * 2.0))
 
 
 def _glow(p, x, y, r, color, alpha=120):
@@ -209,7 +308,6 @@ def _glow(p, x, y, r, color, alpha=120):
 
 
 def _spec(p, x, y, rx, ry, alpha=200):
-    """A specular highlight: what makes a round thing look glossy."""
     g = QRadialGradient(QPointF(x, y), rx)
     g.setColorAt(0, _c("#ffffff", alpha))
     g.setColorAt(1, _c("#ffffff", 0))
@@ -218,393 +316,364 @@ def _spec(p, x, y, rx, ry, alpha=200):
     p.drawEllipse(QPointF(x, y), rx, ry)
 
 
+def _fill(p, path, base, light=130, dark=170, outline=True):
+    box = path.boundingRect()
+    b = _c(base)
+    g = QLinearGradient(box.topLeft(), box.bottomRight())
+    g.setColorAt(0, b.lighter(light))
+    g.setColorAt(0.55, b)
+    g.setColorAt(1, b.darker(dark))
+    p.setPen(Qt.NoPen)
+    p.fillPath(path, QBrush(g))
+    if outline:
+        p.setPen(_pen(b.darker(300), 1.1, 220))
+        p.setBrush(Qt.NoBrush)
+        p.drawPath(path)
+
+
 def _egg(p, x, y, rx, ry, base, rng, glossy=True):
     path = QPainterPath()
     path.addEllipse(QPointF(x, y), rx, ry)
-    _lit(p, path, base, rng, tex_veins, rim=False)
-    if glossy:
-        _spec(p, x - rx * 0.35, y - ry * 0.4, rx * 0.45, ry * 0.3)
-
-
-def _pebble(p, x, y, w, rng, tone="#7d7466"):
-    path = _blob(x, y, w, w * 0.62, rng, 0.18, 9)
-    _shadow(p, x + 1, y + w * 0.5, w * 1.1, w * 0.35, 100)
-    _lit(p, path, tone, rng, tex_speckle, rim=False)
-    _spec(p, x - w * 0.3, y - w * 0.25, w * 0.35, w * 0.2, 120)
-
-
-def _tuft(p, x, y, rng, h=9):
-    for _ in range(rng.randint(4, 7)):
-        dx = rng.uniform(-4, 4)
-        top = QPointF(x + dx + rng.uniform(-3, 3), y - h * rng.uniform(0.6, 1.2))
-        blade = _poly((x + dx - 1.2, y), (top.x(), top.y()), (x + dx + 1.2, y))
-        p.fillPath(blade, _c(rng.choice(["#6f8f45", "#88a653", "#5b7a3a", "#9ab562"])))
-
-
-def _twig(p, a, b, width, color="#6a4526", rng=None):
-    """A branch: bark-textured, outlined, lit on one side."""
-    angle = math.atan2(b.y() - a.y(), b.x() - a.x())
-    nx, ny = -math.sin(angle) * width / 2, math.cos(angle) * width / 2
-    path = _poly((a.x() + nx, a.y() + ny), (b.x() + nx * 0.8, b.y() + ny * 0.8),
-                 (b.x() - nx * 0.8, b.y() - ny * 0.8), (a.x() - nx, a.y() - ny))
-    _lit(p, path, color, rng or random.Random(3), tex_bark, ao=False)
-
-
-def _lashing(p, x, y, w=6):
-    p.setPen(_pen("#d8c9a4", 1.4))
-    for i in range(3):
-        p.drawLine(QPointF(x - w / 2, y - 2 + i * 1.8), QPointF(x + w / 2, y - 1 + i * 1.8))
-
-
-def _thread_ball(p, x, y, w, h, rng):
-    path = QPainterPath()
-    path.addEllipse(QRectF(x - w / 2, y - h / 2, w, h))
-    _lit(p, path, "#e9e2cf", rng, None, light=110)
+    _fill(p, path, base)
     p.save()
     p.setClipPath(path)
-    p.setPen(_pen("#a89f88", 0.9, 200))
-    for i in range(7):
-        a = rng.uniform(-0.9, 0.9)
-        p.drawLine(QPointF(x - w, y - h + i * h / 3.5 + a * 4), QPointF(x + w, y - h / 2 + i * h / 3.5 - a * 4))
+    p.setPen(_pen(_c(base).darker(170), 0.8, 150))
+    for _ in range(3):
+        vx = rng.uniform(x - rx, x + rx)
+        vein = QPainterPath(QPointF(vx, y - ry))
+        vein.cubicTo(QPointF(vx + rng.uniform(-4, 4), y - ry * 0.3), QPointF(vx + rng.uniform(-4, 4), y + ry * 0.3),
+                     QPointF(vx + rng.uniform(-3, 3), y + ry))
+        p.drawPath(vein)
     p.restore()
-    _spec(p, x - w * 0.2, y - h * 0.25, w * 0.25, h * 0.18, 150)
+    if glossy:
+        _spec(p, x - rx * 0.35, y - ry * 0.4, rx * 0.4, ry * 0.28)
 
 
-def _lantern(p, x, y, colour, rng):
-    _glow(p, x, y, 22, colour, 150)
+def _lantern(p, x, y, colour):
+    _glow(p, x, y, 20, colour, 150)
     body = QPainterPath()
-    body.addRoundedRect(QRectF(x - 5, y - 6, 10, 12), 3, 3)
-    _lit(p, body, colour, rng, None, light=150, rim=False)
-    p.setPen(_pen("#3a2a18", 1.3))
-    p.drawLine(QPointF(x - 5.5, y - 6), QPointF(x + 5.5, y - 6))
-    p.drawLine(QPointF(x - 5.5, y + 6), QPointF(x + 5.5, y + 6))
-    p.drawLine(QPointF(x, y - 10), QPointF(x, y - 6))
-    _spec(p, x - 1.5, y - 2, 2.5, 3.5, 230)
+    body.addRoundedRect(QRectF(x - 4.5, y - 5.5, 9, 11), 2.5, 2.5)
+    _fill(p, body, colour, light=160)
+    p.setPen(_pen("#2a1e10", 1.4))
+    for dy in (-5.5, 5.5):
+        p.drawLine(QPointF(x - 5, y + dy), QPointF(x + 5, y + dy))
+    p.drawLine(QPointF(x, y - 9), QPointF(x, y - 5.5))
+    _spec(p, x - 1.4, y - 2, 2.2, 3.2, 230)
 
 
-def _crystal(p, x, y, h, colour, rng, lean=0.0):
-    """A faceted crystal: a light face and a dark face, not a circle."""
+def _crystal(p, x, y, h, colour, lean=0.0):
     w = h * 0.42
     tip = (x + lean * h, y - h)
     left = _poly((x - w, y), (x - w * 0.9, y - h * 0.6), tip, (x, y - h * 0.15), (x, y))
     right = _poly((x, y), (x, y - h * 0.15), tip, (x + w * 0.9, y - h * 0.62), (x + w, y))
-    _lit(p, left, _c(colour).lighter(125), rng, None, ao=False, rim=False)
-    _lit(p, right, _c(colour).darker(135), rng, None, ao=False, rim=False)
+    _fill(p, left, _c(colour).lighter(125))
+    _fill(p, right, _c(colour).darker(135))
     p.setPen(_pen("#fff6d8", 1.0, 190))
     p.drawLine(QPointF(x - w * 0.55, y - h * 0.35), QPointF(tip[0] - w * 0.1, tip[1] + h * 0.2))
 
 
-def _pennant(p, owned):
+def _wicker(p, x, y, w, h, rng):
+    basket = _poly((x - w / 2, y - h), (x + w / 2, y - h), (x + w * 0.4, y), (x - w * 0.4, y))
+    _fill(p, basket, "#b08a52")
+    p.save()
+    p.setClipPath(basket)
+    for i in range(int(h / 2.6) + 1):
+        yy = y - h + i * 2.6
+        p.setPen(_pen("#6a4a26" if i % 2 else "#d8b87a", 1.2, 220))
+        p.drawLine(QPointF(x - w, yy), QPointF(x + w, yy))
+    for i in range(int(w / 4) + 1):
+        p.setPen(_pen("#5a3e20", 0.9, 180))
+        xx = x - w / 2 + i * 4
+        p.drawLine(QPointF(xx, y - h), QPointF(xx + (x - xx) * 0.2, y))
+    p.restore()
+
+
+def _pennant(p, owned, rng):
     """Who holds it: green with a spider when yours, rust with thorns when not."""
-    _twig(p, QPointF(210, GROUND_Y + 4), QPointF(210, 84), 3.2, "#8a6a44")
-    colour = "#6fc4a2" if owned else "#d9784e"
-    flag = QPainterPath(QPointF(211.5, 88))
-    flag.cubicTo(QPointF(222, 86), QPointF(228, 94), QPointF(238, 92))
-    flag.cubicTo(QPointF(232, 98), QPointF(230, 104), QPointF(236, 110))
-    flag.cubicTo(QPointF(226, 108), QPointF(220, 106), QPointF(211.5, 108))
+    _shadow_post(p, 212, GROUND_Y + 4, 58, 2.4)
+    _log(p, QPointF(212, GROUND_Y + 4), QPointF(212, 82), 1.5, WOOD_DARK, rng)
+    colour = "#5fb38e" if owned else "#c8643a"
+    flag = QPainterPath(QPointF(213.4, 86))
+    flag.cubicTo(QPointF(222, 83), QPointF(228, 92), QPointF(238, 90))
+    flag.cubicTo(QPointF(233, 96), QPointF(231, 101), QPointF(236, 108))
+    flag.cubicTo(QPointF(226, 106), QPointF(220, 104), QPointF(213.4, 106))
     flag.closeSubpath()
-    _lit(p, flag, colour, None, None, ao=False)
+    _fill(p, flag, colour)
+    p.save()
+    p.setClipPath(flag)
+    p.setPen(_pen(_c(colour).darker(150), 1.0, 120))
+    for yy in range(86, 108, 3):
+        p.drawLine(QPointF(213, yy), QPointF(240, yy + 2))
+    p.restore()
     mark = "#1d2a24" if owned else "#3a1810"
     p.setPen(Qt.NoPen)
     p.setBrush(_c(mark, 220))
-    p.drawEllipse(QPointF(222, 98), 2.6, 2.2)
+    p.drawEllipse(QPointF(223, 96), 2.6, 2.2)
     p.setPen(_pen(mark, 0.9, 220))
     for k in (-1, 1):
         for dy in (-2, 0, 2):
-            p.drawLine(QPointF(222, 98), QPointF(222 + k * 5, 98 + dy + k * 0.5))
+            p.drawLine(QPointF(223, 96), QPointF(223 + k * 5, 96 + dy + k * 0.5))
+
+
+def _ground(p, rng, tone):
+    """Trampled earth under the building, with stones and grass at its edge."""
+    patch = _blob(120, GROUND_Y + 3, 104, 24, rng, 0.08, 26)
+    g = QRadialGradient(QPointF(116, GROUND_Y), 110)
+    g.setColorAt(0, _c(tone).lighter(112))
+    g.setColorAt(0.8, _c(tone))
+    g.setColorAt(1, _c(tone, 0))
     p.setPen(Qt.NoPen)
-    p.setBrush(_c("#f4d27a"))
-    p.drawEllipse(QPointF(210, 83), 2.4, 2.4)
-
-
-# -- the base every building stands on ---------------------------------------------
-
-def _plinth(p, rng, tone):
-    """A raised slab of earth: soil face, grassy top, moss, pebbles, shadow."""
-    _shadow(p, 122, GROUND_Y + 22, 112, 20, 150)
-    top = _blob(120, GROUND_Y + 2, 101, 25, rng, 0.07, 26)
-    face = QPainterPath(top)
-    face.translate(0, 12)
-    side = face.united(QPainterPath(top))
-    soil = QLinearGradient(0, GROUND_Y, 0, GROUND_Y + 40)
-    soil.setColorAt(0, _c("#5a3f26"))
-    soil.setColorAt(1, _c("#2a1c10"))
-    p.fillPath(side, QBrush(soil))
+    p.fillPath(patch, QBrush(g))
     p.save()
-    p.setClipPath(side)
-    p.setPen(_pen("#7a5a3a", 1.0, 150))
-    for k in range(3):                                  # strata
-        y = GROUND_Y + 18 + k * 5
-        path = QPainterPath(QPointF(16, y))
-        for x in range(16, 230, 12):
-            path.lineTo(QPointF(x, y + math.sin(x * 0.11 + k) * 1.4))
-        p.drawPath(path)
-    for _ in range(10):                                 # stones in the soil
-        x, y = rng.uniform(26, 214), GROUND_Y + rng.uniform(18, 34)
-        p.setPen(Qt.NoPen)
-        p.setBrush(_c(rng.choice(["#8a7d6a", "#6e6254", "#9c8f7a"]), 220))
-        p.drawEllipse(QPointF(x, y), rng.uniform(1.5, 3.2), rng.uniform(1.2, 2.2))
-    p.setPen(_pen("#3b2716", 1.2, 200))
-    for _ in range(5):                                  # roots
-        x = rng.uniform(30, 210)
-        path = QPainterPath(QPointF(x, GROUND_Y + 16))
-        path.cubicTo(QPointF(x + 4, GROUND_Y + 24), QPointF(x - 3, GROUND_Y + 30), QPointF(x + 2, GROUND_Y + 38))
-        p.drawPath(path)
+    p.setClipPath(patch)
+    for _ in range(260):                                # soil grains
+        x, y = rng.uniform(16, 224), rng.uniform(GROUND_Y - 22, GROUND_Y + 28)
+        tone_ = _c(tone).darker(rng.randint(115, 160)) if rng.random() < 0.6 else _c(tone).lighter(rng.randint(110, 140))
+        tone_.setAlpha(rng.randint(80, 170))
+        p.setBrush(tone_)
+        s = rng.uniform(0.6, 1.8)
+        p.drawEllipse(QRectF(x, y, s, s * 0.7))
     p.restore()
-    p.setPen(_pen("#1e140a", 1.5, 220))
-    p.setBrush(Qt.NoBrush)
-    p.drawPath(side)
-    _lit(p, top, tone, rng, tex_speckle, ao=False, light=128)
-    for _ in range(8):                                  # moss
+    for _ in range(9):                                  # stones
         a = rng.uniform(0, math.tau)
-        x, y = 120 + math.cos(a) * rng.uniform(50, 88), GROUND_Y + 2 + math.sin(a) * rng.uniform(10, 19)
-        moss = _blob(x, y, rng.uniform(7, 14), rng.uniform(3, 6), rng, 0.3, 10)
-        _lit(p, moss, rng.choice(["#5d7a3e", "#6f8e48", "#4e6a36"]), rng, tex_speckle, outline=False, rim=False,
-             ao=False)
-    for _ in range(4):
-        a = rng.uniform(0.2, math.pi - 0.2)
-        _pebble(p, 120 + math.cos(a) * rng.uniform(60, 90), GROUND_Y + 4 + math.sin(a) * 16,
-                rng.uniform(3, 5.5), rng)
-    for _ in range(12):                                 # grass along the front edge
-        a = rng.uniform(0.1, math.pi - 0.1)
-        _tuft(p, 120 + math.cos(a) * 96, GROUND_Y + 3 + math.sin(a) * 23, rng, rng.uniform(6, 11))
-    for _ in range(5):
-        a = rng.uniform(math.pi + 0.3, math.tau - 0.3)
-        _tuft(p, 120 + math.cos(a) * 92, GROUND_Y + 3 + math.sin(a) * 21, rng, rng.uniform(5, 8))
+        x, y = 120 + math.cos(a) * rng.uniform(40, 92), GROUND_Y + 3 + math.sin(a) * rng.uniform(8, 20)
+        w = rng.uniform(1.8, 4.2)
+        stone = _blob(x, y, w, w * 0.65, rng, 0.2, 8)
+        _fill(p, stone, rng.choice(["#8a8274", "#6e685c", "#a09888"]), outline=False)
+        _spec(p, x - w * 0.3, y - w * 0.25, w * 0.4, w * 0.25, 110)
+    for _ in range(26):                                 # grass round the edge
+        a = rng.uniform(0, math.tau)
+        x, y = 120 + math.cos(a) * rng.uniform(84, 104), GROUND_Y + 3 + math.sin(a) * rng.uniform(18, 25)
+        for _ in range(rng.randint(3, 6)):
+            dx = rng.uniform(-3, 3)
+            h = rng.uniform(4, 9)
+            blade = _poly((x + dx - 1, y), (x + dx + rng.uniform(-2, 2), y - h), (x + dx + 1, y))
+            p.fillPath(blade, _c(rng.choice(["#6f8a45", "#86a153", "#56733a", "#9ab060"]), 230))
 
 
 # -- the buildings ---------------------------------------------------------------
 
 def _home(p, rng, owned):
-    mound = QPainterPath(QPointF(40, GROUND_Y + 6))
-    mound.cubicTo(QPointF(40, 50), QPointF(200, 44), QPointF(202, GROUND_Y + 6))
+    # The burrow mound, its door, and a thatched porch on four log posts.
+    mound = QPainterPath(QPointF(46, GROUND_Y + 4))
+    mound.cubicTo(QPointF(50, 70), QPointF(190, 64), QPointF(196, GROUND_Y + 4))
     mound.closeSubpath()
-    _lit(p, mound, "#8a6a44", rng, tex_stone)
-    for _ in range(4):                                  # roots over the mound
-        x = rng.uniform(60, 180)
-        root = QPainterPath(QPointF(x, 62 + abs(x - 120) * 0.25))
-        root.cubicTo(QPointF(x - 12, 90), QPointF(x + 10, 110), QPointF(x - 6, GROUND_Y + 2))
-        p.setPen(_pen("#3a2614", 3.2, 230))
-        p.drawPath(root)
-        p.setPen(_pen("#6d4a2a", 1.6))
-        p.drawPath(root)
-    for i in range(9):                                  # the stone arch
-        a = math.pi + i * math.pi / 8
-        x, y = 121 + math.cos(a) * 32, GROUND_Y + 4 + math.sin(a) * 38
-        _lit(p, _blob(x, y, 7.5, 6, rng, 0.15, 8), "#9a9080", rng, tex_stone)
-    door = QPainterPath(QPointF(95, GROUND_Y + 5))
-    door.cubicTo(QPointF(95, 88), QPointF(147, 88), QPointF(147, GROUND_Y + 5))
+    _shadow_mass(p, 124, GROUND_Y + 4, 140, 60)
+    _fill(p, mound, "#7a6040")
+    p.save()
+    p.setClipPath(mound)
+    for _ in range(300):
+        x, y = rng.uniform(46, 196), rng.uniform(64, GROUND_Y + 4)
+        p.setPen(Qt.NoPen)
+        p.setBrush(_c(rng.choice(["#5a4428", "#8e7450", "#6a5234"]), rng.randint(90, 180)))
+        p.drawEllipse(QPointF(x, y), rng.uniform(0.6, 2), rng.uniform(0.5, 1.4))
+    p.restore()
+    door = QPainterPath(QPointF(104, GROUND_Y + 4))
+    door.cubicTo(QPointF(104, 98), QPointF(140, 98), QPointF(140, GROUND_Y + 4))
     door.closeSubpath()
-    g = QRadialGradient(121, GROUND_Y - 4, 36)
-    g.setColorAt(0, _c("#000000"))
-    g.setColorAt(1, _c("#2a1a0e"))
-    p.fillPath(door, QBrush(g))
+    p.fillPath(door, _c("#0e0804"))
     p.save()
     p.setClipPath(door)
-    p.setPen(_pen("#f1ead6", 0.9, 170))                 # silk curtain
-    for i in range(11):
-        x = 98 + i * 4.8
-        p.drawLine(QPointF(x, 96), QPointF(x + math.sin(i) * 3, GROUND_Y + 5))
+    p.setPen(_pen("#efe6cf", 0.8, 170))
+    for i in range(9):
+        x = 106 + i * 4
+        p.drawLine(QPointF(x, 104), QPointF(x + math.sin(i) * 2.5, GROUND_Y + 4))
     p.restore()
-    for x, h in ((66, 26), (176, 22)):                  # mushroom lanterns
-        stem = QPainterPath()
-        stem.addRoundedRect(QRectF(x - 3, GROUND_Y - h + 8, 6, h - 6), 2, 2)
-        _lit(p, stem, "#e8dcc2", rng, None, rim=False)
-        _glow(p, x, GROUND_Y - h + 6, 20, "#ffb95a", 130)
-        cap = QPainterPath(QPointF(x - 13, GROUND_Y - h + 9))
-        cap.cubicTo(QPointF(x - 12, GROUND_Y - h - 8), QPointF(x + 12, GROUND_Y - h - 8),
-                    QPointF(x + 13, GROUND_Y - h + 9))
-        cap.closeSubpath()
-        _lit(p, cap, "#d8702e", rng, None)
-        p.setPen(Qt.NoPen)
-        p.setBrush(_c("#fbe3b8"))
-        for dx, dy in ((-6, -2), (2, -5), (6, 1)):
-            p.drawEllipse(QPointF(x + dx, GROUND_Y - h + 3 + dy), 1.8, 1.4)
-        p.setPen(_pen("#ffd08a", 1.0, 200))
-        p.drawLine(QPointF(x - 11, GROUND_Y - h + 9.5), QPointF(x + 11, GROUND_Y - h + 9.5))
+    posts = ((92, GROUND_Y + 8), (152, GROUND_Y + 8), (100, GROUND_Y - 4), (144, GROUND_Y - 4))
+    for x, y in posts[2:]:
+        _shadow_post(p, x, y, 50, 4)
+        _log(p, QPointF(x, y), QPointF(x, y - 46), 2.4, WOOD, rng)
+    for x, y in posts[:2]:
+        _shadow_post(p, x, y, 56, 4)
+        _log(p, QPointF(x, y), QPointF(x, y - 52), 2.6, WOOD, rng)
+    _log(p, QPointF(86, 90), QPointF(158, 90), 2.4, WOOD_DARK, rng)
+    for x in (92, 152):
+        _rope(p, x, 90)
+    roof = _poly((74, 92), (98, 56), (146, 56), (170, 92))
+    _thatch(p, roof, rng)
+    ridge = QPainterPath(QPointF(96, 57))
+    ridge.lineTo(QPointF(148, 57))
+    _log(p, QPointF(94, 57), QPointF(150, 57), 2.2, WOOD_DARK, rng)
+    for i in range(4):                                  # woodpile
+        for j in range(3 - i // 2):
+            _log(p, QPointF(52 + j * 2, GROUND_Y + 2 - i * 5), QPointF(76 + j * 2, GROUND_Y + 4 - i * 5), 2.4,
+                 WOOD, rng)
+    _log(p, QPointF(180, GROUND_Y + 6), QPointF(180, 96), 1.6, WOOD_DARK, rng)
+    _lantern(p, 180, 104, "#ffb45a")
+
+
+def _shed_roof(p, rng, left, right, top, eave, depth=16):
+    """A gable roof seen from the front-left: the long thatched side and the
+    timber gable end."""
+    front = _poly((left, eave), (left + depth, top), (right + depth, top), (right, eave))
+    gable = _poly((right, eave), (right + depth, top), (right + depth + 10, eave - 4))
+    _fill(p, gable, WOOD_OLD)
+    _planks(p, gable, rng, WOOD_OLD, horizontal=False, nails=False)
+    _thatch(p, front, rng)
 
 
 def _food(p, rng, owned):
-    for a, b in ((QPointF(62, GROUND_Y + 4), QPointF(70, 66)), (QPointF(180, GROUND_Y + 4), QPointF(172, 66))):
-        _twig(p, a, b, 5, rng=rng)
-        _lashing(p, b.x(), b.y() + 6)
-    leaf = QPainterPath(QPointF(40, 72))
-    leaf.cubicTo(QPointF(76, 30), QPointF(170, 26), QPointF(204, 70))
-    leaf.cubicTo(QPointF(170, 60), QPointF(80, 62), QPointF(40, 72))
-    _lit(p, leaf, "#7a9a4a", rng, None)
-    p.setPen(_pen("#4a6a2c", 1.6))
-    p.drawLine(QPointF(44, 70), QPointF(200, 68))
-    p.setPen(_pen("#4a6a2c", 1.0, 200))
-    for i in range(9):                                  # veins
-        x = 58 + i * 16
-        p.drawLine(QPointF(x, 69), QPointF(x + 8, 44 + abs(x - 122) * 0.18))
-    for x, y, w, h in ((96, GROUND_Y - 14, 26, 18), (124, GROUND_Y - 10, 30, 20), (110, GROUND_Y - 30, 22, 16)):
-        _shadow(p, x + 2, y + h / 2, w * 0.7, 4, 100)
-        _thread_ball(p, x, y, w, h, rng)
-    for x, y in ((76, GROUND_Y - 6), (82, GROUND_Y - 11), (86, GROUND_Y - 4)):   # berries
-        berry = QPainterPath()
-        berry.addEllipse(QPointF(x, y), 4.5, 4.5)
-        _lit(p, berry, "#b8262a", rng, None, rim=False)
-        _spec(p, x - 1.5, y - 1.5, 1.8, 1.4, 240)
-    p.setPen(_pen("#141414", 1.2))                      # a beetle
-    for k in (-1, 1):
-        for dx in (-5, 0, 5):
-            p.drawLine(QPointF(160 + dx, GROUND_Y - 4), QPointF(160 + dx + k * 3, GROUND_Y - 4 + k * 10))
-    shell = QPainterPath()
-    shell.addEllipse(QPointF(160, GROUND_Y - 4), 11, 7.5)
-    _lit(p, shell, "#2c4a5a", rng, None)
-    p.setPen(_pen("#0c1820", 1.0))
-    p.drawLine(QPointF(160, GROUND_Y - 11), QPointF(160, GROUND_Y + 3))
-    _spec(p, 156, GROUND_Y - 7, 4, 2.2, 200)
+    back = ((76, GROUND_Y - 10), (168, GROUND_Y - 10))
+    front = ((66, GROUND_Y + 6), (158, GROUND_Y + 6))
+    for x, y in back + front:
+        _shadow_post(p, x, y, 56, 4)
+    for x, y in back:
+        _log(p, QPointF(x, y), QPointF(x, 72), 2.4, WOOD, rng)
+    for x, y, w, h in ((96, GROUND_Y + 2, 26, 18), (124, GROUND_Y + 4, 24, 16), (148, GROUND_Y - 2, 20, 14)):
+        _wicker(p, x, y, w, h, rng)
+        for _ in range(7):                              # berries in the baskets
+            bx, by = x + rng.uniform(-w * 0.3, w * 0.3), y - h - rng.uniform(0, 3)
+            berry = QPainterPath()
+            berry.addEllipse(QPointF(bx, by), 2.8, 2.8)
+            _fill(p, berry, rng.choice(["#b02a2a", "#7a1f3a", "#c8462a"]), outline=False)
+            _spec(p, bx - 0.8, by - 0.8, 1.1, 0.9, 230)
+    for x, y in front:
+        _log(p, QPointF(x, y), QPointF(x, 80), 2.8, WOOD, rng)
+    _log(p, QPointF(60, 80), QPointF(164, 80), 2.6, WOOD_DARK, rng)
+    for x, _y in front:
+        _rope(p, x, 80)
+    for x in (92, 124):                                 # prey wrapped in silk, hung from the beam
+        p.setPen(_pen("#e8e0cc", 1.0))
+        p.drawLine(QPointF(x, 82), QPointF(x, 92))
+        bundle = QPainterPath()
+        bundle.addEllipse(QRectF(x - 6, 92, 12, 18))
+        _fill(p, bundle, "#e6dfcc", light=110)
+        p.save()
+        p.setClipPath(bundle)
+        p.setPen(_pen("#a89f88", 0.8, 200))
+        for i in range(6):
+            p.drawLine(QPointF(x - 8, 92 + i * 3.4), QPointF(x + 8, 94 + i * 3.4))
+        p.restore()
+    _shed_roof(p, rng, 50, 164, 44, 82)
 
 
 def _silk(p, rng, owned):
-    for a, b in ((QPointF(66, GROUND_Y + 4), QPointF(64, 42)), (QPointF(176, GROUND_Y + 4), QPointF(178, 42))):
-        _twig(p, a, b, 6, rng=rng)
-    _twig(p, QPointF(56, 48), QPointF(186, 48), 6, rng=rng)
-    _twig(p, QPointF(62, 108), QPointF(180, 108), 5, rng=rng)
-    for x in (64, 178):
-        _lashing(p, x, 48)
-        _lashing(p, x, 108)
-    p.setPen(_pen("#f2ecdc", 0.9, 220))                 # warp
-    for i in range(20):
-        x = 74 + i * 5.1
-        p.drawLine(QPointF(x, 51), QPointF(x, 105))
+    bench = _poly((70, GROUND_Y - 2), (170, GROUND_Y - 2), (174, GROUND_Y + 4), (66, GROUND_Y + 4))
+    _shadow_mass(p, 120, GROUND_Y + 4, 110, 10)
+    for x in (72, 164):
+        _shadow_post(p, x, GROUND_Y + 4, 84, 4)
+        _log(p, QPointF(x, GROUND_Y + 4), QPointF(x, 46), 3.0, WOOD, rng, sharp=True)
+    _log(p, QPointF(64, 58), QPointF(172, 58), 2.6, WOOD_DARK, rng)
+    _log(p, QPointF(66, 112), QPointF(170, 112), 2.4, WOOD_DARK, rng)
+    for x in (72, 164):
+        _rope(p, x, 58)
+        _rope(p, x, 112)
+    p.setPen(_pen("#f2ecdc", 0.9, 220))                 # warp threads
+    for i in range(18):
+        x = 80 + i * 4.6
+        p.drawLine(QPointF(x, 61), QPointF(x, 109))
     panel = QPainterPath()
-    panel.addRect(QRectF(74, 72, 98, 32))
-    _lit(p, panel, "#e7e0cb", rng, tex_weave, light=110)
-    for x in (86, 118, 150):                            # spools
+    panel.addRect(QRectF(80, 80, 80, 28))
+    _fill(p, panel, "#e7e0cb", light=108)
+    p.save()
+    p.setClipPath(panel)
+    for i in range(0, 90, 3):
+        p.setPen(_pen("#b8ae94", 0.7, 180))
+        p.drawLine(QPointF(80, 80 + i * 0.4), QPointF(160, 80 + i * 0.4))
+    p.restore()
+    _fill(p, bench, WOOD)
+    _planks(p, bench, rng, WOOD, nails=True)
+    for x in (92, 120, 148):                            # spools
         spool = QPainterPath()
-        spool.addRoundedRect(QRectF(x - 9, GROUND_Y - 22, 18, 20), 3, 3)
-        _lit(p, spool, "#efe8d6", rng, tex_weave, light=112)
-        for y in (GROUND_Y - 24, GROUND_Y - 3):
+        spool.addRoundedRect(QRectF(x - 6, GROUND_Y - 16, 12, 14), 2, 2)
+        _fill(p, spool, "#efe8d6", light=110)
+        for y in (GROUND_Y - 18, GROUND_Y - 3):
             end = QPainterPath()
-            end.addRoundedRect(QRectF(x - 11, y, 22, 4), 2, 2)
-            _lit(p, end, "#7a5230", rng, None, rim=False)
+            end.addRoundedRect(QRectF(x - 8, y, 16, 3), 1.5, 1.5)
+            _fill(p, end, WOOD_DARK)
+    cap = _poly((58, 50), (74, 34), (164, 34), (180, 50))
+    _thatch(p, cap, rng)
+
+
+def _ring(cx, cy, rx, ry, count, back):
+    pts = []
+    for i in range(count):
+        a = math.pi + i * math.pi / (count - 1) if back else i * math.pi / (count - 1)
+        pts.append((cx + math.cos(a) * rx, cy + math.sin(a) * ry))
+    return pts
 
 
 def _hatchery(p, rng, owned):
-    arch = QPainterPath(QPointF(56, GROUND_Y + 4))
-    arch.cubicTo(QPointF(52, 34), QPointF(188, 34), QPointF(184, GROUND_Y + 4))
-    p.setPen(_pen("#2a1a0c", 9))
-    p.drawPath(arch)
-    p.setPen(_pen("#6a4526", 6.5))
-    p.drawPath(arch)
-    p.setPen(_pen("#9a7450", 1.6, 170))
-    p.drawPath(arch.translated(-1.5, -1.5))
-    p.setPen(_pen("#e8e0cc", 1.1, 220))                 # hanging threads
-    for x in (92, 120, 148):
-        p.drawLine(QPointF(x, 50), QPointF(x, 72))
+    cx, cy, rx, ry = 120, GROUND_Y - 4, 62, 18
+    for x, y in _ring(cx, cy, rx, ry, 15, back=True):
+        _stake(p, x, y, 40 * rng.uniform(0.9, 1.1), 3.8, WOOD, rng)
     if owned:
-        bundle = _blob(120, 100, 48, 36, rng, 0.06)
-        _lit(p, bundle, "#bdb6a4", rng, tex_weave, light=120)
-        p.setPen(_pen("#857d6a", 2.2))
-        for i in range(5):
-            p.drawLine(QPointF(76, 78 + i * 11), QPointF(164, 70 + i * 13))
+        lid = _blob(cx, cy - 16, 58, 22, rng, 0.04)
+        _fill(p, lid, WOOD)
+        _planks(p, lid, rng, WOOD, horizontal=False)
+        p.setPen(_pen("#e8e0cc", 2.2, 230))
+        for i in range(4):
+            p.drawLine(QPointF(cx - 58, cy - 26 + i * 7), QPointF(cx + 58, cy - 20 + i * 7))
         seal = QPainterPath()
-        seal.addEllipse(QPointF(120, 102), 11, 11)
-        _lit(p, seal, "#a62024", rng, None)
+        seal.addEllipse(QPointF(cx, cy - 14), 9, 9)
+        _fill(p, seal, "#a62024")
         p.setPen(_pen("#f0c0a0", 1.4))
-        p.drawLine(QPointF(114, 102), QPointF(126, 102))
-        p.drawLine(QPointF(120, 96), QPointF(120, 108))
-        _spec(p, 116, 98, 3, 2, 200)
+        p.drawLine(QPointF(cx - 5, cy - 14), QPointF(cx + 5, cy - 14))
+        p.drawLine(QPointF(cx, cy - 19), QPointF(cx, cy - 9))
     else:
-        for x, y, rx, ry in ((104, 96, 17, 20), (136, 94, 18, 21), (120, 78, 15, 17), (88, 116, 13, 15),
-                             (152, 116, 13, 15), (120, 112, 16, 18)):
-            _egg(p, x, y, rx, ry, "#a8c47a", rng)
-        _glow(p, 120, 100, 44, "#d8ff9a", 40)
-        broken = _poly((150, GROUND_Y - 6), (160, GROUND_Y - 16), (166, GROUND_Y - 8), (172, GROUND_Y - 18),
-                       (176, GROUND_Y - 4))
-        _lit(p, broken, "#dfe8c8", rng, None, rim=False)
+        for x, y, erx, ery in ((100, cy - 22, 14, 17), (132, cy - 24, 15, 18), (116, cy - 40, 13, 15),
+                               (84, cy - 12, 11, 13), (150, cy - 12, 11, 13), (118, cy - 10, 13, 15)):
+            _egg(p, x, y, erx, ery, "#a8c47a", rng)
+        _glow(p, cx, cy - 22, 44, "#d8ff9a", 40)
+    for x, y in _ring(cx, cy, rx, ry, 15, back=False):
+        _stake(p, x, y, 34 * rng.uniform(0.9, 1.1), 4.0, WOOD, rng)
+    _log(p, QPointF(cx - rx - 2, cy + 2), QPointF(cx + rx + 2, cy + 2), 1.5, WOOD_DARK, rng)
 
 
 def _nest(p, rng, owned):
-    dome = QPainterPath(QPointF(34, GROUND_Y + 6))
-    dome.cubicTo(QPointF(34, 36), QPointF(206, 36), QPointF(206, GROUND_Y + 6))
-    dome.closeSubpath()
-    _lit(p, dome, "#4a2c36", rng, tex_stone, light=140)
-    for _ in range(9):                                  # brambles
-        start = QPointF(rng.uniform(40, 200), GROUND_Y + rng.uniform(-2, 6))
-        top = QPointF(rng.uniform(70, 170), rng.uniform(40, 76))
-        end = QPointF(rng.uniform(40, 200), GROUND_Y + rng.uniform(-10, 4))
-        path = QPainterPath(start)
-        path.quadTo(top, end)
-        p.setPen(_pen("#120a0c", 6))
-        p.drawPath(path)
-        p.setPen(_pen(rng.choice(["#6a3a44", "#7a4640", "#5a3446"]), 3.6))
-        p.drawPath(path)
-        p.setPen(_pen("#b07a70", 1.0, 150))
-        p.drawPath(path.translated(-0.8, -0.8))
-        for t in (0.2, 0.4, 0.6, 0.8):
-            pt = path.pointAtPercent(t)
-            a = math.radians(-path.angleAtPercent(t) + rng.choice((90, -90)))
-            thorn = _poly((pt.x() - 2, pt.y()), (pt.x() + math.cos(a) * 7, pt.y() + math.sin(a) * 7),
-                          (pt.x() + 2, pt.y()))
-            _lit(p, thorn, "#d8c0a8", rng, None, outline=False, ao=False, rim=False)
-    for x, y, h, lean in ((50, 70, 30, -0.25), (84, 44, 26, -0.1), (156, 42, 28, 0.1), (192, 70, 30, 0.25)):
-        _lit(p, _poly((x - 7, y + h), (x + lean * h, y), (x + 7, y + h)), "#e8d6c0", rng, None)
-    maw = QPainterPath(QPointF(88, GROUND_Y + 2))
-    maw.cubicTo(QPointF(88, 82), QPointF(154, 82), QPointF(154, GROUND_Y + 2))
-    maw.closeSubpath()
-    g = QRadialGradient(121, 122, 40)
-    g.setColorAt(0, _c("#000000"))
-    g.setColorAt(1, _c("#2a1016"))
-    p.fillPath(maw, QBrush(g))
-    for i in range(7):                                  # teeth
-        x = 92 + i * 9.5
-        drop = abs(x - 121)
-        tooth = _poly((x - 3.5, 92 + drop * 0.28), (x, 102 + drop * 0.2), (x + 3.5, 92 + drop * 0.28))
-        _lit(p, tooth, "#efe2c8", rng, None, rim=False, ao=False)
-    p.setPen(_pen("#8a5a62", 2))
-    p.setBrush(Qt.NoBrush)
-    p.drawPath(maw)
+    dark = "#4e3a2e"
+    _palisade(p, 34, GROUND_Y - 6, 92, GROUND_Y - 22, 58, rng, dark, gap=5.5)
+    _palisade(p, 148, GROUND_Y - 22, 206, GROUND_Y - 6, 58, rng, dark, gap=5.5)
+    # The gate: two thick horned posts and a log lintel over a dark mouth.
+    mouth = _poly((96, GROUND_Y + 2), (96, 84), (144, 84), (144, GROUND_Y + 2))
+    p.fillPath(mouth, _c("#060304"))
+    for x in (92, 148):
+        _shadow_post(p, x, GROUND_Y + 4, 80, 7)
+        _log(p, QPointF(x, GROUND_Y + 4), QPointF(x, 64), 5.0, dark, rng, sharp=True)
+        horn = QPainterPath(QPointF(x, 80))
+        side = -1 if x < 120 else 1
+        horn.cubicTo(QPointF(x + side * 18, 74), QPointF(x + side * 22, 60), QPointF(x + side * 16, 50))
+        horn.cubicTo(QPointF(x + side * 16, 62), QPointF(x + side * 10, 72), QPointF(x, 86))
+        _fill(p, horn, "#e6d6bc")
+    _log(p, QPointF(86, 84), QPointF(154, 84), 3.4, dark, rng)
+    for i in range(6):                                  # thorns on the lintel
+        x = 96 + i * 9
+        _fill(p, _poly((x - 2, 82), (x + 1, 72 - (i % 2) * 3), (x + 2, 82)), "#d8c0a8")
     if owned:
         p.setPen(_pen("#f2ecdc", 1.2, 235))
-        for i in range(9):
-            p.drawLine(QPointF(92 + i * 7, 96), QPointF(150 - i * 6.5, GROUND_Y))
-        p.drawLine(QPointF(90, 112), QPointF(152, 108))
-        p.drawLine(QPointF(90, 124), QPointF(152, 126))
+        for i in range(8):
+            p.drawLine(QPointF(98 + i * 6, 86), QPointF(142 - i * 6, GROUND_Y))
+        p.drawLine(QPointF(97, 104), QPointF(143, 100))
+        p.drawLine(QPointF(97, 120), QPointF(143, 122))
     else:
-        for x in (110, 132):
-            _glow(p, x, 118, 12, "#ff3b2f", 170)
+        for x in (111, 129):
+            _glow(p, x, 108, 12, "#ff3b2f", 180)
             eye = QPainterPath()
-            eye.addEllipse(QPointF(x, 118), 3.6, 2.4)
-            _lit(p, eye, "#ff5a3a", rng, None, rim=False, ao=False)
-            _spec(p, x - 1, 117, 1.2, 0.8, 255)
+            eye.addEllipse(QPointF(x, 108), 3.6, 2.4)
+            _fill(p, eye, "#ff5a3a", outline=False)
+            _spec(p, x - 1, 107, 1.2, 0.8, 255)
+    _palisade(p, 150, GROUND_Y + 6, 188, GROUND_Y + 12, 30, rng, dark, gap=5.0, rails=False)
 
 
 def _outpost(p, rng, owned):
-    for x0, x1 in ((54, 102), (186, 138)):
-        _twig(p, QPointF(x0, GROUND_Y + 4), QPointF(x1, 46), 4.5, rng=rng)
-    tent = QPainterPath(QPointF(46, GROUND_Y + 3))
-    tent.quadTo(QPointF(84, 72), QPointF(120, 48))
-    tent.quadTo(QPointF(156, 72), QPointF(194, GROUND_Y + 3))
-    tent.closeSubpath()
-    _lit(p, tent, "#c8b48e", rng, tex_speckle, light=125)
-    p.setPen(_pen("#7a6444", 1.1, 200))                 # seams and stitches
-    for x in (84, 120, 156):
-        p.drawLine(QPointF(120, 50), QPointF(x + (x - 120) * 0.3, GROUND_Y + 2))
-    for i in range(12):
-        t = i / 12
-        x, y = 84 + (120 - 84) * t, GROUND_Y + 2 - (GROUND_Y + 2 - 52) * t
-        p.drawLine(QPointF(x - 2, y), QPointF(x + 2, y + 1))
-    door = QPainterPath(QPointF(100, GROUND_Y + 3))
-    door.quadTo(QPointF(120, 80), QPointF(140, GROUND_Y + 3))
-    door.closeSubpath()
-    p.fillPath(door, _c("#140c06"))
-    p.setPen(_pen("#d8c9a4", 1.0, 200))                 # guy ropes
-    p.drawLine(QPointF(70, 96), QPointF(30, GROUND_Y + 10))
-    p.drawLine(QPointF(170, 96), QPointF(212, GROUND_Y + 8))
-    _lantern(p, 120, 40, "#7de0a8" if owned else "#ff9a3c", rng)
+    _palisade(p, 30, GROUND_Y + 2, 82, GROUND_Y - 12, 38, rng, WOOD, gap=5.5)
+    _palisade(p, 158, GROUND_Y - 12, 206, GROUND_Y + 2, 38, rng, WOOD, gap=5.5)
+    for x in (88, 152):
+        _shadow_post(p, x, GROUND_Y - 8, 78, 5)
+        _log(p, QPointF(x, GROUND_Y - 8), QPointF(x, 60), 3.4, WOOD, rng)
+        _rope(p, x, 68)
+    _log(p, QPointF(80, 66), QPointF(160, 66), 2.8, WOOD_DARK, rng)
+    roof = _poly((70, 68), (86, 46), (156, 46), (172, 68))
+    _thatch(p, roof, rng)
+    _log(p, QPointF(84, 46), QPointF(158, 46), 2.0, WOOD_DARK, rng)
+    _lantern(p, 120, 80, "#7de0a8" if owned else "#ff9a3c")
 
 
 def _infestation(p, rng, owned):
-    frame = QPainterPath()
-    frame.addRoundedRect(QRectF(34, 56, 172, GROUND_Y - 50), 7, 7)
-    _lit(p, frame, "#4c5a66", rng, None, light=150)
+    _shadow_mass(p, 120, GROUND_Y, 170, 84)
     pane = QPainterPath()
-    pane.addRoundedRect(QRectF(41, 63, 158, GROUND_Y - 64), 4, 4)
-    g = QLinearGradient(41, 63, 199, GROUND_Y)
+    pane.addRect(QRectF(44, 58, 152, GROUND_Y - 64))
+    g = QLinearGradient(44, 58, 196, GROUND_Y)
     g.setColorAt(0, _c("#3a6a94"))
     g.setColorAt(1, _c("#0e2238"))
     p.fillPath(pane, QBrush(g))
@@ -612,16 +681,22 @@ def _infestation(p, rng, owned):
     p.setClipPath(pane)
     p.setPen(_pen("#d9f0ff", 1.1, 190))
     for _ in range(8):
-        x, y = rng.uniform(60, 180), rng.uniform(70, 125)
+        x, y = rng.uniform(60, 180), rng.uniform(66, 125)
         a = rng.uniform(0, math.tau)
         for _step in range(5):
             nx, ny = x + math.cos(a) * 11, y + math.sin(a) * 11
             p.drawLine(QPointF(x, y), QPointF(nx, ny))
             x, y, a = nx, ny, a + rng.uniform(-0.6, 0.6)
-    p.fillRect(QRectF(41, 63, 158, 14), _c("#ffffff", 30))
+    p.fillRect(QRectF(44, 58, 152, 12), _c("#ffffff", 30))
     p.restore()
-    for x, y, rx, ry in ((96, 106, 20, 18), (142, 102, 24, 20), (120, 80, 17, 15), (72, 120, 14, 12),
-                         (168, 120, 14, 12)):
+    _log(p, QPointF(40, GROUND_Y + 2), QPointF(40, 54), 3.4, WOOD, rng, sharp=True)
+    _log(p, QPointF(200, GROUND_Y + 2), QPointF(200, 54), 3.4, WOOD, rng, sharp=True)
+    _log(p, QPointF(34, 60), QPointF(206, 60), 2.6, WOOD_DARK, rng)
+    _log(p, QPointF(34, GROUND_Y - 6), QPointF(206, GROUND_Y - 6), 2.6, WOOD_DARK, rng)
+    for x in (40, 200):
+        _rope(p, x, 60)
+    for x, y, rx, ry in ((96, 104, 20, 18), (142, 100, 24, 20), (120, 78, 17, 15), (72, 118, 14, 12),
+                         (168, 118, 14, 12)):
         if owned:
             _egg(p, x, y, rx * 0.85, ry * 0.8, "#6b6f66", rng, glossy=False)
             p.setPen(_pen("#262822", 1.8))
@@ -630,152 +705,229 @@ def _infestation(p, rng, owned):
             _glow(p, x, y, rx * 1.6, "#9dff3a", 70)
             _egg(p, x, y, rx, ry, "#7ccf2a", rng)
     if not owned:
-        _lit(p, _blob(120, GROUND_Y + 2, 40, 7, rng, 0.2), "#8ae63a", rng, None, rim=False, ao=False)
+        puddle = _blob(120, GROUND_Y + 4, 40, 6, rng, 0.2)
+        _fill(p, puddle, "#8ae63a", outline=False)
         p.setPen(_pen("#b8ff5a", 2.6, 220))
         p.setBrush(_c("#b8ff5a"))
         for x in (92, 124, 150):
-            p.drawLine(QPointF(x, 116), QPointF(x, GROUND_Y - 2))
-            p.drawEllipse(QPointF(x, GROUND_Y - 1), 2.4, 2.8)
+            p.drawLine(QPointF(x, 114), QPointF(x, GROUND_Y))
+            p.drawEllipse(QPointF(x, GROUND_Y + 1), 2.2, 2.6)
 
 
 def _venom(p, rng, owned):
-    stump = QPainterPath(QPointF(60, GROUND_Y + 5))
-    stump.lineTo(QPointF(70, 66))
-    stump.quadTo(QPointF(120, 58), QPointF(170, 66))
-    stump.lineTo(QPointF(180, GROUND_Y + 5))
-    stump.quadTo(QPointF(120, GROUND_Y + 12), QPointF(60, GROUND_Y + 5))
-    _lit(p, stump, "#6a4a30", rng, tex_bark)
-    for x, k in ((58, 1), (182, -1)):                   # root flares
-        flare = _poly((x, GROUND_Y + 6), (x + k * 10, GROUND_Y - 16), (x + k * 22, GROUND_Y + 6))
-        _lit(p, flare, "#5a3e28", rng, tex_bark, rim=False)
+    colour = "#7fe06a" if owned else "#a848d0"
+    # A log stand...
+    for x0, x1 in ((82, 96), (158, 144)):
+        _shadow_post(p, x0, GROUND_Y + 4, 40, 4)
+        _log(p, QPointF(x0, GROUND_Y + 4), QPointF(x1, 104), 2.6, WOOD, rng)
+    _log(p, QPointF(86, 106), QPointF(154, 106), 2.6, WOOD_DARK, rng)
+    # ...holding a hooped vat of staves.
+    _shadow_mass(p, 120, 104, 70, 50)
+    vat = _poly((88, 58), (152, 58), (146, 106), (94, 106))
+    _fill(p, vat, WOOD)
+    _planks(p, vat, rng, WOOD, horizontal=False, nails=False)
+    p.save()
+    p.setClipPath(vat)
+    shade = QLinearGradient(88, 0, 152, 0)
+    shade.setColorAt(0, _c("#ffffff", 40))
+    shade.setColorAt(0.4, _c("#000000", 0))
+    shade.setColorAt(1, _c("#000000", 110))
+    p.fillRect(QRectF(86, 56, 70, 52), QBrush(shade))
+    p.restore()
+    for y, w in ((64, 62), (84, 58), (100, 54)):        # iron hoops
+        hoop = QPainterPath(QPointF(120 - w / 2, y))
+        hoop.quadTo(QPointF(120, y + 6), QPointF(120 + w / 2, y))
+        p.setPen(_pen("#2a2622", 3.2))
+        p.drawPath(hoop)
+        p.setPen(_pen("#8a8680", 1.0, 200))
+        p.drawPath(hoop.translated(0, -1))
     top = QPainterPath()
-    top.addEllipse(QRectF(70, 57, 100, 20))
-    _lit(p, top, "#b89468", rng, None, rim=False, ao=False)
-    p.setPen(_pen("#7a5a3a", 1.0, 200))
-    p.setBrush(Qt.NoBrush)
-    for r in (40, 30, 20, 10):                          # growth rings
-        p.drawEllipse(QRectF(120 - r, 67 - r * 0.2, r * 2, r * 0.4))
-    hollow = QPainterPath()
-    hollow.addEllipse(QRectF(98, 62, 44, 10))
-    p.fillPath(hollow, _c("#1a0e08"))
-    colour = "#7fe06a" if owned else "#b04ad8"
-    _glow(p, 120, 98, 32, colour, 140)
-    _egg(p, 120, 98, 16, 18, colour, rng)
+    top.addEllipse(QRectF(88, 52, 64, 12))
+    _fill(p, top, WOOD_DARK)
+    surface = QPainterPath()
+    surface.addEllipse(QRectF(92, 54, 56, 8))
+    _glow(p, 120, 58, 34, colour, 110)
+    _fill(p, surface, colour, light=150, outline=False)
+    _spec(p, 110, 56, 8, 1.6, 180)
     p.setPen(_pen(colour, 3, 230))
-    for x, length in ((112, 24), (127, 32)):
-        p.drawLine(QPointF(x, 110), QPointF(x, 110 + length))
-    _lit(p, _blob(120, GROUND_Y + 4, 28, 6, rng, 0.2), colour, rng, None, rim=False, ao=False)
-    _spec(p, 112, GROUND_Y + 2, 8, 2, 150)
+    for x, length in ((96, 22), (142, 30)):
+        p.drawLine(QPointF(x, 60), QPointF(x - (2 if x < 120 else -2), 60 + length))
+    puddle = _blob(122, GROUND_Y + 4, 30, 6, rng, 0.2)
+    _fill(p, puddle, colour, outline=False)
+    _spec(p, 114, GROUND_Y + 2, 8, 1.8, 150)
+
+
+def _tower(p, rng, owned, top_y, deck_w, legs_spread, roof="cone", height_scale=1.0):
+    """A watchtower: splayed, cross-braced legs, a railed plank deck, a
+    ladder and a thatched roof."""
+    base_l, base_r = 120 - legs_spread, 120 + legs_spread
+    deck_y = top_y + 34
+    back_legs = ((base_l + 10, GROUND_Y - 8), (base_r - 10, GROUND_Y - 8))
+    front_legs = ((base_l, GROUND_Y + 6), (base_r, GROUND_Y + 6))
+    for x, y in back_legs + front_legs:
+        _shadow_post(p, x, y, (y - deck_y) + 30, 4.5)
+    for (x, y), tx in zip(back_legs, (120 - deck_w / 2 + 6, 120 + deck_w / 2 - 6)):
+        _log(p, QPointF(x, y), QPointF(tx, deck_y), 2.4, WOOD, rng)
+    for yb in (GROUND_Y - 30, deck_y + 30):             # cross bracing
+        _log(p, QPointF(base_l + 4, yb + 10), QPointF(base_r - 4, yb - 12), 1.6, WOOD_DARK, rng)
+        _log(p, QPointF(base_l + 4, yb - 12), QPointF(base_r - 4, yb + 10), 1.6, WOOD_DARK, rng)
+    for (x, y), tx in zip(front_legs, (120 - deck_w / 2, 120 + deck_w / 2)):
+        _log(p, QPointF(x, y), QPointF(tx, deck_y - 2), 3.0, WOOD, rng)
+    deck = _poly((120 - deck_w / 2 - 6, deck_y), (120 + deck_w / 2 + 6, deck_y),
+                 (120 + deck_w / 2 + 10, deck_y - 8), (120 - deck_w / 2 - 2, deck_y - 8))
+    _fill(p, deck, WOOD)
+    _planks(p, deck, rng, WOOD, horizontal=False)
+    rail = _poly((120 - deck_w / 2 - 6, deck_y - 2), (120 + deck_w / 2 + 6, deck_y - 2),
+                 (120 + deck_w / 2 + 6, deck_y - 16), (120 - deck_w / 2 - 6, deck_y - 16))
+    for i in range(int(deck_w / 5) + 3):                # stake railing
+        x = 120 - deck_w / 2 - 5 + i * 5
+        _log(p, QPointF(x, deck_y - 1), QPointF(x, deck_y - 18), 1.5, WOOD, rng, sharp=True)
+    _log(p, QPointF(120 - deck_w / 2 - 8, deck_y - 12), QPointF(120 + deck_w / 2 + 8, deck_y - 12), 1.4, WOOD_DARK, rng)
+    del rail
+    for x in (120 - deck_w / 2 + 2, 120 + deck_w / 2 - 2):   # roof posts
+        _log(p, QPointF(x, deck_y - 8), QPointF(x, top_y + 4), 1.6, WOOD, rng)
+    for i in range(7):                                  # ladder
+        y = GROUND_Y + 2 - i * ((GROUND_Y - deck_y) / 7)
+        p.setPen(_pen("#3a2614", 2.4))
+        p.drawLine(QPointF(base_r + 6 - i * 1.4, y), QPointF(base_r + 18 - i * 1.4, y))
+    _log(p, QPointF(base_r + 6, GROUND_Y + 4), QPointF(base_r - 4, deck_y), 1.3, WOOD_DARK, rng)
+    _log(p, QPointF(base_r + 18, GROUND_Y + 4), QPointF(base_r + 8, deck_y), 1.3, WOOD_DARK, rng)
+    if roof == "cone":
+        cone = QPainterPath(QPointF(120 - deck_w / 2 - 12, top_y + 8))
+        cone.quadTo(QPointF(120 - deck_w * 0.2, top_y - 18), QPointF(120, top_y - 30))
+        cone.quadTo(QPointF(120 + deck_w * 0.2, top_y - 18), QPointF(120 + deck_w / 2 + 12, top_y + 8))
+        cone.closeSubpath()
+        _thatch(p, cone, rng)
+        _log(p, QPointF(120, top_y - 26), QPointF(120, top_y - 40), 1.4, WOOD_DARK, rng, sharp=True)
+    else:
+        _thatch(p, _poly((120 - deck_w / 2 - 12, top_y + 8), (120 - deck_w / 2 + 2, top_y - 12),
+                         (120 + deck_w / 2 - 2, top_y - 12), (120 + deck_w / 2 + 12, top_y + 8)), rng)
+    _lantern(p, 120, top_y + 16, "#7de0a8" if owned else "#ff9a3c")
 
 
 def _lookout(p, rng, owned):
-    for x0, x1 in ((74, 100), (166, 140)):
-        _twig(p, QPointF(x0, GROUND_Y + 4), QPointF(x1, 52), 5.5, rng=rng)
-    for y, x0, x1 in ((114, 80, 160), (86, 90, 150)):
-        _twig(p, QPointF(x0, y), QPointF(x1, y), 3.5, rng=rng)
-        _lashing(p, x0 + 3, y)
-        _lashing(p, x1 - 3, y)
-    _twig(p, QPointF(84, 114), QPointF(146, 86), 2.5, rng=rng)
-    _twig(p, QPointF(158, GROUND_Y + 4), QPointF(166, 88), 2.2, rng=rng)
-    _twig(p, QPointF(176, GROUND_Y + 4), QPointF(180, 88), 2.2, rng=rng)
-    p.setPen(_pen("#3a2614", 2.6))
-    for i in range(6):                                  # ladder rungs
-        y = GROUND_Y - 4 - i * 9
-        p.drawLine(QPointF(160 + i * 1.2, y), QPointF(176 + i * 0.6, y))
-    deck = QPainterPath()
-    deck.addRoundedRect(QRectF(86, 46, 68, 10), 2, 2)
-    _lit(p, deck, "#9a7450", rng, tex_bark)
-    p.setPen(_pen("#3a2614", 1.0, 200))
-    for x in range(92, 152, 9):
-        p.drawLine(QPointF(x, 47), QPointF(x, 55))
-    for x in (90, 150):
-        _twig(p, QPointF(x, 46), QPointF(x, 30), 2.4, rng=rng)
-    p.setPen(_pen("#d8c9a4", 1.2))
-    p.drawLine(QPointF(90, 34), QPointF(150, 34))
-    _lantern(p, 120, 26, "#7de0a8" if owned else "#ff9a3c", rng)
+    _tower(p, rng, owned, top_y=38, deck_w=44, legs_spread=34)
 
 
 def _amber(p, rng, owned):
-    pit = QPainterPath()
-    pit.addEllipse(QRectF(56, 98, 128, 44))
-    g = QRadialGradient(120, 124, 70)
-    g.setColorAt(0, _c("#1a0f06"))
-    g.setColorAt(1, _c("#4a3218"))
-    p.fillPath(pit, QBrush(g))
-    rim = [(120 + math.cos(i * math.tau / 14) * 64, 120 + math.sin(i * math.tau / 14) * 22, i) for i in range(14)]
-    for x, y, i in rim:                                 # the back of the rim
-        if math.sin(i * math.tau / 14) < 0:
-            _lit(p, _blob(x, y, 9, 6, rng, 0.2, 9), "#8a8070", rng, tex_stone)
-    _glow(p, 120, 116, 50, "#ffb020", 90)
-    for x, y, h, lean in ((96, 128, 26, -0.2), (112, 124, 36, 0.05), (130, 130, 24, 0.25), (146, 126, 30, 0.12),
-                          (82, 132, 16, -0.3), (160, 134, 16, 0.35)):
-        _crystal(p, x, y, h, "#e8961c", rng, lean)
-    for x, y, i in rim:                                 # the front of the rim, over the crystals' feet
-        if math.sin(i * math.tau / 14) >= 0.2:
-            _lit(p, _blob(x, y, 9, 6, rng, 0.2, 9), "#8a8070", rng, tex_stone)
-    _twig(p, QPointF(176, 70), QPointF(196, 122), 4, rng=rng)
-    _lit(p, _poly((164, 64), (190, 70), (186, 76), (170, 74), (158, 80)), "#9aa0a8", rng, tex_stone)
+    bank = QPainterPath(QPointF(30, GROUND_Y + 2))
+    bank.cubicTo(QPointF(40, 64), QPointF(150, 52), QPointF(180, GROUND_Y + 2))
+    bank.closeSubpath()
+    _shadow_mass(p, 104, GROUND_Y + 2, 150, 60)
+    _fill(p, bank, "#7a6242")
+    p.save()
+    p.setClipPath(bank)
+    for _ in range(260):
+        x, y = rng.uniform(30, 180), rng.uniform(54, GROUND_Y)
+        p.setPen(Qt.NoPen)
+        p.setBrush(_c(rng.choice(["#5a4428", "#8e7450", "#6a5234", "#9a8a70"]), rng.randint(90, 180)))
+        p.drawEllipse(QPointF(x, y), rng.uniform(0.6, 2.2), rng.uniform(0.5, 1.5))
+    p.restore()
+    mouth = _poly((78, GROUND_Y + 2), (80, 90), (124, 90), (126, GROUND_Y + 2))
+    g = QRadialGradient(102, GROUND_Y - 6, 36)
+    g.setColorAt(0, _c("#000000"))
+    g.setColorAt(1, _c("#2a1a0c"))
+    p.fillPath(mouth, QBrush(g))
+    _glow(p, 102, GROUND_Y - 10, 22, "#ffb020", 90)
+    for x in (78, 126):                                 # timbered frame
+        _log(p, QPointF(x, GROUND_Y + 4), QPointF(x, 84), 3.2, WOOD, rng)
+    _log(p, QPointF(72, 88), QPointF(132, 88), 3.2, WOOD_DARK, rng)
+    # A plank cart of amber on two wheels.
+    cart = _poly((136, GROUND_Y - 2), (190, GROUND_Y - 2), (186, GROUND_Y - 22), (140, GROUND_Y - 22))
+    _shadow_mass(p, 163, GROUND_Y + 4, 56, 26)
+    for x, y, h, lean in ((148, GROUND_Y - 20, 16, -0.2), (160, GROUND_Y - 21, 22, 0.05), (172, GROUND_Y - 20, 17, 0.2),
+                          (180, GROUND_Y - 21, 12, 0.3)):
+        _crystal(p, x, y, h, "#e8961c", lean)
+    _fill(p, cart, WOOD)
+    _planks(p, cart, rng, WOOD)
+    for x in (146, 180):
+        wheel = QPainterPath()
+        wheel.addEllipse(QPointF(x, GROUND_Y + 1), 7, 7)
+        _fill(p, wheel, WOOD_DARK)
+        p.setPen(_pen("#2a1a0c", 1.2))
+        for a in range(0, 180, 45):
+            r = math.radians(a)
+            p.drawLine(QPointF(x - math.cos(r) * 6, GROUND_Y + 1 - math.sin(r) * 6),
+                       QPointF(x + math.cos(r) * 6, GROUND_Y + 1 + math.sin(r) * 6))
+    _log(p, QPointF(196, GROUND_Y + 4), QPointF(186, 108), 1.6, WOOD, rng)
+    head = _poly((176, 104), (200, 108), (198, 113), (184, 112), (174, 116))
+    _fill(p, head, "#8e949c")
     if owned:
-        for x, y, h in ((62, 92, 14), (72, 88, 10)):
-            _crystal(p, x, y, h, "#f2b33a", rng)
+        for x, y, h in ((52, GROUND_Y + 2, 12), (60, GROUND_Y + 4, 9)):
+            _crystal(p, x, y, h, "#f2b33a")
 
 
 def _nursery(p, rng, owned):
-    _twig(p, QPointF(120, 60), QPointF(120, GROUND_Y + 3), 3.5, rng=rng)
-    leaf = QPainterPath(QPointF(44, 70))
-    leaf.cubicTo(QPointF(80, 26), QPointF(160, 26), QPointF(196, 70))
-    leaf.cubicTo(QPointF(160, 58), QPointF(80, 58), QPointF(44, 70))
-    _lit(p, leaf, "#5f8a42", rng, None)
-    p.setPen(_pen("#3a5a26", 1.4))
-    p.drawLine(QPointF(48, 68), QPointF(192, 68))
-    p.setPen(_pen("#3a5a26", 0.9, 200))
-    for i in range(8):
-        x = 60 + i * 17
-        p.drawLine(QPointF(x, 67), QPointF(x + 7, 44 + abs(x - 120) * 0.2))
-    p.setPen(_pen("#f4efe0", 1.0, 210))                 # the cradle's threads
-    for i in range(9):
-        p.drawLine(QPointF(70 + i * 12, 70), QPointF(92 + i * 7, 122))
-    cradle = QPainterPath(QPointF(70, 96))
-    cradle.cubicTo(QPointF(76, 140), QPointF(164, 140), QPointF(170, 96))
+    legs = ((82, GROUND_Y + 4), (158, GROUND_Y + 4), (92, GROUND_Y - 8), (148, GROUND_Y - 8))
+    for x, y in legs:
+        _shadow_post(p, x, y, 70, 4)
+    for x, y in legs[2:]:
+        _log(p, QPointF(x, y), QPointF(x, 84), 2.2, WOOD, rng)
+    # The silk cradle of eggs under the floor.
+    p.setPen(_pen("#f4efe0", 1.0, 210))
+    for i in range(7):
+        p.drawLine(QPointF(92 + i * 9, 88), QPointF(100 + i * 7, 116))
+    cradle = QPainterPath(QPointF(92, 104))
+    cradle.cubicTo(QPointF(96, 132), QPointF(146, 132), QPointF(150, 104))
     cradle.closeSubpath()
-    _lit(p, cradle, "#e6dfcc", rng, tex_weave, light=112)
-    for i in range(12):
-        _egg(p, 86 + (i % 6) * 13 + (i // 6) * 6, 106 + (i // 6) * 11, 5.5, 5, "#efe4c0", rng)
+    _fill(p, cradle, "#e6dfcc", light=108)
+    for i in range(9):
+        _egg(p, 102 + (i % 5) * 9 + (i // 5) * 4, 112 + (i // 5) * 8, 4.2, 3.8, "#efe4c0", rng)
+    for x, y in legs[:2]:
+        _log(p, QPointF(x, y), QPointF(x, 84), 2.6, WOOD, rng)
+    floor = _poly((74, 88), (166, 88), (170, 80), (78, 80))
+    _fill(p, floor, WOOD)
+    _planks(p, floor, rng, WOOD, horizontal=False)
+    walls = _poly((82, 80), (158, 80), (158, 56), (82, 56))
+    _fill(p, walls, WOOD_OLD)
+    _planks(p, walls, rng, WOOD_OLD, horizontal=False, nails=False)
+    window = QPainterPath()
+    window.addRect(QRectF(112, 62, 16, 12))
+    p.fillPath(window, _c("#1a0f06"))
+    _glow(p, 120, 68, 14, "#ffcc7a", 90)
+    _thatch(p, _poly((70, 60), (92, 30), (148, 30), (170, 60)), rng)
     if owned:
-        for x in (82, 156):                             # spiderlings
+        for x in (60, 182):                             # spiderlings
             p.setPen(_pen("#2b1a10", 1.2))
             for k in (-1, 1):
                 for dy in (-3, 0, 3):
-                    p.drawLine(QPointF(x, GROUND_Y - 6), QPointF(x + k * 8, GROUND_Y - 6 + dy + k))
+                    p.drawLine(QPointF(x, GROUND_Y - 2), QPointF(x + k * 8, GROUND_Y - 2 + dy + k))
             body = QPainterPath()
-            body.addEllipse(QPointF(x, GROUND_Y - 6), 5, 4)
-            _lit(p, body, "#7a4028", rng, None, rim=False)
-            _spec(p, x - 1.5, GROUND_Y - 8, 1.8, 1.2, 220)
+            body.addEllipse(QPointF(x, GROUND_Y - 2), 5, 4)
+            _fill(p, body, "#7a4028")
+            _spec(p, x - 1.5, GROUND_Y - 4, 1.8, 1.2, 220)
 
 
 def _flynest(p, rng, owned):
-    fruit = _blob(120, 102, 46, 38, rng, 0.05)
-    _lit(p, fruit, "#9a5a32", rng, tex_speckle, light=140)
-    bite = QPainterPath()
-    bite.addEllipse(QPointF(160, 88), 16, 14)
-    eaten = bite.intersected(fruit)
-    p.fillPath(eaten, _c("#e6c89a"))
-    p.setPen(_pen("#6a3a1c", 1.2))
-    p.setBrush(Qt.NoBrush)
-    p.drawPath(eaten)
-    for _ in range(6):                                  # rot
-        spot = _blob(rng.uniform(92, 142), rng.uniform(90, 124), rng.uniform(4, 9), rng.uniform(3, 6), rng, 0.3, 9)
-        _lit(p, spot, "#3d2a12", rng, None, rim=False, ao=False, outline=False)
-    _twig(p, QPointF(118, 66), QPointF(124, 50), 3, rng=rng)
-    leaf = QPainterPath(QPointF(124, 56))
-    leaf.cubicTo(QPointF(136, 42), QPointF(154, 44), QPointF(160, 50))
-    leaf.cubicTo(QPointF(150, 58), QPointF(136, 60), QPointF(124, 56))
-    _lit(p, leaf, "#6a8a3a", rng, None)
-    _spec(p, 102, 84, 14, 8, 90)
-    for _ in range(14):                                 # flies: body and wings, not dots
+    # A broken crate spilling rotten fruit.
+    _shadow_mass(p, 118, GROUND_Y + 4, 100, 40)
+    back = _poly((70, GROUND_Y - 4), (160, GROUND_Y - 4), (166, 100), (76, 100))
+    _fill(p, back, WOOD_OLD)
+    _planks(p, back, rng, WOOD_OLD)
+    for x, y, r, tone in ((100, 100, 16, "#9a5a32"), (126, 96, 18, "#8a4a26"), (148, 104, 14, "#a4683a"),
+                          (112, 88, 13, "#7a4a24")):
+        fruit = _blob(x, y, r, r * 0.9, rng, 0.06)
+        _fill(p, fruit, tone)
+        p.save()
+        p.setClipPath(fruit)
+        for _ in range(3):
+            spot = _blob(x + rng.uniform(-r * 0.5, r * 0.5), y + rng.uniform(-r * 0.5, r * 0.5), r * 0.3, r * 0.22,
+                         rng, 0.3, 8)
+            p.fillPath(spot, _c("#3d2a12", 200))
+        p.restore()
+        _spec(p, x - r * 0.35, y - r * 0.4, r * 0.3, r * 0.2, 120)
+    front = _poly((64, GROUND_Y + 6), (154, GROUND_Y + 6), (158, 112), (68, 116))
+    _fill(p, front, WOOD)
+    _planks(p, front, rng, WOOD)
+    broken = _poly((150, 112), (170, 108), (176, GROUND_Y + 4), (156, GROUND_Y + 6))
+    _fill(p, broken, WOOD)
+    _planks(p, broken, rng, WOOD, horizontal=False)
+    for x0, y0 in ((66, 114), (150, 112)):
+        _log(p, QPointF(x0, GROUND_Y + 6), QPointF(x0 + 2, y0), 1.8, WOOD_DARK, rng)
+    for _ in range(16):                                 # flies
         a = rng.uniform(0, math.tau)
-        r = rng.uniform(52, 80)
-        x, y = 120 + math.cos(a) * r, 84 + math.sin(a) * r * 0.55
+        r = rng.uniform(40, 76)
+        x, y = 118 + math.cos(a) * r, 78 + math.sin(a) * r * 0.5
         p.setPen(Qt.NoPen)
         p.setBrush(_c("#dfe8f0", 150))
         p.drawEllipse(QPointF(x - 2.4, y - 2), 2.6, 1.6)
@@ -787,10 +939,9 @@ def _flynest(p, rng, owned):
 PAINTERS = {"home": _home, "food": _food, "silk": _silk, "hatchery": _hatchery, "nest": _nest,
             "outpost": _outpost, "infestation": _infestation, "venom": _venom, "lookout": _lookout,
             "amber": _amber, "nursery": _nursery, "flynest": _flynest}
-GROUND_TONES = {"home": "#7a6a42", "food": "#6e7440", "silk": "#6e6a44",
-                "hatchery": "#5e6a3c", "nest": "#4a3a34", "outpost": "#6a6040", "infestation": "#3e4a36",
-                "venom": "#4e4440", "lookout": "#6a6040", "amber": "#6e5a34", "nursery": "#5e6e3e",
-                "flynest": "#5a4a30"}
+GROUND_TONES = {"home": "#8a7050", "food": "#86744c", "silk": "#84744e", "hatchery": "#7a6c48",
+                "nest": "#5e4c3c", "outpost": "#86744c", "infestation": "#5a5a48", "venom": "#6e5e4c",
+                "lookout": "#86744c", "amber": "#8a7048", "nursery": "#7e7448", "flynest": "#7a6444"}
 
 
 @lru_cache(maxsize=32)
@@ -802,9 +953,9 @@ def building_art(kind, owned):
     p.setRenderHint(QPainter.Antialiasing)
     p.scale(SCALE, SCALE)
     rng = random.Random(f"{kind}-37")
-    _plinth(p, rng, GROUND_TONES.get(kind, "#6a5a3a"))
+    _ground(p, rng, GROUND_TONES.get(kind, "#86744c"))
     PAINTERS.get(kind, _hatchery)(p, rng, owned)
-    _pennant(p, owned)
+    _pennant(p, owned, rng)
     p.end()
     image.setDevicePixelRatio(SCALE)
     return image

@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFor
                              QTabWidget, QVBoxLayout, QWidget)
 
 from . import custom_maps as cm
+from . import wood_theme
 from .campaign import COMPANIONS
 from .mission_art import building_art
 from ..content.enemy_kinds import ENEMY_KINDS
@@ -42,6 +43,8 @@ NOMINAL_W, NOMINAL_H = 1920.0, 1080.0
 TOP, SPAN = 115.0, NOMINAL_H - 360.0
 # Every tick box shows its box, ticked or not (the wood theme only drew the tick).
 CHECKBOXES = """
+QLabel, QCheckBox, QRadioButton, QGroupBox { color: #f6e2b8; background: transparent; }
+QGroupBox::title { color: #e8c170; }
 QCheckBox::indicator { width: 14px; height: 14px; border: 1px solid #c9a36a; border-radius: 3px;
                        background: #f5e6c8; }
 QCheckBox::indicator:checked { background: #9a6a34; image: none; }
@@ -314,7 +317,16 @@ class MapEditor(QDialog):
         body.addWidget(self.tabs, 2)
         outer.addLayout(body, 1)
         self.resize(1280, 820)
-        self.setStyleSheet(CHECKBOXES)
+        # The walnut board of the other dialogs, cream text on it (the owner:
+        # "in editor text is invisible almost").
+        t = wood_theme
+        self.setStyleSheet(t.dialog_qss() + f"""
+            QWidget {{ font-family: "{t.UI_FONT}"; }}
+            QTabWidget::pane {{ background: rgba(34, 20, 10, 200); border: 1px solid {t.BRASS_DEEP};
+                                border-radius: 6px; }}
+            QLineEdit, QSpinBox, QDoubleSpinBox, QListWidget {{ background: {t.PARCHMENT}; color: {t.INK};
+                border: 1px solid {t.WALNUT_DEEP}; border-radius: 6px; padding: 3px 6px; }}
+        """ + CHECKBOXES)
         self._refresh_chooser()
         self.load(self.data)
 

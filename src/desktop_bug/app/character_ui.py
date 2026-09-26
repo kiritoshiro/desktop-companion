@@ -86,8 +86,9 @@ def character_qss() -> str:
         QPushButton#skillNode[state="available"]:hover {{ background: #5a3820; }}
         QPushButton#skillNode[state="locked"] {{ background: rgba(42, 24, 12, 170); color: {t.INK_SOFT};
             border: 2px dashed {t.INK_SOFT}; }}
+        QLabel#xpLabel {{ color: {t.CREAM}; font-size: 10pt; font-weight: 700; background: transparent; }}
         QProgressBar#xpBar {{ background: {t.WALNUT_DEEP}; border: 1px solid {t.BRASS_DEEP};
-            border-radius: 6px; color: {t.CREAM}; text-align: center; height: 16px; }}
+            border-radius: 5px; }}
         QProgressBar#xpBar::chunk {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
             stop:0 #c9a044, stop:1 #f2d488); border-radius: 5px; }}
     """
@@ -200,8 +201,14 @@ class CharacterDialog(QDialog):
         self.name_edit.setPlaceholderText("Name your spider")
         self.name_edit.editingFinished.connect(self._rename)
         name_box.addWidget(self.name_edit)
+        self.xp_label = QLabel()
+        self.xp_label.setObjectName("xpLabel")
+        name_box.addWidget(self.xp_label)
         self.xp_bar = QProgressBar()
         self.xp_bar.setObjectName("xpBar")
+        # The number is on the label: on the bar it was cream on pale gold.
+        self.xp_bar.setTextVisible(False)
+        self.xp_bar.setFixedHeight(10)
         name_box.addWidget(self.xp_bar)
         head.addLayout(name_box, 1)
         root.addLayout(head)
@@ -375,8 +382,9 @@ class CharacterDialog(QDialog):
         need = xp_to_next_level(state.level)
         self.xp_bar.setRange(0, need)
         self.xp_bar.setValue(min(state.xp, need))
-        self.xp_bar.setFormat("Max level" if state.level >= MAX_LEVEL
-                              else f"Level {state.level}  ·  {state.xp} / {need} XP")
+        text = "Max level" if state.level >= MAX_LEVEL else f"Level {state.level}  ·  {state.xp} / {need} XP"
+        self.xp_bar.setFormat(text)
+        self.xp_label.setText(text)
         points = state.skill_points
         self.points_label.setText(
             f"{points} skill point{'s' if points != 1 else ''} to spend · one per level"

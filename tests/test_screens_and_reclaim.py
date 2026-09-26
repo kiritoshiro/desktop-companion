@@ -353,16 +353,37 @@ def test_reclaim_acid_melts_the_frozen_desktop(state_dir):
     assert m.surface.what_is_at(500, 400) == "desktop"
 
 
-def test_heroes_eat_words_for_silk(state_dir):
+def test_your_spiders_never_eat_words_but_enemies_devour_them(state_dir):
     m = reclaim()
     word = m.surface.living_words()[0]
-    m.player.silk = 0.0
+    enemies = [a for a in m.actors if a.role != "ally"]
+    for a in enemies:
+        a.creature.x, a.creature.y = 3100, 950
     m.hero.x, m.hero.y = word.centre
+    for ally in m.allies:
+        ally.x, ally.y = word.centre
     for _ in range(40):
         m._eat_words(0.05)
-    assert word.done and m.words_eaten >= 1
-    assert m.player.silk >= 1.0
-    assert m.threads, "the word unravels into silk"
+    assert not word.done and m.words_eaten == 0, "your spiders leave the text alone"
+    enemy = enemies[0].creature
+    enemy.x, enemy.y = word.centre
+    enemy.hp = enemy.max_hp * 0.5
+    hp = enemy.hp
+    for _ in range(40):
+        m._eat_words(0.05)
+    assert word.done and m.words_eaten >= 1 and enemy.hp > hp
+    assert m.threads, "the letters are torn away"
+
+
+def test_an_enemy_with_no_one_to_fight_goes_for_a_word(state_dir):
+    m = reclaim()
+    raider = next(a for a in m.actors if a.role != "ally")
+    raider.raider = True
+    word = m.surface.living_words()[0]
+    raider.creature.x, raider.creature.y = word.centre[0] + 120, word.centre[1]
+    goal = m.actor_goal(raider)
+    assert goal is not None
+    assert m.actor_goal(next(a for a in m.actors if a.role == "ally")) is None
 
 
 def test_big_spiders_crack_the_glass_and_small_ones_do_not(state_dir):
