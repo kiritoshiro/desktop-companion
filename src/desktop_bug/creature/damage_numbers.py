@@ -2,7 +2,7 @@
 
 The owner: *"indicate how much health was taken from the spiders."* The health
 bar shrinks, but a bar says nothing about one blow. Every hit that lands now
-puts a red "-N" beside the spider that rises and fades. Blows landing within
+puts a "-N" (red on your side, ice blue on an enemy) beside the spider that rises and fades. Blows landing within
 DAMAGE_MERGE_SECONDS of each other add up into one number rather than piling
 up unreadably. The blow that kills a spider carries its number over to the
 remains, because the spider itself is swept away at the end of that tick.
@@ -16,6 +16,10 @@ DAMAGE_MERGE_SECONDS = 0.15
 DAMAGE_RISE_PX = 30.0
 # Room the numbers need beside and above the spider (bounding_rect).
 DAMAGE_NUMBER_MARGIN = 56.0
+# The owner: "make the damage done to allies and to enemies of different
+# colour". Red when your side is hurt; ice blue when an enemy is.
+ALLY_DAMAGE_COLOR = (255, 86, 64)
+ENEMY_DAMAGE_COLOR = (110, 200, 255)
 
 
 class DamageNumbersMixin:
@@ -43,6 +47,13 @@ class DamageNumbersMixin:
         """Where the numbers start: the top of the drawn spider."""
         return min([self.y] + [leg.foot_y for leg in self.legs]) - self.jump_z
 
+    def damage_color(self) -> tuple:
+        """Ice blue over a mission's enemy, red over your side (and over
+        every spider outside a mission, where nobody is the enemy)."""
+        # Remains keep the side of the spider they were (carcass_for).
+        team = getattr(self, "damage_team", None) or getattr(getattr(self, "progression", None), "team_id", None)
+        return ENEMY_DAMAGE_COLOR if team == "rivals" else ALLY_DAMAGE_COLOR
+
     @staticmethod
     def damage_text(amount: float) -> str:
         return f"-{amount:.0f}" if amount >= 1.0 else f"-{amount:.1f}"
@@ -57,6 +68,7 @@ class DamageNumbersMixin:
         font.setBold(True)
         font.setPixelSize(int(clamp(self.size * 0.55, 12.0, 20.0)))
         top = self._damage_top()
+        colour = self.damage_color()
         painter.save()
         for amount, age, nudge in self.damage_numbers:
             t = clamp(age / DAMAGE_NUMBER_SECONDS, 0.0, 1.0)
@@ -70,7 +82,7 @@ class DamageNumbersMixin:
             painter.setBrush(Qt.NoBrush)
             painter.drawPath(path)
             painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(255, 86, 64, alpha))
+            painter.setBrush(QColor(*colour, alpha))
             painter.drawPath(path)
         painter.restore()
 

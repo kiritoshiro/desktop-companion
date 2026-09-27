@@ -29,7 +29,7 @@ BRASS = "#d6a448"
 UI_FONT = "Segoe UI"
 BRASS_DEEP = "#9c6d22"
 HEALTH = "#b8472f"
-STAMINA = "#7f9e43"
+STAMINA = "#f5c518"  # yellow, as under the spiders
 
 MODE_ART = {
     "companion": "mode_companion.png",

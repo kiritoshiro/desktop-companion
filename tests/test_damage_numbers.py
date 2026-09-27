@@ -122,3 +122,24 @@ def test_the_number_is_drawn_in_red():
     hit.take_damage(15.0)
     hit.hurt_flash = 0.0      # the tint is a separate cue; count only the number
     assert red(hit) > red(_spider()) + 10
+
+
+def test_damage_to_your_side_is_red_and_to_an_enemy_ice_blue():
+    """The owner: "make the damage done to allies and to enemies of different colour"."""
+    from desktop_bug.creature.damage_numbers import ALLY_DAMAGE_COLOR, ENEMY_DAMAGE_COLOR
+
+    ally, enemy = _spider(), _spider()
+    ally.progression.team_id = "adventurers"
+    enemy.progression.team_id = "rivals"
+    assert ally.damage_color() == ALLY_DAMAGE_COLOR
+    assert enemy.damage_color() == ENEMY_DAMAGE_COLOR != ALLY_DAMAGE_COLOR
+    enemy.take_damage(enemy.hp + 50.0)
+    assert carcass_for(enemy).damage_color() == ENEMY_DAMAGE_COLOR, "the remains keep the enemy's colour"
+
+
+def test_stamina_is_yellow_everywhere():
+    from desktop_bug.app import wood_theme
+    from PyQt5.QtGui import QColor
+
+    for colour in (QColor(*Creature.STAMINA_BAR_COLOR), QColor(wood_theme.STAMINA)):
+        assert 40 <= colour.hue() <= 60 and colour.saturation() > 180, colour.name()
