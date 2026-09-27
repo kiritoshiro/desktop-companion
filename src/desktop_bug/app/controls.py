@@ -39,6 +39,10 @@ ACTIONS = (
     ("companion_attack", "Scout: attack target", "Point at an enemy and order your companion to attack it."),
     ("skills", "Character & armour", "Open your character: armour, skills and upgrades."),
     ("pause", "Pause menu", "Pause, save, change settings or release the spider. Esc always pauses too."),
+    ("map_view", "Map / desktop", "Show the mission's painted map instead of your desktop; press again for the desktop."),
+    ("release", "Release / take controls",
+     "Hand the mouse and keyboard back to the computer and pause the raid; press again, from anywhere, "
+     "to take control of your spider again."),
 )
 ACTION_IDS = tuple(action for action, _, _ in ACTIONS)
 
@@ -56,6 +60,8 @@ DEFAULT_BINDINGS = {
     "companion_attack": "3",
     "skills": "K",
     "pause": "Esc",
+    "map_view": "`",
+    "release": "F8",
 }
 
 SECOND_PLAYER_BINDINGS = {

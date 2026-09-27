@@ -49,7 +49,8 @@ def test_defaults_and_legacy_migration(qapp):
     p2 = second_player_controls()
     assert p2.action_for_key(Qt.Key_Up) == 'move_up'
     assert p2.action_for_key(Qt.Key_J) == 'bite'
-    assert set(DEFAULT_BINDINGS.values()) & set(p2.bindings.values()) == {'Esc'}
+    # Only the screen-wide keys are shared: pause, the map (`) and release (F8).
+    assert set(DEFAULT_BINDINGS.values()) & set(p2.bindings.values()) == {'Esc', '`', 'F8'}
 
 
 def test_players_spawn_independently_and_save(mission):

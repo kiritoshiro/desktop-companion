@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from PyQt5.QtCore import QElapsedTimer, QPoint, QRect, QTimer, Qt
-from PyQt5.QtGui import (QColor, QCursor, QGuiApplication, QIcon, QPainter, QPixmap,
+from PyQt5.QtGui import (QColor, QCursor, QFont, QGuiApplication, QIcon, QPainter, QPen, QPixmap,
                          QRegion, QSurfaceFormat)
 from PyQt5.QtWidgets import (
     QActionGroup,
@@ -25,6 +25,7 @@ from PyQt5.QtWidgets import (
 )
 
 from .inspector_ui import CreatureInspectorDialog
+from .mission_backdrop import MissionBackdrop
 from .. import __version__
 from ..content.discovery import migrate_legacy_state_dir, resolve_preset_path, state_dir
 from ..support.dpi import enable_high_dpi_scaling, logical_to_physical, screen_device_pixel_ratio_at
@@ -226,6 +227,27 @@ def screen_rects_local(origin: QPoint) -> list:
     return rects
 
 
+
+# Windows messages and keys for the release hotkey and the map key.
+WM_HOTKEY = 0x0312
+RELEASE_HOTKEY_ID = 0xD0C1
+MOD_NOREPEAT = 0x4000
+VK_OEM_3 = 0xC0          # the key under Esc: ` and ~ on a US layout
+
+
+def virtual_key_for(name: str) -> int | None:
+    """The Windows virtual-key code for a binding name, for RegisterHotKey:
+    F1-F24, letters, digits and the ` key. None for anything else."""
+    name = str(name or "")
+    if name.upper().startswith("F") and name[1:].isdigit() and 1 <= int(name[1:]) <= 24:
+        return 0x6F + int(name[1:])
+    if len(name) == 1 and name.isalnum():
+        return ord(name.upper())
+    if name in ("`", "~"):
+        return VK_OEM_3
+    return None
+
+
 class OverlayWindow(_OverlayBase):
     def __init__(self, preset_path: Path, seed: int | None = None, mode: str = "companion"):
         super().__init__(None)
@@ -233,6 +255,12 @@ class OverlayWindow(_OverlayBase):
         self.player = None
         self.mission = None
         self._adventure_paused = False
+        # The mission's painted map in place of the desktop (the ` / ~ key),
+        # and the spider's controls handed back to the computer (F8).
+        self.map_view = False
+        self.controls_released = False
+        self.backdrop = MissionBackdrop()
+        self._release_hotkey = None
         self._adventure_hud_position = None
         self._adventure_hud_drag_offset = None
         # Adventure bindings and aim cone, from controls.json; re-read when
@@ -371,6 +399,7 @@ class OverlayWindow(_OverlayBase):
         if self.mode == "adventure":
             QTimer.singleShot(0, self.activateWindow)
             QTimer.singleShot(0, self.setFocus)
+            QTimer.singleShot(0, self._register_release_hotkey)
         if GL_OVERLAY and self.mode != "adventure":
             # Start out letting the desktop keep its mouse; the input timer
             # takes it back only when the cursor is over something to grab.
@@ -558,6 +587,11 @@ class OverlayWindow(_OverlayBase):
                     ]
 
                 msg = MSG.from_address(int(message))
+                if msg.message == WM_HOTKEY and int(msg.wParam) == RELEASE_HOTKEY_ID:
+                    # The release key, pressed anywhere: the only way back in
+                    # once the desktop has the keyboard.
+                    QTimer.singleShot(0, self._toggle_controls)
+                    return True, 0
                 WM_NCHITTEST = 0x0084
                 HTCLIENT = 1
                 HTTRANSPARENT = -1
@@ -579,6 +613,9 @@ class OverlayWindow(_OverlayBase):
 
     def _adventure_captures_mouse(self, mx: float, my: float) -> bool:
         """Capture the screen while playing; after release, keep spider clicks."""
+        if self.controls_released:
+            # Handed back to the computer: every click goes to the desktop.
+            return False
         if self.player is not None or self._adventure_paused:
             return True
         if getattr(self.mission, "FREEZES_DESKTOP", False):
@@ -648,6 +685,10 @@ class OverlayWindow(_OverlayBase):
         mx = float(local.x())
         my = float(local.y())
         if self.mode == "adventure":
+            if self.controls_released:
+                # The raid waits while the computer has the controls.
+                self.request_repaint()
+                return
             if self.player is not None:
                 self.player.aim = (mx, my)
             if self._adventure_paused:
@@ -904,9 +945,14 @@ class OverlayWindow(_OverlayBase):
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
 
         if self.mission is not None:
+            show_map = self.map_view and not self.controls_released
+            if show_map:
+                # The mission's own painted ground instead of the desktop.
+                self.backdrop.paint(painter, self.mission)
             surface = getattr(self.mission, "surface", None)
-            if surface is not None:
-                # Reclaim the desktop: the frozen desktop under everything.
+            if surface is not None and not show_map and not self.controls_released:
+                # Reclaim the desktop: the frozen desktop under everything
+                # (the live desktop shows while the controls are released).
                 surface.paint(painter)
             draw_buildings(painter, self.mission)
         self.manager.render(painter)
@@ -937,6 +983,8 @@ class OverlayWindow(_OverlayBase):
                 painter.drawLine(aim.x() + 4, aim.y(), aim.x() + 12, aim.y())
         if self.mission is not None:
             draw_mission_hud(painter, self, self.mission)
+        if self.mode == "adventure" and self.controls_released:
+            self._draw_released_banner(painter)
         if self.show_profile_hud:
             self._draw_profile_hud(painter)
         painter.end()
@@ -1013,12 +1061,108 @@ class OverlayWindow(_OverlayBase):
             if len(getattr(getattr(self, "mission", None), "players", [])) < 2:
                 self.player.controls = self.controls
             self.player.clear_keys()
+        self._register_release_hotkey()
         self._request_full_repaint()
+
+    # -- the map instead of the desktop, and handing the controls back -----
+    def _toggle_map_view(self) -> None:
+        if self.mission is None:
+            self._announce("The map shows during a mission.")
+            return
+        self.map_view = not self.map_view
+        self._announce("Showing the mission map" if self.map_view else "Showing your desktop")
+        self._request_full_repaint()
+
+    def _toggle_controls(self) -> None:
+        """Hand the mouse and keyboard to the computer (the raid pauses), or
+        take them back for the spider."""
+        if self.mode != "adventure":
+            return
+        self.controls_released = not self.controls_released
+        players = list(getattr(self.mission, "players", None) or []) or [self.player]
+        for controller in players:
+            if controller is not None:
+                controller.clear_keys()
+        if self.controls_released:
+            self.clearFocus()
+            if GL_OVERLAY:
+                set_input_transparent(self, True)
+            key = self.controls.binding("release")
+            self._announce(f"Controls released - the raid is paused. Press {key} to take them back.")
+        else:
+            self.raise_()
+            self.activateWindow()
+            self.setFocus()
+            self._announce("Controls back on your spider")
+        apply_click_through(self)
+        self._request_full_repaint()
+
+    def _register_release_hotkey(self) -> None:
+        """Register the release key system-wide, so it works while another
+        window has the keyboard. Windows only; elsewhere the key works while
+        the overlay has focus."""
+        self._unregister_release_hotkey()
+        if self.mode != "adventure" or not sys.platform.startswith("win"):
+            return
+        vk = virtual_key_for(self.controls.binding("release"))
+        if vk is None:
+            return
+        try:
+            import ctypes
+
+            if ctypes.windll.user32.RegisterHotKey(int(self.winId()), RELEASE_HOTKEY_ID, MOD_NOREPEAT, vk):
+                self._release_hotkey = vk
+            else:
+                log.warning("Could not register the release hotkey (taken by another program?)")
+        except Exception:
+            log.exception("Could not register the release hotkey")
+
+    def _unregister_release_hotkey(self) -> None:
+        if self._release_hotkey is None:
+            return
+        try:
+            import ctypes
+
+            ctypes.windll.user32.UnregisterHotKey(int(self.winId()), RELEASE_HOTKEY_ID)
+        except Exception:
+            pass
+        self._release_hotkey = None
+
+    def _draw_released_banner(self, painter) -> None:
+        key = self.controls.binding("release")
+        text = f"Controls released  \u00b7  the raid is paused  \u00b7  press {key} to play again"
+        font = QFont(painter.font())
+        font.setPointSizeF(11.0)
+        font.setBold(True)
+        painter.setFont(font)
+        width = painter.fontMetrics().horizontalAdvance(text) + 40
+        area = self.mission.area if self.mission is not None else None
+        cx = (area.x + area.w / 2) if area is not None else self.width() / 2
+        # In the middle, clear of the objective panel: the raid is paused anyway.
+        top = (area.y + area.h * 0.42) if area is not None else self.height() * 0.42
+        box = QRect(int(cx - width / 2), int(top), int(width), 34)
+        painter.setPen(QPen(QColor("#e8c170"), 2))
+        painter.setBrush(QColor(30, 18, 8, 225))
+        painter.drawRoundedRect(box, 10, 10)
+        painter.setPen(QColor("#fff2d6"))
+        painter.drawText(box, Qt.AlignCenter, text)
 
     def _adventure_action(self, action: str | None, down: bool, repeat: bool = False, player=None) -> bool:
         """Do what a bound key or mouse button means. True if it meant anything."""
         if action is None:
             return False
+        if action == "release":
+            # With the global hotkey registered, Windows delivers the key as
+            # WM_HOTKEY instead; this path serves when it could not be.
+            if down and not repeat and getattr(self, "_release_hotkey", None) is None:
+                self._toggle_controls()
+            return True
+        if getattr(self, "controls_released", False):
+            return True
+        if action == "map_view":
+            if down and not repeat:
+                self._toggle_map_view()
+            return True
         if action == "pause":
             if down and not repeat:
                 self._show_adventure_pause()
@@ -1051,16 +1195,23 @@ class OverlayWindow(_OverlayBase):
             super().keyPressEvent(event)
             return
         key = event.key()
+        # The key under Esc, whether the layout calls it ` or ~ (or a national
+        # letter): the owner asked for "the button ~". Shared by both players.
+        under_esc = key == Qt.Key_AsciiTilde or getattr(event, "nativeVirtualKey", lambda: 0)() == VK_OEM_3
         players = getattr(getattr(self, "mission", None), "players", [self.player])
         if len(players) > 1:
             for player in players:
                 action = player.controls.action_for_key(key)
+                if action is None and under_esc and player.controls.binding("map_view") == "`":
+                    action = "map_view"
                 if action is not None:
                     self._adventure_action(action, True, repeat=event.isAutoRepeat(), player=player)
                     break
             event.accept()
             return
         action = self.controls.action_for_key(key)
+        if action is None and under_esc and self.controls.binding("map_view") == "`":
+            action = "map_view"
         if key == Qt.Key_Escape and action is None:
             # Esc always pauses, whatever pause is bound to, so a player who
             # rebinds it can never lock themselves in.
@@ -1591,6 +1742,7 @@ class OverlayWindow(_OverlayBase):
             log.debug("Could not broadcast session state", exc_info=True)
 
     def closeEvent(self, event):  # noqa: N802 - Qt API name
+        self._unregister_release_hotkey()
         # Closing the window is another exit that must not lose progress.
         try:
             self.manager.save_runtime_state()
