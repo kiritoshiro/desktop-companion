@@ -60,10 +60,11 @@ from .render_procedural import RenderProceduralMixin
 from .render_sprite import RenderSpriteMixin
 from .damage_numbers import DamageNumbersMixin
 from .web_net import WebNetMixin
+from .regal import RegalMixin
 
 
 class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProceduralMixin, RenderSpriteMixin,
-               WebNetMixin, DamageNumbersMixin):
+               WebNetMixin, DamageNumbersMixin, RegalMixin):
     """One data-driven desktop creature with procedural or hybrid sprite-rig rendering."""
 
     SPRITE_CACHE = {}
@@ -1275,6 +1276,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
 
     def update(self, dt: float, mx: float, my: float, sw: int, sh: int) -> None:
         dt = clamp(dt, 0.001, 0.05)
+        self._update_regal(dt, mx, my)
         self.resize_screen(sw, sh)
         self.hurt_flash = max(0.0, self.hurt_flash - dt * 1.6)
         self.attack_cooldown = max(0.0, self.attack_cooldown - dt)
@@ -1847,7 +1849,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             painter.translate(self.x, self.y)
             painter.rotate(math.degrees(self.roll_spin))
             painter.translate(-self.x, -self.y)
-        if render_mode == "sprite_rig":
+        if self._is_regal():
+            self._render_regal(painter)
+        elif render_mode == "sprite_rig":
             self._render_sprite_rig(painter)
         else:
             self._render_procedural(painter)
