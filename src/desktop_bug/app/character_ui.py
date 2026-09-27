@@ -11,13 +11,14 @@ where they are spent.
 """
 from __future__ import annotations
 
-from PyQt5.QtCore import QPointF, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen
+from PyQt5.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
+from PyQt5.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar,
                              QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
 from .armour_ui import InventoryBag, SpiderDoll
+from .skill_art import BRANCH_COLOURS, BRANCHES, branch_crest, skill_icon
 from .armoury import (armoury, can_upgrade, level_of, party, sell_price, sell_spares, spares_of,
                       take_off, upgrade, wear, worn_by)
 from .adventure_profile import (HERO, MAX_NAME_LENGTH, clean_name, hero_progression, load_profile,
@@ -36,8 +37,13 @@ TREE_LAYOUT = {
     "quick_step": (2, 0), "long_stride": (2, 1),
     "silk_sense": (3, 0), "web_crafter": (3, 1), "silk_tracking": (3, 2),
 }
-NODE_W, NODE_H = 172, 62
+NODE_W, NODE_H = 196, 68
 COL_GAP, ROW_GAP = 22, 38
+# Room above the nodes for each branch's crest and name, and beside the
+# outer columns for their carved edges.
+HEADER_H = 52
+EDGE = 10
+ICON = 46
 
 
 def character_qss() -> str:
@@ -76,16 +82,16 @@ def character_qss() -> str:
             border-radius: 8px; }}
         QPushButton#whoButton {{ padding: 3px 10px; }}
         QPushButton#whoButton:checked {{ background: {t.BRASS}; color: {t.WALNUT_DEEP}; }}
-        QPushButton#skillNode {{ border-radius: 10px; padding: 4px; font-size: 9pt;
-            text-align: center; }}
+        QPushButton#skillNode {{ border-radius: 12px; padding: 4px 8px; font-size: 9pt;
+            text-align: left; }}
         QPushButton#skillNode[state="unlocked"] {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
             stop:0 {t.BRASS}, stop:1 {t.BRASS_DEEP}); color: {t.WALNUT_DEEP};
             border: 2px solid {t.WALNUT_DEEP}; font-weight: 800; }}
         QPushButton#skillNode[state="available"] {{ background: {t.WALNUT}; color: {t.CREAM};
             border: 2px solid {t.BRASS}; font-weight: 800; }}
         QPushButton#skillNode[state="available"]:hover {{ background: #5a3820; }}
-        QPushButton#skillNode[state="locked"] {{ background: rgba(42, 24, 12, 170); color: {t.INK_SOFT};
-            border: 2px dashed {t.INK_SOFT}; }}
+        QPushButton#skillNode[state="locked"] {{ background: rgba(34, 20, 10, 215); color: #b8a080;
+            border: 2px dashed #7a6448; }}
         QLabel#xpLabel {{ color: {t.CREAM}; font-size: 10pt; font-weight: 700; background: transparent; }}
         QProgressBar#xpBar {{ background: {t.WALNUT_DEEP}; border: 1px solid {t.BRASS_DEEP};
             border-radius: 5px; }}
@@ -100,12 +106,15 @@ def tree_positions() -> dict:
     spare = max((col for col, _ in TREE_LAYOUT.values()), default=-1) + 1
     for index, node in enumerate(ABILITY_TREE):
         col, row = TREE_LAYOUT.get(node.id, (spare + index // 3, index % 3))
-        positions[node.id] = (col * (NODE_W + COL_GAP), row * (NODE_H + ROW_GAP))
+        positions[node.id] = (EDGE + col * (NODE_W + COL_GAP), HEADER_H + row * (NODE_H + ROW_GAP))
     return positions
 
 
 class SkillTree(QWidget):
-    """Skill nodes placed by branch, with carved links from each prerequisite."""
+    """Skill nodes placed by branch, with carved links from each prerequisite.
+
+    Each branch is a carved column under its crest; each skill a medallion
+    with its own picture (skill_art), glowing once learned."""
 
     unlock = pyqtSignal(str)
 
@@ -114,13 +123,14 @@ class SkillTree(QWidget):
         self.positions = tree_positions()
         width = max(x for x, _ in self.positions.values()) + NODE_W
         height = max(y for _, y in self.positions.values()) + NODE_H
-        self.setFixedSize(width + 8, height + 8)
+        self.setFixedSize(width + 8 + EDGE, height + 14)
         self.buttons = {}
         for node in ABILITY_TREE:
             x, y = self.positions[node.id]
             button = QPushButton(self)
             button.setObjectName("skillNode")
             button.setGeometry(x + 4, y + 4, NODE_W, NODE_H)
+            button.setIconSize(QSize(ICON, ICON))
             button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda _=False, aid=node.id: self.unlock.emit(aid))
             self.buttons[node.id] = button
@@ -141,6 +151,7 @@ class SkillTree(QWidget):
                 note = (f"Level {node.level_required}" if state.level < node.level_required
                         else ("Needs " + ", ".join(missing)) if missing else f"{node.cost} pt")
             button.setProperty("state", look)
+            button.setIcon(QIcon(skill_icon(node.id, {"unlocked": "learned"}.get(look, look), ICON)))
             button.setText(f"{node.name}\n{note}")
             button.setToolTip(skill_tooltip(node, state))
             button.style().unpolish(button)
@@ -150,6 +161,7 @@ class SkillTree(QWidget):
     def paintEvent(self, event):  # noqa: N802 - Qt API name
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing, True)
+        self._paint_branches(painter)
         unlocked = set(self.state.unlocked_abilities) if self.state else set()
         for node in ABILITY_TREE:
             for required in node.prerequisites:
@@ -168,6 +180,33 @@ class SkillTree(QWidget):
                 painter.setPen(QPen(QColor(wood_theme.BRASS if lit else wood_theme.INK_SOFT), 3,
                                     Qt.SolidLine, Qt.RoundCap))
                 painter.drawPath(path)
+
+    def _paint_branches(self, painter) -> None:
+        """A carved, tinted column per branch, its crest and name on top."""
+        font = QFont(painter.font())
+        font.setBold(True)
+        font.setPointSizeF(11.0)
+        for col, (branch, title) in enumerate(BRANCHES):
+            x = EDGE + col * (NODE_W + COL_GAP) + 4
+            column = QRectF(x - 6, 2, NODE_W + 12, self.height() - 4)
+            tint = QColor(BRANCH_COLOURS[branch])
+            grad = QLinearGradient(column.topLeft(), column.bottomLeft())
+            top = QColor(tint)
+            top.setAlpha(70)
+            bottom = QColor(tint)
+            bottom.setAlpha(8)
+            grad.setColorAt(0, top)
+            grad.setColorAt(1, bottom)
+            painter.setPen(QPen(QColor(0, 0, 0, 110), 1.2))
+            painter.setBrush(grad)
+            painter.drawRoundedRect(column, 12, 12)
+            crest = branch_crest(branch, 34)
+            painter.drawPixmap(QPointF(x + 6, 9), crest)
+            painter.setFont(font)
+            painter.setPen(QColor(0, 0, 0, 160))
+            painter.drawText(QRectF(x + 47, 11, NODE_W - 50, 30), Qt.AlignVCenter | Qt.AlignLeft, title)
+            painter.setPen(QColor(wood_theme.BRASS))
+            painter.drawText(QRectF(x + 46, 10, NODE_W - 50, 30), Qt.AlignVCenter | Qt.AlignLeft, title)
 
 
 class CharacterDialog(QDialog):

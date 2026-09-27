@@ -7,7 +7,7 @@ import random
 from PyQt5.QtWidgets import QApplication, QWidget
 
 from desktop_bug.creature import Creature
-from desktop_bug.app.engine import CreatureInspectorDialog
+from desktop_bug.app.inspector_ui import CreatureInspectorDialog
 from desktop_bug.state.teams import normalize_teams
 from desktop_bug.content.body_plans import resolve_body_plan
 from support import ROOT
@@ -153,3 +153,41 @@ def test_the_inspector_says_what_hostility_actually_does(inspector):
         "a spider now dies permanently; the note has to say so", HOSTILITY_NOTE,
     )
     assert dialog.team_combo.toolTip() == HOSTILITY_NOTE
+
+
+# -- the redesigned window (the owner: "spaced way too wide ... make nicer
+#    interface ... inventory / armor page should also have the bag ... and the
+#    spider anatomy and could be equipped") -------------------------------------
+
+def test_the_armour_tab_is_the_anatomy_doll_and_the_bag(inspector):
+    from desktop_bug.app.armour_ui import InventoryBag, SpiderDoll
+
+    _app, _manager, dialog, first, _second = inspector
+    assert dialog.findChildren(SpiderDoll) and dialog.findChildren(InventoryBag)
+    assert dialog.doll.state is first.progression and dialog.bag.tiles.keys() <= set(first.progression.inventory)
+
+
+def test_the_overview_shows_painted_vitals_and_stat_tiles(inspector):
+    _app, _manager, dialog, first, _second = inspector
+    assert dialog.health_bar.maximum == pytest.approx(first.max_hp)
+    assert dialog.stamina_bar.maximum == pytest.approx(first.max_energy)
+    assert set(dialog.tiles) == {"armor", "damage", "points", "worn"}
+    assert not dialog.portrait.pixmap().isNull(), "a live portrait of the spider"
+
+
+def test_the_skill_tree_has_a_picture_on_every_skill(inspector):
+    from desktop_bug.state.progression import ABILITY_TREE
+
+    _app, _manager, dialog, _first, _second = inspector
+    for node in ABILITY_TREE:
+        assert not dialog.tree.buttons[node.id].icon().isNull(), node.id
+
+
+def test_a_pinned_health_bar_no_longer_brings_the_name_with_it(inspector):
+    """The owner: "name is unchecked but it still appears on the spider"."""
+    _app, _manager, _dialog, first, _second = inspector
+    first.set_health_label_pinned(True)
+    first._hovered = False
+    assert first.label_visible(False), "the bar still shows"
+    assert not first.name_visible(False), "but not the name"
+    assert first.name_visible(True), "unless names are switched on"

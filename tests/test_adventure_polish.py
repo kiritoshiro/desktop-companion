@@ -144,5 +144,6 @@ def test_only_an_adventure_overlay_is_stopped(monkeypatch):
 
 
 def test_the_inventory_tab_keeps_its_ampersand():
-    source = (ROOT / "src" / "desktop_bug" / "app" / "engine.py").read_text(encoding="utf-8")
-    assert '"Inventory && armor"' in source, "a single & is a shortcut marker and vanishes"
+    # The inspector moved out of engine.py into inspector_ui.py.
+    source = (ROOT / "src" / "desktop_bug" / "app" / "inspector_ui.py").read_text(encoding="utf-8")
+    assert '"Inventory && armour"' in source, "a single & is a shortcut marker and vanishes"
