@@ -129,10 +129,13 @@ class EncounterDirector:
 
     def defenders_for(self, screen) -> tuple[str, ...]:
         p = self.profile
-        roles = list(p.defenders)
+        # The first maps: one defender (the owner: "in first levels don't put
+        # many enemies"). Later maps add one per tier, and a big screen at
+        # most one more per tier above the first.
+        roles = list(p.defenders[:1] if self.tier <= 1 else p.defenders)
         for i in range(max(0, self.tier - 1)):
             roles.append(p.tier_defenders[i % len(p.tier_defenders)])
-        extra = int(screen.rect.w * screen.rect.h // AREA_PER_EXTRA_DEFENDER)
+        extra = min(max(0, self.tier - 1), int(screen.rect.w * screen.rect.h // AREA_PER_EXTRA_DEFENDER))
         for i in range(extra):
             roles.append(p.tier_defenders[(self.tier + i) % len(p.tier_defenders)])
         return tuple(roles)

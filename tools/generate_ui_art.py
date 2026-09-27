@@ -519,16 +519,24 @@ def menu_emblem(name: str) -> None:
     image.fill(Qt.transparent)
     p = QPainter(image)
     p.setRenderHint(QPainter.Antialiasing, True)
+    # Brighter than it was (the owner: "these icons too dark to see what is
+    # there"): a lighter walnut disc with barely any shading, and symbols in
+    # bright gold and cream, drawn thicker so they survive shrinking to 20 px.
     disc = ellipse(36, 36, 32, 32)
-    relief(p, disc, height=3, fill=QColor(91, 55, 29))
+    relief(p, disc, height=3, fill=QColor(112, 70, 38))
     inner = ellipse(36, 36, 27, 27)
-    recess(p, inner, depth=3, shade=35)
+    face = QRadialGradient(32, 30, 30)
+    face.setColorAt(0.0, QColor(152, 100, 54))
+    face.setColorAt(1.0, QColor(100, 62, 32))
+    p.fillPath(inner, face)
+    recess(p, inner, depth=2, shade=10)
     groove(p, ellipse(36, 36, 29, 29), 1.6)
-    gold = QColor(222, 177, 92)
-    pale = QColor(255, 232, 181)
-    chestnut = QColor(156, 93, 43)
+    gold = QColor(255, 212, 118)
+    pale = QColor(255, 246, 220)
+    chestnut = QColor(214, 138, 70)
 
     def stroke(points, width=2.8, color=gold):
+        width *= 1.45
         path = polyline(points)
         p.save()
         p.setPen(QPen(QColor(31, 15, 5, 220), width + 1.4, Qt.SolidLine,

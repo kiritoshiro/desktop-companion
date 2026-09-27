@@ -724,6 +724,13 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         self.max_energy = max(1.0, self._combat_base_energy + (level - 1) * 3.0 + self._progression_effect("max_energy"))
         self.armor = max(0.0, self._combat_base_armor + (level - 1) * 0.18 + self._progression_effect("armor"))
         self.damage = max(0.1, self._combat_base_damage + (level - 1) * 0.35 + self._progression_effect("damage"))
+        # A mission enemy's kind and role (app/mission.py): health, bite and
+        # shell multipliers that must survive every recompute, level-ups included.
+        scale = getattr(self, "stat_scale", None)
+        if scale is not None:
+            self.max_hp *= scale[0]
+            self.damage *= scale[1]
+            self.armor += scale[2]
         self.size = self._progression_base_size * self.size_scale * size_mult
         if reset_resources:
             self.hp = self.max_hp

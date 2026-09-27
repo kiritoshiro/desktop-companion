@@ -110,7 +110,12 @@ def test_later_maps_and_bigger_screens_bring_more_defenders():
     first = EncounterDirector(PROFILES["raid"], layout, 1).defenders_for(layout.screens[1])
     later = EncounterDirector(PROFILES["raid"], layout, 3).defenders_for(layout.screens[1])
     small = EncounterDirector(PROFILES["raid"], ScreenLayout(SIDE, 0), 1).defenders_for(ScreenLayout(SIDE, 0).screens[1])
-    assert len(later) > len(first) > len(small), "a 4K screen holds more than a 1600x1000 one"
+    # The first maps stay light whatever the screen (the owner: "in first
+    # levels don't put many enemies"); later, a 4K screen holds more.
+    assert len(later) > len(first) == len(small) == 1
+    big2 = EncounterDirector(PROFILES["raid"], layout, 2).defenders_for(layout.screens[1])
+    small2 = EncounterDirector(PROFILES["raid"], ScreenLayout(SIDE, 0), 2).defenders_for(ScreenLayout(SIDE, 0).screens[1])
+    assert len(big2) > len(small2), "a 4K screen holds more than a 1600x1000 one"
 
 
 def test_outposts_warn_then_send_waves_until_taken():
@@ -147,7 +152,7 @@ def test_a_two_screen_raid_keeps_its_buildings_home_and_guards_the_other_screen(
     assert all(SIDE[0].contains(s.x, s.y) for s in m.sites[:5])
     assert len(m.outposts) == 1 and m.outposts[0].screen == 1
     far = [a for a in m.actors if a.role != "ally" and SIDE[1].contains(a.creature.x, a.creature.y)]
-    assert len(far) >= 2, "the outpost is guarded"
+    assert len(far) >= 1, "the outpost is guarded (lightly, on the first map)"
     assert m.objective.startswith("01"), "the outposts are optional; the objective is unchanged"
     assert "other screen" in m.notice
 

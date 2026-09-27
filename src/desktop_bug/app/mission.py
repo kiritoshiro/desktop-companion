@@ -22,6 +22,8 @@ from .encounters import PROFILES, EncounterDirector
 from . import custom_maps
 from .map_layouts import EFFECTS, layout_for
 from ..content.enemy_kinds import ENEMY_KINDS
+from ..content.enemy_traits import traits_for
+from ..world import tactics
 
 
 @dataclass
@@ -138,6 +140,32 @@ class MissionActor(PlayerController):
         self.think = creature.index * 0.013
         self.silk_capacity = mission.silk_capacity_for(creature)
         self.silk = float(self.silk_capacity)
+        # What its kind is like (content/enemy_traits): temperament and
+        # abilities. Companions keep their own ways.
+        self.traits = None if role == "ally" else traits_for(getattr(creature, "enemy_kind", None), role)
+        self.order = None          # the squad's order (world/tactics), or None: its own judgement
+        self.doctrine = "none"
+        self.hunting = False       # an aggressive one that has seen a foe chases it anywhere
+        self.out_of_reach = 0.0    # seconds its foe has been beyond its leash
+        self.charge_time = 0.0
+        self.charge_cooldown = 0.0
+        self.retreat_time = 0.0    # hit and run: springing back after a strike
+
+    def has(self, ability) -> bool:
+        return self.traits is not None and self.traits.has(ability)
+
+    def fighting_reach(self) -> float:
+        """How close it likes to fight from: a shooter's range, or a bite."""
+        if self.style == "weaver" or self.has("web"):
+            return self.WEB_RANGE * 0.6
+        if self.style == "spitter" or self.has("spit"):
+            return self.SPIT_RANGE * 0.7
+        return self.bite_reach()
+
+    @property
+    def keeps_distance(self) -> bool:
+        return self.style in ("weaver", "spitter") or (
+            self.traits is not None and self.traits.squad_role in ("ranged", "support"))
 
     # Acid: the spitter's ranged strike. The same cone and stamina rules as
     # silk, with its own range and a longer cooldown; it needs no silk.
@@ -150,18 +178,18 @@ class MissionActor(PlayerController):
         c = self.creature
         if not self.in_cone(target):
             return None
-        if self.style == "spitter":
+        if self.style == "spitter" or self.has("spit"):
             if gap < self.SPIT_RANGE and self.web_cooldown <= 0 and c.energy >= self.SPIT_ENERGY:
                 return "spit"
             return "bite" if gap < self.bite_reach() else None
-        if self.style == "weaver":
+        if self.style == "weaver" or self.has("web"):
             if (gap < self.WEB_RANGE and self.web_cooldown <= 0 and self.silk >= 1
                     and c.energy >= self.WEB_ENERGY):
                 return "shoot"
             return "bite" if gap < self.bite_reach() else None
         if gap < self.bite_reach():
             return "bite"
-        if (self.style == "hunter" and gap < self.bite_reach() + self.POUNCE_DISTANCE
+        if ((self.style == "hunter" or self.has("pounce")) and gap < self.bite_reach() + self.POUNCE_DISTANCE
                 and self.jump_cooldown <= 0 and c.energy >= self.JUMP_ENERGY
                 and c.has_skill("jump")):
             return "pounce"
@@ -172,6 +200,12 @@ class MissionActor(PlayerController):
         self.think -= dt
         self.web_cooldown = max(0.0, self.web_cooldown - dt)
         self.jump_cooldown = max(0.0, self.jump_cooldown - dt)
+        self.charge_time = max(0.0, self.charge_time - dt)
+        self.charge_cooldown = max(0.0, self.charge_cooldown - dt)
+        self.retreat_time = max(0.0, self.retreat_time - dt)
+        if self.has("regen") and not c.dead and c.hp < c.max_hp:
+            c.heal(self.REGEN_PER_SECOND * dt)
+        previous = self.target
         if self.think <= 0:
             self.think = 0.15
             targets = [s for s in m.manager.creatures if not s.dead and c.relation_to(s) == "foe"]
@@ -189,14 +223,19 @@ class MissionActor(PlayerController):
             elif self.aggro_range is not None:
                 targets = [s for s in targets if math.hypot(s.x-c.x, s.y-c.y) < self.aggro_range]
             elif not self.raider:
-                refuge = m.sites[0]
-                targets = [s for s in targets if math.hypot(s.x-self.home[0], s.y-self.home[1]) < 260
-                           and math.hypot(s.x-refuge.x, s.y-refuge.y) > 130]
+                targets = self._by_temperament(targets)
             self.target = min(targets, key=lambda s: math.hypot(s.x-c.x, s.y-c.y), default=None)
+            self._follow_order()
         target = self.target
         if target is not None and target.dead:
             target = self.target = None
+        if (target is not None and previous is None and self.has("charge")
+                and self.charge_cooldown <= 0):
+            # A burst of speed at a foe it has just spotted.
+            self.charge_time, self.charge_cooldown = self.CHARGE_SECONDS, self.CHARGE_COOLDOWN
         tx, ty = (target.x, target.y) if target is not None else self.home
+        order = self.order
+        point = order.point if order is not None else None
         # A side job the mission offers (a fly to catch) only when there is
         # no foe to fight: the owner, "attacking me is their priority, flies
         # are a side quest ... if they are defenders they should defend first".
@@ -207,12 +246,32 @@ class MissionActor(PlayerController):
         reach = self.bite_reach()
         c.motion_paused = gap < (reach * 0.72 if target else 22)
         # Its own pace, never faster than the player's walk, and scaled by
-        # level and armour exactly as the player's is.
+        # level and armour exactly as the player's is -- then by its kind:
+        # a redback is quick, a trapdoor brute slow.
         c.speed = (95.0 if self.style == "hunter" else 68.0) * c._speed_mult()
-        if target is not None and self.style in ("weaver", "spitter"):
+        if self.traits is not None:
+            c.speed *= self.traits.speed
+            if self.charge_time > 0:
+                c.speed *= self.CHARGE_SPEED
+            if self.enraged:
+                c.speed *= 1.2
+        if target is not None and self.keeps_distance and point is None:
             c.motion_paused = 135 < gap < 230
             if gap < 135:
                 tx, ty = c.x + (c.x-tx), c.y + (c.y-ty)
+        if point is not None:
+            # The squad's place for it: a flank, a screen, a spot in a ring.
+            # Once there, a close-fighter closes in on the foe.
+            to_point = math.hypot(point[0]-c.x, point[1]-c.y)
+            closing = (target is not None and order.mode in ("flank", "encircle", "screen", "bait")
+                       and to_point < 34 and not self.keeps_distance)
+            if not closing:
+                tx, ty = point
+                c.motion_paused = to_point < 18
+        if target is not None and self.retreat_time > 0:
+            # Hit and run: springing back out of reach.
+            tx, ty = c.x + (c.x-target.x), c.y + (c.y-target.y)
+            c.motion_paused = False
         if self.windup > 0:
             c.motion_paused = True
             self.windup -= dt
@@ -257,8 +316,85 @@ class MissionActor(PlayerController):
             self.jump()
         else:
             self.bite(m.manager)
-        # The pause after a strike: this brain's pacing, not a rule.
-        c.attack_cooldown = max(c.attack_cooldown, 1.4 if self.role != "guardian" else 1.8)
+        # The pause after a strike: this brain's pacing, not a rule. An
+        # enraged spider, or one near a rallying weaver, strikes more often.
+        pause = 1.4 if self.role != "guardian" else 1.8
+        if self.enraged:
+            pause *= 0.65
+        if self.rallied():
+            pause *= 0.8
+        c.attack_cooldown = max(c.attack_cooldown, pause)
+        if self.has("hit_and_run"):
+            self.retreat_time = self.HIT_AND_RUN_SECONDS
+
+    # -- temperament and abilities (content/enemy_traits) ------------------
+    REGEN_PER_SECOND = 0.9
+    CHARGE_SECONDS = 1.1
+    CHARGE_COOLDOWN = 7.0
+    CHARGE_SPEED = 1.7
+    HIT_AND_RUN_SECONDS = 0.9
+    RALLY_REACH = 230.0
+
+    @property
+    def enraged(self) -> bool:
+        c = self.creature
+        return self.has("enrage") and c.hp < c.max_hp * 0.4
+
+    def rallied(self) -> bool:
+        """A living rallying spider of its side stands close by."""
+        c = self.creature
+        return any(a is not self and a.has("rally") and not a.creature.dead and a.role != "ally"
+                   and math.hypot(a.creature.x-c.x, a.creature.y-c.y) < self.RALLY_REACH
+                   for a in self.mission.actors) if self.role != "ally" else False
+
+    def _by_temperament(self, targets):
+        """The foes it will fight, by its temperament: a sentinel only what
+        comes close to its post, a stalker far from it, an aggressive one --
+        once it has seen a foe -- anywhere, for ever."""
+        c, m = self.creature, self.mission
+        temper = self.traits.temper
+        if temper.chase_forever:
+            if not self.hunting and any(math.hypot(s.x-c.x, s.y-c.y) < temper.notice for s in targets):
+                self.hunting = True
+            if self.hunting:
+                # It hunts you above all (the owner: "attacking me is their priority").
+                hero = m.hero
+                return [hero] if hero in targets else targets
+        refuge = m.sites[0]
+        home = self.home
+        fair = [s for s in targets if math.hypot(s.x-refuge.x, s.y-refuge.y) > 130]
+        near_post = [s for s in fair if math.hypot(s.x-home[0], s.y-home[1]) < temper.leash]
+        chosen = [s for s in near_post if math.hypot(s.x-c.x, s.y-c.y) < temper.notice or s is self.target]
+        keep = self.target
+        if keep is not None and not keep.dead and keep not in chosen and keep in fair:
+            # Out of its reach: it keeps after its foe a little while
+            # (a stalker long, a sentinel hardly) before going back.
+            self.out_of_reach += 0.15
+            if self.out_of_reach < temper.give_up:
+                chosen.append(keep)
+        else:
+            self.out_of_reach = 0.0
+        return chosen
+
+    def _follow_order(self):
+        """The squad's order, when it has one, over its own choice of foe."""
+        order = self.order
+        if order is None or self.role == "ally":
+            return
+        if order.mode == "retreat":
+            self.target = None
+            return
+        wanted = order.target
+        if wanted is None or getattr(wanted, "dead", True):
+            return
+        c = self.creature
+        if order.mode in ("hold", "ambush"):
+            # Lying in wait: only a foe right on it breaks the wait.
+            notice = self.traits.temper.notice * 0.6 if self.traits else 120.0
+            if self.target is not None and math.hypot(self.target.x-c.x, self.target.y-c.y) > notice:
+                self.target = None
+            return
+        self.target = wanted
 
     def spit(self, point) -> bool:
         """Spit acid at a point, under the same cone and stamina rules as silk."""
@@ -334,6 +470,19 @@ class TerritoryMission:
             self.CAP = self.custom["cap"]
             self.WAVE_EVERY = self.custom["wave_every"]
         self.MISSION_ID = self.map_info.id
+        # How well its enemies fight together (world/tactics): none on the
+        # first maps, full squads on the last. An editor map may choose.
+        chosen = self.custom.get("tactics", -1) if self.custom is not None else -1
+        self.tactics_level = chosen if chosen >= 0 else tactics.tactics_level(self.map_info.tier)
+        self.squad_clock = 0.0
+        if self.custom is None and self.map_info.tier <= 1:
+            # The first maps: a smaller arena and slower waves (the owner:
+            # "in first levels don't put many enemies").
+            self.CAP = self.EARLY_CAP
+            self.WAVE_EVERY = self.EARLY_WAVE_EVERY
+        elif self.custom is None and self.map_info.tier >= 3:
+            # The hardest maps field whole squads at their buildings.
+            self.CAP = self.CAP + 2 * (self.map_info.tier - 2)
         self.rng = random.Random()
         self.hazards = []         # acid in flight
         self.splashes = []
@@ -487,6 +636,8 @@ class TerritoryMission:
         return kinds <= {"food", "silk", "amber"} and {"food", "silk"} <= kinds
 
     WAVE_EVERY = 24.0
+    EARLY_CAP = 8
+    EARLY_WAVE_EVERY = 36.0
 
     def _spawn(self, role, pos, raider=False, companion=None, spec=None):
         # The cap keeps the arena readable; a boss always gets in.
@@ -565,17 +716,20 @@ class TerritoryMission:
         c.hp = c.max_hp
         c.energy = c.max_energy
         c.heading = c.target_heading = 0 if role in ("hero", "ally") else math.pi
-        if role == "guardian":
-            c.max_hp *= 2.5
-            c.hp = c.max_hp
-            c.damage *= 1.25
-        elif role not in ("hero", "ally"):
-            c.max_hp *= .75 if role == "weaver" else .9
-            c.hp = c.max_hp
-            c.damage *= .65
-        if spec is not None and spec.get("hp", 1.0) != 1.0:
-            c.max_hp *= spec["hp"]
-            c.hp = c.max_hp
+        if role not in ("hero", "ally"):
+            # The role's share and the kind's own body (content/enemy_traits),
+            # kept on the spider so a level-up in the fight keeps them.
+            traits = traits_for(c.enemy_kind, role)
+            if role == "guardian":
+                hp_mult, bite_mult = 2.5, 1.25
+            else:
+                hp_mult, bite_mult = (.75 if role == "weaver" else .9), .65
+            hp_mult *= traits.health
+            bite_mult *= traits.bite
+            if spec is not None:
+                hp_mult *= spec.get("hp", 1.0)
+            c.stat_scale = (hp_mult, bite_mult, traits.shell)
+            c._apply_progression_stats(reset_resources=True)
         self.manager.creatures.append(c)
         if role != "hero":
             style = (COMPANION_BY_ID[companion].style if companion else "scout") if role == "ally" else None
@@ -602,14 +756,19 @@ class TerritoryMission:
         pool = kinds_for_tier(tier)
         if not pool:
             return None
-        # Later maps lean on their own new kinds, with older ones mixed in.
-        top = max(k.tier for k in pool)
-        newest = [k for k in pool if k.tier == top]
-        if self.rng.random() < 0.65:
-            pool = newest
+        # A kind that suits the role first -- a hunter slot gets a hunter, not
+        # a crab -- then, among those, later maps lean on their newest kinds.
         wanted = set(self.ROLE_TAGS.get(role, ()))
-        suited = [k for k in pool if set(k.tags) & wanted]
-        return self.rng.choice(suited or pool)
+        suited = [k for k in pool if set(k.tags) & wanted] or pool
+        if role == "guard":
+            # A guard holds ground: never one that chases for ever when
+            # another will do.
+            suited = [k for k in suited if not traits_for(k.id, role).temper.chase_forever] or suited
+        top = max(k.tier for k in suited)
+        newest = [k for k in suited if k.tier == top]
+        if self.rng.random() < 0.65:
+            suited = newest
+        return self.rng.choice(suited)
 
     def issue(self, command, aim):
         if self.state != "active":
@@ -721,6 +880,60 @@ class TerritoryMission:
         self._spawning(dt)
         self._outpost_waves(dt)
         self._building_work(dt)
+        self._plan_squads(dt)
+
+    # -- squads (world/tactics) ------------------------------------------------
+    SQUAD_EVERY = 0.4
+    SQUAD_REACH = 300.0        # a defender belongs to the building within this of its post
+
+    def _plan_squads(self, dt):
+        """Group the enemy into squads -- the defenders of each building, and
+        everyone on the attack -- and let each squad plan together."""
+        self.squad_clock -= dt
+        if self.squad_clock > 0:
+            return
+        self.squad_clock = self.SQUAD_EVERY
+        enemies = [a for a in self.actors if a.role != "ally" and not a.creature.dead]
+        for actor in enemies:
+            actor.order, actor.doctrine = None, "none"
+        if self.tactics_level <= 0 or len(enemies) < 2:
+            return
+        foes = [tactics.Foe(c, c.x, c.y, c.hp / max(1.0, c.max_hp), 1.6 if c is self.hero else 1.0)
+                for c in self.manager.creatures
+                if not c.dead and c.progression.team_id == "adventurers"]
+        attack, posts = [], {}
+        for actor in enemies:
+            if actor.raider or actor.hunting:
+                attack.append(actor)
+                continue
+            site = min(self.sites, key=lambda s: math.hypot(s.x-actor.home[0], s.y-actor.home[1]))
+            if math.hypot(site.x-actor.home[0], site.y-actor.home[1]) > self.SQUAD_REACH:
+                site = None
+            # Keyed by the building's place in the list: a site is not hashable.
+            key = self.sites.index(site) if site is not None else -1
+            posts.setdefault(key, []).append(actor)
+        squads = [(attack, "attack", None)] + [(group, "defend", self.sites[key] if key >= 0 else None)
+                                                for key, group in posts.items()]
+        for group, stance, site in squads:
+            if len(group) < 2:
+                continue
+            anchor = (site.x, site.y) if site is not None else group[0].home
+            members = [self._member(a) for a in group]
+            notice = max((a.traits.temper.notice for a in group if a.traits), default=300.0)
+            result = tactics.plan(members, foes, self.tactics_level, stance, anchor, notice)
+            for actor in group:
+                actor.order = result.orders.get(actor)
+                actor.doctrine = result.doctrine
+
+    def _member(self, actor):
+        c = actor.creature
+        # Somewhere of its side's to heal: the nearest enemy-held base that heals.
+        healers = [s for s in self.sites if not s.owned and s.kind in self.HEAL_RATES]
+        refuge = min(healers, key=lambda s: math.hypot(s.x-c.x, s.y-c.y), default=None)
+        role = actor.traits.squad_role if actor.traits is not None else "melee"
+        return tactics.Member(actor, c.x, c.y, c.hp / max(1.0, c.max_hp), role, actor.fighting_reach(),
+                              frozenset(actor.traits.abilities) if actor.traits else frozenset(),
+                              anchor=(refuge.x, refuge.y) if refuge is not None else actor.home)
 
     # How close a spider must be to use a base. The Scout gets a little more,
     # because a following Scout trails about 85 px behind the hero.
@@ -806,7 +1019,14 @@ class TerritoryMission:
             self.pending = [entry for entry in self.pending if entry[0] != "hatchery"]
         if site in self.footholds and not self.counter_started and self.nest is not None:
             self.counter_started = True
-            self.pending.extend([("nest", "hunter", True), ("nest", "guard", True)])
+            # One hunter on the first maps, a hunter and a guard after, and a
+            # weaver too on the hardest.
+            tier = self.map_info.tier
+            self.pending.append(("nest", "hunter", True))
+            if tier >= 2:
+                self.pending.append(("nest", "guard", True))
+            if tier >= 4:
+                self.pending.append(("nest", "weaver", True))
             self.nest.warning = 4.0
             self.announce("Outpost secured! Counterattack from Thorn nest in 4 seconds.")
         if site.kind in ("outpost", "infestation"):

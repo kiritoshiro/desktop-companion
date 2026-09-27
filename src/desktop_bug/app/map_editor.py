@@ -361,6 +361,13 @@ class MapEditor(QDialog):
         self.wave.setRange(5, 300)
         self.wave.setSuffix(" s")
         form.addRow("Hatchery sends one every", self.wave)
+        # How well the enemy fights together (world/tactics.py).
+        self.tactics = QComboBox()
+        for value, text in ((-1, "By the tier"), (0, "None: each on its own"), (1, "Focus fire"),
+                            (2, "Formations: flank, screen, perimeter"), (3, "Advanced: encircle, bait and ambush")):
+            self.tactics.addItem(text, value)
+        form.addRow("Enemy teamwork", self.tactics)
+        self.tactics.currentIndexChanged.connect(self._changed)
         for w in (self.title, self.blurb):
             w.textEdited.connect(self._changed)
         for w in (self.tier, self.cap):
@@ -481,6 +488,7 @@ class MapEditor(QDialog):
         _select(self.reward, data.get("reward_companion"))
         self.cap.setValue(data["cap"])
         self.wave.setValue(data["wave_every"])
+        self.tactics.setCurrentIndex(max(0, self.tactics.findData(data.get("tactics", -1))))
         self.boss_name.setText(data["boss"].get("name", "Guardian"))
         self.boss_editor.set_spec(data["boss"])
         self._loading = False
@@ -501,6 +509,7 @@ class MapEditor(QDialog):
         d["reward_companion"] = self.reward.currentData()
         d["cap"] = self.cap.value()
         d["wave_every"] = self.wave.value()
+        d["tactics"] = self.tactics.currentData()
         self.dirty = True
         self._refresh_lists(keep=True)
         self._show_problems()

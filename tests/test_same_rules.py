@@ -22,7 +22,13 @@ def make_mission():
 
 
 def actor(m, role):
-    return next(a for a in m.actors if a.role == role)
+    """The mission's spider in this role; the first map no longer guards its
+    Silk loom with a weaver, so one is brought in when there is none."""
+    found = next((a for a in m.actors if a.role == role), None)
+    if found is None:
+        m._spawn(role, (m.sites[2].x + 80, m.sites[2].y))
+        found = next(a for a in m.actors if a.role == role)
+    return found
 
 
 def place(spider, x, y, heading):
