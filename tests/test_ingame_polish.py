@@ -107,6 +107,9 @@ def test_with_you_far_away_a_rival_hunts_flies(state_dir):
     m.hero.x, m.hero.y = 3100, 950
     for ally in m.allies:
         ally.x, ally.y = 3100, 950
+    # Random initial positions can put another fly nearer than this target.
+    for other in m.manager.fly_world.flies:
+        other.x, other.y = 3100, 950
     fly = m.manager.fly_world.flies[0]
     fly.x, fly.y = c.x + 120, c.y + 40
     rival.think = 0

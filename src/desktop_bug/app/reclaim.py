@@ -114,13 +114,14 @@ class ReclaimMission(TerritoryMission):
         if self.surface.integrity < self.LOST_BELOW:
             self.lost_desktop = True
             self.state = "defeat"
-            self.player.clear_keys()
+            self.clear_player_keys()
             self.finish(won=False)
             return
         if self.guardian is not None and self.guardian.dead:
             self.state = "victory"
-            self.hero.gain_experience(100, "desktop reclaimed")
-            self.player.clear_keys()
+            for player in self.players:
+                player.creature.gain_experience(100, "desktop reclaimed")
+            self.clear_player_keys()
             self.finish(won=True)
 
     def _spawning(self, dt):
