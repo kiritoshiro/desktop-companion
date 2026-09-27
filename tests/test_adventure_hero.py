@@ -132,6 +132,8 @@ def test_the_character_window_names_levels_and_equips(state_dir):
     profile["progression"] = {"level": 5, "skill_points": 2}
     save_profile(profile)
     dialog = CharacterDialog()
+    assert [dialog.tabs.tabText(i) for i in range(dialog.tabs.count())] == ["Armour", "Skills"]
+    assert all(not dialog.tabs.tabIcon(i).isNull() for i in range(dialog.tabs.count()))
     dialog.name_edit.setText("Night Weaver")
     dialog._rename()
     assert dialog.tree.buttons["vitality"].property("state") == "available"
@@ -144,6 +146,8 @@ def test_the_character_window_names_levels_and_equips(state_dir):
     assert saved["progression"]["skill_points"] == 1
     assert saved["progression"]["equipped"] == {"carapace": "silk_carapace"}
     assert dialog.tree.buttons["vitality"].property("state") == "unlocked"
+    assert dialog.tree.buttons["vitality"].accessibleName().startswith("Vitality:")
+    assert "sturdier body" in dialog.tree.buttons["vitality"].accessibleDescription()
     dialog.close()
 
 

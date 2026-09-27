@@ -169,6 +169,10 @@ def test_the_armour_tab_is_the_anatomy_doll_and_the_bag(inspector):
 
 def test_the_overview_shows_painted_vitals_and_stat_tiles(inspector):
     _app, _manager, dialog, first, _second = inspector
+    assert [dialog.tabs.tabText(i) for i in range(dialog.tabs.count())] == [
+        "Overview", "Skill tree", "Inventory && armour",
+    ]
+    assert all(not dialog.tabs.tabIcon(i).isNull() for i in range(dialog.tabs.count()))
     assert dialog.health_bar.maximum == pytest.approx(first.max_hp)
     assert dialog.stamina_bar.maximum == pytest.approx(first.max_energy)
     assert set(dialog.tiles) == {"armor", "damage", "points", "worn"}

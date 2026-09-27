@@ -7,7 +7,7 @@ later). Dressed in the carved-wood theme from ``wood_theme``.
 
 from __future__ import annotations
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QColor, QGuiApplication
 from PyQt5.QtWidgets import (QCheckBox, QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout, QLabel,
                              QLayout, QPushButton, QScrollArea, QStackedWidget, QVBoxLayout, QWidget)
@@ -133,6 +133,10 @@ class ModeShell(QWidget):
             cell.addStretch()
             button = QPushButton("Preview" if kind == "strategy" else "Play " + title_text)
             button.setObjectName("modeChoice")
+            icon = wood_theme.menu_icon({"skirmish": "adventure"}.get(kind, kind))
+            if icon is not None:
+                button.setIcon(icon)
+                button.setIconSize(QSize(30, 30))
             button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda _=False, value=kind: self.show_mode(value))
             cell.addWidget(button)
@@ -225,6 +229,10 @@ class ModeShell(QWidget):
         strip.addWidget(self.hero_label, 1)
         character = QPushButton("Character\u2026")
         character.setObjectName("modeChoice")
+        character_icon = wood_theme.menu_icon("skills")
+        if character_icon is not None:
+            character.setIcon(character_icon)
+            character.setIconSize(QSize(26, 26))
         character.setCursor(Qt.PointingHandCursor)
         character.clicked.connect(self.open_character)
         self.character_button = character
@@ -292,6 +300,10 @@ class ModeShell(QWidget):
         # whole list lives behind Controls.
         controls = QPushButton("Controls\u2026")
         controls.setObjectName("modeBack")
+        controls_icon = wood_theme.menu_icon("behavior")
+        if controls_icon is not None:
+            controls.setIcon(controls_icon)
+            controls.setIconSize(QSize(22, 22))
         controls.setCursor(Qt.PointingHandCursor)
         controls.clicked.connect(self.open_controls)
         self.controls_button = controls
@@ -310,6 +322,10 @@ class ModeShell(QWidget):
                                  ("Admin\u2026", self.open_admin, "admin_button")):
             button = QPushButton(text)
             button.setObjectName("modeBack")
+            icon = wood_theme.menu_icon("strategy" if attr == "editor_button" else "behavior")
+            if icon is not None:
+                button.setIcon(icon)
+                button.setIconSize(QSize(22, 22))
             button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda _=False, slot=slot: slot())
             setattr(self, attr, button)
@@ -358,6 +374,10 @@ class ModeShell(QWidget):
             self.mission_status[mission_id] = status
             button = QPushButton("Play")
             button.setObjectName("modeChoice")
+            play_icon = wood_theme.menu_icon("adventure")
+            if play_icon is not None:
+                button.setIcon(play_icon)
+                button.setIconSize(QSize(23, 23))
             button.setCursor(Qt.PointingHandCursor)
             button.clicked.connect(lambda _=False, mid=mission_id: self.play_map(mid, start_adventure))
             if self.adventure_launch is None:

@@ -153,7 +153,10 @@ class SkillTree(QWidget):
             button.setProperty("state", look)
             button.setIcon(QIcon(skill_icon(node.id, {"unlocked": "learned"}.get(look, look), ICON)))
             button.setText(f"{node.name}\n{note}")
-            button.setToolTip(skill_tooltip(node, state))
+            tooltip = skill_tooltip(node, state)
+            button.setToolTip(tooltip)
+            button.setAccessibleName(f"{node.name}: {note}")
+            button.setAccessibleDescription(f"{node.description} Current state: {note}.")
             button.style().unpolish(button)
             button.style().polish(button)
         self.update()
@@ -347,6 +350,10 @@ class CharacterDialog(QDialog):
 
         self.tabs.addTab(armour_panel, "Armour")
         self.tabs.addTab(tree_panel, "Skills")
+        for index, icon_name in enumerate(("armor", "skills")):
+            icon = wood_theme.menu_icon(icon_name)
+            if icon is not None:
+                self.tabs.setTabIcon(index, icon)
         root.addWidget(self.tabs, 1)
 
         close = QPushButton("Done")

@@ -49,6 +49,7 @@ from ..support.frame_policy import FramePolicy
 from ..support.profiling import hud_requested, profiler_from_env
 from ..content.skills import SKILLS
 from ..state.teams import team_label
+from .skill_art import skill_icon
 
 
 log = get_logger("engine")
@@ -1182,13 +1183,29 @@ class OverlayWindow(_OverlayBase):
 
     def _show_context_menu(self, global_pos, mx: float, my: float) -> None:
         menu = QMenu(self)
+        menu.setToolTipsVisible(True)
         creature = self.manager.creature_at(mx, my)
 
         if creature is not None:
+            title = menu.addAction(f"SPIDER  ·  {creature.name or creature.display_name}")
+            title.setEnabled(False)
+            icon = wood_theme.menu_icon("companion")
+            if icon is not None:
+                title.setIcon(icon)
+            title_font = title.font()
+            title_font.setBold(True)
+            title.setFont(title_font)
+            menu.addSeparator()
             inspect = menu.addAction("Inspect progression, inventory, and stats…")
+            icon = wood_theme.menu_icon("inspect")
+            if icon is not None:
+                inspect.setIcon(icon)
             inspect.setToolTip("View level, XP, skill tree, armor, health, energy, and team relations.")
             inspect.triggered.connect(lambda: self._show_inspector(creature))
             pin = menu.addAction("Pin level above name")
+            icon = wood_theme.menu_icon("pin")
+            if icon is not None:
+                pin.setIcon(icon)
             pin.setCheckable(True)
             pin.setChecked(creature.level_label_pinned)
             pin.triggered.connect(lambda enabled, c=creature: self._announce(self.manager.set_creature_level_pin(c, enabled)))
@@ -1196,16 +1213,33 @@ class OverlayWindow(_OverlayBase):
             current = creature.name
             if current:
                 rename = menu.addAction(f"Rename \u201c{current}\u201d\u2026")
+                icon = wood_theme.menu_icon("rename")
+                if icon is not None:
+                    rename.setIcon(icon)
+                rename.setToolTip("Give this spider a name shown above it on the desktop.")
                 rename.triggered.connect(lambda: self._prompt_name(creature))
                 clear = menu.addAction("Clear name")
+                icon = wood_theme.menu_icon("remove")
+                if icon is not None:
+                    clear.setIcon(icon)
+                clear.setToolTip("Remove its custom name; the model name can still be shown.")
                 clear.triggered.connect(lambda: self._apply_name(creature, ""))
             else:
                 name_it = menu.addAction("Name this spider\u2026")
+                icon = wood_theme.menu_icon("name")
+                if icon is not None:
+                    name_it.setIcon(icon)
+                name_it.setToolTip("Give this spider a name shown above it on the desktop.")
                 name_it.triggered.connect(lambda: self._prompt_name(creature))
 
             skills_menu = menu.addMenu("Skills for this spider")
+            icon = wood_theme.menu_icon("skills")
+            if icon is not None:
+                skills_menu.setIcon(icon)
             for skill in SKILLS:
                 action = skills_menu.addAction(skill.display_name)
+                action.setIcon(QIcon(skill_icon(
+                    skill.id, "learned" if creature.has_skill(skill.id) else "available", 24)))
                 action.setCheckable(True)
                 action.setChecked(creature.has_skill(skill.id))
                 action.setToolTip(skill.description)
@@ -1223,19 +1257,31 @@ class OverlayWindow(_OverlayBase):
         if carried is not None and carried is not base:
             carried_name = team_label(carried.team_id, self.manager.team_profiles)
             drop = menu.addAction(f"Put the {carried_name} base down here")
+            icon = wood_theme.menu_icon("move")
+            if icon is not None:
+                drop.setIcon(icon)
             drop.setToolTip("Move the base you picked up to this spot, earth and all.")
             drop.triggered.connect(
                 lambda _checked=False, site=carried, x=mx, y=my: self._drop_base(site, x, y))
             cancel = menu.addAction("Leave it where it is")
+            icon = wood_theme.menu_icon("remove")
+            if icon is not None:
+                cancel.setIcon(icon)
             cancel.triggered.connect(lambda _checked=False: self._cancel_base_move())
             menu.addSeparator()
         if base is not None:
             team_name = team_label(base.team_id, self.manager.team_profiles)
             if carried is base:
                 cancel_here = menu.addAction(f"Leave the {team_name} base where it is")
+                icon = wood_theme.menu_icon("remove")
+                if icon is not None:
+                    cancel_here.setIcon(icon)
                 cancel_here.triggered.connect(lambda _checked=False: self._cancel_base_move())
             else:
                 move_base = menu.addAction(f"Move the {team_name} base…")
+                icon = wood_theme.menu_icon("move")
+                if icon is not None:
+                    move_base.setIcon(icon)
                 move_base.setToolTip(
                     "Pick this base up, then right-click where it should go. "
                     "It keeps its level, its food and the earth already dug. "
@@ -1245,6 +1291,9 @@ class OverlayWindow(_OverlayBase):
                 move_base.triggered.connect(
                     lambda _checked=False, site=base: self._pick_up_base(site))
             remove_base = menu.addAction(f"Remove the {team_name} base here")
+            icon = wood_theme.menu_icon("base")
+            if icon is not None:
+                remove_base.setIcon(icon)
             remove_base.setToolTip(
                 "Delete this base. Its team keeps its spiders and its food; a "
                 "Builder will found a new one."
@@ -1254,6 +1303,9 @@ class OverlayWindow(_OverlayBase):
             menu.addSeparator()
         if getattr(self.manager, "base_world", None) is not None and self.manager.base_world.bases:
             remove_all_bases = menu.addAction("Remove every base")
+            icon = wood_theme.menu_icon("remove")
+            if icon is not None:
+                remove_all_bases.setIcon(icon)
             remove_all_bases.setToolTip(
                 "Clear the desktop of colonies. Builders start again from nothing."
             )
@@ -1262,9 +1314,17 @@ class OverlayWindow(_OverlayBase):
             menu.addSeparator()
 
         add_cage = menu.addAction("Add a cage here")
+        icon = wood_theme.menu_icon("cage")
+        if icon is not None:
+            add_cage.setIcon(icon)
+        add_cage.setToolTip("Place a roomy boundary here; spiders inside stay on this part of the desktop.")
         add_cage.triggered.connect(lambda: self._announce(self.manager.add_cage(mx, my)))
         if self.manager.cages:
             remove_cage = menu.addAction("Remove all cages")
+            icon = wood_theme.menu_icon("remove")
+            if icon is not None:
+                remove_cage.setIcon(icon)
+            remove_cage.setToolTip("Remove every boundary so the spiders can roam freely again.")
             remove_cage.triggered.connect(lambda: self._announce(self.manager.remove_cages()))
 
         menu.addSeparator()
@@ -1568,19 +1628,22 @@ def _add_label_switches(parent, manager, announce) -> None:
     drifted apart.
     """
     entries = (
-        ("Always show names", "always_show_names", manager.set_always_show_names,
+        ("Always show names", "always_show_names", manager.set_always_show_names, "name",
          "Show every spider's name without having to hover it."),
-        ("Always show levels", "always_show_levels", manager.set_always_show_levels,
+        ("Always show levels", "always_show_levels", manager.set_always_show_levels, "pin",
          "Show every spider's level beside its name."),
-        ("Always show health bars", "always_show_health", manager.set_always_show_health,
+        ("Always show health bars", "always_show_health", manager.set_always_show_health, "health",
          "Show every spider's health bar, not just ones pinned individually."),
-        ("Always show XP bars", "always_show_xp", manager.set_always_show_xp,
+        ("Always show XP bars", "always_show_xp", manager.set_always_show_xp, "xp",
          "Show every spider's progress to its next level as a line under its level."),
-        ("Always show stamina bars", "always_show_stamina", manager.set_always_show_stamina,
+        ("Always show stamina bars", "always_show_stamina", manager.set_always_show_stamina, "stamina",
          "Show every spider's stamina (energy) under its health bar."),
     )
-    for text, attribute, setter, tip in entries:
+    for text, attribute, setter, icon_name, tip in entries:
         action = parent.addAction(text)
+        icon = wood_theme.menu_icon(icon_name)
+        if icon is not None:
+            action.setIcon(icon)
         action.setCheckable(True)
         action.setChecked(bool(getattr(manager, attribute, False)))
         action.setToolTip(tip)
@@ -1599,6 +1662,15 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     except Exception:
         pass
 
+    def adorn(target, name: str):
+        action = target.menuAction() if isinstance(target, QMenu) else target
+        icon = wood_theme.menu_icon(name)
+        if icon is not None:
+            action.setIcon(icon)
+        if isinstance(target, QMenu):
+            target.setToolTipsVisible(True)
+        return target
+
     def add_note(parent: QMenu, text: str):
         action = parent.addAction(text)
         action.setEnabled(False)
@@ -1606,6 +1678,7 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
 
     initial_status = "Running - dragging is on." if window.manager.interferable else "Running - clicks pass through spiders."
     status_action = add_note(menu, initial_status)
+    adorn(status_action, "companion")
     menu.addSeparator()
 
     def announce(message: str) -> None:
@@ -1618,6 +1691,7 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
         window._broadcast_session_state()
 
     performance_menu = menu.addMenu("Performance")
+    adorn(performance_menu, "performance")
     fps_group = QActionGroup(menu)
     fps_group.setExclusive(True)
     fps_options = [
@@ -1637,8 +1711,10 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     add_note(performance_menu, "Tip: fewer/lower-size spiders matter more than FPS.")
 
     appearance_menu = menu.addMenu("Appearance and mood")
+    adorn(appearance_menu, "appearance")
 
     size_menu = appearance_menu.addMenu("Creature size")
+    adorn(size_menu, "appearance")
     size_group = QActionGroup(menu)
     size_group.setExclusive(True)
     size_options = [
@@ -1662,28 +1738,35 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     # it. `set_mood_mode` remains for a preset that still carries the key.
 
     random_menu = menu.addMenu("Randomize creatures")
+    adorn(random_menu, "randomize")
     add_note(random_menu, "Changes apply immediately to the running overlay.")
     random_menu.addSeparator()
 
     random_model_action = random_menu.addAction("Randomize models")
+    adorn(random_model_action, "appearance")
     random_model_action.setToolTip("Keep the current count and personalities, but swap creature models.")
     random_model_action.triggered.connect(lambda: announce(window.manager.randomize_models()))
 
     random_personality_action = random_menu.addAction("Randomize personalities")
+    adorn(random_personality_action, "companion")
     random_personality_action.setToolTip("Keep the current models and count, but swap personalities.")
     random_personality_action.triggered.connect(lambda: announce(window.manager.randomize_personalities()))
 
     random_count_action = random_menu.addAction("Randomize count (1-10)")
+    adorn(random_count_action, "creatures")
     random_count_action.setToolTip("Keep the current model/personality pattern and pick a new total count.")
     random_count_action.triggered.connect(lambda: announce(window.manager.randomize_count(1, 10)))
 
     random_menu.addSeparator()
     random_all_action = random_menu.addAction("Surprise me: randomize everything")
+    adorn(random_all_action, "randomize")
     random_all_action.setToolTip("Pick a fresh count, models, personalities, and positions.")
     random_all_action.triggered.connect(lambda: announce(window.manager.randomize_everything()))
 
     interaction_menu = menu.addMenu("Interaction")
+    adorn(interaction_menu, "interaction")
     interferable_action = interaction_menu.addAction("Allow dragging spiders")
+    adorn(interferable_action, "move")
     interferable_action.setCheckable(True)
     interferable_action.setChecked(window.manager.interferable)
     interferable_action.setToolTip("Empty overlay space stays click-through; this only affects spider pixels.")
@@ -1701,6 +1784,7 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     # spider antisocial.
 
     mouse_web_action = interaction_menu.addAction("Let spiders web-trap the mouse")
+    adorn(mouse_web_action, "skills")
     mouse_web_action.setCheckable(True)
     mouse_web_action.setChecked(window.manager.allow_mouse_capture)
     mouse_web_action.setToolTip(
@@ -1711,6 +1795,7 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     mouse_web_action.toggled.connect(lambda enabled: announce(window.manager.set_allow_mouse_capture(enabled)))
 
     naming_action = interaction_menu.addAction("Right-click a spider to name it")
+    adorn(naming_action, "name")
     naming_action.setCheckable(True)
     naming_action.setChecked(window.manager.naming_enabled)
     naming_action.setToolTip("Lets you right-click a spider to give it a name. Disable to make spiders click-through when dragging is also off.")
@@ -1728,10 +1813,12 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     _add_label_switches(interaction_menu, window.manager, _announce_and_repaint)
 
     flies_menu = menu.addMenu("Flies")
+    adorn(flies_menu, "flies")
     add_note(flies_menu, "Flies buzz around for the spiders to hunt, trap, and eat.")
     flies_menu.addSeparator()
 
     flies_on_action = flies_menu.addAction("Flies on")
+    adorn(flies_on_action, "flies")
     flies_on_action.setCheckable(True)
     flies_on_action.setChecked(window.manager.flies_enabled)
     flies_on_action.setToolTip("Turn the fly spawner on or off. Spiders only hunt when flies are on.")
@@ -1756,11 +1843,13 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
     add_note(rate_menu, "Fine-grained spawn timing lives in the settings window.")
 
     release_action = flies_menu.addAction("Release a fly now")
+    adorn(release_action, "flies")
     release_action.setToolTip("Drop a single fly onto the screen immediately.")
     release_action.triggered.connect(lambda: announce(window.manager.release_fly()))
 
     flies_menu.addSeparator()
     nest_action = flies_menu.addAction("Flies emerge from a nest")
+    adorn(nest_action, "base")
     nest_action.setCheckable(True)
     nest_action.setChecked(getattr(window.manager, "flies_spawner", True))
     nest_action.setToolTip("When on, flies crawl out of a movable nest you can drag around. "
@@ -1770,31 +1859,37 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
                          announce(window.manager.set_fly_spawner_enabled(enabled)))
     )
     add_nest_action = flies_menu.addAction("Add another nest")
+    adorn(add_nest_action, "base")
     add_nest_action.setToolTip("Drop an extra fly nest on the screen. Drag any nest to move it.")
     add_nest_action.triggered.connect(
         lambda: (window._request_full_repaint(), announce(window.manager.add_fly_spawner()))
     )
     reset_nest_action = flies_menu.addAction("Reset nest position")
+    adorn(reset_nest_action, "move")
     reset_nest_action.setToolTip("Remove extra nests and put one back in its default spot.")
     reset_nest_action.triggered.connect(
         lambda: (window._request_full_repaint(), announce(window.manager.reset_fly_spawner()))
     )
 
     cages_menu = menu.addMenu("Cages")
+    adorn(cages_menu, "cage")
     add_note(cages_menu, "A cage keeps any spider you drop inside from wandering out.")
     cages_menu.addSeparator()
     add_cage_action = cages_menu.addAction("Add a cage")
+    adorn(add_cage_action, "cage")
     add_cage_action.setToolTip("Drop a resizable cage in the middle of the screen. Drag its frame to move it, corners to resize.")
     add_cage_action.triggered.connect(
         lambda: (window._request_full_repaint(), announce(window.manager.add_cage()))
     )
     remove_cage_action = cages_menu.addAction("Remove all cages")
+    adorn(remove_cage_action, "remove")
     remove_cage_action.setToolTip("Delete every cage. The spiders inside roam freely again.")
     remove_cage_action.triggered.connect(
         lambda: (window._request_full_repaint(), announce(window.manager.remove_cages()))
     )
 
     help_menu = menu.addMenu("Help")
+    adorn(help_menu, "help")
     add_note(help_menu, "Right-click this tray icon for controls.")
     add_note(help_menu, "Empty overlay space stays click-through.")
     add_note(help_menu, "Enable dragging to grab a spider by its body.")
@@ -1803,6 +1898,7 @@ def create_tray(app: QApplication, window: OverlayWindow) -> QSystemTrayIcon:
 
     menu.addSeparator()
     quit_action = menu.addAction("Quit overlay")
+    adorn(quit_action, "quit")
     quit_action.triggered.connect(app.quit)
 
     tray.setContextMenu(menu)

@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 from PyQt5.QtGui import QColor, QFont, QImage, QPainter, QPixmap
-from PyQt5.QtWidgets import QLabel
+from PyQt5.QtWidgets import QLabel, QWidget
 
 from desktop_bug.app import wood_theme
 from desktop_bug.app.mode_menu import MODES, ModeShell
@@ -22,6 +22,12 @@ from support import ROOT
 ASSETS = ("wood_tile.png", "wood_dark_tile.png", "card_frame.png",
           "mode_companion.png", "mode_adventure.png", "mode_strategy.png",
           "app_icon.png", "app_icon.ico")
+MENU_EMBLEMS = (
+    "companion", "adventure", "strategy", "inspect", "pin", "name", "rename",
+    "skills", "preset", "creatures", "teams", "behavior", "flies", "launch",
+    "base", "move", "remove", "cage", "armor", "labels", "health", "stamina", "xp",
+    "appearance", "performance", "randomize", "interaction", "help", "quit",
+)
 
 
 def test_the_app_icon_has_every_size_windows_asks_for():
@@ -47,6 +53,15 @@ def test_every_asset_is_committed_and_loads():
         assert not QPixmap(str(path)).isNull(), f"{name} does not load as an image"
 
 
+def test_each_menu_and_companion_section_emblem_is_a_readable_png():
+    for name in MENU_EMBLEMS:
+        path = ROOT / "assets" / "ui" / f"menu_{name}.png"
+        pixmap = QPixmap(str(path))
+        assert path.exists(), f"menu_{name}.png is missing; run tools/generate_ui_art.py"
+        assert not pixmap.isNull(), f"menu_{name}.png does not load"
+        assert pixmap.size().width() == pixmap.size().height() == 72
+
+
 def test_the_exe_bundles_the_assets():
     spec = (ROOT / "DesktopBugCompanion.spec").read_text(encoding="utf-8")
     assert "('assets', 'assets')" in spec
@@ -62,6 +77,85 @@ def test_the_three_modes_are_named_and_pictured():
                 if label.objectName() == "modeArt"]
     assert len(pictures) == 3
     assert all(label.pixmap() is not None and not label.pixmap().isNull() for label in pictures)
+    assert all(not shell.mode_buttons[kind].icon().isNull() for kind, _, _ in MODES)
+
+
+def test_companion_sections_have_illustrated_purpose_headings(qapp):
+    from desktop_bug.app.config_ui import ConfigWindow
+
+    window = ConfigWindow()
+    try:
+        headings = {label.text() for label in window.findChildren(QLabel, "sectionTitle")}
+        assert headings == {
+            "Saved colony setups", "Colony roster", "Factions & relations",
+            "Desktop behavior", "Prey & food", "Ready the colony",
+        }
+        for header in window.findChildren(QWidget, "sectionHeader"):
+            emblem = header.findChild(QLabel, "sectionEmblem")
+            assert emblem is not None and emblem.pixmap() is not None and not emblem.pixmap().isNull()
+            assert header.accessibleName()
+    finally:
+        window.close()
+
+
+def test_spider_right_click_menu_uses_action_emblems_and_explanations(qapp, monkeypatch):
+    from types import SimpleNamespace
+    from PyQt5.QtWidgets import QMenu, QWidget
+    from desktop_bug.app import engine
+
+    creature = SimpleNamespace(
+        name="Moss", display_name="Moss", level_label_pinned=False,
+        has_skill=lambda _skill_id: False,
+    )
+
+    class Manager:
+        team_profiles = {}
+        cages = []
+        base_world = None
+        always_show_names = always_show_levels = False
+        always_show_health = always_show_xp = always_show_stamina = False
+
+        def creature_at(self, _x, _y): return creature
+        def base_at(self, _x, _y): return None
+        def set_creature_level_pin(self, *_args): return "ok"
+        def set_creature_skill(self, *_args): return "ok"
+        def set_always_show_names(self, _on): return "ok"
+        def set_always_show_levels(self, _on): return "ok"
+        def set_always_show_health(self, _on): return "ok"
+        def set_always_show_xp(self, _on): return "ok"
+        def set_always_show_stamina(self, _on): return "ok"
+        def add_cage(self, *_args): return "ok"
+        def remove_cages(self): return "ok"
+
+    class FakeWindow(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.manager = Manager()
+            self._moving_base_id = None
+
+        def _carried_base(self): return None
+        def _show_inspector(self, _creature): pass
+        def _prompt_name(self, _creature): pass
+        def _apply_name(self, *_args): pass
+        def _announce(self, _message): pass
+        def _request_full_repaint(self): pass
+
+    menus = []
+    monkeypatch.setattr(QMenu, "exec_", lambda menu, *_args: menus.append(menu))
+    monkeypatch.setattr(engine, "apply_click_through", lambda _window: None)
+    window = FakeWindow()
+    try:
+        engine.OverlayWindow._show_context_menu(window, None, 20, 30)
+        menu = menus[-1]
+        actions = [action for action in menu.actions() if not action.isSeparator()]
+        assert actions and all(not action.icon().isNull() for action in actions)
+        assert actions[0].text() == "SPIDER  ·  Moss"
+        assert any("Inspect progression" in action.text() for action in actions)
+        assert any(action.toolTip() for action in actions)
+        skills = next(action.menu() for action in actions if action.menu() is not None)
+        assert skills.actions() and all(not action.icon().isNull() for action in skills.actions())
+    finally:
+        window.close()
 
 
 def test_style_sheets_are_well_formed():

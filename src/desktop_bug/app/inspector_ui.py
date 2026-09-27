@@ -188,6 +188,10 @@ class CreatureInspectorDialog(QDialog):
         self.tabs.addTab(self._overview_tab(), "Overview")
         self.tabs.addTab(self._skills_tab(), "Skill tree")
         self.tabs.addTab(self._armour_tab(), "Inventory && armour")
+        for index, icon_name in enumerate(("inspect", "skills", "armor")):
+            icon = wood_theme.menu_icon(icon_name)
+            if icon is not None:
+                self.tabs.setTabIcon(index, icon)
         root.addWidget(self.tabs, 1)
         close = QPushButton("Done")
         close.clicked.connect(self.accept)
