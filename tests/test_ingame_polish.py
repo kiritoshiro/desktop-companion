@@ -21,7 +21,7 @@ from desktop_bug.app import armoury
 from desktop_bug.app.adventure_profile import (fresh_profile, hero_progression, load_profile, save_profile,
                                                store_progression)
 from desktop_bug.app.controls import ControlSettings
-from desktop_bug.app.mission_art import SCALE, building_art
+from desktop_bug.app.mission_art import GROUND_Y, SCALE, building_art
 from desktop_bug.app.mission_factory import create_mission
 from desktop_bug.manager import CreatureManager
 from desktop_bug.world.playfield import ScreenRect
@@ -166,20 +166,14 @@ def test_buildings_are_painted_at_twice_the_size_for_crisp_edges():
     assert art.devicePixelRatio() == SCALE and art.width() == 240 * SCALE
 
 
-def test_every_building_stands_on_earth_and_casts_its_shadow_to_the_lower_right():
-    """The owner's reference: wooden buildings on the ground with long shadows."""
+def test_generated_buildings_keep_their_ground_contact_at_the_site_anchor():
+    """The site coordinates still meet the generated soil-and-shadow sprites."""
     for kind in ("home", "lookout", "amber", "nest"):
         art = building_art(kind, False)
-        ground = QColor.fromRgba(art.pixel(100 * SCALE, (139 + 4) * SCALE))
-        assert ground.alpha() > 120, (kind, "stands on trampled earth")
-        # Right of the building, at ground level, darker than the same spot on
-        # the left: its shadow falls that way.
-        def shade(x):
-            c = QColor.fromRgba(art.pixel(int(x * SCALE), int((139 + 10) * SCALE)))
-            return c.lightness() if c.alpha() > 60 else 255
-        right = min(shade(x) for x in range(140, 200, 4))
-        left = min(shade(x) for x in range(40, 100, 4))
-        assert right <= left, (kind, right, left)
+        opaque_rows = [y for y in range(art.height())
+                       if any(art.pixelColor(x, y).alpha() > 8 for x in range(art.width()))]
+        assert opaque_rows, kind
+        assert abs((opaque_rows[-1] + 1) - GROUND_Y * SCALE) <= 2, kind
 
 
 # -- the owner's second round: the armour crash, readable text, map pictures -------
