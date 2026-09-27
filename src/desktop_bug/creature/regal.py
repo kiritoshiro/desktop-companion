@@ -34,7 +34,11 @@ class RegalExpression:
 
 class RegalMixin:
     def _is_regal(self):
-        return self.model.get("appearance", {}).get("species_profile") == "regal_fluff"
+        return self.model.get("appearance", {}).get("species_profile") in ("regal_fluff", "regal_scout")
+
+    def _regal_face_forward(self):
+        """Scout fixes the face axis; the original Fluff stays unchanged."""
+        return self.model.get("appearance", {}).get("species_profile") == "regal_scout"
 
     def _regal_blocked(self):
         return (self.dead or self.dragging or self.webbed or self.airborne
@@ -218,6 +222,12 @@ class RegalMixin:
         painter.save()
         painter.translate(r.yaw*.12, -.32-r.pitch*.09)
         painter.rotate(math.degrees(r.yaw)*.23)
+        if self._regal_face_forward():
+            # Body-space forward is -Y. The portrait's crown must point back
+            # toward the abdomen (+Y), and its mouth/palps forward (-Y).
+            # Flip the complete face, not just the eyes, so sockets, palps,
+            # chelicerae and grooming stay attached as the spider turns.
+            painter.scale(1, -1)
         plush(0, 0, .59, .48, body, 84)
         # White brow forms a soft crown without adding a cartoon mouth.
         painter.setPen(QPen(fur, .065, Qt.SolidLine, Qt.RoundCap))

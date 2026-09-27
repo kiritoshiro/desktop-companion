@@ -1,0 +1,191 @@
+{
+  "id": "regal_scout",
+  "display_name": "Regal Scout \u00b7 corrected face",
+  "base_size": 32,
+  "default_personality": "curious",
+  "body_plan": "jumper",
+  "render_mode": "procedural",
+  "colors": {
+    "body": [
+      37,
+      40,
+      49
+    ],
+    "legs": [
+      42,
+      44,
+      53
+    ],
+    "highlight": [
+      228,
+      224,
+      213
+    ],
+    "eyes": [
+      12,
+      17,
+      29
+    ],
+    "accent": [
+      39,
+      193,
+      184
+    ]
+  },
+  "appearance": {
+    "species_profile": "regal_scout",
+    "eye_count": 8,
+    "eye_layout": "jumping_spider",
+    "fluffiness": 1.0,
+    "spider_gait": {
+      "enabled": true,
+      "profile": "jumper",
+      "max_airborne": 3,
+      "cycle_hz": 2.6,
+      "swing_fraction": 0.25,
+      "swing_height": 0.46,
+      "stride_gain": 0.72,
+      "turn_gain": 1.05,
+      "max_body_turn_rate": 2.5,
+      "stance_deadband": 0.34
+    }
+  },
+  "legs": [
+    {
+      "name": "front_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -35,
+      "rest_angle": -50,
+      "reach": 1.253,
+      "upper_len": 0.72,
+      "lower_len": 0.72,
+      "attach_forward": 0.36,
+      "attach_side": 0.35,
+      "rest_forward": 0.88,
+      "rest_side": 0.82,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.239,
+      "stride_forward": 0.3633
+    },
+    {
+      "name": "front_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 35,
+      "rest_angle": 50,
+      "reach": 1.253,
+      "upper_len": 0.72,
+      "lower_len": 0.72,
+      "attach_forward": 0.36,
+      "attach_side": 0.35,
+      "rest_forward": 0.88,
+      "rest_side": 0.82,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.239,
+      "stride_forward": 0.3633
+    },
+    {
+      "name": "mid_front_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -75,
+      "rest_angle": -92,
+      "reach": 1.165,
+      "upper_len": 0.65,
+      "lower_len": 0.838,
+      "attach_forward": 0.12,
+      "attach_side": 0.35,
+      "rest_forward": 0.3128,
+      "rest_side": 1.00152,
+      "rest_jitter": 0.02,
+      "coxa_len": 0.23,
+      "stride_forward": 0.3122
+    },
+    {
+      "name": "mid_front_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 75,
+      "rest_angle": 92,
+      "reach": 1.165,
+      "upper_len": 0.65,
+      "lower_len": 0.838,
+      "attach_forward": 0.12,
+      "attach_side": 0.35,
+      "rest_forward": 0.3128,
+      "rest_side": 1.00152,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.23,
+      "stride_forward": 0.3122
+    },
+    {
+      "name": "mid_rear_left",
+      "side": "left",
+      "gait_group": 0,
+      "attach_angle": -108,
+      "rest_angle": -118,
+      "reach": 1.152,
+      "upper_len": 0.665,
+      "lower_len": 0.809,
+      "attach_forward": -0.12,
+      "attach_side": 0.35,
+      "rest_forward": -0.3128,
+      "rest_side": 0.9682400000000001,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.23,
+      "stride_forward": 0.29469999999999996
+    },
+    {
+      "name": "mid_rear_right",
+      "side": "right",
+      "gait_group": 1,
+      "attach_angle": 108,
+      "rest_angle": 118,
+      "reach": 1.152,
+      "upper_len": 0.665,
+      "lower_len": 0.809,
+      "attach_forward": -0.12,
+      "attach_side": 0.35,
+      "rest_forward": -0.3128,
+      "rest_side": 0.9682400000000001,
+      "rest_jitter": 0.022,
+      "coxa_len": 0.23,
+      "stride_forward": 0.29469999999999996
+    },
+    {
+      "name": "rear_left",
+      "side": "left",
+      "gait_group": 1,
+      "attach_angle": -142,
+      "rest_angle": -150,
+      "reach": 1.152,
+      "upper_len": 0.68,
+      "lower_len": 0.809,
+      "attach_forward": -0.36,
+      "attach_side": 0.35,
+      "rest_forward": -0.8704000000000001,
+      "rest_side": 0.7644,
+      "rest_jitter": 0.02,
+      "coxa_len": 0.239,
+      "stride_forward": 0.2688
+    },
+    {
+      "name": "rear_right",
+      "side": "right",
+      "gait_group": 0,
+      "attach_angle": 142,
+      "rest_angle": 150,
+      "reach": 1.152,
+      "upper_len": 0.68,
+      "lower_len": 0.809,
+      "attach_forward": -0.36,
+      "attach_side": 0.35,
+      "rest_forward": -0.8704000000000001,
+      "rest_side": 0.7644,
+      "rest_jitter": 0.017,
+      "coxa_len": 0.239,
+      "stride_forward": 0.2688
+    }
+  ]
+}
