@@ -81,7 +81,12 @@ def test_a_locked_map_cannot_be_played_yet(state_dir):
 
 def test_a_killed_enemy_drops_armour_you_pick_up_by_walking_over_it(state_dir):
     m = mission_on("ember", won=("territory",))
-    guard = next(a for a in enemies(m) if a.creature.mission_loot)
+    # Tier-2 enemies wear 0-2 pieces at random (map_layouts / enemy_loadout)
+    # and the spawn roll is not seeded, so give one a piece if none rolled any.
+    guard = next((a for a in enemies(m) if a.creature.mission_loot), None)
+    if guard is None:
+        guard = enemies(m)[0]
+        guard.creature.mission_loot = [ARMOR_SETS["forager"].pieces[0]]
     c = guard.creature
     worn = list(c.mission_loot)
     m.rng = random.Random()
