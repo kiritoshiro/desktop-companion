@@ -150,9 +150,10 @@ class FlySwarmMission(TerritoryMission):
     def _end(self, won, text):
         self.state = "victory" if won else "defeat"
         if won:
-            self.hero.gain_experience(80, "swarm caught")
+            for player in self.players:
+                player.creature.gain_experience(80, "swarm caught")
         self.announce(text)
-        self.player.clear_keys()
+        self.clear_player_keys()
         self.finish(won=won)
 
     def _spawning(self, dt):
@@ -208,8 +209,7 @@ class FlySwarmMission(TerritoryMission):
         spider.heal(self.FLY_HEAL)
         if spider.progression.team_id == "adventurers":
             self.caught += 1
-            control = self.player if spider is self.hero else next(
-                (a for a in self.actors if a.creature is spider), None)
+            control = next((a for a in self.players + self.actors if a.creature is spider), None)
             if control is not None:
                 control.silk = min(control.silk_capacity, control.silk + self.FLY_SILK)
             spider.gain_experience(self.FLY_XP, "fly caught")

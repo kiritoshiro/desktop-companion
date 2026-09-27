@@ -128,3 +128,26 @@ def test_the_backdrop_is_painted_once_and_reused(window):
     painter = QPainter(painter_image)
     backdrop.paint(painter, window.mission)
     painter.end()
+
+
+def test_in_two_player_either_player_can_open_the_map_and_release_clears_both(state_dir, monkeypatch):
+    from desktop_bug.app.adventure_profile import fresh_profile, save_profile
+    from desktop_bug.app.engine import OverlayWindow
+
+    profile = fresh_profile()
+    profile["two_player"] = True
+    save_profile(profile)
+    w = OverlayWindow(Path("presets/colony.json"), seed=4, mode="adventure")
+    try:
+        w.timer.stop()
+        monkeypatch.setattr(w, "_register_release_hotkey", lambda: None)
+        assert len(w.mission.players) == 2
+        w.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_AsciiTilde, Qt.ShiftModifier, "~"))
+        assert w.map_view
+        second = w.mission.players[1]
+        second.set_held("move_up", True)
+        w._adventure_action("release", True)
+        assert w.controls_released and not second.held, "player 2 stops too"
+    finally:
+        w.style_timer.stop()
+        w.deleteLater()

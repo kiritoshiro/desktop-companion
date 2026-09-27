@@ -25,7 +25,7 @@ healing. Both have a finite healing supply. Silk gives twelve-charge capacity,
 an immediate refill and three charges per second while nearby. A shot costs one
 charge and twelve stamina, with a 1.2-second cooldown. Misses still spend silk.
 
-WASD move; Shift sprints; Space jumps; left mouse shoots; right mouse bites;
+WASD move; Shift sprints; Space jumps; Q shoots web; hold F to bite repeatedly;
 K opens skills. 1 orders Scout to follow, 2 to defend its current position,
 3 to attack the pointed enemy. HUD buttons use the last pointed enemy for Attack.
 All commands appear in Controls and can be rebound. Normal defenders leave the
@@ -115,3 +115,41 @@ pre-existing default pytest temp-directory permission error.
 
 Local branch only; no commit, push or merge. Real desktop input, game balance and
 frame pacing still need a playthrough. Obsidian hub and work log are updated.
+
+
+## Local two-player mode
+
+On the Adventure page, check **Two players · one keyboard** before launching a
+raid. Leave it unchecked for single player. The choice is saved. Co-op uses a
+fixed, non-overlapping layout; custom single-player bindings remain saved for
+solo play. Untouched legacy mouse defaults migrate to F/Q; explicitly saved
+custom mouse bindings remain available.
+
+| Action | Player 1 | Player 2 |
+| --- | --- | --- |
+| Move | WASD | Arrow keys |
+| Attack repeatedly | Hold F | Hold J |
+| Shoot web | Q | U |
+| Jump | Space | I |
+| Sprint | Shift | O |
+| Character windows | K | P |
+| Pause both players | Esc | Esc |
+
+Both players aim in the direction their spider faces in co-op. Either character
+key opens two separate windows together. Each window has its own armour doll,
+name, level and skill tree; both show the same shared bag and refresh immediately
+when an item is equipped, removed, upgraded or sold. Close both windows to resume.
+The existing armour rule still applies: each named piece is worn by one spider;
+spares are upgrade/sale materials. Unequip a worn piece to pass it to the other
+player. Player 2 starts at level one, and keeps separate XP, skill points and
+armour in `adventure-hero.json`, including when switching back to solo play.
+
+Either player can collect loot, capture buildings and use home/loom healing and
+silk supplies. Building and victory XP go to both heroes; combat XP belongs to the
+spider that earns it. A fallen player stays out until the next raid; defeat occurs
+when both players fall (or the desktop is lost in Reclaim). Restart restores both
+heroes. Co-op does not change Companion colony saves.
+
+Verification: `tests/test_local_coop.py` covers simultaneous key routing, held
+attack cooldowns/releases, web aiming, profile persistence, solo switching,
+second-player captures/loot/refills, defeat and synchronized gear/skill windows.

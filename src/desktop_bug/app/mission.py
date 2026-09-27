@@ -7,6 +7,8 @@ import math
 import random
 
 from .adventure import PlayerController
+from .controls import ControlSettings, second_player_controls
+from .adventure_profile import PLAYER_TWO, spider_progression
 from .adventure_profile import (companion_progression, hero_progression, load_profile,
                                 profile_path, record_result, save_profile, store_progression,
                                 unlock_companion)
@@ -210,10 +212,11 @@ class MissionActor(PlayerController):
             self.think = 0.15
             targets = [s for s in m.manager.creatures if not s.dead and c.relation_to(s) == "foe"]
             if self.role == "ally":
-                anchor = self.defend_point if m.command == "defend" else (m.hero.x, m.hero.y)
+                leader = next((p.creature for p in m.players if not p.creature.dead), m.hero)
+                anchor = self.defend_point if m.command == "defend" else (leader.x, leader.y)
                 # Companions trail behind the hero, fanned out by party slot.
                 spread = (self.slot - (len(m.allies) - 1) / 2) * 0.7
-                behind = m.hero.heading + math.pi + spread
+                behind = leader.heading + math.pi + spread
                 self.home = anchor if m.command == "defend" else m.layout.clamp(
                     anchor[0] + math.cos(behind)*85,
                     anchor[1] + math.sin(behind)*85, c.size*2)
@@ -525,6 +528,20 @@ class TerritoryMission:
         self.sites = self._build_sites(area)
         self.hero = self._spawn("hero", (self.sites[0].x, self.sites[0].y))
         self.player = PlayerController(self.hero, controls)
+        self.players = [self.player]
+        self.second_hero = None
+        if self.profile.get("two_player", False):
+            self.player.controls = ControlSettings(movement=controls.movement)
+            self.second_hero = self._spawn("hero", self.layout.clamp(self.hero.x, self.hero.y + 65, 40))
+            self.second_hero.progression = spider_progression(self.profile, PLAYER_TWO)
+            self.second_hero.progression.team_id = "adventurers"
+            self.second_hero.progression.relation_overrides = {}
+            self.second_hero._apply_progression_stats(reset_resources=True)
+            self.second_hero.set_name(self.profile[PLAYER_TWO]["name"])
+            self.players.append(PlayerController(self.second_hero, second_player_controls()))
+            for player in self.players:
+                player.keyboard_aim = True
+            self.CAP += 1
         # The party: the first PARTY_SIZE companions unlocked, each with its
         # own level, skills and armour from the profile.
         self.allies = []
@@ -816,12 +833,19 @@ class TerritoryMission:
             return "03 / Defeat the counterattack"
         return "04 / Defeat the guardian and claim Thorn nest"
 
+    def clear_player_keys(self):
+        for player in self.players:
+            player.clear_keys()
+
     def update(self, dt):
         if self.state != "active":
             self.end_clock += max(0.0, dt)
             return
         dt = min(.05, max(0, dt))
         self.elapsed += dt
+        for player in self.players:
+            if "bite" in player.held:
+                player.bite(self.manager)
         for enemy in self.manager.creatures:
             if (not enemy.dead and self.hero.relation_to(enemy) == "foe"
                     and math.hypot(enemy.x-self.player.aim[0], enemy.y-self.player.aim[1]) < 75):
@@ -846,9 +870,9 @@ class TerritoryMission:
         self._collect_loot(dt)
         self.actors = [a for a in self.actors if not a.creature.dead]
         self.manager.carcasses = [c for c in self.manager.carcasses[-4:] if not c.update(dt)]
-        if self.hero.dead:
+        if all(p.creature.dead for p in self.players):
             self.state = "defeat"
-            self.player.clear_keys()
+            self.clear_player_keys()
             self.finish(won=False)
             return
         if self.command == "attack" and (self.attack_target is None or self.attack_target.dead):
@@ -858,7 +882,8 @@ class TerritoryMission:
             site.contested = any(not c.dead and self.hero.relation_to(c) == "foe"
                                  and math.hypot(c.x-site.x, c.y-site.y) < 125
                                  for c in self.manager.creatures)
-            near = math.hypot(self.hero.x-site.x, self.hero.y-site.y) < 92
+            near = any(not p.creature.dead and math.hypot(p.creature.x-site.x, p.creature.y-site.y) < 92
+                       for p in self.players)
             # A base heals and refills whichever side holds it, while the
             # other side keeps away: the player's bases for the player and
             # the Scout, the rest for the enemy.
@@ -946,12 +971,14 @@ class TerritoryMission:
 
     def _adventurers_near(self, site) -> bool:
         return any(not c.dead and math.hypot(c.x-site.x, c.y-site.y) < 125
-                   for c in [self.hero] + self.allies)
+                   for c in [p.creature for p in self.players] + self.allies)
 
     def _holders(self, site):
         """(spider, controller, reach) for every spider of the side holding ``site``."""
         if site.owned:
-            yield self.hero, self.player, self.BASE_REACH
+            for player in self.players:
+                if not player.creature.dead:
+                    yield player.creature, player, self.BASE_REACH
             for actor in self.actors:
                 if actor.role == "ally" and not actor.creature.dead:
                     yield actor.creature, actor, self.SCOUT_HEAL_REACH
@@ -1001,13 +1028,15 @@ class TerritoryMission:
         if site.owned:
             return
         site.owned = True
-        self.hero.gain_experience(35, "territory captured")
+        for player in self.players:
+            player.creature.gain_experience(35, "territory captured")
         effect = EFFECTS.get(site.kind)
         self.announce(f"{site.name} secured" + (f" - {effect} for your side" if effect else ""))
         self._apply_building_bonuses()
         if site.kind == "silk":
-            self.player.silk_capacity = PlayerController.LOOM_SILK_CAPACITY
-            self.player.silk = float(self.player.silk_capacity)
+            for player in self.players:
+                player.silk_capacity = PlayerController.LOOM_SILK_CAPACITY
+                player.silk = float(player.silk_capacity)
             # The enemy lost the loom: back to what they can carry without it.
             for actor in self.actors:
                 if actor.role != "ally":
@@ -1032,12 +1061,14 @@ class TerritoryMission:
         if site.kind in ("outpost", "infestation"):
             site.reserves = 0
             site.warning = 0
-            self.hero.gain_experience(25, "outpost taken")
+            for player in self.players:
+                player.creature.gain_experience(25, "outpost taken")
             self.announce(f"{site.name} taken on {self.layout.screens[site.screen].name} - no more raids from it")
         if site.kind == "nest":
             self.state = "victory"
-            self.hero.gain_experience(100, "raid complete")
-            self.player.clear_keys()
+            for player in self.players:
+                player.creature.gain_experience(100, "raid complete")
+            self.clear_player_keys()
             self.finish(won=True)
 
     def _drop_loot(self):
@@ -1052,7 +1083,7 @@ class TerritoryMission:
 
     def _collect_loot(self, dt):
         """Walk over loot to take it: the hero or any companion."""
-        pickers = [s for s in [self.hero] + self.allies if not s.dead]
+        pickers = [s for s in [p.creature for p in self.players] + self.allies if not s.dead]
         for loot in list(self.loot):
             loot.age += dt
             if not any(math.hypot(s.x-loot.x, s.y-loot.y) < LOOT_REACH for s in pickers):
@@ -1086,7 +1117,8 @@ class TerritoryMission:
             if site.warning > 0 or len(self.manager.creatures) >= 8:
                 continue
             pos = self.layout.clamp(site.x+50, site.y+50, 65)
-            if math.hypot(self.hero.x-pos[0], self.hero.y-pos[1]) < 150:
+            if any(not p.creature.dead and math.hypot(p.creature.x-pos[0], p.creature.y-pos[1]) < 150
+                   for p in self.players):
                 continue
             if self._spawn(role, pos, raider) is not None:
                 self.pending.remove(entry)
@@ -1101,7 +1133,8 @@ class TerritoryMission:
                 self.announce("Thorn nest is stirring. The guardian will emerge in 4 seconds.")
             self.guardian_warning = max(0.0, self.guardian_warning-dt)
             nest.warning = self.guardian_warning
-            if self.guardian_warning <= 0 and math.hypot(self.hero.x-nest.x, self.hero.y-nest.y) >= 150:
+            if self.guardian_warning <= 0 and all(p.creature.dead or
+                    math.hypot(p.creature.x-nest.x, p.creature.y-nest.y) >= 150 for p in self.players):
                 self.guardian = self._spawn("guardian", (nest.x, nest.y))
                 if self.guardian is not None:
                     self.announce("Thorn guardian awakened. Bait its strike, then counterattack.")
@@ -1122,7 +1155,12 @@ class TerritoryMission:
         skills learned, upgrades -- onto the living hero and companions,
         keeping their wounds as a share of their health."""
         self.profile = load_profile(self.progress_path)
+        self.hero.set_name(self.profile["name"])
+        if self.second_hero is not None:
+            self.second_hero.set_name(self.profile[PLAYER_TWO]["name"])
         pairs = [(self.hero, hero_progression(self.profile))]
+        if self.second_hero is not None:
+            pairs.append((self.second_hero, spider_progression(self.profile, PLAYER_TWO)))
         for actor in self.actors:
             if actor.role == "ally" and actor.companion_id and not actor.creature.dead:
                 pairs.append((actor.creature, companion_progression(self.profile, actor.companion_id)))
@@ -1150,7 +1188,7 @@ class TerritoryMission:
                 c._venom_base = c.damage
             c.damage = c._venom_base * mult
             c._venom_applied = c.damage
-        controllers = ([self.player] if getattr(self, "player", None) is not None else []) + list(self.actors)
+        controllers = list(getattr(self, "players", [])) + list(self.actors)
         for control in controllers:
             ours = control.creature.progression.team_id == "adventurers"
             reach = self.LOOKOUT_BONUS if self._holds("lookout", ours) else 1.0
@@ -1325,6 +1363,8 @@ class TerritoryMission:
         enter creatures.json.
         """
         self.profile["progression"] = self.hero.progression.to_dict()
+        if self.second_hero is not None:
+            store_progression(self.profile, PLAYER_TWO, self.second_hero.progression)
         # Companions keep what they earned, like the hero; loot is already
         # in the profile's armoury (add_loot).
         for actor in self.actors:

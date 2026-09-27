@@ -11,7 +11,7 @@ companion dress from it, and a piece is worn by one spider at a time.
 from __future__ import annotations
 
 from ..state.progression import ARMOR_BY_ID, MAX_ITEM_LEVEL
-from .adventure_profile import HERO, fresh_armoury, spider_progression, store_progression
+from .adventure_profile import HERO, PLAYER_TWO, fresh_armoury, spider_progression, store_progression
 from .campaign import SELL_PRICES
 
 
@@ -77,7 +77,7 @@ def sell_spares(profile: dict, item_id: str, count: int = 1) -> int:
 
 def party(profile: dict) -> list[str]:
     """Everyone who can wear armour: the hero, then each companion."""
-    return [HERO] + list((profile.get("companions") or {}).keys())
+    return [HERO, PLAYER_TWO] + list((profile.get("companions") or {}).keys())
 
 
 def worn_by(profile: dict) -> dict[str, str]:

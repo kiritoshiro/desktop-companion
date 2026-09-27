@@ -345,7 +345,7 @@ def draw_mission_hud(painter, window, mission):
             painter.setBrush(QColor("#29463d" if active else "#312820"))
             painter.drawRoundedRect(rect, 5, 5)
             painter.setPen(QColor("#f9edce"))
-            key = short_binding(window.controls.binding("companion_"+command))
+            key = short_binding(window.player.controls.binding("companion_"+command))
             painter.drawText(rect, Qt.AlignCenter, f"{key}  {command.title()}")
         painter.setPen(QColor("#e7d4ac"))
         party = "  ".join(f"{a.display_name} {a.hp:.0f}/{a.max_hp:.0f}" for a in living)

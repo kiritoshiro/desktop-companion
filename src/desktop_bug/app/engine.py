@@ -699,6 +699,10 @@ class OverlayWindow(_OverlayBase):
             self._last_camouflage_sample_ms = current_ms
             self._refresh_camouflage_samples()
 
+        if (self.mode == "adventure" and self.mission is None
+                and self.player is not None and "bite" in self.player.held):
+            self.player.bite(self.manager)
+
         mouse_down = left_mouse_button_down()
         mouse_pressed = mouse_down and not self.last_left_mouse_down
         mouse_released = self.last_left_mouse_down and not mouse_down
@@ -887,6 +891,13 @@ class OverlayWindow(_OverlayBase):
                 region += self._rect_from_xywh(fp)
         if self.mode == "adventure":
             region += hud_rect(self)
+            if self.mission is not None and len(self.mission.players) > 1:
+                region += hud_rect(self, 1)
+                for player in self.mission.players:
+                    c = player.creature
+                    x = round(c.x + math.cos(c.heading) * (c.size + 28))
+                    y = round(c.y + math.sin(c.heading) * (c.size + 28))
+                    region += QRect(x - 8, y - 20, 55, 35)
             region += self._adventure_hint_rect()
             aim = QCursor.pos() - self.geometry_rect.topLeft()
             region += QRect(aim.x() - 16, aim.y() - 16, 32, 32)
@@ -948,15 +959,28 @@ class OverlayWindow(_OverlayBase):
         if self.mode == "adventure":
             if self.player is not None:
                 draw_hud(painter, self, self.player)
+                if self.mission is not None and len(self.mission.players) > 1:
+                    draw_hud(painter, self, self.mission.players[1], player_index=1)
             else:
                 painter.setPen(QColor("#ffffff"))
                 painter.drawText(self._adventure_hint_rect(), Qt.AlignCenter,
                                  "Click a spider to take control · Esc for menu")
-            aim = QCursor.pos() - self.geometry_rect.topLeft()
-            painter.setPen(QColor("#f7df93"))
-            painter.drawEllipse(aim, 7, 7)
-            painter.drawLine(aim.x() - 12, aim.y(), aim.x() - 4, aim.y())
-            painter.drawLine(aim.x() + 4, aim.y(), aim.x() + 12, aim.y())
+            if self.mission is not None and len(self.mission.players) > 1:
+                for index, player in enumerate(self.mission.players):
+                    c = player.creature
+                    if c.dead:
+                        continue
+                    aim = QPoint(round(c.x + math.cos(c.heading) * (c.size + 28)),
+                                 round(c.y + math.sin(c.heading) * (c.size + 28)))
+                    painter.setPen(QColor("#f7df93" if index == 0 else "#9fe7fa"))
+                    painter.drawEllipse(aim, 5, 5)
+                    painter.drawText(aim + QPoint(8, 0), f"P{index + 1}")
+            else:
+                aim = QCursor.pos() - self.geometry_rect.topLeft()
+                painter.setPen(QColor("#f7df93"))
+                painter.drawEllipse(aim, 7, 7)
+                painter.drawLine(aim.x() - 12, aim.y(), aim.x() - 4, aim.y())
+                painter.drawLine(aim.x() + 4, aim.y(), aim.x() + 12, aim.y())
         if self.mission is not None:
             draw_mission_hud(painter, self, self.mission)
         if self.mode == "adventure" and self.controls_released:
@@ -1034,7 +1058,8 @@ class OverlayWindow(_OverlayBase):
         self._controls_mtime = mtime
         self.controls = load_controls()
         if self.player is not None:
-            self.player.controls = self.controls
+            if len(getattr(getattr(self, "mission", None), "players", [])) < 2:
+                self.player.controls = self.controls
             self.player.clear_keys()
         self._register_release_hotkey()
         self._request_full_repaint()
@@ -1054,8 +1079,10 @@ class OverlayWindow(_OverlayBase):
         if self.mode != "adventure":
             return
         self.controls_released = not self.controls_released
-        if self.player is not None:
-            self.player.clear_keys()
+        players = list(getattr(self.mission, "players", None) or []) or [self.player]
+        for controller in players:
+            if controller is not None:
+                controller.clear_keys()
         if self.controls_released:
             self.clearFocus()
             if GL_OVERLAY:
@@ -1120,7 +1147,7 @@ class OverlayWindow(_OverlayBase):
         painter.setPen(QColor("#fff2d6"))
         painter.drawText(box, Qt.AlignCenter, text)
 
-    def _adventure_action(self, action: str | None, down: bool, repeat: bool = False) -> bool:
+    def _adventure_action(self, action: str | None, down: bool, repeat: bool = False, player=None) -> bool:
         """Do what a bound key or mouse button means. True if it meant anything."""
         if action is None:
             return False
@@ -1144,7 +1171,7 @@ class OverlayWindow(_OverlayBase):
             if down and not repeat:
                 self._show_adventure_skills()
             return True
-        player = self.player
+        player = player or self.player
         mission = getattr(self, "mission", None)
         if mission is not None and mission.state != "active":
             return True
@@ -1154,15 +1181,13 @@ class OverlayWindow(_OverlayBase):
             return True
         if player is None or self._adventure_paused:
             return True
-        if action in ("move_up", "move_down", "move_left", "move_right", "sprint"):
+        if action in ("move_up", "move_down", "move_left", "move_right", "sprint", "bite"):
             player.set_held(action, down)
         elif down and not repeat:
             if action == "jump":
                 player.jump()
             elif action == "shoot":
                 player.shoot(self.manager)
-            elif action == "bite":
-                player.bite(self.manager)
         return True
 
     def keyPressEvent(self, event):  # noqa: N802 - Qt API name
@@ -1170,11 +1195,22 @@ class OverlayWindow(_OverlayBase):
             super().keyPressEvent(event)
             return
         key = event.key()
+        # The key under Esc, whether the layout calls it ` or ~ (or a national
+        # letter): the owner asked for "the button ~". Shared by both players.
+        under_esc = key == Qt.Key_AsciiTilde or getattr(event, "nativeVirtualKey", lambda: 0)() == VK_OEM_3
+        players = getattr(getattr(self, "mission", None), "players", [self.player])
+        if len(players) > 1:
+            for player in players:
+                action = player.controls.action_for_key(key)
+                if action is None and under_esc and player.controls.binding("map_view") == "`":
+                    action = "map_view"
+                if action is not None:
+                    self._adventure_action(action, True, repeat=event.isAutoRepeat(), player=player)
+                    break
+            event.accept()
+            return
         action = self.controls.action_for_key(key)
-        if action is None and self.controls.binding("map_view") == "`" and (
-                key == Qt.Key_AsciiTilde or getattr(event, "nativeVirtualKey", lambda: 0)() == VK_OEM_3):
-            # The key under Esc, whether the layout calls it ` or ~ (or a
-            # national letter): the owner asked for "the button ~".
+        if action is None and under_esc and self.controls.binding("map_view") == "`":
             action = "map_view"
         if key == Qt.Key_Escape and action is None:
             # Esc always pauses, whatever pause is bound to, so a player who
@@ -1186,15 +1222,19 @@ class OverlayWindow(_OverlayBase):
     def keyReleaseEvent(self, event):  # noqa: N802 - Qt API name
         if self.mode == "adventure":
             if not event.isAutoRepeat():
-                self._adventure_action(self.controls.action_for_key(event.key()), False)
+                players = getattr(getattr(self, "mission", None), "players", [self.player])
+                for player in players:
+                    controls = getattr(player, "controls", self.controls)
+                    self._adventure_action(controls.action_for_key(event.key()), False, player=player)
             event.accept()
         else:
             super().keyReleaseEvent(event)
 
     def focusOutEvent(self, event):  # noqa: N802 - Qt API name
         self._adventure_hud_drag_offset = None
-        if self.player is not None:
-            self.player.clear_keys()
+        for player in getattr(getattr(self, "mission", None), "players", [self.player]):
+            if player is not None:
+                player.clear_keys()
         super().focusOutEvent(event)
 
     def _open_character_window(self) -> None:
@@ -1209,14 +1249,15 @@ class OverlayWindow(_OverlayBase):
             dialog.tabs.setCurrentIndex(1)
             dialog.exec_()
             return
-        from .character_ui import CharacterDialog
+        from .character_ui import show_party_windows
 
+        self.mission.clear_player_keys()
         self.mission.save_progress()
-        CharacterDialog(self, path=self.mission.progress_path).exec_()
+        show_party_windows(self, path=self.mission.progress_path, two_player=len(self.mission.players) > 1)
         self.mission.refresh_from_profile()
 
     def _show_adventure_skills(self):
-        if self.player is None:
+        if self.player is None or self._adventure_paused:
             return
         self._adventure_paused = True
         self.player.paused = True
@@ -1231,6 +1272,8 @@ class OverlayWindow(_OverlayBase):
         if self._adventure_paused:
             return
         self._adventure_paused = True
+        if self.mission is not None:
+            self.mission.clear_player_keys()
         if self.player is not None:
             self.player.paused = True
             self.player.clear_keys()
@@ -1285,6 +1328,7 @@ class OverlayWindow(_OverlayBase):
                     event.accept()
                     return
             if (self.player is not None and event.button() == Qt.LeftButton
+                    and len(getattr(mission, "players", [])) < 2
                     and hud_rect(self).contains(local)):
                 self._adventure_hud_drag_offset = local - hud_rect(self).topLeft()
                 event.accept()
@@ -1295,7 +1339,7 @@ class OverlayWindow(_OverlayBase):
                     self._possess_next_spider(creature)
             else:
                 self.player.aim = (float(local.x()), float(local.y()))
-                self._adventure_action(self.controls.action_for_mouse(int(event.button())), True)
+                self._adventure_action(self.player.controls.action_for_mouse(int(event.button())), True)
             return
         if event.button() != Qt.RightButton:
             super().mousePressEvent(event)
@@ -1325,7 +1369,7 @@ class OverlayWindow(_OverlayBase):
             return
         if getattr(self, "mode", "companion") == "adventure" and self.player is not None:
             # A mouse button bound to a held action (sprint, a direction).
-            self._adventure_action(self.controls.action_for_mouse(int(event.button())), False)
+            self._adventure_action(self.player.controls.action_for_mouse(int(event.button())), False)
         super().mouseReleaseEvent(event)
 
     def _show_context_menu(self, global_pos, mx: float, my: float) -> None:

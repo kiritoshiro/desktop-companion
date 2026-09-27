@@ -45,6 +45,7 @@ class PlayerController:
         self.web_cooldown = 0.0
         self.jump_cooldown = 0.0
         self.paused = False
+        self.keyboard_aim = False
         self.sprint_exhausted = False
         self.silk_capacity = self.SILK_CAPACITY
         self.silk = float(self.silk_capacity)
@@ -80,6 +81,8 @@ class PlayerController:
         """Where a shot goes: towards the pointer, inside the view cone."""
         spider = self.creature
         ax, ay = self.aim
+        if self.keyboard_aim:
+            return spider.heading
         if math.hypot(ax - spider.x, ay - spider.y) < 1.0:
             return spider.heading
         wanted = math.atan2(ay - spider.y, ax - spider.x)
@@ -170,7 +173,7 @@ class PlayerController:
                 # The pointer only aims (the owner's choice); turning to face
                 # it while standing is an option in the controls settings.
                 ax, ay = self.aim
-                if (self.controls.face_mouse_when_still
+                if (not self.keyboard_aim and self.controls.face_mouse_when_still
                         and math.hypot(ax - spider.x, ay - spider.y) > spider.size):
                     spider.target_heading = math.atan2(ay - spider.y, ax - spider.x)
         if spider.webbed:

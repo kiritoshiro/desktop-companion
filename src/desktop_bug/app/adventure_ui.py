@@ -38,7 +38,12 @@ def _home_area(window) -> QRect:
     return area if area.width() >= 200 and area.height() >= 200 else whole
 
 
-def hud_rect(window):
+def hud_rect(window, player_index=0):
+    if len(getattr(getattr(window, "mission", None), "players", [])) > 1:
+        area = _home_area(window)
+        width = min(HUD_WIDTH, max(200, (area.width() - 32) // 2))
+        return QRect(area.left() + 10 + player_index * (width + 12),
+                     area.bottom() - HUD_HEIGHT - 14, width, HUD_HEIGHT)
     width = min(HUD_WIDTH, max(1, window.width() - 16))
     height = min(HUD_HEIGHT, max(1, window.height() - 16))
     position = getattr(window, "_adventure_hud_position", None)
@@ -93,9 +98,9 @@ def short_binding(name: str) -> str:
     return mouse.get(name, name.upper())
 
 
-def draw_hud(painter, window, controller):
+def draw_hud(painter, window, controller, player_index=0):
     spider = controller.creature
-    rect = hud_rect(window)
+    rect = hud_rect(window, player_index)
     painter.save()
     painter.setClipping(False)
     painter.setRenderHint(painter.Antialiasing, True)
@@ -106,6 +111,10 @@ def draw_hud(painter, window, controller):
     title_font = spider._label_font()
     painter.setFont(title_font)
     title = f"{spider.display_name}  ·  Level {spider.level}"
+    if len(getattr(getattr(window, "mission", None), "players", [])) > 1:
+        title = f"P{player_index + 1} · " + title
+    if getattr(spider, "dead", False):
+        title += " · FALLEN"
     title = painter.fontMetrics().elidedText(title, Qt.ElideRight, max(1, rect.width() - 64))
     title_rect = QRect(rect.left() + 16, rect.top() + 5, rect.width() - 64, 26)
     painter.setPen(QColor(10, 4, 0, 200))
@@ -265,8 +274,15 @@ class AdventureSettingsDialog(QDialog):
         heading.setObjectName("dialogTitle")
         layout.addWidget(heading)
         self.controls = ControlsEditor()
+        if len(getattr(getattr(window, "mission", None), "players", [])) > 1:
+            self.controls.setEnabled(False)
+            layout.addWidget(QLabel("Two-player mode uses its fixed keyboard layout to avoid shared keys.\n"
+                                   "P1: WASD / F / Q / Space / Shift / K\n"
+                                   "P2: Arrows / J / U / I / O / P · Esc pauses both"))
         layout.addWidget(self.controls)
-        note = QLabel("Drag the status panel to move it.")
+        note = QLabel("Two player status panels sit side by side."
+                      if len(getattr(getattr(window, "mission", None), "players", [])) > 1
+                      else "Drag the status panel to move it.")
         note.setObjectName("controlsHint")
         layout.addWidget(note)
         done = QPushButton("Apply and return")

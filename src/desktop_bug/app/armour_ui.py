@@ -89,16 +89,18 @@ class SpiderDoll(QWidget):
 
     PLAQUE_W, PLAQUE_H = 156, 54
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, compact=False):
         super().__init__(parent)
-        self.setFixedSize(620, 440)
+        self.setFixedSize(440 if compact else 620, 340 if compact else 440)
+        if compact:
+            self.PLAQUE_W = 120
         self.setAcceptDrops(True)
         self.setMouseTracking(True)
         self.state = None
         self.drag_slot = None      # the part a dragged piece would go to
         self.hover_slot = None
         self._press = None
-        self.unit = 80.0
+        self.unit = 58.0 if compact else 80.0
         self.transform = QTransform()
         self.transform.translate(self.width() / 2, self.height() / 2 + 8)
         self.transform.rotate(-90.0)  # the spider's front points up
@@ -534,8 +536,10 @@ class InventoryBag(QScrollArea):
     unequip = pyqtSignal(str)
     picked = pyqtSignal(str)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, columns=None):
         super().__init__(parent)
+        if columns is not None:
+            self.COLUMNS = max(1, int(columns))
         self.setObjectName("inventoryBag")
         self.setAcceptDrops(True)
         self.setWidgetResizable(True)
