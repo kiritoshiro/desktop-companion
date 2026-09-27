@@ -144,7 +144,7 @@ def shell_qss() -> str:
                                              border: 2px dashed {INK_SOFT}; }}
         QLabel#missionTitle {{ color: {CREAM}; font-size: 11pt; font-weight: 800;
                                background: transparent; }}
-        QLabel#missionText {{ color: {CREAM_SOFT}; font-size: 9pt; background: transparent; }}
+        QLabel#missionText {{ color: {CREAM_SOFT}; font-size: 9pt; background: transparent; min-height: 104px; }}
         QLabel#missionLocked {{ color: {OAK_LIGHT}; font-size: 9pt; font-style: italic;
                                 background: transparent; }}
         QFrame#heroStrip {{ background: rgba(42, 24, 12, 215); border: 2px solid {BRASS};
