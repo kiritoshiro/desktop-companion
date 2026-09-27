@@ -1572,6 +1572,18 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             return True
         return bool(self.name) and self._hovered
 
+    def name_visible(self, always_show: bool) -> bool:
+        """Whether the name itself is drawn, not just the bars under it.
+
+        The owner: "name is unchecked but it still appears on the spider".
+        Pinning a health or stamina bar used to bring the whole name box with
+        it; now a pinned bar hangs on its own. The name shows with "Always
+        show names", with the level or XP pinned (they are part of the name
+        line), for your own spider, or on hover over a named spider."""
+        if always_show or self.level_label_pinned or self.xp_label_pinned or self.label_style == "hero":
+            return True
+        return bool(self.name) and self._hovered
+
     def _label_border_color(self, QColor):
         """The label is edged in the team colour -- white when there is no team.
 
@@ -1759,6 +1771,10 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
             self._draw_quiet_label(painter)
             return
 
+        if not self.name_visible(always_show_names):
+            self._draw_label_bars(painter, self._label_top() - self._label_bars_height() - 1.0)
+            return
+
         font = self._label_font()
         painter.setFont(font)
         fm = QFontMetrics(font)
@@ -1770,12 +1786,7 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         box_w = tw + pad_x * 2.0
         box_h = th + pad_y * 2.0
 
-        # Sit just above the spider's body/leg cluster.
-        top_extent = self.y
-        for leg in self.legs:
-            if leg.foot_y < top_extent:
-                top_extent = leg.foot_y
-        top_extent -= self.size * 0.6 + self.jump_z
+        top_extent = self._label_top()
         box_x = self.x - box_w * 0.5
         box_y = top_extent - box_h - 4.0 - self._label_bars_height()
 
@@ -1814,9 +1825,20 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
                 painter.setBrush(QBrush(QColor(*self.XP_BAR_COLOR, 255)))
                 painter.drawRoundedRect(QRectF(level_x, line_y, fill, 2.5), 1.2, 1.2)
             painter.setBrush(Qt.NoBrush)
+        self._draw_label_bars(painter, box_y + box_h + 3.0)
+
+    def _label_top(self) -> float:
+        """Just above the spider's body and legs, where the label sits."""
+        top_extent = self.y
+        for leg in self.legs:
+            if leg.foot_y < top_extent:
+                top_extent = leg.foot_y
+        return top_extent - (self.size * 0.6 + self.jump_z)
+
+    def _draw_label_bars(self, painter, bar_y: float) -> None:
+        """The pinned health and stamina bars, from ``bar_y`` down."""
         bar_w = self.LABEL_BAR_WIDTH
         bar_x = self.x - bar_w * 0.5
-        bar_y = box_y + box_h + 3.0
         if self.health_label_pinned:
             self._draw_health_bar(painter, bar_x, bar_y, bar_w,
                                   QRectF, Qt, QColor, QBrush, QPen)
