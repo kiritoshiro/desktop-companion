@@ -33,7 +33,8 @@ from ..content.discovery import state_dir
 from ..state.progression import ARMOR_BY_ID, MAX_ITEM_LEVEL, ProgressionState
 from .campaign import COMPANION_BY_ID, DEFAULT_MAP, MAP_BY_ID, STARTING_COMPANIONS
 
-PROFILE_VERSION = 3
+PROFILE_VERSION = 4
+PLAYER_TWO = "player_two"
 HERO = "hero"
 DEFAULT_HERO_NAME = "Wayfarer"
 MAX_NAME_LENGTH = 24
@@ -56,6 +57,7 @@ def fresh_armoury(owned=None) -> dict:
 def fresh_profile() -> dict:
     return {"version": PROFILE_VERSION, "name": DEFAULT_HERO_NAME, "progression": None,
             "missions": {}, "armoury": fresh_armoury(),
+            "two_player": False, "player_two": {"name": "Trailblazer", "progression": None},
             "companions": {cid: {"name": COMPANION_BY_ID[cid].name, "progression": None}
                            for cid in STARTING_COMPANIONS},
             "selected_map": DEFAULT_MAP, "all_screens": True, "disabled_screens": [], "admin": False}
@@ -126,6 +128,12 @@ def load_profile(path: Path | None = None) -> dict:
     profile["all_screens"] = bool(raw.get("all_screens", True))
     profile["disabled_screens"] = [str(n) for n in (raw.get("disabled_screens") or []) if isinstance(n, str)]
     profile["admin"] = bool(raw.get("admin", False))
+    profile["two_player"] = bool(raw.get("two_player", False))
+    second = raw.get("player_two")
+    if isinstance(second, dict):
+        profile["player_two"]["name"] = clean_name(second.get("name") or "Trailblazer")
+        if isinstance(second.get("progression"), dict):
+            profile["player_two"]["progression"] = ProgressionState.from_dict(second["progression"]).to_dict()
     missions = raw.get("missions")
     if isinstance(missions, dict):
         for mission_id, record in missions.items():
@@ -152,6 +160,8 @@ def save_profile(profile: dict, path: Path | None = None) -> bool:
     path = Path(path) if path is not None else profile_path()
     data = {
         "version": PROFILE_VERSION,
+        "two_player": bool(profile.get("two_player", False)),
+        "player_two": profile.get("player_two") or fresh_profile()["player_two"],
         "name": clean_name(profile.get("name")),
         "progression": profile.get("progression"),
         "missions": {k: _clean_record(v) for k, v in (profile.get("missions") or {}).items()},
@@ -202,11 +212,19 @@ def companion_progression(profile: dict, companion_id: str) -> ProgressionState:
 
 
 def spider_progression(profile: dict, who: str) -> ProgressionState:
+    if who == PLAYER_TWO:
+        raw = (profile.get(PLAYER_TWO) or {}).get("progression")
+        state = ProgressionState.from_dict(raw) if isinstance(raw, dict) else ProgressionState()
+        if not isinstance(raw, dict):
+            state.equipped = {}
+        return _dress(state, profile)
     return hero_progression(profile) if who == HERO else companion_progression(profile, who)
 
 
 def store_progression(profile: dict, who: str, state: ProgressionState) -> None:
-    if who == HERO:
+    if who == PLAYER_TWO:
+        profile.setdefault(PLAYER_TWO, {"name": "Trailblazer"})["progression"] = state.to_dict()
+    elif who == HERO:
         profile["progression"] = state.to_dict()
     else:
         entry = profile.setdefault("companions", {}).setdefault(

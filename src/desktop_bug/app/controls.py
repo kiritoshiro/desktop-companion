@@ -33,7 +33,7 @@ ACTIONS = (
     ("sprint", "Sprint", "Hold while moving to run faster. Drains stamina."),
     ("jump", "Jump", "Pounce forward in the direction you are walking."),
     ("shoot", "Shoot silk", "Fire one silk charge along your aim, even if it misses. Refill at home or the Silk loom."),
-    ("bite", "Bite", "Bite a foe in front of you, inside the aim cone."),
+    ("bite", "Bite", "Hold to repeatedly bite a foe in front of you, inside the aim cone."),
     ("companion_follow", "Scout: follow", "Your companion follows and fights nearby enemies."),
     ("companion_defend", "Scout: defend here", "Your companion holds its current position and protects the area."),
     ("companion_attack", "Scout: attack target", "Point at an enemy and order your companion to attack it."),
@@ -49,14 +49,25 @@ DEFAULT_BINDINGS = {
     "move_right": "D",
     "sprint": "Shift",
     "jump": "Space",
-    "shoot": "Mouse Left",
-    "bite": "Mouse Right",
+    "shoot": "Q",
+    "bite": "F",
     "companion_follow": "1",
     "companion_defend": "2",
     "companion_attack": "3",
     "skills": "K",
     "pause": "Esc",
 }
+
+SECOND_PLAYER_BINDINGS = {
+    **DEFAULT_BINDINGS,
+    "move_up": "Up", "move_down": "Down", "move_left": "Left", "move_right": "Right",
+    "bite": "J", "shoot": "U", "jump": "I", "sprint": "O", "skills": "P",
+    "companion_follow": "7", "companion_defend": "8", "companion_attack": "9",
+}
+
+
+def second_player_controls():
+    return ControlSettings(bindings=dict(SECOND_PLAYER_BINDINGS))
 
 # How W/A/S/D move the spider. "screen": up/left/down/right on the screen.
 # "turn": forward, back up, turn left, turn right -- the owner wanted to walk
@@ -182,7 +193,7 @@ class ControlSettings:
 
     # -- saving ----------------------------------------------------------
     def to_dict(self) -> dict:
-        return {"bindings": dict(self.bindings), "aim_cone": int(self.aim_cone),
+        return {"version": 2, "bindings": dict(self.bindings), "aim_cone": int(self.aim_cone),
                 "face_mouse_when_still": bool(self.face_mouse_when_still),
                 "movement": self.movement}
 
@@ -192,6 +203,10 @@ class ControlSettings:
         if not isinstance(data, dict):
             return settings
         bindings = data.get("bindings")
+        if (isinstance(bindings, dict) and "version" not in data
+                and bindings.get("shoot") == "Mouse Left" and bindings.get("bite") == "Mouse Right"
+                and not any(v in ("F", "Q") for k, v in bindings.items() if k not in ("shoot", "bite"))):
+            bindings = {**bindings, "shoot": "Q", "bite": "F"}
         if isinstance(bindings, dict):
             # Explicit saved bindings win over defaults introduced by an update.
             # In particular, a player may already use 1/2/3 for another action.

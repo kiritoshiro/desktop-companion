@@ -280,6 +280,15 @@ class ModeShell(QWidget):
         # Multi-screen raids (the owner: "make multi screen missions too. to
         # recognise automatically where are the screens"). On by default;
         # Reclaim the desktop always freezes every screen.
+        self.two_player_check = QCheckBox("Two players · one keyboard (unchecked: single player)")
+        self.two_player_check.toggled.connect(self._set_two_player)
+        layout.addWidget(self.two_player_check, alignment=Qt.AlignHCenter)
+        controls_hint = QLabel("P1: WASD · F attack (hold) · Q web · Space jump · Shift sprint · K gear\n"
+                              "P2: Arrows · J attack (hold) · U web · I jump · O sprint · P gear\n"
+                              "Two players aim forward. Either gear key opens both player windows. Esc pauses both.")
+        controls_hint.setAlignment(Qt.AlignCenter)
+        controls_hint.setWordWrap(True)
+        layout.addWidget(controls_hint)
         self.all_screens_check = QCheckBox()
         self.all_screens_check.setObjectName("allScreens")
         self.all_screens_check.setCursor(Qt.PointingHandCursor)
@@ -408,6 +417,9 @@ class ModeShell(QWidget):
         self.hero_label.setText(f"{profile['name']}  \u00b7  Level {state.level}{spend}"
                                 f"  \u00b7  {companions} companion{'s' if companions != 1 else ''}"
                                 f"  \u00b7  {amber} amber" + ("  \u00b7  ADMIN" if admin else ""))
+        self.two_player_check.blockSignals(True)
+        self.two_player_check.setChecked(bool(profile.get("two_player", False)))
+        self.two_player_check.blockSignals(False)
         screens = len(QGuiApplication.screens())
         check = getattr(self, "all_screens_check", None)
         if check is not None:
@@ -553,6 +565,11 @@ class ModeShell(QWidget):
         AdminDialog(self).exec_()
         self.refresh_adventure()
 
+    def _set_two_player(self, on: bool) -> None:
+        profile = load_profile()
+        profile["two_player"] = bool(on)
+        save_profile(profile)
+
     def _set_all_screens(self, on: bool) -> None:
         profile = load_profile()
         profile["all_screens"] = bool(on)
@@ -568,9 +585,9 @@ class ModeShell(QWidget):
         start_adventure()
 
     def open_character(self) -> None:
-        from .character_ui import CharacterDialog
+        from .character_ui import show_party_windows
 
-        CharacterDialog(self).exec_()
+        show_party_windows(self)
         self.refresh_adventure()
 
     def refresh_controls_summary(self) -> None:

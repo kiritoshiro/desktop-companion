@@ -11,17 +11,17 @@ where they are spent.
 """
 from __future__ import annotations
 
-from PyQt5.QtCore import QPointF, QRectF, QSize, Qt, pyqtSignal
+from PyQt5.QtCore import QEventLoop, QPointF, QRectF, QSize, Qt, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QIcon, QLinearGradient, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import (QDialog, QFrame, QHBoxLayout, QLabel, QLineEdit, QProgressBar,
-                             QPushButton, QTabWidget, QVBoxLayout, QWidget)
+                             QPushButton, QScrollArea, QTabWidget, QVBoxLayout, QWidget)
 
 from . import wood_theme
 from .armour_ui import InventoryBag, SpiderDoll
 from .skill_art import BRANCH_COLOURS, BRANCHES, branch_crest, skill_icon
 from .armoury import (armoury, can_upgrade, level_of, party, sell_price, sell_spares, spares_of,
                       take_off, upgrade, wear, worn_by)
-from .adventure_profile import (HERO, MAX_NAME_LENGTH, clean_name, hero_progression, load_profile,
+from .adventure_profile import (HERO, PLAYER_TWO, MAX_NAME_LENGTH, clean_name, load_profile,
                                 save_profile, spider_progression, store_progression)
 from .stat_text import (TIER_COLORS, effect_lines, item_effects, set_line, short_effect,
                         skill_tooltip)
@@ -215,14 +215,17 @@ class SkillTree(QWidget):
 class CharacterDialog(QDialog):
     """Name, level, skill tree and armour of the Adventure hero."""
 
-    def __init__(self, parent=None, path=None):
+    changed = pyqtSignal()
+
+    def __init__(self, parent=None, path=None, profile=None, who=HERO, fixed_who=False):
         super().__init__(parent)
         self.path = path
-        self.profile = load_profile(path)
-        self.state = hero_progression(self.profile)
+        self.profile = profile if profile is not None else load_profile(path)
+        self.state = spider_progression(self.profile, who)
+        self.fixed_who = fixed_who
         # Whose armour the Armour tab dresses: the hero or a companion (the
         # owner: "also ability to put armor on companion/s").
-        self.who = HERO
+        self.who = who
         self.dress = self.state
         self.selected = None      # the piece shown in the item panel
         self.setWindowTitle("Your Adventure spider")
@@ -237,7 +240,7 @@ class CharacterDialog(QDialog):
         self.level_badge.setAlignment(Qt.AlignCenter)
         head.addWidget(self.level_badge)
         name_box = QVBoxLayout()
-        self.name_edit = QLineEdit(self.profile["name"])
+        self.name_edit = QLineEdit(self._entry()["name"])
         self.name_edit.setObjectName("heroName")
         self.name_edit.setMaxLength(MAX_NAME_LENGTH)
         self.name_edit.setPlaceholderText("Name your spider")
@@ -291,7 +294,7 @@ class CharacterDialog(QDialog):
         hint.setObjectName("statLine")
         hint.setWordWrap(True)
         doll_col.addWidget(hint)
-        self.doll = SpiderDoll()
+        self.doll = SpiderDoll(compact=fixed_who)
         self.doll.equip.connect(self._equip)
         self.doll.unequip.connect(self._unequip)
         self.doll.picked.connect(self._select)
@@ -305,7 +308,7 @@ class CharacterDialog(QDialog):
         bag_col = QVBoxLayout()
         bag_col.setSpacing(6)
         bag_head = QHBoxLayout()
-        bag_title = QLabel("Bag")
+        bag_title = QLabel("Shared bag" if fixed_who else "Bag")
         bag_title.setObjectName("sectionTitle")
         bag_head.addWidget(bag_title)
         bag_head.addStretch(1)
@@ -318,7 +321,7 @@ class CharacterDialog(QDialog):
         self.shop_button.setToolTip("Coming later: spend amber on armour and more.")
         bag_head.addWidget(self.shop_button)
         bag_col.addLayout(bag_head)
-        self.bag = InventoryBag()
+        self.bag = InventoryBag(columns=3 if fixed_who else None)
         self.bag.equip.connect(self._equip)
         self.bag.unequip.connect(self._unequip)
         self.bag.picked.connect(self._select)
@@ -326,7 +329,7 @@ class CharacterDialog(QDialog):
         # The selected piece: its level and spares, and what can be done with them.
         self.item_panel = QFrame()
         self.item_panel.setObjectName("itemPanel")
-        panel = QHBoxLayout(self.item_panel)
+        panel = QVBoxLayout(self.item_panel) if fixed_who else QHBoxLayout(self.item_panel)
         panel.setContentsMargins(10, 6, 10, 6)
         self.item_label = QLabel()
         self.item_label.setObjectName("statLine")
@@ -363,15 +366,36 @@ class CharacterDialog(QDialog):
         row.addWidget(close)
         root.addLayout(row)
         self.refresh()
+        if fixed_who:
+            # Each window fits half a monitor; detailed armour/skill content scrolls.
+            content = QWidget()
+            content.setObjectName("playerSheet")
+            content.setStyleSheet(f"QWidget#playerSheet {{ background: {wood_theme.WALNUT}; }}")
+            content.setLayout(root)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(content)
+            outer = QVBoxLayout(self)
+            outer.setContentsMargins(0, 0, 0, 0)
+            outer.addWidget(scroll)
+
+    def _entry(self):
+        if self.who == HERO:
+            return self.profile
+        if self.who == PLAYER_TWO:
+            return self.profile.setdefault(PLAYER_TWO, {"name": "Trailblazer", "progression": None})
+        return self.profile["companions"][self.who]
 
     # -- changes -----------------------------------------------------------
     def _save(self) -> None:
-        store_progression(self.profile, HERO, self.state)
+        store_progression(self.profile, self.who, self.state)
         save_profile(self.profile, self.path)
+        self.changed.emit()
 
     def _commit(self) -> None:
         """Save a change made straight to the profile (armoury, who wears what)."""
         save_profile(self.profile, self.path)
+        self.changed.emit()
         self.refresh()
 
     def choose_spider(self, who: str) -> None:
@@ -394,8 +418,8 @@ class CharacterDialog(QDialog):
     def _rename(self) -> None:
         name = clean_name(self.name_edit.text())
         self.name_edit.setText(name)
-        if name != self.profile["name"]:
-            self.profile["name"] = name
+        if name != self._entry()["name"]:
+            self._entry()["name"] = name
             self._save()
 
     def _unlock(self, ability_id: str) -> None:
@@ -419,10 +443,12 @@ class CharacterDialog(QDialog):
 
     # -- display -----------------------------------------------------------
     def refresh(self) -> None:
-        self.state = hero_progression(self.profile)
         if self.who not in party(self.profile):
             self.who = HERO
+        self.state = spider_progression(self.profile, self.who)
         self.dress = spider_progression(self.profile, self.who)
+        if not self.name_edit.hasFocus():
+            self.name_edit.setText(self._entry()["name"])
         state = self.state
         self.level_badge.setText(str(state.level))
         need = xp_to_next_level(state.level)
@@ -450,6 +476,9 @@ class CharacterDialog(QDialog):
     def _refresh_who(self) -> None:
         """One button per spider that can wear armour."""
         names = {HERO: self.profile["name"]}
+        second = self.profile.get(PLAYER_TWO) or {}
+        if self.profile.get("two_player") or second.get("progression") is not None or self.who == PLAYER_TWO:
+            names[PLAYER_TWO] = second.get("name", "Trailblazer")
         for cid, entry in (self.profile.get("companions") or {}).items():
             names[cid] = entry.get("name") or cid
         if list(self.who_buttons) != list(names):
@@ -467,7 +496,9 @@ class CharacterDialog(QDialog):
                 self.who_buttons[who] = button
             self.who_row.addStretch(1)
         for who, button in self.who_buttons.items():
+            button.setText(names[who])
             button.setChecked(who == self.who)
+            button.setVisible(not self.fixed_who or who == self.who)
 
     def _refresh_item_panel(self) -> None:
         item = ARMOR_BY_ID.get(self.selected or "")
@@ -477,7 +508,7 @@ class CharacterDialog(QDialog):
             return
         level, spares = level_of(self.profile, item.id), spares_of(self.profile, item.id)
         wearer = worn_by(self.profile).get(item.id)
-        names = {HERO: self.profile["name"]}
+        names = {HERO: self.profile["name"], PLAYER_TWO: self.profile.get(PLAYER_TWO, {}).get("name", "Trailblazer")}
         names.update({cid: e.get("name") or cid for cid, e in (self.profile.get("companions") or {}).items()})
         worn = f" · worn by {names.get(wearer, wearer)}" if wearer else ""
         colour = TIER_COLORS.get(item.tier, wood_theme.CREAM)
@@ -512,3 +543,42 @@ class CharacterDialog(QDialog):
         sets = [set_line(set_id, dress, dim=wood_theme.CREAM_SOFT, good=wood_theme.BRASS)
                 for set_id in ARMOR_SETS if set_id in worn_sets]
         return text + "".join("<br>" + line for line in sets)
+
+
+def show_party_windows(parent=None, path=None, two_player=None):
+    """Two independent, simultaneous sheets with one authoritative shared bag."""
+    profile = load_profile(path)
+    if not (profile.get("two_player", False) if two_player is None else two_player):
+        CharacterDialog(parent, path=path).exec_()
+        return
+    dialogs = [CharacterDialog(parent, path, profile, who, fixed_who=True)
+               for who in (HERO, PLAYER_TWO)]
+    was_enabled = parent.isEnabled() if parent is not None else False
+    if parent is not None:
+        parent.setEnabled(False)
+    remaining = set(dialogs)
+
+    def closed(dialog):
+        remaining.discard(dialog)
+
+    from PyQt5.QtGui import QGuiApplication
+    area = QGuiApplication.primaryScreen().availableGeometry()
+    for index, dialog in enumerate(dialogs):
+        dialog.setWindowTitle(f"Player {index + 1} · Character, skills & shared bag")
+        dialog.setWindowModality(Qt.NonModal)
+        dialog.setEnabled(True)
+        dialog.changed.connect(lambda: [sheet.refresh() for sheet in dialogs])
+        dialog.finished.connect(lambda _result, sheet=dialog: closed(sheet))
+        dialog.resize(max(350, area.width() // 2 - 20), min(850, area.height() - 80))
+        dialog.move(area.left() + index * area.width() // 2 + 8, area.top() + 30)
+        dialog.show()
+    # Wait by processing events rather than in a nested QEventLoop: once the
+    # application has been asked to quit (a stray last-window-closed), every
+    # new nested loop returns at once and the sheets would vanish unseen.
+    from PyQt5.QtCore import QCoreApplication
+    while remaining and not QCoreApplication.closingDown():
+        QCoreApplication.processEvents(QEventLoop.AllEvents | QEventLoop.WaitForMoreEvents)
+    if parent is not None:
+        parent.setEnabled(was_enabled)
+    for dialog in dialogs:
+        dialog.deleteLater()
