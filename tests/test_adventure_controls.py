@@ -131,7 +131,8 @@ def test_only_what_is_in_front_can_be_hit():
 
 def test_the_mouse_does_not_turn_a_standing_spider_unless_asked():
     spider = _spider(heading=0.0)
-    player = PlayerController(spider)
+    # Facing the mouse is a screen-directions option.
+    player = PlayerController(spider, ControlSettings(movement="screen"))
     player.aim = (spider.x, spider.y - 200.0)
     for _ in range(60):
         spider.update(1 / 60, 100, 100, 900, 700)
@@ -143,7 +144,7 @@ def test_the_mouse_does_not_turn_a_standing_spider_unless_asked():
 
 
 def test_rebound_keys_move_the_spider():
-    settings = ControlSettings()
+    settings = ControlSettings(movement="screen")     # "right" walks right
     settings.rebind("move_right", "L")
     spider = _spider()
     player = PlayerController(spider, settings)
@@ -228,8 +229,9 @@ def test_the_adventure_page_shows_the_essential_buttons(monkeypatch):
     save_controls(settings)
     shell = ModeShell(QLabel("editor"), lambda: None)
     text = shell.controls_line.text()
-    assert "<b>F</b> shoot silk" in text
-    assert "<b>WASD</b> walk" in text
+    # Keys are drawn as key caps now.
+    assert "&nbsp;F&nbsp;</span> shoot silk" in text
+    assert "&nbsp;WASD&nbsp;</span> walk" in text
     for label in ("sprint", "jump", "bite", "pause menu", "90° cone"):
         assert label in text, label
     assert shell.controls_button.text().startswith("Controls")

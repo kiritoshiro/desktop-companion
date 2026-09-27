@@ -10,7 +10,7 @@ from desktop_bug.app.adventure_profile import (
     PLAYER_TWO, fresh_profile, load_profile, save_profile, spider_progression, store_progression,
 )
 from desktop_bug.app.armoury import wear
-from desktop_bug.app.character_ui import CharacterDialog, show_party_windows
+from desktop_bug.app.character_ui import CharacterDialog, PartyDialog, show_party_windows
 from desktop_bug.app.controls import ControlSettings, DEFAULT_BINDINGS, second_player_controls
 from desktop_bug.app.engine import OverlayWindow
 from desktop_bug.app.mission import Loot, TerritoryMission
@@ -203,12 +203,12 @@ def test_both_windows_are_visible_together(qapp, state_dir):
     observed = []
 
     def inspect():
-        sheets = [w for w in QApplication.topLevelWidgets()
-                  if isinstance(w, CharacterDialog) and w.isVisible()
-                  and w.windowTitle().startswith("Player ")]
+        # One window, both players side by side (the owner's layout).
+        windows = [w for w in QApplication.topLevelWidgets() if isinstance(w, PartyDialog) and w.isVisible()]
+        sheets = [c for w in windows for c in w.findChildren(CharacterDialog) if c.isVisible()]
         observed.append(len(sheets))
-        for sheet in sheets:
-            sheet.close()
+        for window in windows:
+            window.close()
 
     QTimer.singleShot(100, inspect)
     show_party_windows()
@@ -257,12 +257,11 @@ def test_paired_windows_disable_parent_and_restore_it(qapp, state_dir):
     observed = []
 
     def inspect():
-        sheets = [w for w in QApplication.topLevelWidgets()
-                  if isinstance(w, CharacterDialog) and w.isVisible()
-                  and w.windowTitle().startswith("Player ")]
+        windows = [w for w in QApplication.topLevelWidgets() if isinstance(w, PartyDialog) and w.isVisible()]
+        sheets = [c for w in windows for c in w.findChildren(CharacterDialog) if c.isVisible()]
         observed.append(not parent.isEnabled() and len(sheets) == 2 and all(s.isEnabled() for s in sheets))
-        for sheet in sheets:
-            sheet.close()
+        for window in windows:
+            window.close()
 
     QTimer.singleShot(100, inspect)
     show_party_windows(parent)
@@ -311,3 +310,36 @@ def test_mode_checkbox_persists(qapp, state_dir):
         assert load_profile()['two_player'] is False
     finally:
         shell.close()
+
+
+def test_both_players_turn_and_walk_by_default(mission):
+    """The owner: "make default controls for both players turn based ... not
+    with the arrow direction"."""
+    assert all(p.controls.turn_movement for p in mission.players)
+
+
+def test_the_settings_list_still_scrolls_in_two_player(qapp, state_dir):
+    from desktop_bug.app.controls_ui import ControlsEditor
+
+    editor = ControlsEditor()
+    editor.lock_bindings(True)
+    assert editor.isEnabled() and editor.movement.isEnabled(), "the list and movement stay usable"
+    assert not any(b.isEnabled() for b in editor.buttons.values()) and not editor.reset_button.isEnabled()
+
+
+def test_the_party_window_puts_each_bag_below_its_spider(qapp, state_dir):
+    """The owner: "make inventory below the spider anatomy ... one player's
+    spider on one side, the other's on the other side with inventory below"."""
+    profile = fresh_profile()
+    profile['two_player'] = True
+    save_profile(profile)
+    window = PartyDialog(profile=profile)
+    window.show()
+    qapp.processEvents()
+    left, right = window.sheets
+    for sheet in (left, right):
+        doll = sheet.doll.mapTo(window, sheet.doll.rect().bottomLeft())
+        bag = sheet.bag.mapTo(window, sheet.bag.rect().topLeft())
+        assert bag.y() >= doll.y() - 2, "the bag is under the doll"
+    assert right.mapTo(window, right.rect().topLeft()).x() > left.mapTo(window, left.rect().topRight()).x() - 2
+    window.close()

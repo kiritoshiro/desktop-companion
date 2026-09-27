@@ -275,10 +275,17 @@ class AdventureSettingsDialog(QDialog):
         layout.addWidget(heading)
         self.controls = ControlsEditor()
         if len(getattr(getattr(window, "mission", None), "players", [])) > 1:
-            self.controls.setEnabled(False)
-            layout.addWidget(QLabel("Two-player mode uses its fixed keyboard layout to avoid shared keys.\n"
-                                   "P1: WASD / F / Q / Space / Shift / K\n"
-                                   "P2: Arrows / J / U / I / O / P · Esc pauses both"))
+            # Fixed keys in two-player; movement and aim still apply to both.
+            # (Disabling the whole editor also stopped its list scrolling.)
+            self.controls.lock_bindings(True)
+            fixed = QLabel("Two-player mode uses fixed keys so the players never share one. "
+                           "Both walk the way chosen under Movement (turn and walk by default).\n"
+                           "P1: W forward, S back, A/D turn · F bite · Q web · Space jump · Shift sprint · K gear\n"
+                           "P2: ↑ forward, ↓ back, ←/→ turn · J bite · U web · I jump · O sprint · P gear\n"
+                           "Esc pauses both · ` shows the map · F8 releases the controls")
+            fixed.setObjectName("controlsHint")
+            fixed.setWordWrap(True)
+            layout.addWidget(fixed)
         layout.addWidget(self.controls)
         note = QLabel("Two player status panels sit side by side."
                       if len(getattr(getattr(window, "mission", None), "players", [])) > 1

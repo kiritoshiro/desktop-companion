@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from PyQt5.QtCore import QPoint, QRect, Qt
 
+from desktop_bug.app.controls import ControlSettings
 from desktop_bug.app.adventure import PlayerController
 from desktop_bug.app.adventure_ui import hud_rect
 from desktop_bug.app.engine import OverlayWindow
@@ -19,7 +20,8 @@ from support import load_pair
 def test_player_moves_and_spends_stamina_without_ai_taking_over():
     model, personality = load_pair()
     spider = Creature(model, personality, 900, 700, index=0, seed=7)
-    player = PlayerController(spider)
+    # Screen directions: D walks right (turn and walk is the default now).
+    player = PlayerController(spider, ControlSettings(movement="screen"))
     start_x = spider.x
     player.set_held(Qt.Key_D, True)
     player.set_held(Qt.Key_Shift, True)

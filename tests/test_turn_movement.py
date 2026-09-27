@@ -116,18 +116,19 @@ def test_the_setting_is_saved_and_labels_follow_it():
     settings = ControlSettings.from_dict({"movement": "turn"})
     assert settings.turn_movement
     assert ControlSettings.from_dict(settings.to_dict()).movement == "turn"
-    assert ControlSettings.from_dict({"movement": "sideways"}).movement == "screen"
+    # Turn and walk is the default now, for both players (the owner).
+    assert ControlSettings.from_dict({"movement": "sideways"}).movement == "turn"
     labels = {label for _, label, _ in instructions(settings)}
     assert {"Forward", "Back up", "Turn left", "Turn right"} <= labels
     settings.reset()
-    assert settings.movement == "screen"
+    assert settings.movement == "turn"
 
 
 def test_the_controls_editor_offers_it(tmp_path_factory):
     from desktop_bug.app.controls_ui import ControlsEditor
 
     path = tmp_path_factory.mktemp("controls") / "controls.json"
-    editor = ControlsEditor(ControlSettings(), path=path)
+    editor = ControlsEditor(ControlSettings(movement="screen"), path=path)
     editor.movement.setCurrentIndex(editor.movement.findData("turn"))
     assert editor.settings.movement == "turn"
     assert editor.action_labels["move_down"][0].text() == "<b>Back up</b>"

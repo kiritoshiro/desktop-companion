@@ -538,7 +538,8 @@ class TerritoryMission:
             self.second_hero.progression.relation_overrides = {}
             self.second_hero._apply_progression_stats(reset_resources=True)
             self.second_hero.set_name(self.profile[PLAYER_TWO]["name"])
-            self.players.append(PlayerController(self.second_hero, second_player_controls()))
+            # Both players move the same way: player 1's choice, turn and walk by default.
+            self.players.append(PlayerController(self.second_hero, second_player_controls(controls.movement)))
             for player in self.players:
                 player.keyboard_aim = True
             self.CAP += 1
