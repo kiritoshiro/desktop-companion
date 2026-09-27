@@ -33,7 +33,7 @@ class SwarmRules:
 
 
 RULES = {
-    "swarm": SwarmRules(target=18, seconds=150.0, rivals=2, max_flies=10, spawn_every=3.2, escape_after=26.0),
+    "swarm": SwarmRules(target=18, seconds=150.0, rivals=1, max_flies=10, spawn_every=3.2, escape_after=26.0),
     "storm": SwarmRules(target=30, seconds=170.0, rivals=4, max_flies=16, spawn_every=2.4, escape_after=20.0),
 }
 

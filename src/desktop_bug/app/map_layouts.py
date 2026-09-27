@@ -57,10 +57,10 @@ LAYOUTS = {
     "territory": (
         Placement("home", "Home burrow", .16, .57, owned=True),
         Placement("food", "Food cache", .39, .29, guards=("guard",)),
-        Placement("silk", "Silk loom", .39, .70, guards=("weaver",)),
-        Placement("hatchery", "Hatchery", .64, .47, guards=("hunter",), reserves=6),
+        Placement("silk", "Silk loom", .39, .70),
+        Placement("hatchery", "Hatchery", .64, .47, guards=("hunter",), reserves=4),
         Placement("nest", "Thorn nest", .83, .30),
-        Placement("amber", "Amber mine", .50, .55, guards=("guard",), far=True),
+        Placement("amber", "Amber mine", .50, .55, far=True),
     ),
     # Ember hollow: home high on the left, a venom den to fight over, the
     # nest across on the other screen.
@@ -68,7 +68,7 @@ LAYOUTS = {
         Placement("home", "Home burrow", .10, .22, owned=True),
         Placement("venom", "Venom den", .28, .78, guards=("guard",)),
         Placement("food", "Food cache", .46, .20, guards=("hunter",)),
-        Placement("hatchery", "Hatchery", .60, .66, guards=("hunter",), reserves=7),
+        Placement("hatchery", "Hatchery", .60, .66, guards=("hunter", "guard"), reserves=7),
         Placement("lookout", "Lookout", .80, .80, guards=("weaver",)),
         Placement("nest", "Hollow nest", .60, .40, far=True, alt=(.88, .26)),
         Placement("amber", "Amber mine", .25, .70, guards=("guard",), far=True),
@@ -77,24 +77,24 @@ LAYOUTS = {
     # far screen, a nursery in the middle.
     "obsidian": (
         Placement("home", "Home burrow", .12, .82, owned=True),
-        Placement("silk", "Silk loom", .28, .30, guards=("weaver",)),
-        Placement("nursery", "Nursery", .50, .68, guards=("guard",)),
+        Placement("silk", "Silk loom", .28, .30, guards=("weaver", "guard")),
+        Placement("nursery", "Nursery", .50, .68, guards=("guard", "hunter")),
         Placement("amber", "Amber mine", .66, .20, guards=("guard",)),
-        Placement("hatchery", "Hatchery", .30, .60, guards=("hunter", "weaver"), reserves=8,
+        Placement("hatchery", "Hatchery", .30, .60, guards=("guard", "hunter", "weaver"), reserves=8,
                   far=True, alt=(.74, .58)),
         Placement("nest", "Obsidian nest", .75, .30, far=True, alt=(.90, .84)),
-        Placement("lookout", "Lookout", .86, .45, guards=("weaver",)),
+        Placement("lookout", "Lookout", .86, .45, guards=("weaver", "hunter")),
     ),
     # Queen of thorns: home at the bottom middle, every kind of building
     # round it, the queen's nest across on the far screen.
     "queen": (
         Placement("home", "Home burrow", .50, .92, owned=True),
-        Placement("food", "Food cache", .18, .60, guards=("guard",)),
-        Placement("silk", "Silk loom", .82, .60, guards=("weaver",)),
-        Placement("venom", "Venom den", .30, .16, guards=("hunter",)),
-        Placement("lookout", "Lookout", .70, .16, guards=("weaver",)),
-        Placement("nursery", "Nursery", .50, .45, guards=("guard",)),
-        Placement("hatchery", "Hatchery", .30, .62, guards=("hunter", "guard"), reserves=9,
+        Placement("food", "Food cache", .18, .60, guards=("guard", "hunter")),
+        Placement("silk", "Silk loom", .82, .60, guards=("weaver", "guard")),
+        Placement("venom", "Venom den", .30, .16, guards=("hunter", "hunter", "guard")),
+        Placement("lookout", "Lookout", .70, .16, guards=("weaver", "weaver", "guard")),
+        Placement("nursery", "Nursery", .50, .45, guards=("guard", "hunter")),
+        Placement("hatchery", "Hatchery", .30, .62, guards=("hunter", "guard", "weaver"), reserves=9,
                   far=True, alt=(.10, .22)),
         Placement("nest", "Queen's nest", .66, .38, far=True, alt=(.90, .22)),
         Placement("amber", "Amber mine", .20, .25, guards=("guard",), far=True),

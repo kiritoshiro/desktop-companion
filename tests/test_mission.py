@@ -35,9 +35,11 @@ def stand(mission, site):
     mission.hero._initialize_legs()
 
 
-def test_mission_starts_with_five_spiders_and_runs(state_dir):
+def test_mission_starts_with_four_spiders_and_runs(state_dir):
     m = make_mission()
-    assert len(m.manager.creatures) == 5
+    # Hero, Scout, the Food cache's guard and the Hatchery's hunter: the first
+    # map is lighter than it was (the owner: "in first levels don't put many enemies").
+    assert len(m.manager.creatures) == 4
     assert len(m.sites) == 5
     step(m, 3)
     assert m.state == "active"
@@ -83,7 +85,7 @@ def test_capture_requires_clear_area_and_triggers_counterattack(state_dir):
     step(m, 4.1)
     assert site.owned
     assert m.counter_started
-    assert len(m.pending) == 2
+    assert len(m.pending) == 1, "one hunter counterattacks on the first map"
     assert m.sites[4].warning > 0
 
 
@@ -259,7 +261,7 @@ def test_reinforcement_warning_and_finite_reserves(state_dir):
     for _ in range(65):
         m._spawning(.05)
     assert len(m.manager.creatures) == before+1
-    assert m.sites[3].reserves == 5
+    assert m.sites[3].reserves == 3
 
 
 def test_projectile_miss_expires_and_cannot_hit_friend(state_dir):

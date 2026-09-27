@@ -113,6 +113,8 @@ def clean_map(raw) -> dict:
         "reward_companion": raw.get("reward_companion") if raw.get("reward_companion") in COMPANION_BY_ID else None,
         "cap": _int(raw.get("cap", 12), 4, 30),
         "wave_every": _float(raw.get("wave_every", 24.0), 5.0, 300.0),
+        # How well its enemies fight together (world/tactics): -1 by the tier.
+        "tactics": _int(raw.get("tactics", -1), -1, 3),
         "buildings": [],
         "enemies": [],
         "boss": clean_spec(raw.get("boss"), boss=True),
