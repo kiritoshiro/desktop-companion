@@ -75,8 +75,9 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
     LABEL_BAR_WIDTH = 44.0
     # Pale gold under the level; not the health bar's half-health amber.
     XP_BAR_COLOR = (242, 212, 128)
-    # Sky blue: the health bar is green when full, so stamina must not be.
-    STAMINA_BAR_COLOR = (92, 176, 226)
+    # Yellow everywhere (the owner). A deep yellow, far from the XP bar's
+    # pale gold and the health bar's green.
+    STAMINA_BAR_COLOR = (250, 204, 20)
     BASE_SIZE = 28.0
 
     def __init__(

@@ -154,6 +154,7 @@ def carcass_for(creature) -> Carcass:
         colors,
     )
     carcass.damage_numbers = [list(n) for n in getattr(creature, "damage_numbers", [])]
+    carcass.damage_team = getattr(getattr(creature, "progression", None), "team_id", None)
     return carcass
 
 
