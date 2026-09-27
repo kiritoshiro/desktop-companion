@@ -982,6 +982,8 @@ class ConfigWindow(QMainWindow):
             if creature._is_regal():
                 # Present the raised face upright in the small skin swatch.
                 creature.heading = creature.target_heading = -math.pi / 2
+                if creature._regal_face_forward():
+                    creature.heading = creature.target_heading = math.pi / 2
             creature.current_speed = 0.0
             creature.speed = 0.0
             creature.body_bob = 0.0

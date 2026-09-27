@@ -38,7 +38,7 @@ GEOMETRY = ("attach_angle", "rest_angle", "reach", "upper_len", "lower_len",
 # test or a gait profile that encodes its own anatomy.
 # Regal Fluff has a compact, bent-foreleg stance rather than the peacock
 # jumper's extended resting forelegs; retain this intentional anatomical rig.
-KEEPS_OWN_RIG = {"plush_snow_hybrid_2", "knuckle_skitter_stalker", "chosen_one", "regal_fluff"}
+KEEPS_OWN_RIG = {"plush_snow_hybrid_2", "knuckle_skitter_stalker", "chosen_one", "regal_fluff", "regal_scout"}
 
 
 def _raw_models() -> dict:
@@ -59,7 +59,10 @@ def test_almost_no_model_still_carries_its_own_rig():
     """The point of the package: forty-one rigs down to a handful."""
     own = {mid for mid, data in _raw_models().items() if data.get("legs")}
     assert own == KEEPS_OWN_RIG, sorted(own)
-    total_rigs = len(BODY_PLANS) + len(own)
+    # Scout reuses Fluff's compact skeleton; a new face is not a new rig.
+    custom_rigs = {json.dumps(data["legs"], sort_keys=True)
+                   for data in _raw_models().values() if data.get("legs")}
+    total_rigs = len(BODY_PLANS) + len(custom_rigs)
     assert total_rigs <= 10, total_rigs
 
 
@@ -111,8 +114,8 @@ def test_an_unknown_plan_is_left_alone_rather_than_emptied():
 def test_every_shipped_model_still_loads_with_eight_legs():
     models, warnings = discover_models()
     assert not warnings, warnings
-    # Original companion set plus the new Regal Fluff and adventure enemies.
-    assert len(models) == 50 + len(ENEMY_KINDS), len(models)
+    # Original companion set plus Regal Fluff/Scout and adventure enemies.
+    assert len(models) == 51 + len(ENEMY_KINDS), len(models)
     for model_id, data in models.items():
         assert len(data["legs"]) == 8, (model_id, len(data["legs"]))
         for leg in data["legs"]:
