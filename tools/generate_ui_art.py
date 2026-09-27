@@ -13,6 +13,7 @@ Outputs (all PNG):
 - ``wood_dark_tile.png`` walnut, tiles seamlessly; cards, HUD, dialogs
 - ``card_frame.png``     nine-slice carved frame for the mode cards
 - ``mode_companion.png`` / ``mode_adventure.png`` / ``mode_strategy.png``
+- ``menu_*.png``         small carved emblems for menus and settings sections
 - ``app_icon.png`` / ``app_icon.ico``  the app's own icon (window, tray, exe)
 """
 
@@ -506,6 +507,237 @@ def card_frame() -> None:
     print("wrote card_frame.png")
 
 
+def menu_emblem(name: str) -> None:
+    """A compact, transparent walnut medallion with a carved action symbol.
+
+    These icons sit beside menu labels and Companion section headings. The
+    outer ring stays warm and legible at 20-32px; a few simple inlaid shapes
+    give every action a recognizable meaning without relying on emoji fonts.
+    """
+    size = 72
+    image = QImage(size, size, QImage.Format_ARGB32_Premultiplied)
+    image.fill(Qt.transparent)
+    p = QPainter(image)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    disc = ellipse(36, 36, 32, 32)
+    relief(p, disc, height=3, fill=QColor(91, 55, 29))
+    inner = ellipse(36, 36, 27, 27)
+    recess(p, inner, depth=3, shade=35)
+    groove(p, ellipse(36, 36, 29, 29), 1.6)
+    gold = QColor(222, 177, 92)
+    pale = QColor(255, 232, 181)
+    chestnut = QColor(156, 93, 43)
+
+    def stroke(points, width=2.8, color=gold):
+        path = polyline(points)
+        p.save()
+        p.setPen(QPen(QColor(31, 15, 5, 220), width + 1.4, Qt.SolidLine,
+                      Qt.RoundCap, Qt.RoundJoin))
+        p.drawPath(path)
+        p.setPen(QPen(color, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.drawPath(path)
+        p.restore()
+
+    def dot(x, y, radius=3.2, color=pale):
+        relief(p, ellipse(x, y, radius, radius), height=1.2, fill=color)
+
+    def spider(cx=36, cy=39, scale=1.0, eye_color=pale):
+        for side in (-1, 1):
+            for index, dy in enumerate((-8, -3, 3, 8)):
+                x0, y0 = cx + side * 6 * scale, cy + dy * scale
+                reach = (13 if index in (0, 3) else 16) * scale
+                bend = (9 if index < 2 else -9) * scale
+                stroke(((x0, y0), (cx + side * 11 * scale, y0 + bend),
+                        (cx + side * reach * scale, y0 + (bend + dy * .4) * scale)),
+                       2.0 * scale)
+        p.save()
+        p.setPen(QPen(QColor(29, 13, 4, 230), 1.4))
+        p.setBrush(QColor(159, 103, 53))
+        p.drawEllipse(QRectF(cx - 7 * scale, cy - 5 * scale, 14 * scale, 15 * scale))
+        p.setBrush(QColor(111, 69, 38))
+        p.drawEllipse(QRectF(cx - 7 * scale, cy - 12 * scale, 14 * scale, 11 * scale))
+        p.setPen(Qt.NoPen)
+        p.setBrush(eye_color)
+        p.drawEllipse(QRectF(cx - 4.8 * scale, cy - 10 * scale, 3.7 * scale, 3.7 * scale))
+        p.drawEllipse(QRectF(cx + 1.1 * scale, cy - 10 * scale, 3.7 * scale, 3.7 * scale))
+        p.restore()
+
+    def eye(cx=36, cy=37):
+        path = QPainterPath(QPointF(cx - 16, cy))
+        path.quadTo(QPointF(cx, cy - 14), QPointF(cx + 16, cy))
+        path.quadTo(QPointF(cx, cy + 14), QPointF(cx - 16, cy))
+        stroke(((cx - 16, cy), (cx - 8, cy - 8), (cx, cy - 11),
+                (cx + 8, cy - 8), (cx + 16, cy), (cx + 8, cy + 8),
+                (cx, cy + 11), (cx - 8, cy + 8), (cx - 16, cy)), 2.3)
+        p.save()
+        p.setPen(QPen(QColor(35, 17, 6), 1.4))
+        p.setBrush(QColor(72, 139, 154))
+        p.drawEllipse(QRectF(cx - 5.5, cy - 5.5, 11, 11))
+        p.setBrush(pale)
+        p.drawEllipse(QRectF(cx - 2, cy - 3.8, 3, 3))
+        p.restore()
+
+    if name in {"companion", "creatures", "appearance"}:
+        if name == "creatures":
+            spider(26, 41, .66)
+            spider(45, 42, .62)
+            dot(36, 26, 2.4)
+        elif name == "appearance":
+            spider(36, 42, 1.0)
+        else:
+            spider(36, 42, .83)
+            web(p, 15, 15, 12, 0, math.pi / 2, spokes=4, turns=2)
+    elif name == "inspect":
+        p.save()
+        p.setPen(QPen(QColor(38, 18, 6), 5.0, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(43, 43, 56, 56)
+        p.setPen(QPen(gold, 3.1))
+        p.drawEllipse(QRectF(17, 16, 31, 31))
+        p.restore()
+        eye(32, 31)
+    elif name in {"pin", "name", "rename"}:
+        tag = polyline(((20, 27), (43, 23), (54, 35), (36, 53), (20, 38)), closed=True)
+        relief(p, tag, height=2.5, fill=chestnut if name == "pin" else gold)
+        dot(28, 32, 2.4, pale)
+        if name == "pin":
+            stroke(((43, 32), (42, 41), (36, 48)), 2.4, pale)
+        elif name == "rename":
+            stroke(((31, 43), (45, 29), (49, 33), (35, 47), (30, 48), (31, 43)), 2.2, pale)
+        else:
+            stroke(((29, 39), (37, 33), (44, 40)), 2.1, pale)
+    elif name == "skills":
+        stroke(((24, 48), (24, 33), (36, 25), (48, 33), (48, 48)), 2.4)
+        stroke(((24, 33), (36, 40), (48, 33)), 2.1)
+        for x, y in ((24, 48), (24, 33), (36, 25), (48, 33), (48, 48), (36, 40)):
+            dot(x, y, 3.4, pale if (x, y) == (36, 25) else gold)
+    elif name == "base":
+        mound = QPainterPath(QPointF(18, 47))
+        mound.quadTo(QPointF(36, 27), QPointF(54, 47))
+        stroke(((18, 47), (23, 41), (29, 37), (36, 35), (43, 37), (49, 41), (54, 47)), 2.7)
+        stroke(((30, 50), (30, 43), (36, 39), (42, 43), (42, 50)), 2.3, pale)
+        stroke(((36, 22), (36, 34)), 1.8)
+        stroke(((36, 23), (47, 27), (36, 31)), 2.0, gold)
+    elif name in {"move", "interaction"}:
+        if name == "move":
+            stroke(((36, 19), (36, 53)), 2.2)
+            stroke(((19, 36), (53, 36)), 2.2)
+            for pts in (((36, 19), (31, 26)), ((36, 19), (41, 26)),
+                        ((36, 53), (31, 46)), ((36, 53), (41, 46)),
+                        ((19, 36), (26, 31)), ((19, 36), (26, 41)),
+                        ((53, 36), (46, 31)), ((53, 36), (46, 41))):
+                stroke(pts, 2.0, pale)
+        else:
+            stroke(((24, 18), (24, 48), (32, 41), (38, 53), (44, 50),
+                    (38, 38), (49, 38), (24, 18)), 2.5, pale)
+            dot(50, 23, 2.5, gold)
+    elif name == "remove":
+        stroke(((23, 23), (49, 49)), 4.0, pale)
+        stroke(((49, 23), (23, 49)), 4.0, pale)
+    elif name in {"cage", "teams"}:
+        if name == "cage":
+            stroke(((21, 26), (51, 26), (51, 49), (21, 49), (21, 26)), 2.1)
+            for x in (28, 36, 44):
+                stroke(((x, 27), (x, 48)), 1.7, pale)
+            stroke(((22, 34), (50, 34)), 1.4)
+        else:
+            dot(27, 36, 8, QColor(119, 151, 179))
+            dot(45, 36, 8, QColor(190, 89, 70))
+            stroke(((28, 37), (35, 29), (43, 37)), 2.2, pale)
+            dot(36, 22, 2.2)
+    elif name == "armor":
+        shield = polyline(((36, 18), (50, 24), (49, 39), (43, 48), (36, 54),
+                           (29, 48), (23, 39), (22, 24), (36, 18)), closed=True)
+        relief(p, shield, height=2.5, fill=QColor(125, 92, 52))
+        groove(p, polyline(((36, 23), (36, 48))), 1.7)
+        stroke(((27, 28), (36, 33), (45, 28)), 1.7, pale)
+        dot(36, 40, 2.4, gold)
+    elif name == "labels":
+        eye(36, 36)
+    elif name == "health":
+        heart = QPainterPath(QPointF(36, 51))
+        heart.cubicTo(QPointF(31, 46), QPointF(20, 40), QPointF(20, 31))
+        heart.cubicTo(QPointF(20, 21), QPointF(31, 19), QPointF(36, 28))
+        heart.cubicTo(QPointF(41, 19), QPointF(52, 21), QPointF(52, 31))
+        heart.cubicTo(QPointF(52, 40), QPointF(41, 46), QPointF(36, 51))
+        p.save()
+        p.setPen(QPen(QColor(50, 19, 8), 2.8, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.setBrush(QColor(173, 70, 49))
+        p.drawPath(heart)
+        p.setPen(QPen(pale, 1.5, Qt.SolidLine, Qt.RoundCap))
+        p.drawLine(36, 27, 36, 44)
+        p.drawLine(29, 35, 43, 35)
+        p.restore()
+    elif name == "stamina":
+        bolt = polyline(((40, 18), (25, 38), (34, 38), (30, 54), (48, 31),
+                         (39, 31), (44, 18)), closed=True)
+        relief(p, bolt, height=2.0, fill=QColor(223, 181, 67))
+    elif name == "xp":
+        stroke(((21, 50), (21, 24)), 2.0, pale)
+        stroke(((21, 50), (53, 50)), 2.0, pale)
+        stroke(((24, 45), (32, 39), (38, 42), (48, 28)), 3.0)
+        stroke(((42, 28), (48, 28), (48, 34)), 2.0, pale)
+    elif name == "preset":
+        page = rounded(QRectF(22, 17, 28, 38), 3)
+        relief(p, page, height=1.8, fill=chestnut)
+        stroke(((28, 28), (44, 28)), 1.7, pale)
+        stroke(((28, 35), (44, 35)), 1.7, pale)
+        stroke(((28, 42), (40, 42)), 1.7, pale)
+        stroke(((44, 18), (44, 27), (51, 24)), 1.7)
+    elif name in {"behavior", "performance"}:
+        if name == "behavior":
+            for y, knob_x in ((27, 42), (37, 29), (47, 46)):
+                stroke(((21, y), (51, y)), 2.0)
+                dot(knob_x, y, 3.5, pale)
+        else:
+            arc = QPainterPath(QPointF(20, 47))
+            arc.cubicTo(QPointF(21, 20), QPointF(51, 20), QPointF(52, 47))
+            p.save()
+            p.setPen(QPen(gold, 3.0, Qt.SolidLine, Qt.RoundCap))
+            p.drawPath(arc)
+            p.restore()
+            stroke(((36, 40), (47, 29)), 2.6, pale)
+            dot(36, 40, 3)
+    elif name == "flies":
+        fly(p, 36, 39, 1.5)
+        stroke(((23, 21), (19, 17)), 1.5, pale)
+        stroke(((49, 21), (53, 17)), 1.5, pale)
+    elif name in {"launch", "quit", "adventure"}:
+        if name == "adventure":
+            spider(34, 40, .77)
+            stroke(((17, 51), (25, 47), (21, 54)), 2.3, pale)
+            stroke(((48, 22), (55, 17), (52, 27)), 2.1, gold)
+        else:
+            stroke(((24, 20), (40, 20), (40, 52), (24, 52), (24, 20)), 2.3)
+            if name == "launch":
+                stroke(((28, 36), (54, 36), (46, 28)), 3.0, pale)
+                stroke(((54, 36), (46, 44)), 3.0, pale)
+            else:
+                stroke(((52, 36), (42, 36), (48, 30)), 2.6, pale)
+                stroke(((42, 36), (48, 42)), 2.6, pale)
+    elif name == "strategy":
+        stroke(((21, 48), (27, 33), (41, 38), (48, 23), (54, 48), (21, 48)), 2.2)
+        stroke(((29, 27), (29, 18), (46, 22), (29, 26)), 2.3, pale)
+        dot(28, 48, 2.5)
+    elif name == "randomize":
+        stroke(((20, 24), (28, 24), (44, 48), (52, 48)), 2.4)
+        stroke(((20, 48), (28, 48), (44, 24), (52, 24)), 2.4, pale)
+        stroke(((47, 20), (53, 24), (47, 28)), 2.0)
+        stroke(((47, 44), (53, 48), (47, 52)), 2.0)
+    elif name == "help":
+        p.save()
+        p.setPen(QPen(pale, 3.0))
+        font = p.font()
+        font.setFamily("Georgia")
+        font.setBold(True)
+        font.setPointSize(31)
+        p.setFont(font)
+        p.drawText(QRectF(19, 13, 34, 43), Qt.AlignCenter, "?")
+        p.restore()
+    p.end()
+    image.save(str(OUT / f"menu_{name}.png"))
+    print("wrote", f"menu_{name}.png")
+
+
 ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
@@ -593,6 +825,11 @@ def main() -> None:
     print("wrote wood_dark_tile.png")
     card_frame()
     app_icon()
+    for name in ("companion", "adventure", "strategy", "inspect", "pin", "name", "rename",
+                 "skills", "preset", "creatures", "teams", "behavior", "flies", "launch",
+                 "base", "move", "remove", "cage", "armor", "labels", "health", "stamina", "xp",
+                 "appearance", "performance", "randomize", "interaction", "help", "quit"):
+        menu_emblem(name)
     only = set(sys.argv[1:])
     for name, make in (("companion", companion), ("adventure", adventure), ("strategy", strategy)):
         if not only or name in only:

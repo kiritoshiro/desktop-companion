@@ -197,7 +197,7 @@ def companion_qss() -> str:
             font-weight: 700;
             border: 2px solid #8a5a2e;
             border-radius: 10px;
-            margin-top: 14px;
+            margin-top: 4px;
             padding: 10px 8px 6px 8px;
             background: {PARCHMENT};
         }}
@@ -211,6 +211,11 @@ def companion_qss() -> str:
             color: {CREAM};
         }}
         {group_titles}
+        QLabel#sectionTitle {{ color: {WALNUT_DEEP}; font-size: 11pt; font-weight: 800;
+                               background: transparent; }}
+        QLabel#sectionDetail {{ color: {INK_SOFT}; font-size: 8.5pt; font-weight: 500;
+                                background: transparent; }}
+        QWidget#sectionHeader {{ background: transparent; }}
         QPushButton#removeSlotButton {{ padding: 0px; }}
         QLabel#teamsNote {{ color: {INK_SOFT}; }}
 
@@ -338,11 +343,13 @@ def app_qss() -> str:
         {d} QGroupBox::title {{ subcontrol-origin: margin; left: 10px; padding: 0 4px; }}
         QMenu {{
             {_background("wood_dark_tile.png", WALNUT)}
-            color: {CREAM}; border: 2px solid {WALNUT_DEEP}; border-radius: 6px; padding: 5px;
+            color: {CREAM}; border: 2px solid {WALNUT_DEEP}; border-radius: 6px;
+            padding: 4px; icon-size: 22px;
         }}
-        QMenu::item {{ padding: 5px 22px 5px 22px; border-radius: 4px; background: transparent; }}
+        QMenu::item {{ padding: 3px 22px 3px 8px; min-height: 20px;
+                       border-radius: 4px; background: transparent; }}
         QMenu::item:selected {{ background: {OAK}; color: #fff5e0; }}
-        QMenu::item:disabled {{ color: #9c8a70; }}
+        QMenu::item:disabled {{ color: #d7c29e; }}
         QMenu::separator {{ height: 1px; background: {WALNUT_DEEP}; margin: 4px 8px; }}
         QMenu::indicator {{ width: 14px; height: 14px; left: 4px; }}
         QToolTip {{ background: {PARCHMENT}; color: {INK}; border: 1px solid {WALNUT_DEEP};
@@ -404,3 +411,19 @@ def texture(name: str):
 def mode_art(kind: str):
     name = MODE_ART.get(kind)
     return texture(name) if name else None
+
+
+@lru_cache(maxsize=None)
+def menu_icon(name: str):
+    """Load an action-specific carved emblem, or leave the text-only fallback.
+
+    The assets are generated with ``tools/generate_ui_art.py`` and deliberately
+    live beside the wood textures, so source runs and frozen builds resolve
+    them through the same data-file lookup.
+    """
+    from PyQt5.QtGui import QIcon
+
+    pixmap = texture(f"menu_{name}.png")
+    if pixmap is None or pixmap.isNull():
+        return None
+    return QIcon(pixmap)

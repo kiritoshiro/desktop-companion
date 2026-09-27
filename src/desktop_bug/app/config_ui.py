@@ -115,6 +115,38 @@ COLOR_KEYS = (
 )
 
 
+def _section_header(icon_name: str, title: str, purpose: str) -> QWidget:
+    """An illustrated, readable heading for one Companion control group."""
+    header = QWidget()
+    header.setObjectName("sectionHeader")
+    header.setAccessibleName(f"{title}. {purpose}")
+    row = QHBoxLayout(header)
+    row.setContentsMargins(2, 0, 2, 2)
+    row.setSpacing(8)
+    emblem = QLabel()
+    emblem.setObjectName("sectionEmblem")
+    emblem.setFixedSize(38, 38)
+    emblem.setAccessibleName(f"{title} symbol")
+    icon = wood_theme.menu_icon(icon_name)
+    if icon is not None:
+        emblem.setPixmap(icon.pixmap(QSize(36, 36)))
+    row.addWidget(emblem, 0, Qt.AlignTop)
+    copy = QVBoxLayout()
+    copy.setContentsMargins(0, 1, 0, 0)
+    copy.setSpacing(1)
+    heading = QLabel(title)
+    heading.setObjectName("sectionTitle")
+    heading.setAccessibleName(title)
+    detail = QLabel(purpose)
+    detail.setObjectName("sectionDetail")
+    detail.setWordWrap(True)
+    detail.setAccessibleName(purpose)
+    copy.addWidget(heading)
+    copy.addWidget(detail)
+    row.addLayout(copy, 1)
+    return header
+
+
 def _short_ability_label(ids, _summary: str) -> str:
     """A label narrow enough for a table cell; the tooltip carries the rest.
 
@@ -379,27 +411,31 @@ class ConfigWindow(QMainWindow):
         root_widget.setToolTip(intro_tip)
         layout.addWidget(title)
 
-        self.preset_group = QGroupBox("Preset")
+        self.preset_group = QGroupBox()
         self.preset_group.setObjectName("presetGroup")
         preset_layout = QGridLayout(self.preset_group)
         preset_layout.setColumnStretch(1, 2)
         preset_layout.setColumnStretch(3, 2)
+        preset_layout.addWidget(
+            _section_header("preset", "Saved colony setups",
+                            "Name, load, save, or refresh a complete spider configuration."),
+            0, 0, 1, 6)
         self.preset_name = QLineEdit("Default")
         self.preset_name.setPlaceholderText("Preset name")
         self.preset_combo = NoScrollComboBox()
         self.load_btn = QPushButton("Load")
         self.save_btn = QPushButton("Save")
         self.refresh_btn = QPushButton("Refresh library")
-        preset_layout.addWidget(QLabel("Name:"), 0, 0)
-        preset_layout.addWidget(self.preset_name, 0, 1)
-        preset_layout.addWidget(QLabel("Saved preset:"), 0, 2)
-        preset_layout.addWidget(self.preset_combo, 0, 3)
-        preset_layout.addWidget(self.load_btn, 0, 4)
-        preset_layout.addWidget(self.save_btn, 0, 5)
-        preset_layout.addWidget(self.refresh_btn, 1, 3, 1, 3)
+        preset_layout.addWidget(QLabel("Name:"), 1, 0)
+        preset_layout.addWidget(self.preset_name, 1, 1)
+        preset_layout.addWidget(QLabel("Saved preset:"), 1, 2)
+        preset_layout.addWidget(self.preset_combo, 1, 3)
+        preset_layout.addWidget(self.load_btn, 1, 4)
+        preset_layout.addWidget(self.save_btn, 1, 5)
+        preset_layout.addWidget(self.refresh_btn, 2, 3, 1, 3)
         layout.addWidget(self.preset_group)
 
-        self.creatures_group = QGroupBox("Creatures")
+        self.creatures_group = QGroupBox()
         self.creatures_group.setObjectName("creaturesGroup")
         self.creatures_group.setToolTip(
             "Each row is one creature group. Temperament is stable personality, Job is a separate profession, and Abilities are true capabilities."
@@ -407,6 +443,9 @@ class ConfigWindow(QMainWindow):
         creatures_layout = QVBoxLayout(self.creatures_group)
         creatures_layout.setContentsMargins(6, 6, 6, 6)
         creatures_layout.setSpacing(4)
+        creatures_layout.addWidget(
+            _section_header("creatures", "Colony roster",
+                            "Each slot sets a spider's body, temperament, job, team, and abilities."))
 
         # The "Randomize:" row (Models, Temperaments, Counts, Surprise me) was
         # removed at the owner's request. Its handlers stay; right-click on a
@@ -425,11 +464,14 @@ class ConfigWindow(QMainWindow):
         creatures_layout.addLayout(slot_buttons)
         layout.addWidget(self.creatures_group, 1)
 
-        self.teams_group = QGroupBox("Teams")
+        self.teams_group = QGroupBox()
         self.teams_group.setObjectName("teamsGroup")
         teams_outer = QVBoxLayout(self.teams_group)
         teams_outer.setContentsMargins(6, 6, 6, 6)
         teams_outer.setSpacing(4)
+        teams_outer.addWidget(
+            _section_header("teams", "Factions & relations",
+                            "Choose who lives together and who competes across the colony."))
         # The honest description of what a team does, in the one place a person
         # picking teams will read it. It comes from the teams module so the
         # window, the tooltips and the README cannot drift apart.
@@ -445,9 +487,13 @@ class ConfigWindow(QMainWindow):
         teams_outer.addWidget(self.teams_panel)
         layout.addWidget(self.teams_group)
 
-        self.behavior_group = QGroupBox("Overlay behavior")
+        self.behavior_group = QGroupBox()
         self.behavior_group.setObjectName("behaviorGroup")
         behavior_layout = QGridLayout(self.behavior_group)
+        behavior_layout.addWidget(
+            _section_header("behavior", "Desktop behavior",
+                            "Set spider size, dragging, and the labels that stay visible."),
+            0, 0, 1, 4)
         self.size_combo = NoScrollComboBox()
         for label, scale in SIZE_OPTIONS:
             self.size_combo.addItem(label, scale)
@@ -496,10 +542,10 @@ class ConfigWindow(QMainWindow):
         # Mood and Movement gone the size dropdown was the only thing in its
         # row and grew to 700px to fill it, which looks like a mistake.
         self.size_combo.setMaximumWidth(200)
-        behavior_layout.addWidget(QLabel("Size:"), 0, 0)
-        behavior_layout.addWidget(self.size_combo, 0, 1)
-        behavior_layout.addWidget(self.interferable_check, 0, 2)
-        behavior_layout.addWidget(QLabel("Always show:"), 1, 0)
+        behavior_layout.addWidget(QLabel("Size:"), 1, 0)
+        behavior_layout.addWidget(self.size_combo, 1, 1)
+        behavior_layout.addWidget(self.interferable_check, 1, 2)
+        behavior_layout.addWidget(QLabel("Always show:"), 2, 0)
         switches = QHBoxLayout()
         switches.setContentsMargins(0, 0, 0, 0)
         switches.setSpacing(12)
@@ -510,15 +556,18 @@ class ConfigWindow(QMainWindow):
         switches.addStretch(1)
         switch_row = QWidget()
         switch_row.setLayout(switches)
-        behavior_layout.addWidget(switch_row, 1, 1, 1, 2)
+        behavior_layout.addWidget(switch_row, 2, 1, 1, 2)
         behavior_layout.setColumnStretch(3, 1)
         layout.addWidget(self.behavior_group)
 
-        self.flies_group = QGroupBox("Flies")
+        self.flies_group = QGroupBox()
         self.flies_group.setObjectName("fliesGroup")
         flies_outer = QVBoxLayout(self.flies_group)
         flies_outer.setContentsMargins(6, 6, 6, 6)
         flies_outer.setSpacing(4)
+        flies_outer.addWidget(
+            _section_header("flies", "Prey & food",
+                            "Release flies for hunters to chase, trap, and eat."))
 
         self.flies_enabled_check = QCheckBox("Spawn flies for the spiders to hunt")
         self.flies_enabled_check.setObjectName("fliesToggle")
@@ -564,11 +613,14 @@ class ConfigWindow(QMainWindow):
         flies_outer.addWidget(self.flies_details)
         layout.addWidget(self.flies_group)
 
-        self.launch_group = QGroupBox("Launch")
+        self.launch_group = QGroupBox()
         self.launch_group.setObjectName("launchGroup")
         launch_layout = QVBoxLayout(self.launch_group)
         launch_layout.setContentsMargins(6, 6, 6, 6)
         launch_layout.setSpacing(4)
+        launch_layout.addWidget(
+            _section_header("launch", "Ready the colony",
+                            "Save this setup, then start or stop the desktop overlay."))
         self.summary = QLabel("")
         self.summary.setVisible(False)
 
