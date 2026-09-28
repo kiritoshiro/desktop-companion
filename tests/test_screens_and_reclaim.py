@@ -574,3 +574,24 @@ def test_an_actor_heads_for_the_door_when_its_target_is_on_the_other_screen(stat
     door = m.layout.links[0]
     assert math.hypot(ally.creature.target_x - door.a_point[0], ally.creature.target_y - door.a_point[1]) < 60
     assert isinstance(ally, MissionActor)
+
+
+def test_the_fast_word_lookup_agrees_with_a_full_scan_and_follows_melting():
+    """Words are kept in buckets for speed (the owner: "a lot of lag"); the
+    answers must match looking at every word, before and after acid."""
+    import math as m
+
+    s = surface(text_rows=8)
+
+    def slow_within(x, y, reach):
+        return {id(w) for w in s.words if not w.done and s._word_visible(w)
+                and m.hypot(w.centre[0] - x, w.centre[1] - y) <= reach}
+
+    for x, y, reach in ((500, 400, 120), (300, 200, 600), (1400, 900, 80)):
+        assert {id(w) for w in s.words_within(x, y, reach)} == slow_within(x, y, reach)
+    word = s.word_near(400, 250, 40)
+    assert word is not None
+    cx, cy = word.centre
+    s.melt(cx, cy, 30)
+    assert word not in s.words_within(cx, cy, 5), "a melted word is gone at once"
+    assert {id(w) for w in s.words_within(500, 400, 300)} == slow_within(500, 400, 300)

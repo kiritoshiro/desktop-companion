@@ -50,8 +50,12 @@ DESKTOP_PER_CRACK = 0.06
 ACID_EATS_ALL = 0.55
 # The break: cracks race across the whole window, then it falls away.
 BREAK_SECONDS = 0.45
+# How far one crack's rays can run from the blow.
+CRACK_REACH = 520.0
 BREAK_HOLD = 0.12
 SHARD_SECONDS = 2.4
+# The word finder's buckets, for asking "which words are near here?" fast.
+WORD_CELL = 160
 # Spacing of the grid on which the desktop's remaining area is sampled.
 INTEGRITY_STEP = 32
 
@@ -156,6 +160,7 @@ class DesktopSurface:
         self.words: list[Word] = []
         self.version = 0
         self._integrity = None
+        self._living = None
         for index, shot in enumerate(snapshot.screens):
             ratio = shot.image.devicePixelRatio() or 1.0
             top = shot.image.convertToFormat(QImage.Format_ARGB32_Premultiplied)
@@ -280,7 +285,47 @@ class DesktopSurface:
         return path
 
     def living_words(self) -> list[Word]:
-        return [w for w in self.words if not w.done and self._word_visible(w)]
+        return [w for w in self._visible_words()[0] if not w.done]
+
+    def _visible_words(self):
+        """The words still showing, and the same in buckets by where they are.
+
+        Whether a word shows changes only when acid melts or glass breaks, so
+        this is worked out once and kept until then: every enemy asks every
+        frame, and asking a thousand words each time read a thousand pixels
+        (the owner: "there is a lot of lag when playing reclaim the desktop")."""
+        if self._living is None:
+            showing = [w for w in self.words if not w.done and self._word_visible(w)]
+            buckets = {}
+            reach = 0.0
+            for word in showing:
+                cx, cy = word.centre
+                buckets.setdefault((int(cx // WORD_CELL), int(cy // WORD_CELL)), []).append(word)
+                reach = max(reach, word.rect.width() / 2, word.rect.height() / 2)
+            self._living = (showing, buckets, reach)
+        return self._living
+
+    def _candidates(self, x: float, y: float, reach: float):
+        _, buckets, _ = self._visible_words()
+        x0, x1 = int((x - reach) // WORD_CELL), int((x + reach) // WORD_CELL)
+        y0, y1 = int((y - reach) // WORD_CELL), int((y + reach) // WORD_CELL)
+        if (x1 - x0 + 1) * (y1 - y0 + 1) > len(buckets):
+            for words in buckets.values():
+                yield from words
+            return
+        for cx in range(x0, x1 + 1):
+            for cy in range(y0, y1 + 1):
+                yield from buckets.get((cx, cy), ())
+
+    def words_within(self, x: float, y: float, reach: float) -> list[Word]:
+        """Showing words whose middle is within ``reach`` of a point."""
+        found = []
+        for word in self._candidates(x, y, reach):
+            if not word.done:
+                cx, cy = word.centre
+                if math.hypot(cx - x, cy - y) <= reach:
+                    found.append(word)
+        return found
 
     def _word_visible(self, word: Word) -> bool:
         layer = self.layers[word.screen]
@@ -288,15 +333,16 @@ class DesktopSurface:
         return self._alpha(layer.top, lx, ly) > 0
 
     def word_near(self, x: float, y: float, reach: float) -> Word | None:
+        """The nearest showing word whose box is within ``reach`` of a point."""
         best, best_d = None, reach
-        for word in self.words:
+        for word in self._candidates(x, y, reach + self._visible_words()[2]):
             if word.done:
                 continue
             r = word.rect
             dx = max(r.left() - x, 0.0, x - r.right())
             dy = max(r.top() - y, 0.0, y - r.bottom())
             d = math.hypot(dx, dy)
-            if d <= best_d and self._word_visible(word):
+            if d <= best_d:
                 best, best_d = word, d
         return best
 
@@ -322,6 +368,7 @@ class DesktopSurface:
         pad = radius * 1.7
         self._compose(layer, QRectF(lx - pad, ly - pad, pad * 2, pad * 2 + radius * 1.5))
         self._integrity = None
+        self._living = None
         return result
 
     def crack(self, x: float, y: float, force: float) -> str | None:
@@ -335,7 +382,11 @@ class DesktopSurface:
         if pane is not None and any(b.pane is pane for b in self.breaks):
             return None
         region = self._visible(pane) if pane is not None else self._bare_desktop()
-        self._draw_on_glass(region, lambda glass, ox, oy: _draw_cracks(glass, x - ox, y - oy, force, self.rng))
+        # A crack reaches a few hundred pixels at most: draw only round it.
+        near = QPainterPath()
+        near.addRect(QRectF(x - CRACK_REACH, y - CRACK_REACH, CRACK_REACH * 2, CRACK_REACH * 2))
+        self._draw_on_glass(region.intersected(near),
+                            lambda glass, ox, oy: _draw_cracks(glass, x - ox, y - oy, force, self.rng))
         if pane is not None:
             pane.stress += force * STRESS_PER_CRACK
             if pane.stress >= 1.0:
@@ -380,16 +431,24 @@ class DesktopSurface:
             if not region.intersects(layer.rect):
                 continue
             local = region.translated(-layer.x, -layer.y)
-            scratch = QImage(layer.glass.size(), QImage.Format_ARGB32_Premultiplied)
-            scratch.setDevicePixelRatio(layer.glass.devicePixelRatio())
+            # Only as big as the region: a whole 4K screen each frame of a
+            # break was most of its cost.
+            bounds = local.boundingRect().intersected(QRectF(0, 0, layer.w, layer.h)).toAlignedRect()
+            if bounds.isEmpty():
+                continue
+            ratio = layer.glass.devicePixelRatio() or 1.0
+            scratch = QImage(max(1, int(bounds.width() * ratio)), max(1, int(bounds.height() * ratio)),
+                             QImage.Format_ARGB32_Premultiplied)
+            scratch.setDevicePixelRatio(ratio)
             scratch.fill(Qt.transparent)
-            area = draw(scratch, layer.x, layer.y)
+            area = draw(scratch, layer.x + bounds.x(), layer.y + bounds.y())
             p = QPainter(layer.glass)
             p.setClipPath(local)
-            p.drawImage(0, 0, scratch)
+            p.drawImage(QPointF(bounds.x(), bounds.y()), scratch)
             p.end()
-            bounds = local.boundingRect()
-            self._compose(layer, area.intersected(bounds) if area is not None else bounds)
+            box = QRectF(bounds)
+            self._compose(layer, area.translated(bounds.x(), bounds.y()).intersected(box)
+                          if area is not None else box)
 
     def _finish_break(self, brk: Break) -> None:
         """The cracked piece falls away as shards. Under a window: the windows
@@ -426,6 +485,7 @@ class DesktopSurface:
             brk.pane.broken = True
             self.windows = [p.rect for p in self.intact_panes()]
         self._integrity = None
+        self._living = None
 
     def _reveal_behind(self, layer: ScreenLayers, pane: Pane, local: QPainterPath) -> None:
         """Paint the unbroken windows behind a broken one into its hole, back

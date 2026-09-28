@@ -204,10 +204,8 @@ class ReclaimMission(TerritoryMission):
         else:
             (ax, ay), reach = actor.defend_point, self.WORD_LEASH
         best, best_d = None, reach
-        for word in self.surface.living_words():
+        for word in self.surface.words_within(ax, ay, reach):
             wx, wy = word.centre
-            if math.hypot(wx - ax, wy - ay) > reach:
-                continue
             d = math.hypot(wx - c.x, wy - c.y)
             if d < best_d:
                 best, best_d = (wx, wy), d
