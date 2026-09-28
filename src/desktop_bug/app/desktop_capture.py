@@ -7,8 +7,11 @@ screen."*
 Nothing here touches a real window. It takes, once, before the overlay shows:
 
 - a screenshot of every monitor, at its native resolution;
-- where the open windows are (rectangles only; no titles, no contents
-  beyond the screenshot itself), so acid can tell a window from the desktop;
+- where the open windows are, front to back, so acid can tell a window from
+  the desktop -- and a picture of each (Windows' PrintWindow), so when the
+  glass of the front one breaks the one behind it can show (the owner:
+  "there could be another folder open beneath it therefore the desktop is
+  not seen until it is broken too"). No titles are read;
 - the wallpaper, to show through a hole melted in a window.
 
 The snapshot lives in memory only. It is never written to disk or sent
@@ -38,6 +41,9 @@ class DesktopSnapshot:
     screens: list[ScreenShot]
     windows: list[QRectF] = field(default_factory=list)   # overlay-local, logical
     primary: int = 0
+    # Each window's own picture, in step with ``windows``; None where it could
+    # not be taken (then it is drawn as a plain window).
+    window_images: list = field(default_factory=list)
 
 
 def capture_desktop(origin: QPoint, screens=None) -> DesktopSnapshot | None:
@@ -58,7 +64,8 @@ def capture_desktop(origin: QPoint, screens=None) -> DesktopSnapshot | None:
         rect = ScreenRect(float(g.x() - origin.x()), float(g.y() - origin.y()), float(g.width()), float(g.height()))
         shots.append(ScreenShot(rect, image, _fill(wallpaper, image.size(), image.devicePixelRatio())))
     index = screens.index(primary) if primary in screens else 0
-    return DesktopSnapshot(shots, list_windows(origin, screens), index)
+    found = _windows(origin, screens, pictures=True)
+    return DesktopSnapshot(shots, [rect for rect, _ in found], index, [image for _, image in found])
 
 
 def _fake_word(p, x, y, letters, seed):
@@ -152,15 +159,24 @@ def list_windows(origin: QPoint, screens) -> list[QRectF]:
     cloaked (hidden UWP) and tool windows are skipped, as are this process's
     own windows and the desktop itself.
     """
+    return [rect for rect, _ in _windows(origin, screens, pictures=False)]
+
+
+def _windows(origin, screens, pictures: bool) -> list:
+    """(rect, picture or None) for each window, front to back."""
     if not sys.platform.startswith("win"):
         return []
     try:
-        return _win32_windows(origin, screens)
+        return _win32_windows(origin, screens, pictures)
     except Exception:
         return []
 
 
-def _win32_windows(origin, screens) -> list[QRectF]:
+# Pictures are taken of at most this many windows, front first.
+MAX_PICTURES = 12
+
+
+def _win32_windows(origin, screens, pictures: bool = False) -> list:
     import ctypes
     from ctypes import wintypes
 
@@ -208,8 +224,72 @@ def _win32_windows(origin, screens) -> list[QRectF]:
             return True
         x0, y0 = physical_to_local(rect.left, rect.top)
         x1, y1 = physical_to_local(rect.right, rect.bottom)
-        found.append(QRectF(x0, y0, x1 - x0, y1 - y0))
+        picture = None
+        if pictures and len(found) < MAX_PICTURES and not user32.IsHungAppWindow(hwnd):
+            try:
+                picture = _print_window(hwnd, rect)
+            except Exception:
+                picture = None
+        found.append((QRectF(x0, y0, x1 - x0, y1 - y0), picture))
         return True
 
     user32.EnumWindows(visit, 0)
     return found
+
+
+def _print_window(hwnd, frame) -> QImage | None:
+    """A window's own picture, even where other windows cover it, cropped to
+    its visible frame (``frame``, physical pixels). None if Windows gives back
+    nothing (some windows draw only to the screen)."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    whole = wintypes.RECT()
+    if not user32.GetWindowRect(hwnd, ctypes.byref(whole)):
+        return None
+    w, h = whole.right - whole.left, whole.bottom - whole.top
+    if w <= 0 or h <= 0 or w * h > 40_000_000:
+        return None
+
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG), ("biHeight", wintypes.LONG),
+                    ("biPlanes", wintypes.WORD), ("biBitCount", wintypes.WORD),
+                    ("biCompression", wintypes.DWORD), ("biSizeImage", wintypes.DWORD),
+                    ("biXPelsPerMeter", wintypes.LONG), ("biYPelsPerMeter", wintypes.LONG),
+                    ("biClrUsed", wintypes.DWORD), ("biClrImportant", wintypes.DWORD)]
+
+    screen_dc = user32.GetDC(None)
+    memory_dc = gdi32.CreateCompatibleDC(screen_dc)
+    bitmap = gdi32.CreateCompatibleBitmap(screen_dc, w, h)
+    old = gdi32.SelectObject(memory_dc, bitmap)
+    try:
+        PW_RENDERFULLCONTENT = 0x2
+        if not user32.PrintWindow(hwnd, memory_dc, PW_RENDERFULLCONTENT):
+            return None
+        header = BITMAPINFOHEADER(ctypes.sizeof(BITMAPINFOHEADER), w, -h, 1, 32, 0, 0, 0, 0, 0, 0)
+        buffer = ctypes.create_string_buffer(w * h * 4)
+        if not gdi32.GetDIBits(memory_dc, bitmap, 0, h, buffer, ctypes.byref(header), 0):
+            return None
+    finally:
+        gdi32.SelectObject(memory_dc, old)
+        gdi32.DeleteObject(bitmap)
+        gdi32.DeleteDC(memory_dc)
+        user32.ReleaseDC(None, screen_dc)
+    image = QImage(buffer.raw, w, h, w * 4, QImage.Format_RGB32).copy()
+    left, top = frame.left - whole.left, frame.top - whole.top
+    image = image.copy(max(0, left), max(0, top), frame.right - frame.left, frame.bottom - frame.top)
+    return None if _blank(image) else image
+
+
+def _blank(image: QImage) -> bool:
+    """True when every sampled pixel is the same colour: nothing was drawn."""
+    if image.isNull() or image.width() < 2 or image.height() < 2:
+        return True
+    first = image.pixel(0, 0)
+    for j in range(1, 12):
+        for i in range(1, 12):
+            if image.pixel(image.width() * i // 12, image.height() * j // 12) != first:
+                return False
+    return True

@@ -243,6 +243,9 @@ def test_the_admin_gifts(state_dir):
     save_profile(fresh_profile())
     assert admin_ui.give_amber(1000) == 1000
     assert admin_ui.give_all_armour() > 20
+    assert load_profile()["armoury"]["spares"] == {}, "the gift hands out no spares, so no free upgrades"
+    assert admin_ui.give_all_armour() == 0
+    assert load_profile()["armoury"]["spares"] == {}
     assert admin_ui.unlock_all_companions() >= 3
     assert admin_ui.set_hero_level(12) == 12
     from desktop_bug.app.adventure_profile import hero_progression
