@@ -62,6 +62,67 @@ SKIRMISH_MISSIONS = tuple((m.id, m.title, m.blurb, True) for m in MAPS) + (
 MISSION_COLUMNS = 3
 
 
+
+def _cap(key: str) -> str:
+    """A key as a small key cap, in rich text."""
+    return (f"<span style='background:#f3dfb4; color:#2e1d10; font-weight:800; "
+            f"font-family:Consolas,monospace;'>&nbsp;{key}&nbsp;</span>")
+
+
+def _key_row(badge: str, keys) -> QWidget:
+    """"P1  [W] forward  [S] back ..." as a row of key caps."""
+    row = QWidget()
+    line = QHBoxLayout(row)
+    line.setContentsMargins(0, 0, 0, 0)
+    line.setSpacing(6)
+    if badge:
+        tag = QLabel(badge)
+        tag.setObjectName("playerBadge")
+        tag.setProperty("player", badge)
+        tag.setAlignment(Qt.AlignCenter)
+        line.addWidget(tag)
+    for key, what in keys:
+        cap = QLabel(key)
+        cap.setObjectName("keyCap")
+        cap.setAlignment(Qt.AlignCenter)
+        line.addWidget(cap)
+        text = QLabel(what)
+        text.setObjectName("keyWhat")
+        line.addWidget(text)
+    line.addStretch(1)
+    return row
+
+
+def _setup_qss() -> str:
+    t = wood_theme
+    return f"""
+        QFrame#setupCard {{ background: rgba(42, 24, 12, 220); border: 2px solid {t.BRASS_DEEP};
+                            border-radius: 12px; }}
+        QFrame#setupCard QLabel {{ color: {t.CREAM}; background: transparent; }}
+        QFrame#setupCard QLabel#setupTitle {{ color: {t.BRASS}; font-size: 11pt; font-weight: 800; }}
+        QFrame#setupCard QLabel#setupNote, QFrame#setupCard QLabel#controlsHintLine {{ color: {t.CREAM_SOFT}; font-size: 9pt; }}
+        QFrame#setupRule {{ background: rgba(232, 193, 112, 70); border: none; }}
+        QPushButton#segment {{ padding: 6px 16px; font-weight: 700; color: {t.CREAM};
+            background: rgba(20, 12, 6, 200); border: 1px solid {t.BRASS_DEEP}; }}
+        QPushButton#segment[side="left"] {{ border-top-left-radius: 8px; border-bottom-left-radius: 8px; }}
+        QPushButton#segment[side="right"] {{ border-top-right-radius: 8px; border-bottom-right-radius: 8px; }}
+        QPushButton#segment:checked {{ background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+            stop:0 #e8bd62, stop:1 {t.BRASS_DEEP}); color: {t.WALNUT_DEEP}; }}
+        QPushButton#segment:hover:!checked {{ background: rgba(90, 58, 32, 220); }}
+        QFrame#setupCard QLabel#keyCap {{ background: #f3dfb4; color: #2e1d10; border: 1px solid #b08a4a; border-bottom-width: 3px;
+            border-radius: 5px; padding: 1px 7px; font-family: Consolas, monospace; font-weight: 800; }}
+        QFrame#setupCard QLabel#keyWhat {{ color: {t.CREAM_SOFT}; font-size: 9pt; padding-right: 6px; }}
+        QFrame#setupCard QLabel#playerBadge {{ color: {t.WALNUT_DEEP}; font-weight: 900; border-radius: 9px; padding: 1px 8px;
+            min-width: 22px; background: {t.BRASS}; }}
+        QFrame#setupCard QLabel#playerBadge[player="P2"] {{ background: #7ec4e0; }}
+        QFrame#setupCard QCheckBox {{ color: {t.CREAM}; spacing: 10px; }}
+        QFrame#setupCard QCheckBox:disabled {{ color: {t.CREAM_SOFT}; }}
+        QFrame#setupCard QCheckBox::indicator {{ width: 34px; height: 18px; border-radius: 9px;
+            background: rgba(20, 12, 6, 220); border: 1px solid {t.BRASS_DEEP}; image: none; }}
+        QFrame#setupCard QCheckBox::indicator:checked {{ background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 {t.BRASS_DEEP}, stop:1 #f0cf7a); border: 1px solid {t.BRASS}; }}
+    """
+
 class ModeShell(QWidget):
     def __init__(self, companion: QWidget, start_adventure, parent=None, leave_adventure=None):
         super().__init__(parent)
@@ -280,33 +341,45 @@ class ModeShell(QWidget):
         # Multi-screen raids (the owner: "make multi screen missions too. to
         # recognise automatically where are the screens"). On by default;
         # Reclaim the desktop always freezes every screen.
-        self.two_player_check = QCheckBox("Two players · one keyboard (unchecked: single player)")
-        self.two_player_check.toggled.connect(self._set_two_player)
-        layout.addWidget(self.two_player_check, alignment=Qt.AlignHCenter)
-        controls_hint = QLabel("P1: WASD · F attack (hold) · Q web · Space jump · Shift sprint · K gear\n"
-                              "P2: Arrows · J attack (hold) · U web · I jump · O sprint · P gear\n"
-                              "Two players aim forward. Either gear key opens both player windows. Esc pauses both.")
-        controls_hint.setAlignment(Qt.AlignCenter)
-        controls_hint.setWordWrap(True)
-        layout.addWidget(controls_hint)
-        self.all_screens_check = QCheckBox()
-        self.all_screens_check.setObjectName("allScreens")
-        self.all_screens_check.setCursor(Qt.PointingHandCursor)
-        self.all_screens_check.toggled.connect(self._set_all_screens)
-        layout.addWidget(self.all_screens_check, alignment=Qt.AlignHCenter)
-        # One switch per other screen: a monitor asleep or off is skipped by
-        # itself; one showing another PC can be switched off here (the owner:
-        # "only when the second/or other screens are active only then
-        # populate them").
-        self.screen_box = QVBoxLayout()
-        self.screen_checks = {}
-        screen_holder = QWidget()
-        screen_holder.setLayout(self.screen_box)
-        layout.addWidget(screen_holder, alignment=Qt.AlignHCenter)
+        # Raid setup on a walnut card, not loose text and tick boxes (the
+        # owner: "make the text below the maps nicer, now it's just text and
+        # checkboxes"): who plays and with which keys, and which screens.
+        setup = QFrame()
+        setup.setObjectName("setupCard")
+        setup.setFixedWidth(760)
+        card = QVBoxLayout(setup)
+        card.setContentsMargins(20, 14, 20, 16)
+        card.setSpacing(10)
 
-        # One short line instead of the old instructions (the owner: "the
-        # instructions could be smaller too, and maybe unnecessary"). The
-        # whole list lives behind Controls.
+        players_title = QLabel("Players")
+        players_title.setObjectName("setupTitle")
+        card.addWidget(players_title)
+        seg = QHBoxLayout()
+        seg.setSpacing(0)
+        self.one_player_button = QPushButton("One player")
+        self.two_player_button = QPushButton("Two players \u00b7 one keyboard")
+        for index, button in enumerate((self.one_player_button, self.two_player_button)):
+            button.setObjectName("segment")
+            button.setProperty("side", "left" if index == 0 else "right")
+            button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
+            seg.addWidget(button)
+        seg.addStretch(1)
+        card.addLayout(seg)
+        # The switch itself stays a check box (saved by _set_two_player); the
+        # two segment buttons drive it.
+        self.two_player_check = QCheckBox("Two players \u00b7 one keyboard")
+        self.two_player_check.setVisible(False)
+        self.two_player_check.toggled.connect(self._set_two_player)
+        self.two_player_check.toggled.connect(self._show_player_mode)
+        self.one_player_button.clicked.connect(lambda: self.two_player_check.setChecked(False))
+        self.two_player_button.clicked.connect(lambda: self.two_player_check.setChecked(True))
+        card.addWidget(self.two_player_check)
+
+        # Keys: the saved ones for one player; the fixed pair for two.
+        self.solo_keys = QWidget()
+        solo = QVBoxLayout(self.solo_keys)
+        solo.setContentsMargins(0, 0, 0, 0)
         controls = QPushButton("Controls\u2026")
         controls.setObjectName("modeBack")
         controls_icon = wood_theme.menu_icon("behavior")
@@ -316,14 +389,61 @@ class ModeShell(QWidget):
         controls.setCursor(Qt.PointingHandCursor)
         controls.clicked.connect(self.open_controls)
         self.controls_button = controls
+        # The saved keys as key caps; the same summary as text stays on
+        # controls_line (hidden) for anything that reads it.
+        self.solo_caps = QVBoxLayout()
+        self.solo_caps.setContentsMargins(0, 0, 0, 0)
+        solo.addLayout(self.solo_caps)
         self.controls_line = QLabel()
         self.controls_line.setObjectName("controlsHintLine")
         self.controls_line.setWordWrap(True)
-        self.controls_line.setAlignment(Qt.AlignCenter)
-        self.controls_line.setFixedWidth(740)
+        self.controls_line.setTextFormat(Qt.RichText)
+        self.controls_line.setVisible(False)
+        solo.addWidget(self.controls_line)
+        self.aim_note = QLabel()
+        self.aim_note.setObjectName("setupNote")
+        solo.addWidget(self.aim_note)
+        card.addWidget(self.solo_keys)
+        self.coop_keys = QWidget()
+        coop = QVBoxLayout(self.coop_keys)
+        coop.setContentsMargins(0, 0, 0, 0)
+        coop.setSpacing(6)
+        for badge, keys in (("P1", (("W", "forward"), ("S", "back"), ("A D", "turn"), ("F", "bite"), ("Q", "web"),
+                                    ("Space", "jump"), ("Shift", "sprint"), ("K", "gear"))),
+                            ("P2", (("\u2191", "forward"), ("\u2193", "back"), ("\u2190 \u2192", "turn"),
+                                    ("J", "bite"), ("U", "web"), ("I", "jump"), ("O", "sprint"), ("P", "gear")))):
+            coop.addWidget(_key_row(badge, keys))
+        shared = QLabel("Both walk and turn and aim where they face \u00b7 either gear key opens both "
+                        "spiders \u00b7 <b>Esc</b> pauses both \u00b7 <b>`</b> map \u00b7 <b>F8</b> release")
+        shared.setObjectName("setupNote")
+        shared.setWordWrap(True)
+        coop.addWidget(shared)
+        card.addWidget(self.coop_keys)
+
+        rule = QFrame()
+        rule.setObjectName("setupRule")
+        rule.setFixedHeight(1)
+        card.addWidget(rule)
+        screens_title = QLabel("Screens")
+        screens_title.setObjectName("setupTitle")
+        card.addWidget(screens_title)
+        self.all_screens_check = QCheckBox()
+        self.all_screens_check.setObjectName("allScreens")
+        self.all_screens_check.setCursor(Qt.PointingHandCursor)
+        self.all_screens_check.toggled.connect(self._set_all_screens)
+        card.addWidget(self.all_screens_check)
+        # One switch per other screen: a monitor asleep or off is skipped by
+        # itself; one showing another PC can be switched off here (the owner:
+        # "only when the second/or other screens are active only then
+        # populate them").
+        self.screen_box = QVBoxLayout()
+        self.screen_box.setSpacing(6)
+        self.screen_checks = {}
+        card.addLayout(self.screen_box)
+        setup.setStyleSheet(_setup_qss())
         self.refresh_controls_summary()
         self.refresh_adventure()
-        layout.addWidget(self.controls_line, alignment=Qt.AlignHCenter)
+        layout.addWidget(setup, alignment=Qt.AlignHCenter)
         tools = QHBoxLayout()
         tools.addStretch(1)
         tools.addWidget(controls)
@@ -420,6 +540,7 @@ class ModeShell(QWidget):
         self.two_player_check.blockSignals(True)
         self.two_player_check.setChecked(bool(profile.get("two_player", False)))
         self.two_player_check.blockSignals(False)
+        self._show_player_mode(self.two_player_check.isChecked())
         screens = len(QGuiApplication.screens())
         check = getattr(self, "all_screens_check", None)
         if check is not None:
@@ -490,7 +611,8 @@ class ModeShell(QWidget):
             check.setToolTip("Switch off a screen that shows another computer; asleep or off "
                              "screens are skipped by themselves.")
             check.toggled.connect(lambda on, name=screen.name(): self._set_screen(name, on))
-            box.addWidget(check, alignment=Qt.AlignHCenter)
+            check.setCursor(Qt.PointingHandCursor)
+            box.addWidget(check)
             self.screen_checks[screen.name()] = check
 
     def _set_screen(self, name: str, on: bool) -> None:
@@ -590,18 +712,37 @@ class ModeShell(QWidget):
         show_party_windows(self)
         self.refresh_adventure()
 
+    def _show_player_mode(self, two: bool) -> None:
+        """The segment buttons and the keys shown follow the player switch."""
+        if not hasattr(self, "one_player_button"):
+            return
+        self.one_player_button.setChecked(not two)
+        self.two_player_button.setChecked(bool(two))
+        self.solo_keys.setVisible(not two)
+        self.coop_keys.setVisible(bool(two))
+
     def refresh_controls_summary(self) -> None:
         """One line of the essentials, from the saved bindings."""
         settings = load_controls()
         keys = [settings.binding(a) for a in ("move_up", "move_left", "move_down", "move_right")]
         walk = "".join(keys) if all(len(k) == 1 for k in keys) else "/".join(keys)
         walking = "walk and turn" if settings.turn_movement else "walk"
-        parts = [f"<b>{walk}</b> {walking}"]
+        parts = [f"{_cap(walk)} {walking}"]
         for action in ("sprint", "jump", "shoot", "bite", "pause"):
             label, _ = settings.action_text(action)
-            parts.append(f"<b>{settings.binding(action)}</b> {label.lower()}")
+            parts.append(f"{_cap(settings.binding(action))} {label.lower()}")
         cone = "free aim" if settings.aim_cone >= 360 else f"mouse aims in a {settings.aim_cone}° cone"
-        self.controls_line.setText("  ·  ".join(parts) + "  ·  " + cone)
+        self.controls_line.setText("&nbsp;&nbsp; ".join(parts) + "&nbsp;&nbsp; " + cone)
+        caps = getattr(self, "solo_caps", None)
+        if caps is not None:
+            while caps.count():
+                item = caps.takeAt(0)
+                if item.widget() is not None:
+                    item.widget().deleteLater()
+            keys = [(walk, walking)] + [(settings.binding(a), settings.action_text(a)[0].lower())
+                                         for a in ("sprint", "jump", "shoot", "bite", "pause")]
+            caps.addWidget(_key_row(None, keys))
+            self.aim_note.setText(cone[:1].upper() + cone[1:] + " · ` map · F8 release")
 
     def open_controls(self) -> None:
         from .controls_ui import ControlsDialog

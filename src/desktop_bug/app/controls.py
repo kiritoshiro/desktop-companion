@@ -72,8 +72,10 @@ SECOND_PLAYER_BINDINGS = {
 }
 
 
-def second_player_controls():
-    return ControlSettings(bindings=dict(SECOND_PLAYER_BINDINGS))
+def second_player_controls(movement: str | None = None):
+    """Player 2's fixed keys. Up walks forward, Down backs up and Left/Right
+    turn, like player 1's W/S/A/D, unless ``movement`` says screen directions."""
+    return ControlSettings(bindings=dict(SECOND_PLAYER_BINDINGS), movement=movement or DEFAULT_MOVEMENT)
 
 # How W/A/S/D move the spider. "screen": up/left/down/right on the screen.
 # "turn": forward, back up, turn left, turn right -- the owner wanted to walk
@@ -81,7 +83,9 @@ def second_player_controls():
 # for short distances, so backing is slow and cannot sprint.
 MOVEMENT_MODES = (("screen", "Screen directions"), ("turn", "Turn and walk"))
 MOVEMENT_IDS = tuple(mode for mode, _ in MOVEMENT_MODES)
-DEFAULT_MOVEMENT = "screen"
+# Turn and walk by default, for both players (the owner: "make default
+# controls for both players turn based ... not with the arrow direction").
+DEFAULT_MOVEMENT = "turn"
 TURN_ACTION_TEXT = {
     "move_up": ("Forward", "Walk forward, the way your spider is facing."),
     "move_down": ("Back up", "Walk slowly backwards, still facing forward. No sprint."),

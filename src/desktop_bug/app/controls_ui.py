@@ -147,8 +147,10 @@ class ControlsEditor(QWidget):
             self.action_labels[action] = (name_label, what)
         grid.setColumnStretch(2, 1)
         bindings_panel = QWidget()
+        bindings_panel.setObjectName("bindingsPanel")
         bindings_panel.setLayout(grid)
         scroll = QScrollArea()
+        scroll.setObjectName("bindingsScroll")
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setMinimumHeight(240)
@@ -217,12 +219,29 @@ class ControlsEditor(QWidget):
         self._sync()
         self._save()
 
+    def lock_bindings(self, locked: bool = True) -> None:
+        """Two-player mode keeps fixed keys: the key buttons and Reset are
+        locked, but the list still scrolls and movement and aim still apply.
+        (Disabling the whole editor also stopped it scrolling.)"""
+        for button in self.buttons.values():
+            button.setEnabled(not locked)
+        self.reset_button.setEnabled(not locked)
+
 
 def controls_qss() -> str:
+    # The key list on dark walnut with cream text: on the default light
+    # panel its labels were close to invisible (the owner).
     return f"""
         QLabel#controlsHint {{ color: {wood_theme.CREAM_SOFT}; }}
         QPushButton#bindingButton {{ font-family: Consolas, monospace; }}
+        QPushButton#bindingButton:disabled {{ color: {wood_theme.CREAM}; }}
         QCheckBox {{ color: {wood_theme.CREAM}; }}
+        QScrollArea#bindingsScroll {{ background: rgba(28, 16, 8, 215); border: 1px solid {wood_theme.BRASS_DEEP};
+                                      border-radius: 8px; }}
+        QWidget#bindingsPanel {{ background: transparent; }}
+        QWidget#bindingsPanel QLabel {{ color: {wood_theme.CREAM}; background: transparent; }}
+        QWidget#bindingsPanel QLabel#controlsHint {{ color: {wood_theme.CREAM_SOFT}; }}
+        QLabel:disabled {{ color: {wood_theme.CREAM_SOFT}; }}
     """
 
 

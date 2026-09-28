@@ -278,9 +278,11 @@ class CharacterDialog(QDialog):
 
         armour_panel = QFrame()
         armour_panel.setObjectName("sheetPanel")
-        armour_row = QHBoxLayout(armour_panel)
+        # The bag under the anatomy doll (the owner: "make inventory below
+        # the spider anatomy").
+        armour_row = QVBoxLayout(armour_panel)
         armour_row.setContentsMargins(14, 10, 14, 14)
-        armour_row.setSpacing(14)
+        armour_row.setSpacing(10)
         doll_col = QVBoxLayout()
         doll_col.setSpacing(6)
         armour_title = QLabel("Armour")
@@ -303,8 +305,12 @@ class CharacterDialog(QDialog):
         self.stats_label.setObjectName("statLine")
         self.stats_label.setWordWrap(True)
         self.stats_label.setTextFormat(Qt.RichText)
-        doll_col.addStretch(1)
-        armour_row.addLayout(doll_col)
+        # In a widget with a firm minimum height: a word-wrapped hint above
+        # the doll made the layout squeeze the column and the bag overlap it.
+        doll_holder = QWidget()
+        doll_holder.setLayout(doll_col)
+        doll_holder.setMinimumHeight(self.doll.height() + 110)
+        armour_row.addWidget(doll_holder)
         bag_col = QVBoxLayout()
         bag_col.setSpacing(6)
         bag_head = QHBoxLayout()
@@ -321,7 +327,10 @@ class CharacterDialog(QDialog):
         self.shop_button.setToolTip("Coming later: spend amber on armour and more.")
         bag_head.addWidget(self.shop_button)
         bag_col.addLayout(bag_head)
-        self.bag = InventoryBag(columns=3 if fixed_who else None)
+        self.bag = InventoryBag(columns=4 if fixed_who else 5)
+        # Two rows of tiles show at once; more scroll.
+        self.bag.setMinimumHeight(150)
+        self.bag.setMaximumHeight(270)
         self.bag.equip.connect(self._equip)
         self.bag.unequip.connect(self._unequip)
         self.bag.picked.connect(self._select)
@@ -349,9 +358,25 @@ class CharacterDialog(QDialog):
         bag_col.addWidget(self.item_panel)
         self.stats_label.setMaximumWidth(self.bag.width())
         bag_col.addWidget(self.stats_label)
-        armour_row.addLayout(bag_col)
+        bag_holder = QWidget()
+        bag_holder.setLayout(bag_col)
+        bag_holder.setMaximumWidth(max(self.doll.width(), self.bag.width()) + 8)
+        armour_row.addWidget(bag_holder, 0, Qt.AlignHCenter)
+        armour_row.addStretch(1)
 
-        self.tabs.addTab(armour_panel, "Armour")
+        if fixed_who:
+            armour_page = armour_panel
+        else:
+            # Doll above, bag below: taller than some screens, so the page
+            # scrolls rather than letting the two overlap.
+            armour_page = QScrollArea()
+            armour_page.setWidgetResizable(True)
+            armour_page.setFrameShape(QFrame.NoFrame)
+            armour_page.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+            armour_page.setStyleSheet("QScrollArea { background: transparent; }")
+            armour_page.setWidget(armour_panel)
+            armour_page.setMinimumHeight(min(armour_panel.minimumSizeHint().height(), 760))
+        self.tabs.addTab(armour_page, "Armour")
         self.tabs.addTab(tree_panel, "Skills")
         for index, icon_name in enumerate(("armor", "skills")):
             icon = wood_theme.menu_icon(icon_name)
@@ -361,6 +386,7 @@ class CharacterDialog(QDialog):
 
         close = QPushButton("Done")
         close.clicked.connect(self.accept)
+        self.done_button = close
         row = QHBoxLayout()
         row.addStretch(1)
         row.addWidget(close)
@@ -545,40 +571,72 @@ class CharacterDialog(QDialog):
         return text + "".join("<br>" + line for line in sets)
 
 
+class PartyDialog(QDialog):
+    """Both players in one window: Player 1's spider on the left, Player 2's
+    on the right, each with the shared bag below its anatomy doll (the owner:
+    "when two players enabled on one side make one player spider on another
+    side another player's spider with inventory below")."""
+
+    def __init__(self, parent=None, path=None, profile=None):
+        super().__init__(parent)
+        self.setWindowTitle("Players 1 & 2 · Character, skills & shared bag")
+        self.setStyleSheet(character_qss())
+        profile = profile if profile is not None else load_profile(path)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(12, 10, 12, 12)
+        root.setSpacing(8)
+        row = QHBoxLayout()
+        row.setSpacing(12)
+        self.sheets = []
+        for index, (who, keys) in enumerate(((HERO, "WASD · K"), (PLAYER_TWO, "Arrows · P"))):
+            column = QVBoxLayout()
+            column.setSpacing(4)
+            heading = QLabel(f"Player {index + 1}  ·  {keys}")
+            heading.setObjectName("sectionTitle")
+            column.addWidget(heading)
+            sheet = CharacterDialog(self, path, profile, who, fixed_who=True)
+            sheet.setWindowFlags(Qt.Widget)
+            sheet.done_button.hide()
+            sheet.setWindowTitle(f"Player {index + 1}")
+            column.addWidget(sheet, 1)
+            row.addLayout(column, 1)
+            self.sheets.append(sheet)
+        for sheet in self.sheets:
+            # One bag: a change on either side shows on both at once.
+            sheet.changed.connect(lambda: [other.refresh() for other in self.sheets])
+        root.addLayout(row, 1)
+        done = QPushButton("Done")
+        done.clicked.connect(self.accept)
+        bottom = QHBoxLayout()
+        bottom.addStretch(1)
+        bottom.addWidget(done)
+        root.addLayout(bottom)
+        from PyQt5.QtGui import QGuiApplication
+        area = QGuiApplication.primaryScreen().availableGeometry()
+        self.resize(min(area.width() - 40, 1180), min(area.height() - 60, 940))
+
+
 def show_party_windows(parent=None, path=None, two_player=None):
-    """Two independent, simultaneous sheets with one authoritative shared bag."""
+    """The character window: one spider, or both players side by side."""
     profile = load_profile(path)
     if not (profile.get("two_player", False) if two_player is None else two_player):
         CharacterDialog(parent, path=path).exec_()
         return
-    dialogs = [CharacterDialog(parent, path, profile, who, fixed_who=True)
-               for who in (HERO, PLAYER_TWO)]
+    dialog = PartyDialog(parent, path, profile)
     was_enabled = parent.isEnabled() if parent is not None else False
     if parent is not None:
         parent.setEnabled(False)
-    remaining = set(dialogs)
-
-    def closed(dialog):
-        remaining.discard(dialog)
-
-    from PyQt5.QtGui import QGuiApplication
-    area = QGuiApplication.primaryScreen().availableGeometry()
-    for index, dialog in enumerate(dialogs):
-        dialog.setWindowTitle(f"Player {index + 1} · Character, skills & shared bag")
-        dialog.setWindowModality(Qt.NonModal)
-        dialog.setEnabled(True)
-        dialog.changed.connect(lambda: [sheet.refresh() for sheet in dialogs])
-        dialog.finished.connect(lambda _result, sheet=dialog: closed(sheet))
-        dialog.resize(max(350, area.width() // 2 - 20), min(850, area.height() - 80))
-        dialog.move(area.left() + index * area.width() // 2 + 8, area.top() + 30)
-        dialog.show()
+    dialog.setWindowModality(Qt.NonModal)
+    dialog.setEnabled(True)
+    closed = []
+    dialog.finished.connect(lambda _result: closed.append(True))
+    dialog.show()
     # Wait by processing events rather than in a nested QEventLoop: once the
     # application has been asked to quit (a stray last-window-closed), every
-    # new nested loop returns at once and the sheets would vanish unseen.
+    # new nested loop returns at once and the window would vanish unseen.
     from PyQt5.QtCore import QCoreApplication
-    while remaining and not QCoreApplication.closingDown():
+    while not closed and not QCoreApplication.closingDown():
         QCoreApplication.processEvents(QEventLoop.AllEvents | QEventLoop.WaitForMoreEvents)
     if parent is not None:
         parent.setEnabled(was_enabled)
-    for dialog in dialogs:
-        dialog.deleteLater()
+    dialog.deleteLater()
