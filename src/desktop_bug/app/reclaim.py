@@ -12,23 +12,32 @@ frozen. On it:
   guarded, sending raiders until destroyed;
 - **spitters** whose acid burns spiders and melts the picture -- a window
   first, then the desktop behind it, then nothing (desktop_surface.py);
-- **heavy spiders** crack the screen's glass when they land, bosses as they
-  walk; enough cracks and a screen's glass shatters and falls away;
+- **heavy spiders** crack the glass when they land, bosses as they walk:
+  one window at a time, and when a window's glass gives it cracks right
+  across and falls away, showing the window behind it; on the bare desktop
+  the cracks wear down the **desktop's health** (a bar on the HUD), as acid
+  eating it does;
 - **words** on the frozen screen, which the enemy devours letter by letter
   to heal -- the destroyers eat the desktop's text, never your spiders (the
   owner: "my spider shouldn't eat the letters off the screen. it should be
   done by enemy spiders only as they are the evil ones destroying").
 
-Destroy every infestation, then the Devourer that comes for you. If acid eats
-too much of the desktop, the raid is lost. Win, lose or press Esc and leave:
-the overlay closes and the real desktop, never touched, is yours again.
+Destroy every infestation, then the Devourer that comes for you. If the
+desktop's health runs out it breaks: a blue screen instead of DEFEAT (the
+owner: "then the windows desktop breaks and ... put then blue screen of death
+instead of defeated ... if that happens nothing what was gained in that
+mission is kept. or lost"), and back to the Adventure window. Win, lose or
+press Esc and leave: the overlay closes and the real desktop, never touched,
+is yours again.
 """
 from __future__ import annotations
 
+import copy
 import math
 from dataclasses import dataclass
 
 from .adventure import PlayerController
+from .adventure_profile import save_profile
 from .desktop_surface import DesktopSurface
 from .mission import MissionSite, TerritoryMission
 
@@ -45,8 +54,9 @@ class SilkThread:
 class ReclaimMission(TerritoryMission):
     ENCOUNTER = "reclaim"
     FREEZES_DESKTOP = True
-    # The raid is lost when less than this share of the desktop is left.
-    LOST_BELOW = 0.45
+    # The blue screen: the glass falls first, then it shows this long.
+    CRASH_GLASS_SECONDS = 1.2
+    CRASH_SCREEN_SECONDS = 7.0
     # Acid holes, by the size of the splash.
     MELT_RADIUS = 30.0
     # An enemy devouring a word: seconds for one, and the health it gains.
@@ -65,6 +75,8 @@ class ReclaimMission(TerritoryMission):
         self.guardian_called = False
         self.lost_desktop = False
         super().__init__(manager, controls, layout=layout)
+        # The profile as the raid began: a crash puts it back as it was.
+        self.start_profile = copy.deepcopy(self.profile)
         # The guardian of this map is a pouncing boss: its landings crack glass.
         self.announce("The desktop is frozen. Esc and Leave gives it back at once.")
 
@@ -93,9 +105,10 @@ class ReclaimMission(TerritoryMission):
     def objective(self):
         if self.state == "victory":
             return "VICTORY - the desktop is yours again"
+        if self.state == "crashed":
+            return "DESKTOP BROKEN - nothing gained, nothing lost"
         if self.state == "defeat":
-            return ("DESKTOP LOST - the acid ate it" if self.lost_desktop
-                    else "RAID ENDED - your spider has fallen")
+            return "RAID ENDED - your spider has fallen"
         taken = sum(s.owned for s in self.outposts)
         if taken < len(self.outposts):
             return f"01 / Destroy the nests  ({taken}/{len(self.outposts)})"
@@ -111,11 +124,8 @@ class ReclaimMission(TerritoryMission):
         if self.state != "active":
             return
         self._eat_words(min(0.05, max(0.0, dt)))
-        if self.surface.integrity < self.LOST_BELOW:
-            self.lost_desktop = True
-            self.state = "defeat"
-            self.clear_player_keys()
-            self.finish(won=False)
+        if self.surface.desktop_hp <= 0.0:
+            self.crash()
             return
         if self.guardian is not None and self.guardian.dead:
             self.state = "victory"
@@ -123,6 +133,37 @@ class ReclaimMission(TerritoryMission):
                 player.creature.gain_experience(100, "desktop reclaimed")
             self.clear_player_keys()
             self.finish(won=True)
+
+    def crash(self) -> None:
+        """The desktop's health is gone: it breaks, a blue screen follows, and
+        the profile goes back to how it was when the raid began -- nothing
+        found, earned or lost here is kept, and no result is recorded."""
+        if self.state == "crashed":
+            return
+        self.surface.break_desktop()
+        self.lost_desktop = True
+        self.state = "crashed"
+        self.end_clock = 0.0
+        self.clear_player_keys()
+        self.profile = copy.deepcopy(self.start_profile)
+        if save_profile(self.profile, self.progress_path):
+            self.saved = True
+            self.save_error = ""
+        else:
+            self.save_error = "The profile could not be restored."
+
+    @property
+    def blue_screen(self) -> float:
+        """0 before the blue screen shows, then how long it has shown."""
+        if self.state != "crashed":
+            return 0.0
+        return max(0.0, self.end_clock - self.CRASH_GLASS_SECONDS)
+
+    @property
+    def end_screen_done(self) -> bool:
+        if self.state == "crashed":
+            return self.end_clock >= self.CRASH_GLASS_SECONDS + self.CRASH_SCREEN_SECONDS
+        return super().end_screen_done
 
     def _spawning(self, dt):
         """The Devourer comes once every nest is destroyed and their raiders dead."""
@@ -201,10 +242,15 @@ class ReclaimMission(TerritoryMission):
 
     def on_landing(self, c):
         if c.size_scale >= self.HEAVY_LANDING:
-            force = min(1.0, 0.25 + (c.size_scale - 1.0) * 0.9)
-            if self.surface.crack(c.x, c.y, force):
-                self.announce(f"The glass of {self.layout.screen_at(c.x, c.y).name} shattered")
+            self._cracked(self.surface.crack(c.x, c.y, min(1.0, 0.25 + (c.size_scale - 1.0) * 0.9)))
 
     def on_heavy_step(self, c):
-        if self.surface.crack(c.x, c.y, 0.16):
-            self.announce(f"The glass of {self.layout.screen_at(c.x, c.y).name} shattered")
+        self._cracked(self.surface.crack(c.x, c.y, 0.16))
+
+    def _cracked(self, result):
+        if result == "window":
+            left = len(self.surface.intact_panes()) - 1
+            more = f" - {left} window{'s' if left != 1 else ''} left" if left > 0 else " - the desktop is next"
+            self.announce(f"A window's glass gave way{more}")
+        elif result == "desktop":
+            self.announce("The desktop's glass is breaking")

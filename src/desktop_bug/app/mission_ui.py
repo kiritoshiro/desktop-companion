@@ -230,35 +230,11 @@ def draw_minimap(painter, window, mission):
 
 
 def draw_reclaim_extras(painter, window, mission):
-    """How much desktop is left, and the opening card that says it is frozen."""
+    """The desktop's health, and the opening card that says it is frozen."""
     surface = getattr(mission, "surface", None)
     if surface is None:
         return
-    banner = mission_banner_rect(window)
-    bar = QRectF(banner.x() + 14, banner.bottom() + 6, banner.width() - 28, 16)
-    left = surface.integrity
-    lost = getattr(mission, "LOST_BELOW", 0.45)
-    painter.setPen(QPen(QColor("#9a7951"), 1))
-    painter.setBrush(QColor(24, 18, 14, 225))
-    painter.drawRoundedRect(bar, 5, 5)
-    if left > lost + 0.2:
-        fill = QColor("#7fd06a")
-    elif left > lost + 0.08:
-        fill = QColor("#e0b24a")
-    else:
-        fill = QColor("#e0604a")
-    painter.setPen(Qt.NoPen)
-    painter.setBrush(fill)
-    painter.drawRoundedRect(QRectF(bar.x() + 2, bar.y() + 2, (bar.width() - 4) * left, bar.height() - 4), 4, 4)
-    painter.setPen(QPen(QColor(255, 255, 255, 170), 1, Qt.DashLine))
-    mark = bar.x() + 2 + (bar.width() - 4) * lost
-    painter.drawLine(QPointF(mark, bar.top() + 1), QPointF(mark, bar.bottom() - 1))
-    painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
-    painter.setPen(QColor("#fff0cd"))
-    words = getattr(mission, "words_eaten", 0)
-    painter.drawText(bar, Qt.AlignCenter,
-                     f"Desktop left {left * 100:.0f}%  \u00b7  lost below {lost * 100:.0f}%"
-                     f"  \u00b7  words devoured {words}")
+    draw_desktop_health(painter, window, mission, surface)
     intro = getattr(mission, "intro_time", 0.0)
     if intro <= 0 or mission.ended:
         return
@@ -280,6 +256,108 @@ def draw_reclaim_extras(painter, window, mission):
             "Destroy the nests before they devour its words and their acid melts it.\n"
             "Esc and Leave gives you the desktop back at once. Nothing real is harmed.")
     painter.drawText(card.adjusted(26, 78, -26, -14), Qt.AlignHCenter | Qt.AlignTop | Qt.TextWordWrap, text)
+
+
+def draw_desktop_health(painter, window, mission, surface):
+    """"DESKTOP" and its health bar under the mission banner (the owner: "if
+    on desktop already and cracking is happening here make an hp bar appear
+    on top Desktop and show how much hp it is left with"). It flashes when a
+    crack lands on the bare desktop."""
+    banner = mission_banner_rect(window)
+    hp = surface.desktop_hp
+    windows = len(surface.intact_panes())
+    box = QRectF(banner.x() + 14, banner.bottom() + 6, banner.width() - 28, 30)
+    flash = min(1.0, surface.hit_flash / 0.5)
+    painter.setPen(QPen(QColor(255, 120, 90, int(120 + 135 * flash)) if flash else QColor("#9a7951"), 1.5))
+    painter.setBrush(QColor(24, 18, 14, 230))
+    painter.drawRoundedRect(box, 7, 7)
+    painter.setFont(QFont("Segoe UI", 9, QFont.Black))
+    painter.setPen(QColor("#9fd3ff"))
+    label = QRectF(box.x() + 10, box.y(), 78, box.height())
+    painter.drawText(label, Qt.AlignLeft | Qt.AlignVCenter, "DESKTOP")
+    bar = QRectF(label.right() + 4, box.y() + 8, box.width() - label.width() - 24, box.height() - 16)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(QColor(8, 6, 4, 230))
+    painter.drawRoundedRect(bar, 4, 4)
+    if hp > 0.5:
+        fill = QColor("#6ccf6a")
+    elif hp > 0.25:
+        fill = QColor("#e0b24a")
+    else:
+        fill = QColor("#e0503e")
+    if flash:
+        fill = fill.lighter(100 + int(60 * flash))
+    painter.setBrush(fill)
+    painter.drawRoundedRect(QRectF(bar.x() + 1, bar.y() + 1, (bar.width() - 2) * hp, bar.height() - 2), 3, 3)
+    painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+    painter.setPen(QColor("#fff6de"))
+    words = getattr(mission, "words_eaten", 0)
+    shield = f"{windows} window{'s' if windows != 1 else ''} guarding it" if windows else "no windows left"
+    painter.drawText(bar, Qt.AlignCenter,
+                     f"HP {hp * 100:.0f} / 100  \u00b7  {shield}  \u00b7  {words} words devoured")
+
+
+def draw_blue_screen(painter, mission):
+    """The desktop broke: a blue screen on every screen, then back to the
+    Adventure window. It says plainly that the raid is over and that nothing
+    from it was kept, and nothing was lost."""
+    shown = getattr(mission, "blue_screen", 0.0)
+    if shown <= 0.0:
+        return
+    fade = min(1.0, shown / 0.25)
+    total = getattr(mission, "CRASH_SCREEN_SECONDS", 7.0)
+    percent = min(100, int(shown / max(0.1, total - 0.8) * 100))
+    painter.save()
+    painter.setClipping(False)
+    for screen in mission.layout.screens:
+        r = QRectF(screen.rect.x, screen.rect.y, screen.rect.w, screen.rect.h)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(0, 120, 215, int(255 * fade)))
+        painter.drawRect(r)
+        unit = max(0.6, min(r.width() / 1920.0, r.height() / 1080.0))
+        left = r.x() + r.width() * 0.1
+        top = r.y() + r.height() * 0.16
+        white = QColor(255, 255, 255, int(255 * fade))
+        painter.setPen(white)
+        face = QFont("Segoe UI", 12, QFont.Light)
+        face.setPixelSize(int(150 * unit))
+        painter.setFont(face)
+        painter.drawText(QRectF(left, top, r.width() * 0.8, 190 * unit), Qt.AlignLeft | Qt.AlignTop, ":(")
+        top += 210 * unit
+        text = QFont("Segoe UI", 12, QFont.Light)
+        text.setPixelSize(int(34 * unit))
+        painter.setFont(text)
+        painter.drawText(QRectF(left, top, r.width() * 0.78, 110 * unit), Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
+                         "Your desktop ran into a problem: the spiders broke it. We're just collecting "
+                         "the pieces, and then we'll take you back.")
+        top += 120 * unit
+        painter.drawText(QRectF(left, top, r.width() * 0.7, 50 * unit), Qt.AlignLeft | Qt.AlignTop,
+                         f"{percent}% complete")
+        top += 80 * unit
+        code = QRectF(left, top, 118 * unit, 118 * unit)
+        painter.setBrush(white)
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(code)
+        cell = code.width() / 11
+        painter.setBrush(QColor(0, 120, 215, int(255 * fade)))
+        seed = 7
+        for j in range(11):
+            for i in range(11):
+                corner = (i < 3 and j < 3) or (i > 7 and j < 3) or (i < 3 and j > 7)
+                seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
+                if (corner and (i in (1, 9) or j in (1, 9))) or (not corner and seed % 3 == 0):
+                    painter.drawRect(QRectF(code.x() + i * cell, code.y() + j * cell, cell, cell))
+        small = QFont("Segoe UI", 12)
+        small.setPixelSize(int(17 * unit))
+        painter.setFont(small)
+        painter.setPen(white)
+        info = QRectF(code.right() + 24 * unit, code.y(), r.width() * 0.6, code.height() * 1.6)
+        painter.drawText(info, Qt.AlignLeft | Qt.AlignTop | Qt.TextWordWrap,
+                         "The raid is over. Nothing you found or earned in it is kept, and nothing was lost:\n"
+                         "your spider is just as it was before the raid.\n\n"
+                         "Your real desktop was never touched. Back to Adventure in a moment.\n\n"
+                         "Stop code: DESKTOP_DEVOURED")
+    painter.restore()
 
 
 def draw_loot(painter, mission):
@@ -358,7 +436,9 @@ def draw_mission_hud(painter, window, mission):
     draw_minimap(painter, window, mission)
     draw_reclaim_extras(painter, window, mission)
     painter.restore()
-    if mission.ended:
+    if getattr(mission, "state", "") == "crashed":
+        draw_blue_screen(painter, mission)
+    elif mission.ended:
         draw_end_title(painter, mission)
 
 
@@ -384,8 +464,6 @@ def end_title_text(mission):
         tail += f"  \u00b7  {words} word{plural} devoured"
     if mission.state == "victory":
         return "VICTORY", f"The desktop is yours  \u00b7  {hero.display_name} reached level {hero.level}{tail}"
-    if getattr(mission, "lost_desktop", False):
-        return "DEFEAT", f"The acid ate the desktop  \u00b7  level, XP and loot are kept{tail}"
     return "DEFEAT", f"{hero.display_name} has fallen  \u00b7  level, XP and loot are kept{tail}"
 
 

@@ -276,21 +276,62 @@ def test_the_picture_shows_the_hole():
     assert QColor(before.pixel(1400, 900)) == QColor(image.pixel(1400, 900)), "the rest is untouched"
 
 
-def test_heavy_landings_crack_the_glass_until_it_shatters():
-    s = surface()
-    layer = s.layers[0]
-    assert not s.crack(800, 500, 0.5) and 0 < layer.stress < 1
-    shattered = False
-    for i in range(40):
-        shattered = s.crack(300 + i * 25, 500, 1.0) or shattered
-        if shattered:
-            break
-    assert shattered and layer.shattered and layer.shards
-    assert s.what_is_at(500, 400) == "desktop", "the glass and windows fell away; the desktop is bare"
-    for _ in range(200):
+BEHIND = QRectF(500, 300, 700, 500)
+
+
+def settle(s, seconds=4.0):
+    for _ in range(int(seconds / 0.02)):
         s.update(0.02)
-    assert not layer.shards, "the falling shards finish"
-    assert not s.crack(800, 500, 1.0), "broken glass cannot crack again"
+
+
+def test_a_window_cracks_until_its_glass_breaks_and_the_window_behind_shows():
+    snap = synthetic_snapshot([ScreenRect(0, 0, 1600, 1000)], [WINDOW, BEHIND])
+    s = DesktopSurface(snap, seed=2, find_text=False)
+    front, back = s.panes
+    assert s.crack(400, 400, 0.5) is None and 0 < front.stress < 1 and back.stress == 0
+    result = None
+    for _ in range(10):
+        result = s.crack(400, 400, 1.0)
+        if result:
+            break
+    assert result == "window" and s.breaks, "the cracks race across it first"
+    assert not front.broken
+    assert s.crack(420, 400, 1.0) is None, "a window already breaking takes no more"
+    settle(s, 0.7)
+    assert front.broken and not back.broken
+    assert s.windows == [back.rect]
+    assert s.what_is_at(600, 400) == "window", "the window behind shows where they overlapped"
+    assert s.what_is_at(300, 400) == "desktop", "where none is behind, the desktop"
+    assert s.layers[0].falls, "its glass falls as shards"
+    settle(s)
+    assert not s.layers[0].falls, "the falling shards finish"
+    assert s.desktop_hp == 1.0, "breaking a window costs the desktop nothing"
+
+
+def test_cracks_on_the_bare_desktop_wear_down_its_health_until_it_breaks():
+    s = surface()
+    assert s.desktop_hp == 1.0
+    assert s.crack(1300, 800, 1.0) is None
+    assert s.desktop_hp < 1.0 and s.hit_flash > 0
+    assert s.panes[0].stress == 0, "the window is not touched"
+    result = None
+    for _ in range(40):
+        result = s.crack(1300, 800, 1.0)
+        if result:
+            break
+    assert result == "desktop" and s.desktop_broken and s.desktop_hp == 0
+    settle(s, 0.8)
+    assert s.layers[0].shattered
+    assert s.what_is_at(1300, 800) == "void"
+    assert s.crack(500, 400, 1.0) is None, "nothing is left to crack"
+
+
+def test_acid_eating_the_desktop_also_takes_its_health():
+    s = surface()
+    for x in range(1000, 1600, 40):
+        for y in range(0, 1000, 40):
+            s.melt(x, y, 30)
+    assert s.desktop_hp < 1.0
 
 
 def test_words_are_found_by_their_shape_and_eaten_to_the_background():
@@ -395,15 +436,19 @@ def test_big_spiders_crack_the_glass_and_small_ones_do_not(state_dir):
     m = reclaim()
     small = m.hero
     m.on_landing(small)
-    assert all(layer.stress == 0 for layer in m.surface.layers)
+    assert m.surface.desktop_hp == 1.0 and all(p.stress == 0 for p in m.surface.panes)
     big = m._spawn("guard", (1200, 500))
     big.set_size_scale(1.7)
+    big.x, big.y = 1200, 500
     m.on_landing(big)
-    assert m.surface.layers[0].stress > 0
-    before = m.surface.layers[0].stress
+    assert m.surface.desktop_hp < 1.0, "outside the window it cracks the desktop"
+    before = m.surface.desktop_hp
     for _ in range(3):
         m._heavy_steps(big, 60)
-    assert m.surface.layers[0].stress > before, "a boss's walk cracks it too"
+    assert m.surface.desktop_hp < before, "a boss's walk cracks it too"
+    big.x, big.y = 500, 400
+    m.on_landing(big)
+    assert m.surface.panes[0].stress > 0, "on a window it cracks that window"
 
 
 def test_destroying_every_nest_raises_the_devourer_and_killing_it_wins(state_dir):
@@ -427,16 +472,47 @@ def test_destroying_every_nest_raises_the_devourer_and_killing_it_wins(state_dir
     assert load_profile()["missions"]["reclaim"]["victories"] == 1
 
 
-def test_too_much_desktop_eaten_loses_the_raid(state_dir):
+def test_a_broken_desktop_is_a_blue_screen_and_the_raid_leaves_no_trace(state_dir):
+    from desktop_bug.app.armoury import add_loot
+
     m = reclaim(rects=SIDE[:1], text_rows=0)
+    before = load_profile()
+    # Things gained in the raid, saved mid-raid as the Character window does.
+    add_loot(m.profile, "forager_hood")
+    m.hero.gain_experience(500, "test")
+    m.save_progress()
+    assert load_profile() != before
     for x in range(40, 1600, 50):
         for y in range(40, 1000, 50):
             m.surface.melt(x, y, 40)
             m.surface.melt(x, y, 40)
-    assert m.surface.integrity < m.LOST_BELOW
+    assert m.surface.desktop_hp == 0
     m.update(0.016)
-    assert m.state == "defeat" and m.lost_desktop
-    assert "acid" in m.objective.lower()
+    assert m.state == "crashed" and m.ended
+    assert "nothing gained" in m.objective.lower()
+    after = load_profile()
+    assert after["armoury"] == before["armoury"] and after["progression"] == before["progression"]
+    assert after.get("missions") == before.get("missions"), "no result is recorded"
+    assert m.blue_screen == 0.0, "the glass falls first"
+    for _ in range(int(m.CRASH_GLASS_SECONDS / 0.05) + 2):
+        m.update(0.05)
+    assert m.blue_screen > 0 and not m.end_screen_done
+    for _ in range(int(m.CRASH_SCREEN_SECONDS / 0.05) + 2):
+        m.update(0.05)
+    assert m.end_screen_done, "then back to the Adventure window"
+
+
+def test_the_last_crack_on_the_desktop_crashes_the_raid(state_dir):
+    m = reclaim(rects=SIDE[:1], text_rows=0)
+    big = m._spawn("guard", (1200, 500))
+    big.set_size_scale(2.0)
+    for _ in range(60):
+        big.x, big.y = 1300, 800
+        m.on_landing(big)
+        if m.surface.desktop_broken:
+            break
+    m.update(0.016)
+    assert m.state == "crashed"
 
 
 def test_retry_starts_a_fresh_desktop_from_the_same_picture(state_dir):
@@ -464,7 +540,11 @@ def test_the_whole_reclaim_scene_paints(state_dir):
     for c in m.manager.creatures:
         c.render(p)
     draw_mission_hud(p, window, m)
-    m.state, m.lost_desktop = "defeat", True
+    m.state = "defeat"
+    draw_mission_hud(p, window, m)
+    m.state = "active"
+    m.crash()
+    m.end_clock = m.CRASH_GLASS_SECONDS + 2.0
     draw_mission_hud(p, window, m)
     p.end()
 

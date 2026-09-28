@@ -1855,7 +1855,20 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
                                  self.stamina_fraction(), QColor(*self.STAMINA_BAR_COLOR, 235),
                                  QRectF, Qt, QColor, QBrush, QPen)
 
-    def render(self, painter, always_show_names: bool = False) -> None:
+    def render_damage_numbers(self, painter) -> None:
+        """The damage numbers alone, as the manager draws them last, above
+        every spider and name (the owner: "my name ... is hiding damage I'm
+        doing to enemies"). A camouflaged spider's numbers fade with it."""
+        if not self.damage_numbers:
+            return
+        strength = clamp(float(self._camouflage_strength), 0.0, 1.0)
+        opacity = clamp(1.0 - strength * float(self.personality.get("camouflage_opacity_drop", 0.72)), 0.12, 1.0)
+        painter.save()
+        painter.setOpacity(painter.opacity() * opacity)
+        self._draw_damage_numbers(painter)
+        painter.restore()
+
+    def render(self, painter, always_show_names: bool = False, numbers: bool = True) -> None:
         # One frame's worth of solved leg chains. Cleared here rather than
         # grown forever, because the key includes foot positions that change
         # every frame and would otherwise never be looked up again.
@@ -1891,7 +1904,8 @@ class Creature(BehaviourMixin, KinematicsMixin, ExpressionMixin, RenderProcedura
         # Name labels should obey the same visibility as the spider.  Otherwise a
         # hidden Camouflage spider would still leave a floating readable label.
         self._draw_name_label(painter, always_show_names)
-        self._draw_damage_numbers(painter)
+        if numbers:
+            self._draw_damage_numbers(painter)
         if camouflage_saved:
             painter.restore()
 

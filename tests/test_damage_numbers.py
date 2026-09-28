@@ -143,3 +143,37 @@ def test_stamina_is_yellow_everywhere():
 
     for colour in (QColor(*Creature.STAMINA_BAR_COLOR), QColor(wood_theme.STAMINA)):
         assert 40 <= colour.hue() <= 60 and colour.saturation() > 180, colour.name()
+
+
+def test_numbers_are_drawn_last_above_every_spider_and_name(monkeypatch):
+    """The owner: "my name on the map is hiding damage I'm doing to enemies."
+    Every spider and label is drawn first; the numbers go on top."""
+    from PyQt5.QtGui import QImage, QPainter
+    from desktop_bug.manager import CreatureManager
+
+    scratch = Path(tempfile.mkdtemp(prefix="dmg-"))
+    monkeypatch.setenv("DESKTOP_BUG_STATE_DIR", str(scratch / "state"))
+    preset = scratch / "f.json"
+    preset.write_text(json.dumps({
+        "name": "f",
+        "slots": [{"model": "tarantula", "personality": "bold", "count": 2, "slot_id": "a"}],
+        "settings": {"flies": {"enabled": False, "spawner": False}},
+    }), encoding="utf-8")
+    manager = CreatureManager(preset, 420, 300, seed=6)
+    first, second = manager.creatures
+    first.x, first.y, second.x, second.y = 200.0, 150.0, 210.0, 140.0
+    first.take_damage(5.0)
+    calls = []
+    for spider in manager.creatures:
+        monkeypatch.setattr(spider, "_draw_name_label",
+                            lambda *a, s=spider, **k: calls.append(("name", s)))
+        monkeypatch.setattr(spider, "_draw_damage_numbers",
+                            lambda *a, s=spider, **k: calls.append(("numbers", s)))
+    image = QImage(420, 300, QImage.Format_ARGB32_Premultiplied)
+    painter = QPainter(image)
+    manager.render(painter)
+    painter.end()
+    names = [i for i, (kind, _) in enumerate(calls) if kind == "name"]
+    numbers = [i for i, (kind, _) in enumerate(calls) if kind == "numbers"]
+    assert len(names) == 2 and numbers
+    assert min(numbers) > max(names), calls

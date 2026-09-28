@@ -484,4 +484,4 @@ class CombatMixin:
 
     def render_carcasses(self, painter) -> None:
         for carcass in self.carcasses:
-            carcass.draw(painter)
+            carcass.draw(painter, numbers=False)

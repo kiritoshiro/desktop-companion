@@ -103,7 +103,7 @@ class Carcass(DamageNumbersMixin):
     def _damage_top(self) -> float:
         return self.y - self.size * 0.6
 
-    def draw(self, painter) -> None:
+    def draw(self, painter, numbers: bool = True) -> None:
         """Draw the remains: a shrinking, fading curl of legs and body."""
         from PyQt5.QtCore import QPointF, QRectF, Qt
         from PyQt5.QtGui import QColor, QPen
@@ -132,7 +132,8 @@ class Carcass(DamageNumbersMixin):
         painter.drawEllipse(QRectF(self.x - scale * 0.36, self.y - scale * 0.28,
                                    scale * 0.72, scale * 0.56))
         painter.restore()
-        self._draw_damage_numbers(painter)
+        if numbers:
+            self._draw_damage_numbers(painter)
 
 
 def curled_size(creature) -> float:

@@ -1226,12 +1226,18 @@ class CreatureManager(
                                 visible_region -= hidden_region
                         painter.save()
                         painter.setClipRegion(visible_region, Qt.IntersectClip)
-                        creature.render(painter, always_show_names=self.always_show_names)
+                        creature.render(painter, always_show_names=self.always_show_names, numbers=False)
                         painter.restore()
                     except Exception:
                         # If a Qt clipping call fails for any reason, keep the spider
                         # visible rather than making it vanish suddenly.
-                        creature.render(painter, always_show_names=self.always_show_names)
+                        creature.render(painter, always_show_names=self.always_show_names, numbers=False)
                 else:
-                    creature.render(painter, always_show_names=self.always_show_names)
+                    creature.render(painter, always_show_names=self.always_show_names, numbers=False)
+        # Damage numbers go on last, above every spider and every name label,
+        # so the hero's own name never hides the damage it deals.
+        for carcass in self.carcasses:
+            carcass._draw_damage_numbers(painter)
+        for creature in order:
+            creature.render_damage_numbers(painter)
 

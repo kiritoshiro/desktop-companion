@@ -43,8 +43,11 @@ def give_amber(amount: int) -> int:
 
 
 def give_all_armour() -> int:
+    """Every piece not yet owned. Pieces already owned get no spare: a spare
+    is an upgrade, and the gift should not hand out upgrades unasked."""
     profile = load_profile()
-    added = sum(armoury.add_loot(profile, item.id) == "new" for item in ARMOR_CATALOG)
+    owned = set(armoury.armoury(profile)["owned"])
+    added = sum(armoury.add_loot(profile, item.id) == "new" for item in ARMOR_CATALOG if item.id not in owned)
     save_profile(profile)
     return added
 
