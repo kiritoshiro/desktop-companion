@@ -76,7 +76,8 @@ def channel_name(state_dir) -> str:
     ``DESKTOP_BUG_STATE_DIR``) must not cross-talk, so the name is derived
     from the resolved state directory instead of being fixed.
     """
-    digest = hashlib.sha1(
+    # Stable IPC name only, never authentication or integrity; changing it breaks older peers.
+    digest = hashlib.sha1(  # nosemgrep: python.lang.security.insecure-hash-algorithms.insecure-hash-algorithm-sha1
         str(Path(state_dir).resolve()).encode("utf-8", "replace")
     ).hexdigest()
     return f"DesktopBugCompanion-{digest[:16]}"
