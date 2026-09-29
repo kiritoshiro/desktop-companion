@@ -1,0 +1,9 @@
+{
+  "category": "Python desktop application",
+  "source_paths": [
+    "src"
+  ],
+  "semgrep_rules": [
+    "p/python"
+  ]
+}
