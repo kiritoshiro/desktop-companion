@@ -4,13 +4,14 @@ name: Cybersecurity baseline
   schedule:
   - cron: 43 6 * * 2
   workflow_dispatch: null
+  workflow_call: null
   push:
     branches:
     - main
 permissions:
   contents: read
 concurrency:
-  group: cybersecurity-${{ github.ref }}
+  group: cybersecurity-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   security:
