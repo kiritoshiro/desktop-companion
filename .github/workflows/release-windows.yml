@@ -20,17 +20,37 @@ permissions:
   contents: read
 
 jobs:
+  # The whole security gate must pass on the release commit before the EXE is
+  # built and published.
+  security-gate:
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/security-gate.yml
   build:
+    needs: security-gate
     runs-on: windows-latest
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Verify manual release commit
+        if: github.event_name == 'workflow_dispatch' && inputs.create_release == true
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') { throw 'Invalid release tag' }
+          $commit = git rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
+          if ($LASTEXITCODE -ne 0 -or $commit -ne $env:GITHUB_SHA) { throw 'Select the release tag as the workflow ref; its commit must match the scanned checkout.' }
 
       - name: Set up Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.13'
 
