@@ -1,0 +1,83 @@
+name: Security gate
+
+# Single entry point for every security check. Each check lives in its own
+# reusable workflow and only runs through here, so one PR or push runs each
+# scanner exactly once and branch protection needs one context:
+# "All security checks passed". Release workflows call this file too, so a
+# release is built only from a commit on which every check passed.
+#
+# The final job is the gate. It fails if any check failed, was cancelled, or
+# was skipped when it should have run. A green gate means every scanner ran
+# to completion and reported nothing it is configured to block on; it does
+# not mean the code is secure (see docs/cybersecurity.md).
+
+on:
+  pull_request:
+    # Every pull request, like CI: stacked PRs target other branches.
+  push:
+    branches: [main]
+  schedule:
+    - cron: "43 6 * * 2" # weekly: catches new advisories in unchanged code
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  baseline:
+    name: Baseline
+    uses: ./.github/workflows/cybersecurity.yml
+
+  codeql:
+    name: CodeQL
+    uses: ./.github/workflows/codeql.yml
+    permissions:
+      contents: read
+      security-events: write
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Blocks a PR that *introduces* a vulnerable dependency, which the
+      # scans above would only catch once the lockfile is already merged.
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
+        with:
+          fail-on-severity: moderate
+
+  gate:
+    name: All security checks passed
+    if: ${{ always() }}
+    needs: [baseline, codeql, dependency-review]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every security check to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for job in $(jq -r 'keys[]' <<<"$RESULTS"); do
+            result=$(jq -r --arg job "$job" '.[$job].result' <<<"$RESULTS")
+            # Dependency review compares a PR against its base, so it is the
+            # only check that legitimately skips (push/schedule/dispatch/release).
+            if [ "$job" = "dependency-review" ] && [ "$EVENT" != "pull_request" ] && [ "$result" = "skipped" ]; then
+              echo "$job: skipped (PR-only check)"
+              continue
+            fi
+            echo "$job: $result"
+            if [ "$result" != "success" ]; then
+              echo "::error::Security check '$job' did not pass (result: $result)."
+              failed=1
+            fi
+          done
+          exit "$failed"

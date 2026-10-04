@@ -1,17 +1,10 @@
 name: CodeQL
+# Reusable: runs only through security-gate.yml, which owns the triggers,
+# schedule and concurrency.
 'on':
-  pull_request: null
-  push:
-    branches:
-    - main
-  schedule:
-  - cron: 23 5 * * 3
-  workflow_dispatch: null
+  workflow_call:
 permissions:
   contents: read
-concurrency:
-  group: codeql-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   analyze:
     if: ${{ github.event.repository.private == false }}

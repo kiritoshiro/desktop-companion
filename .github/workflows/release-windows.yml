@@ -20,12 +20,15 @@ permissions:
   contents: read
 
 jobs:
-  cybersecurity:
+  # The whole security gate must pass on the release commit before the EXE is
+  # built and published.
+  security-gate:
     permissions:
       contents: read
-    uses: ./.github/workflows/cybersecurity.yml
+      security-events: write
+    uses: ./.github/workflows/security-gate.yml
   build:
-    needs: cybersecurity
+    needs: security-gate
     runs-on: windows-latest
 
     steps:
