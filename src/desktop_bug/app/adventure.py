@@ -88,6 +88,20 @@ class PlayerController:
         wanted = math.atan2(ay - spider.y, ax - spider.x)
         return clamp_to_cone(spider.heading, wanted, self.controls.half_cone)
 
+    def shot_angle(self, toward_pointer: bool = False) -> float:
+        """Where a silk shot goes (the owner: "when I'm using F to shoot it
+        should shoot in the direction the spider is facing, not based on the
+        mouse. If shooting with the mouse, then the mouse dictates the precise
+        direction"): a key shoots straight ahead; a mouse button shoots
+        exactly at the pointer."""
+        spider = self.creature
+        if not toward_pointer or self.keyboard_aim:
+            return spider.heading
+        ax, ay = self.aim
+        if math.hypot(ax - spider.x, ay - spider.y) < 1.0:
+            return spider.heading
+        return math.atan2(ay - spider.y, ax - spider.x)
+
     def in_cone(self, target) -> bool:
         """Is ``target`` inside the view cone (allowing for its own size)?"""
         spider = self.creature
@@ -136,6 +150,10 @@ class PlayerController:
 
     def clear_keys(self):
         self.held.clear()
+
+    def motion_idle(self) -> bool:
+        """No movement key held."""
+        return not (self.held & {"move_up", "move_down", "move_left", "move_right"})
 
     def update(self, dt: float):
         spider = self.creature
@@ -288,7 +306,7 @@ class PlayerController:
         manager._trade_blow(spider, target)
         return True
 
-    def shoot(self, manager) -> bool:
+    def shoot(self, manager, toward_pointer: bool = False) -> bool:
         spider = self.creature
         if self.paused or spider.dead or spider.airborne or self.web_cooldown > 0.0:
             return False
@@ -303,7 +321,7 @@ class PlayerController:
         from ..world.aimed_silk import AimedSilk
 
         manager.fly_world.projectiles.append(AimedSilk(
-            spider, self.aim_angle(), self.WEB_RANGE,
+            spider, self.shot_angle(toward_pointer), self.WEB_RANGE,
             lambda: manager.creatures, lambda: manager.fly_world.flies))
         spider.spend_energy(self.WEB_ENERGY)
         self.silk -= 1
