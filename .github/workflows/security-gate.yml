@@ -17,7 +17,7 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "43 6 * * 2" # weekly: catches new advisories in unchanged code
+    - cron: "43 6 * * 2" # weekly: re-runs only the scanners whose rules or advisory data change between commits; the rest skip (see the gate job)
   workflow_dispatch:
   workflow_call:
 
@@ -35,6 +35,7 @@ jobs:
 
   codeql:
     name: CodeQL
+    if: github.event_name != 'schedule'
     uses: ./.github/workflows/codeql.yml
     permissions:
       contents: read
@@ -63,6 +64,7 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
+          SCHEDULE_SKIPS: codeql
         run: |
           set -euo pipefail
           failed=0
@@ -72,6 +74,13 @@ jobs:
             # only check that legitimately skips (push/schedule/dispatch/release).
             if [ "$job" = "dependency-review" ] && [ "$EVENT" != "pull_request" ] && [ "$result" = "skipped" ]; then
               echo "$job: skipped (PR-only check)"
+              continue
+            fi
+            # The scheduled run re-runs only the scans whose rules or advisory
+            # data change while the code does not; these deterministic checks
+            # skip on it by design (they run on every PR, push and release).
+            if [ "$EVENT" = "schedule" ] && [ "$result" = "skipped" ] && [[ " $SCHEDULE_SKIPS " == *" $job "* ]]; then
+              echo "$job: skipped (not part of the scheduled scan)"
               continue
             fi
             echo "$job: $result"
