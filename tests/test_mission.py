@@ -49,7 +49,7 @@ def test_mission_starts_with_four_spiders_and_runs(state_dir):
 
 def test_silk_fires_without_target_and_hits_enemy(state_dir):
     m = make_mission()
-    m.player.aim = (m.hero.x+250, m.hero.y)
+    m.hero.heading = 0.0
     assert m.player.shoot(m.manager)
     assert m.player.silk == 7
     shot = m.manager.fly_world.projectiles[-1]
@@ -350,3 +350,47 @@ def test_the_scout_heals_at_an_owned_base_too(state_dir):
     m.ally.x, m.ally.y = home.x + 300, home.y
     m._heal_at(home, 1.0)
     assert m.ally.hp == far, "not from across the arena"
+
+
+def test_a_key_shoots_where_the_spider_faces_and_a_click_at_the_pointer(state_dir):
+    """The owner: "when I'm using F to shoot it should shoot in the direction
+    the spider is facing, not based on the mouse. If shooting with the mouse
+    then the mouse dictates the precise direction."
+    """
+    import math
+
+    m = make_mission()
+    m.hero.heading = 0.4
+    m.player.aim = (m.hero.x, m.hero.y + 300)          # the pointer straight below
+    assert m.player.shoot(m.manager)
+    vx, vy = m.manager.fly_world.projectiles[-1].vel
+    assert math.atan2(vy, vx) == pytest.approx(0.4)
+    m.player.web_cooldown = 0.0
+    m.player.aim = (m.hero.x - 300, m.hero.y)          # behind it: a click still goes there
+    assert m.player.shoot(m.manager, toward_pointer=True)
+    vx, vy = m.manager.fly_world.projectiles[-1].vel
+    assert abs(math.atan2(vy, vx)) == pytest.approx(math.pi)
+
+
+def test_companions_walk_at_your_pace_and_run_to_catch_up(state_dir):
+    """The owner: "my companion spiders seem to not have ability to run just
+    like me ... they should be able to shift run, to follow me."
+    """
+    m = make_mission()
+    clear_enemies(m)
+    ally = next(a for a in m.actors if a.role == "ally")
+    c = ally.creature
+    step(m, 0.5)
+    c.x, c.y = m.hero.x + 20, m.hero.y + 90
+    ally.think = 0
+    step(m, 0.2)
+    assert c.speed <= ally.ALLY_WALK * c._speed_mult() + 1e-6
+    c.x, c.y = m.layout.clamp(m.hero.x + 700, m.hero.y, 40)
+    energy = c.energy
+    ally.think = 0
+    step(m, 0.3)
+    assert c.speed == pytest.approx(ally.ALLY_RUN * c._speed_mult()), "far behind: it runs"
+    assert c.energy < energy, "running costs it stamina, as it costs you"
+    c.energy = 0.0
+    step(m, 0.1)
+    assert c.speed == pytest.approx(ally.ALLY_WALK * c._speed_mult()), "out of stamina it walks"

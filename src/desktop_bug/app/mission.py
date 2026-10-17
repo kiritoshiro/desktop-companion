@@ -156,6 +156,32 @@ class MissionActor(PlayerController):
     def has(self, ability) -> bool:
         return self.traits is not None and self.traits.has(ability)
 
+    def shot_angle(self, toward_pointer: bool = False) -> float:
+        """A mission spider shoots at the point it wound up at, inside its
+        view cone, as before."""
+        return self.aim_angle()
+
+    # A companion keeps up with you (the owner: "my companion spiders seem to
+    # not have ability to run just like me ... they should be able to shift
+    # run, to follow me and do other of my commands"): it walks at your pace,
+    # and runs, on its own stamina, when it has fallen this far behind where
+    # it should be -- or whenever you run.
+    ALLY_WALK = 115.0
+    ALLY_RUN = 190.0
+    ALLY_RUN_GAP = 170.0
+    ALLY_CALM_GAP = 90.0
+
+    def _ally_pace(self, gap: float, dt: float) -> float:
+        c, m = self.creature, self.mission
+        leader = next((p for p in m.players if not p.creature.dead), None)
+        leader_runs = leader is not None and "sprint" in leader.held and not leader.motion_idle()
+        if gap > self.ALLY_RUN_GAP or leader_runs:
+            self.held.add("sprint")
+        elif gap < self.ALLY_CALM_GAP:
+            self.held.discard("sprint")
+        running = self._sprinting(not c.motion_paused, dt)
+        return (self.ALLY_RUN if running else self.ALLY_WALK) * c._speed_mult()
+
     def fighting_reach(self) -> float:
         """How close it likes to fight from: a shooter's range, or a bite."""
         if self.style == "weaver" or self.has("web"):
@@ -252,6 +278,8 @@ class MissionActor(PlayerController):
         # level and armour exactly as the player's is -- then by its kind:
         # a redback is quick, a trapdoor brute slow.
         c.speed = (95.0 if self.style == "hunter" else 68.0) * c._speed_mult()
+        if self.role == "ally":
+            c.speed = self._ally_pace(gap, dt)
         if self.traits is not None:
             c.speed *= self.traits.speed
             if self.charge_time > 0:
@@ -311,7 +339,7 @@ class MissionActor(PlayerController):
         c, m = self.creature, self.mission
         self.aim = self.strike_point
         if self.strike_kind == "shoot":
-            self.shoot(m.manager)
+            self.shoot(m.manager, toward_pointer=True)
         elif self.strike_kind == "spit":
             self.spit(self.strike_point)
         elif self.strike_kind == "pounce":

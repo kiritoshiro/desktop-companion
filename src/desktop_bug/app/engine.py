@@ -1147,7 +1147,8 @@ class OverlayWindow(_OverlayBase):
         painter.setPen(QColor("#fff2d6"))
         painter.drawText(box, Qt.AlignCenter, text)
 
-    def _adventure_action(self, action: str | None, down: bool, repeat: bool = False, player=None) -> bool:
+    def _adventure_action(self, action: str | None, down: bool, repeat: bool = False, player=None,
+                          pointer: bool = False) -> bool:
         """Do what a bound key or mouse button means. True if it meant anything."""
         if action is None:
             return False
@@ -1187,7 +1188,8 @@ class OverlayWindow(_OverlayBase):
             if action == "jump":
                 player.jump()
             elif action == "shoot":
-                player.shoot(self.manager)
+                # A key shoots where the spider faces; a mouse button, at the pointer.
+                player.shoot(self.manager, toward_pointer=pointer)
         return True
 
     def keyPressEvent(self, event):  # noqa: N802 - Qt API name
@@ -1339,7 +1341,8 @@ class OverlayWindow(_OverlayBase):
                     self._possess_next_spider(creature)
             else:
                 self.player.aim = (float(local.x()), float(local.y()))
-                self._adventure_action(self.player.controls.action_for_mouse(int(event.button())), True)
+                self._adventure_action(self.player.controls.action_for_mouse(int(event.button())), True,
+                                       pointer=True)
             return
         if event.button() != Qt.RightButton:
             super().mousePressEvent(event)

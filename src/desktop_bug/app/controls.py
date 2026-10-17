@@ -32,7 +32,8 @@ ACTIONS = (
     ("move_right", "Move right", "Walk right."),
     ("sprint", "Sprint", "Hold while moving to run faster. Drains stamina."),
     ("jump", "Jump", "Pounce forward in the direction you are walking."),
-    ("shoot", "Shoot silk", "Fire one silk charge along your aim, even if it misses. Refill at home or the Silk loom."),
+    ("shoot", "Shoot silk", "Fire one silk charge, even if it misses: from a key, straight where your spider "
+              "faces; from a mouse button, exactly at the pointer. Refill at home or the Silk loom."),
     ("bite", "Bite", "Hold to repeatedly bite a foe in front of you, inside the aim cone."),
     ("companion_follow", "Scout: follow", "Your companion follows and fights nearby enemies."),
     ("companion_defend", "Scout: defend here", "Your companion holds its current position and protects the area."),
