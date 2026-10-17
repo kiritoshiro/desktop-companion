@@ -1,0 +1,79 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.90"
+
+[workspace.dependencies]
+# Internal crates
+dc-core = { path = "crates/dc-core" }
+dc-content = { path = "crates/dc-content" }
+dc-state = { path = "crates/dc-state" }
+dc-kinematics = { path = "crates/dc-kinematics" }
+dc-render = { path = "crates/dc-render" }
+dc-platform = { path = "crates/dc-platform" }
+dc-creature = { path = "crates/dc-creature" }
+dc-world = { path = "crates/dc-world" }
+dc-manager = { path = "crates/dc-manager" }
+dc-paint = { path = "crates/dc-paint" }
+dc-adventure = { path = "crates/dc-adventure" }
+dc-ui = { path = "crates/dc-ui" }
+
+# External crates (one version for the whole workspace; do not add new ones
+# without coordinating, so Cargo.lock stays stable while agents work in parallel)
+ab_glyph = "0.2.32"
+anyhow = "1.0.104"
+bytemuck = { version = "1.25.2", features = ["derive"] }
+egui = "0.37.0"
+egui-wgpu = { version = "0.37.0", features = ["winit"] }
+egui-winit = "0.37.0"
+env_logger = "0.11.11"
+glam = { version = "0.34.1", features = ["serde"] }
+image = { version = "0.25.10", default-features = false, features = ["png"] }
+log = "0.4.34"
+lyon = "1.0.19"
+pollster = "1.0.1"
+raw-window-handle = "0.6.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = { version = "1.0.154", features = ["preserve_order", "float_roundtrip"] }
+sha2 = "0.11.1"
+thiserror = "2.0.21"
+tiny-skia = "0.12.0"
+tray-icon = "0.26.1"
+wgpu = "30.0.1"
+winit = "0.30.13"
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Devices_Display",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Pipes",
+    "Win32_System_Power",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Threading",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"

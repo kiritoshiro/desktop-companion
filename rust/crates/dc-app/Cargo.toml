@@ -1,0 +1,16 @@
+[package]
+name = "dc-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dc-core.workspace = true
+dc-content.workspace = true
+dc-state.workspace = true
+dc-platform.workspace = true
+dc-render.workspace = true
+dc-ui.workspace = true
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true
