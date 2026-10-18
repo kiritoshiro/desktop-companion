@@ -1,14 +1,14 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! The world the spiders live in: where they may stand, how the screens join,
+//! and how squads fight (ports of `world/*`).
+//!
+//! Modules are independent ports of one Python module each. Wave-2 modules
+//! (`webs`, `flies`, `mouse_webs`, `jobs`, `cage`, `carcass`, `aimed_silk`,
+//! `desktop_environment`) go beside these as further `pub mod` lines; nothing
+//! here needs to change for them.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod playfield;
+pub mod screen_layout;
+pub mod tactics;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use playfield::{Playfield, ScreenRect, rects_from_geometry};
+pub use screen_layout::{LinkKind, Screen, ScreenLayout, ScreenLink};
