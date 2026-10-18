@@ -1,14 +1,15 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! Port of `desktop_bug/state/*`: what outlives one session.
+//!
+//! - [`progression`]: XP curve, levels, talents, armour, per-spider state,
+//!   team ids and stances.
+//! - [`teams`]: team names and colours.
+//! - [`runtime_state`]: `creatures.json` (schema 3): keys, migration,
+//!   eviction, reset and atomic save.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod progression;
+pub mod runtime_state;
+pub mod teams;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use progression::{ArmorItem, ProgressionState, Stances};
+pub use runtime_state::{RuntimeState, SavedCreature, Scene};
+pub use teams::{TeamProfile, TeamProfiles};

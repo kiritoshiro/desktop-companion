@@ -1,0 +1,5029 @@
+{
+ "xp": {
+  "-1": 115,
+  "0": 115,
+  "1": 115,
+  "2": 142,
+  "3": 174,
+  "4": 210,
+  "5": 250,
+  "6": 294,
+  "7": 342,
+  "8": 394,
+  "9": 451,
+  "10": 512,
+  "11": 577,
+  "12": 646,
+  "13": 720,
+  "14": 798,
+  "15": 880,
+  "16": 966,
+  "17": 1056,
+  "18": 1150,
+  "19": 1249,
+  "20": 1352,
+  "21": 1459,
+  "22": 1570,
+  "23": 1686,
+  "24": 1806,
+  "25": 1930,
+  "26": 2058,
+  "27": 2190,
+  "28": 2326,
+  "29": 2467,
+  "30": 2612,
+  "31": 2612,
+  "32": 2612
+ },
+ "growth": {
+  "-1": [
+   1.0,
+   1.0
+  ],
+  "0": [
+   1.0,
+   1.0
+  ],
+  "1": [
+   1.0,
+   1.0
+  ],
+  "2": [
+   1.012,
+   1.018
+  ],
+  "3": [
+   1.024,
+   1.036
+  ],
+  "4": [
+   1.036,
+   1.054
+  ],
+  "5": [
+   1.048,
+   1.072
+  ],
+  "6": [
+   1.06,
+   1.09
+  ],
+  "7": [
+   1.072,
+   1.108
+  ],
+  "8": [
+   1.084,
+   1.126
+  ],
+  "9": [
+   1.096,
+   1.144
+  ],
+  "10": [
+   1.108,
+   1.162
+  ],
+  "11": [
+   1.12,
+   1.18
+  ],
+  "12": [
+   1.1320000000000001,
+   1.198
+  ],
+  "13": [
+   1.1440000000000001,
+   1.216
+  ],
+  "14": [
+   1.156,
+   1.234
+  ],
+  "15": [
+   1.168,
+   1.252
+  ],
+  "16": [
+   1.18,
+   1.27
+  ],
+  "17": [
+   1.192,
+   1.288
+  ],
+  "18": [
+   1.204,
+   1.306
+  ],
+  "19": [
+   1.216,
+   1.3239999999999998
+  ],
+  "20": [
+   1.228,
+   1.342
+  ],
+  "21": [
+   1.24,
+   1.3599999999999999
+  ],
+  "22": [
+   1.252,
+   1.378
+  ],
+  "23": [
+   1.264,
+   1.396
+  ],
+  "24": [
+   1.276,
+   1.414
+  ],
+  "25": [
+   1.288,
+   1.432
+  ],
+  "26": [
+   1.3,
+   1.45
+  ],
+  "27": [
+   1.312,
+   1.468
+  ],
+  "28": [
+   1.324,
+   1.486
+  ],
+  "29": [
+   1.336,
+   1.504
+  ],
+  "30": [
+   1.348,
+   1.5219999999999998
+  ],
+  "31": [
+   1.348,
+   1.5219999999999998
+  ],
+  "32": [
+   1.348,
+   1.5219999999999998
+  ]
+ },
+ "level_multiplier": {
+  "-1": 1.0,
+  "0": 1.0,
+  "1": 1.0,
+  "2": 1.2,
+  "3": 1.4,
+  "4": 1.6,
+  "5": 1.8,
+  "6": 1.8,
+  "7": 1.8
+ },
+ "items": {
+  "silk_carapace": {
+   "1": {
+    "id": "silk_carapace",
+    "name": "Woven carapace",
+    "slot": "carapace",
+    "description": "A flexible silk shell over the carapace.",
+    "armor": 2.0,
+    "max_hp": 8.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.015,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "2": {
+    "id": "silk_carapace",
+    "name": "Woven carapace",
+    "slot": "carapace",
+    "description": "A flexible silk shell over the carapace.",
+    "armor": 2.4,
+    "max_hp": 9.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.018,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "3": {
+    "id": "silk_carapace",
+    "name": "Woven carapace",
+    "slot": "carapace",
+    "description": "A flexible silk shell over the carapace.",
+    "armor": 2.8,
+    "max_hp": 11.2,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.020999999999999998,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "5": {
+    "id": "silk_carapace",
+    "name": "Woven carapace",
+    "slot": "carapace",
+    "description": "A flexible silk shell over the carapace.",
+    "armor": 3.6,
+    "max_hp": 14.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.027,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "9": {
+    "id": "silk_carapace",
+    "name": "Woven carapace",
+    "slot": "carapace",
+    "description": "A flexible silk shell over the carapace.",
+    "armor": 3.6,
+    "max_hp": 14.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.027,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   }
+  },
+  "fluffy_mantle": {
+   "1": {
+    "id": "fluffy_mantle",
+    "name": "Soft setae mantle",
+    "slot": "abdomen",
+    "description": "A warm, light mantle that cushions impacts.",
+    "armor": 1.0,
+    "max_hp": 12.0,
+    "max_energy": 4.0,
+    "damage": 0.0,
+    "speed": -0.02,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "2": {
+    "id": "fluffy_mantle",
+    "name": "Soft setae mantle",
+    "slot": "abdomen",
+    "description": "A warm, light mantle that cushions impacts.",
+    "armor": 1.2,
+    "max_hp": 14.399999999999999,
+    "max_energy": 4.8,
+    "damage": 0.0,
+    "speed": -0.024,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "3": {
+    "id": "fluffy_mantle",
+    "name": "Soft setae mantle",
+    "slot": "abdomen",
+    "description": "A warm, light mantle that cushions impacts.",
+    "armor": 1.4,
+    "max_hp": 16.799999999999997,
+    "max_energy": 5.6,
+    "damage": 0.0,
+    "speed": -0.027999999999999997,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "5": {
+    "id": "fluffy_mantle",
+    "name": "Soft setae mantle",
+    "slot": "abdomen",
+    "description": "A warm, light mantle that cushions impacts.",
+    "armor": 1.8,
+    "max_hp": 21.6,
+    "max_energy": 7.2,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "9": {
+    "id": "fluffy_mantle",
+    "name": "Soft setae mantle",
+    "slot": "abdomen",
+    "description": "A warm, light mantle that cushions impacts.",
+    "armor": 1.8,
+    "max_hp": 21.6,
+    "max_energy": 7.2,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   }
+  },
+  "leg_guard_set": {
+   "1": {
+    "id": "leg_guard_set",
+    "name": "Leg guard set",
+    "slot": "legs",
+    "description": "Small guards fitted around the leg joints.",
+    "armor": 1.0,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.025,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "2": {
+    "id": "leg_guard_set",
+    "name": "Leg guard set",
+    "slot": "legs",
+    "description": "Small guards fitted around the leg joints.",
+    "armor": 1.2,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.03,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "3": {
+    "id": "leg_guard_set",
+    "name": "Leg guard set",
+    "slot": "legs",
+    "description": "Small guards fitted around the leg joints.",
+    "armor": 1.4,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.034999999999999996,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "5": {
+    "id": "leg_guard_set",
+    "name": "Leg guard set",
+    "slot": "legs",
+    "description": "Small guards fitted around the leg joints.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.045000000000000005,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "9": {
+    "id": "leg_guard_set",
+    "name": "Leg guard set",
+    "slot": "legs",
+    "description": "Small guards fitted around the leg joints.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.045000000000000005,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   }
+  },
+  "pedipalp_cuffs": {
+   "1": {
+    "id": "pedipalp_cuffs",
+    "name": "Pedipalp cuffs",
+    "slot": "pedipalps",
+    "description": "Tiny protective cuffs that leave the hands free.",
+    "armor": 0.5,
+    "max_hp": 0.0,
+    "max_energy": 5.0,
+    "damage": 0.5,
+    "speed": -0.01,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "2": {
+    "id": "pedipalp_cuffs",
+    "name": "Pedipalp cuffs",
+    "slot": "pedipalps",
+    "description": "Tiny protective cuffs that leave the hands free.",
+    "armor": 0.6,
+    "max_hp": 0.0,
+    "max_energy": 6.0,
+    "damage": 0.6,
+    "speed": -0.012,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "3": {
+    "id": "pedipalp_cuffs",
+    "name": "Pedipalp cuffs",
+    "slot": "pedipalps",
+    "description": "Tiny protective cuffs that leave the hands free.",
+    "armor": 0.7,
+    "max_hp": 0.0,
+    "max_energy": 7.0,
+    "damage": 0.7,
+    "speed": -0.013999999999999999,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "5": {
+    "id": "pedipalp_cuffs",
+    "name": "Pedipalp cuffs",
+    "slot": "pedipalps",
+    "description": "Tiny protective cuffs that leave the hands free.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 9.0,
+    "damage": 0.9,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "9": {
+    "id": "pedipalp_cuffs",
+    "name": "Pedipalp cuffs",
+    "slot": "pedipalps",
+    "description": "Tiny protective cuffs that leave the hands free.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 9.0,
+    "damage": 0.9,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   }
+  },
+  "chelicerae_cap": {
+   "1": {
+    "id": "chelicerae_cap",
+    "name": "Fang cap",
+    "slot": "head",
+    "description": "A narrow guard around the small head and chelicerae.",
+    "armor": 1.0,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.0,
+    "speed": -0.008,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "2": {
+    "id": "chelicerae_cap",
+    "name": "Fang cap",
+    "slot": "head",
+    "description": "A narrow guard around the small head and chelicerae.",
+    "armor": 1.2,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.4,
+    "speed": -0.0096,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "3": {
+    "id": "chelicerae_cap",
+    "name": "Fang cap",
+    "slot": "head",
+    "description": "A narrow guard around the small head and chelicerae.",
+    "armor": 1.4,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.8,
+    "speed": -0.0112,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "5": {
+    "id": "chelicerae_cap",
+    "name": "Fang cap",
+    "slot": "head",
+    "description": "A narrow guard around the small head and chelicerae.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.6,
+    "speed": -0.014400000000000001,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   },
+   "9": {
+    "id": "chelicerae_cap",
+    "name": "Fang cap",
+    "slot": "head",
+    "description": "A narrow guard around the small head and chelicerae.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.6,
+    "speed": -0.014400000000000001,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "",
+    "tier": "common"
+   }
+  },
+  "warden_crest": {
+   "1": {
+    "id": "warden_crest",
+    "name": "Warden ocular crest",
+    "slot": "head",
+    "description": "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+    "armor": 1.0,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "2": {
+    "id": "warden_crest",
+    "name": "Warden ocular crest",
+    "slot": "head",
+    "description": "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+    "armor": 1.2,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "3": {
+    "id": "warden_crest",
+    "name": "Warden ocular crest",
+    "slot": "head",
+    "description": "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+    "armor": 1.4,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "5": {
+    "id": "warden_crest",
+    "name": "Warden ocular crest",
+    "slot": "head",
+    "description": "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 4.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "9": {
+    "id": "warden_crest",
+    "name": "Warden ocular crest",
+    "slot": "head",
+    "description": "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 4.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   }
+  },
+  "warden_carapace": {
+   "1": {
+    "id": "warden_carapace",
+    "name": "Warden carapace plate",
+    "slot": "carapace",
+    "description": "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
+    "armor": 2.5,
+    "max_hp": 12.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.02,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "2": {
+    "id": "warden_carapace",
+    "name": "Warden carapace plate",
+    "slot": "carapace",
+    "description": "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
+    "armor": 3.0,
+    "max_hp": 14.399999999999999,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.024,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "3": {
+    "id": "warden_carapace",
+    "name": "Warden carapace plate",
+    "slot": "carapace",
+    "description": "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
+    "armor": 3.5,
+    "max_hp": 16.799999999999997,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.027999999999999997,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "5": {
+    "id": "warden_carapace",
+    "name": "Warden carapace plate",
+    "slot": "carapace",
+    "description": "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
+    "armor": 4.5,
+    "max_hp": 21.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "9": {
+    "id": "warden_carapace",
+    "name": "Warden carapace plate",
+    "slot": "carapace",
+    "description": "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
+    "armor": 4.5,
+    "max_hp": 21.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   }
+  },
+  "warden_tergites": {
+   "1": {
+    "id": "warden_tergites",
+    "name": "Warden tergite bands",
+    "slot": "abdomen",
+    "description": "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
+    "armor": 1.5,
+    "max_hp": 20.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.02,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "2": {
+    "id": "warden_tergites",
+    "name": "Warden tergite bands",
+    "slot": "abdomen",
+    "description": "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
+    "armor": 1.7999999999999998,
+    "max_hp": 24.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.024,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "3": {
+    "id": "warden_tergites",
+    "name": "Warden tergite bands",
+    "slot": "abdomen",
+    "description": "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
+    "armor": 2.0999999999999996,
+    "max_hp": 28.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.027999999999999997,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "5": {
+    "id": "warden_tergites",
+    "name": "Warden tergite bands",
+    "slot": "abdomen",
+    "description": "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
+    "armor": 2.7,
+    "max_hp": 36.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "9": {
+    "id": "warden_tergites",
+    "name": "Warden tergite bands",
+    "slot": "abdomen",
+    "description": "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
+    "armor": 2.7,
+    "max_hp": 36.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   }
+  },
+  "warden_greaves": {
+   "1": {
+    "id": "warden_greaves",
+    "name": "Warden leg plates",
+    "slot": "legs",
+    "description": "Plates down all eight legs, femur to metatarsus, with a cop over each knee; the clawed tarsi stay bare to grip.",
+    "armor": 1.0,
+    "max_hp": 6.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.01,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "2": {
+    "id": "warden_greaves",
+    "name": "Warden leg plates",
+    "slot": "legs",
+    "description": "Plates down all eight legs, femur to metatarsus, with a cop over each knee; the clawed tarsi stay bare to grip.",
+    "armor": 1.2,
+    "max_hp": 7.199999999999999,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.012,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "3": {
+    "id": "warden_greaves",
+    "name": "Warden leg plates",
+    "slot": "legs",
+    "description": "Plates down all eight legs, femur to metatarsus, with a cop over each knee; the clawed tarsi stay bare to grip.",
+    "armor": 1.4,
+    "max_hp": 8.399999999999999,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.013999999999999999,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "5": {
+    "id": "warden_greaves",
+    "name": "Warden leg plates",
+    "slot": "legs",
+    "description": "Plates down all eight legs, femur to metatarsus, with a cop over each knee; the clawed tarsi stay bare to grip.",
+    "armor": 1.8,
+    "max_hp": 10.8,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "9": {
+    "id": "warden_greaves",
+    "name": "Warden leg plates",
+    "slot": "legs",
+    "description": "Plates down all eight legs, femur to metatarsus, with a cop over each knee; the clawed tarsi stay bare to grip.",
+    "armor": 1.8,
+    "max_hp": 10.8,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   }
+  },
+  "warden_bracers": {
+   "1": {
+    "id": "warden_bracers",
+    "name": "Warden palp bracers",
+    "slot": "pedipalps",
+    "description": "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
+    "armor": 0.5,
+    "max_hp": 0.0,
+    "max_energy": 6.0,
+    "damage": 1.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "2": {
+    "id": "warden_bracers",
+    "name": "Warden palp bracers",
+    "slot": "pedipalps",
+    "description": "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
+    "armor": 0.6,
+    "max_hp": 0.0,
+    "max_energy": 7.199999999999999,
+    "damage": 1.2,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "3": {
+    "id": "warden_bracers",
+    "name": "Warden palp bracers",
+    "slot": "pedipalps",
+    "description": "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
+    "armor": 0.7,
+    "max_hp": 0.0,
+    "max_energy": 8.399999999999999,
+    "damage": 1.4,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "5": {
+    "id": "warden_bracers",
+    "name": "Warden palp bracers",
+    "slot": "pedipalps",
+    "description": "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 10.8,
+    "damage": 1.8,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   },
+   "9": {
+    "id": "warden_bracers",
+    "name": "Warden palp bracers",
+    "slot": "pedipalps",
+    "description": "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 10.8,
+    "damage": 1.8,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "warden",
+    "tier": "rare"
+   }
+  },
+  "forager_hood": {
+   "1": {
+    "id": "forager_hood",
+    "name": "Forager elytra hood",
+    "slot": "head",
+    "description": "A beetle's wing case bent over the eye mound and lashed with silk.",
+    "armor": 0.5,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "2": {
+    "id": "forager_hood",
+    "name": "Forager elytra hood",
+    "slot": "head",
+    "description": "A beetle's wing case bent over the eye mound and lashed with silk.",
+    "armor": 0.6,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.2,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "3": {
+    "id": "forager_hood",
+    "name": "Forager elytra hood",
+    "slot": "head",
+    "description": "A beetle's wing case bent over the eye mound and lashed with silk.",
+    "armor": 0.7,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.4,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "5": {
+    "id": "forager_hood",
+    "name": "Forager elytra hood",
+    "slot": "head",
+    "description": "A beetle's wing case bent over the eye mound and lashed with silk.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.8,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "9": {
+    "id": "forager_hood",
+    "name": "Forager elytra hood",
+    "slot": "head",
+    "description": "A beetle's wing case bent over the eye mound and lashed with silk.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.8,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   }
+  },
+  "forager_shell": {
+   "1": {
+    "id": "forager_shell",
+    "name": "Forager shell",
+    "slot": "carapace",
+    "description": "Two elytra halves over the carapace, still green-bronze where the light hits.",
+    "armor": 1.2,
+    "max_hp": 8.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "2": {
+    "id": "forager_shell",
+    "name": "Forager shell",
+    "slot": "carapace",
+    "description": "Two elytra halves over the carapace, still green-bronze where the light hits.",
+    "armor": 1.44,
+    "max_hp": 9.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "3": {
+    "id": "forager_shell",
+    "name": "Forager shell",
+    "slot": "carapace",
+    "description": "Two elytra halves over the carapace, still green-bronze where the light hits.",
+    "armor": 1.68,
+    "max_hp": 11.2,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "5": {
+    "id": "forager_shell",
+    "name": "Forager shell",
+    "slot": "carapace",
+    "description": "Two elytra halves over the carapace, still green-bronze where the light hits.",
+    "armor": 2.16,
+    "max_hp": 14.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "9": {
+    "id": "forager_shell",
+    "name": "Forager shell",
+    "slot": "carapace",
+    "description": "Two elytra halves over the carapace, still green-bronze where the light hits.",
+    "armor": 2.16,
+    "max_hp": 14.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   }
+  },
+  "forager_mantle": {
+   "1": {
+    "id": "forager_mantle",
+    "name": "Forager mantle",
+    "slot": "abdomen",
+    "description": "Wing-case scales sewn on silk over the abdomen.",
+    "armor": 0.8,
+    "max_hp": 12.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.01,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "2": {
+    "id": "forager_mantle",
+    "name": "Forager mantle",
+    "slot": "abdomen",
+    "description": "Wing-case scales sewn on silk over the abdomen.",
+    "armor": 0.96,
+    "max_hp": 14.399999999999999,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.012,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "3": {
+    "id": "forager_mantle",
+    "name": "Forager mantle",
+    "slot": "abdomen",
+    "description": "Wing-case scales sewn on silk over the abdomen.",
+    "armor": 1.1199999999999999,
+    "max_hp": 16.799999999999997,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.013999999999999999,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "5": {
+    "id": "forager_mantle",
+    "name": "Forager mantle",
+    "slot": "abdomen",
+    "description": "Wing-case scales sewn on silk over the abdomen.",
+    "armor": 1.4400000000000002,
+    "max_hp": 21.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "9": {
+    "id": "forager_mantle",
+    "name": "Forager mantle",
+    "slot": "abdomen",
+    "description": "Wing-case scales sewn on silk over the abdomen.",
+    "armor": 1.4400000000000002,
+    "max_hp": 21.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   }
+  },
+  "forager_leggings": {
+   "1": {
+    "id": "forager_leggings",
+    "name": "Forager leggings",
+    "slot": "legs",
+    "description": "Light chitin splints down each leg; barely heavier than bare legs.",
+    "armor": 0.6,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.02,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "2": {
+    "id": "forager_leggings",
+    "name": "Forager leggings",
+    "slot": "legs",
+    "description": "Light chitin splints down each leg; barely heavier than bare legs.",
+    "armor": 0.72,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.024,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "3": {
+    "id": "forager_leggings",
+    "name": "Forager leggings",
+    "slot": "legs",
+    "description": "Light chitin splints down each leg; barely heavier than bare legs.",
+    "armor": 0.84,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.027999999999999997,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "5": {
+    "id": "forager_leggings",
+    "name": "Forager leggings",
+    "slot": "legs",
+    "description": "Light chitin splints down each leg; barely heavier than bare legs.",
+    "armor": 1.08,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "9": {
+    "id": "forager_leggings",
+    "name": "Forager leggings",
+    "slot": "legs",
+    "description": "Light chitin splints down each leg; barely heavier than bare legs.",
+    "armor": 1.08,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   }
+  },
+  "forager_wraps": {
+   "1": {
+    "id": "forager_wraps",
+    "name": "Forager palp wraps",
+    "slot": "pedipalps",
+    "description": "Chitin slivers wrapped round the palps.",
+    "armor": 0.3,
+    "max_hp": 0.0,
+    "max_energy": 4.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "2": {
+    "id": "forager_wraps",
+    "name": "Forager palp wraps",
+    "slot": "pedipalps",
+    "description": "Chitin slivers wrapped round the palps.",
+    "armor": 0.36,
+    "max_hp": 0.0,
+    "max_energy": 4.8,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "3": {
+    "id": "forager_wraps",
+    "name": "Forager palp wraps",
+    "slot": "pedipalps",
+    "description": "Chitin slivers wrapped round the palps.",
+    "armor": 0.42,
+    "max_hp": 0.0,
+    "max_energy": 5.6,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "5": {
+    "id": "forager_wraps",
+    "name": "Forager palp wraps",
+    "slot": "pedipalps",
+    "description": "Chitin slivers wrapped round the palps.",
+    "armor": 0.54,
+    "max_hp": 0.0,
+    "max_energy": 7.2,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   },
+   "9": {
+    "id": "forager_wraps",
+    "name": "Forager palp wraps",
+    "slot": "pedipalps",
+    "description": "Chitin slivers wrapped round the palps.",
+    "armor": 0.54,
+    "max_hp": 0.0,
+    "max_energy": 7.2,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "forager",
+    "tier": "uncommon"
+   }
+  },
+  "frost_diadem": {
+   "1": {
+    "id": "frost_diadem",
+    "name": "Frostglass diadem",
+    "slot": "head",
+    "description": "A ring of ice-clear crystal round the eye mound; the eyes look out through it.",
+    "armor": 1.0,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.0,
+    "speed": 0.01,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "frost_diadem",
+    "name": "Frostglass diadem",
+    "slot": "head",
+    "description": "A ring of ice-clear crystal round the eye mound; the eyes look out through it.",
+    "armor": 1.2,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.4,
+    "speed": 0.012,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "frost_diadem",
+    "name": "Frostglass diadem",
+    "slot": "head",
+    "description": "A ring of ice-clear crystal round the eye mound; the eyes look out through it.",
+    "armor": 1.4,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.8,
+    "speed": 0.013999999999999999,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "frost_diadem",
+    "name": "Frostglass diadem",
+    "slot": "head",
+    "description": "A ring of ice-clear crystal round the eye mound; the eyes look out through it.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.6,
+    "speed": 0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "frost_diadem",
+    "name": "Frostglass diadem",
+    "slot": "head",
+    "description": "A ring of ice-clear crystal round the eye mound; the eyes look out through it.",
+    "armor": 1.8,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.6,
+    "speed": 0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   }
+  },
+  "frost_aegis": {
+   "1": {
+    "id": "frost_aegis",
+    "name": "Frostglass aegis",
+    "slot": "carapace",
+    "description": "A faceted crystal shield over the carapace, light as frost.",
+    "armor": 2.0,
+    "max_hp": 12.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.01,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "frost_aegis",
+    "name": "Frostglass aegis",
+    "slot": "carapace",
+    "description": "A faceted crystal shield over the carapace, light as frost.",
+    "armor": 2.4,
+    "max_hp": 14.399999999999999,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.012,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "frost_aegis",
+    "name": "Frostglass aegis",
+    "slot": "carapace",
+    "description": "A faceted crystal shield over the carapace, light as frost.",
+    "armor": 2.8,
+    "max_hp": 16.799999999999997,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.013999999999999999,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "frost_aegis",
+    "name": "Frostglass aegis",
+    "slot": "carapace",
+    "description": "A faceted crystal shield over the carapace, light as frost.",
+    "armor": 3.6,
+    "max_hp": 21.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "frost_aegis",
+    "name": "Frostglass aegis",
+    "slot": "carapace",
+    "description": "A faceted crystal shield over the carapace, light as frost.",
+    "armor": 3.6,
+    "max_hp": 21.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   }
+  },
+  "frost_scales": {
+   "1": {
+    "id": "frost_scales",
+    "name": "Frostglass scales",
+    "slot": "abdomen",
+    "description": "Overlapping crystal scales that ring faintly as the spider walks.",
+    "armor": 1.5,
+    "max_hp": 18.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "frost_scales",
+    "name": "Frostglass scales",
+    "slot": "abdomen",
+    "description": "Overlapping crystal scales that ring faintly as the spider walks.",
+    "armor": 1.7999999999999998,
+    "max_hp": 21.599999999999998,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "frost_scales",
+    "name": "Frostglass scales",
+    "slot": "abdomen",
+    "description": "Overlapping crystal scales that ring faintly as the spider walks.",
+    "armor": 2.0999999999999996,
+    "max_hp": 25.2,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "frost_scales",
+    "name": "Frostglass scales",
+    "slot": "abdomen",
+    "description": "Overlapping crystal scales that ring faintly as the spider walks.",
+    "armor": 2.7,
+    "max_hp": 32.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "frost_scales",
+    "name": "Frostglass scales",
+    "slot": "abdomen",
+    "description": "Overlapping crystal scales that ring faintly as the spider walks.",
+    "armor": 2.7,
+    "max_hp": 32.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   }
+  },
+  "frost_shards": {
+   "1": {
+    "id": "frost_shards",
+    "name": "Frostglass leg shards",
+    "slot": "legs",
+    "description": "Crystal sheaths down every leg; they shed the air like ice on a blade.",
+    "armor": 1.2,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.04,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "frost_shards",
+    "name": "Frostglass leg shards",
+    "slot": "legs",
+    "description": "Crystal sheaths down every leg; they shed the air like ice on a blade.",
+    "armor": 1.44,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.048,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "frost_shards",
+    "name": "Frostglass leg shards",
+    "slot": "legs",
+    "description": "Crystal sheaths down every leg; they shed the air like ice on a blade.",
+    "armor": 1.68,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.055999999999999994,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "frost_shards",
+    "name": "Frostglass leg shards",
+    "slot": "legs",
+    "description": "Crystal sheaths down every leg; they shed the air like ice on a blade.",
+    "armor": 2.16,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.07200000000000001,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "frost_shards",
+    "name": "Frostglass leg shards",
+    "slot": "legs",
+    "description": "Crystal sheaths down every leg; they shed the air like ice on a blade.",
+    "armor": 2.16,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.07200000000000001,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   }
+  },
+  "frost_talons": {
+   "1": {
+    "id": "frost_talons",
+    "name": "Frostglass talons",
+    "slot": "pedipalps",
+    "description": "Crystal points over the palps, cold enough to numb what they touch.",
+    "armor": 0.5,
+    "max_hp": 0.0,
+    "max_energy": 8.0,
+    "damage": 1.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "frost_talons",
+    "name": "Frostglass talons",
+    "slot": "pedipalps",
+    "description": "Crystal points over the palps, cold enough to numb what they touch.",
+    "armor": 0.6,
+    "max_hp": 0.0,
+    "max_energy": 9.6,
+    "damage": 1.7999999999999998,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "frost_talons",
+    "name": "Frostglass talons",
+    "slot": "pedipalps",
+    "description": "Crystal points over the palps, cold enough to numb what they touch.",
+    "armor": 0.7,
+    "max_hp": 0.0,
+    "max_energy": 11.2,
+    "damage": 2.0999999999999996,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "frost_talons",
+    "name": "Frostglass talons",
+    "slot": "pedipalps",
+    "description": "Crystal points over the palps, cold enough to numb what they touch.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 14.4,
+    "damage": 2.7,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "frost_talons",
+    "name": "Frostglass talons",
+    "slot": "pedipalps",
+    "description": "Crystal points over the palps, cold enough to numb what they touch.",
+    "armor": 0.9,
+    "max_hp": 0.0,
+    "max_energy": 14.4,
+    "damage": 2.7,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "frost",
+    "tier": "epic"
+   }
+  },
+  "brood_crown": {
+   "1": {
+    "id": "brood_crown",
+    "name": "Brood obsidian crown",
+    "slot": "head",
+    "description": "A spiked crown of black glass; the runes on it glow when the spider bites.",
+    "armor": 1.2,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 4.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "brood_crown",
+    "name": "Brood obsidian crown",
+    "slot": "head",
+    "description": "A spiked crown of black glass; the runes on it glow when the spider bites.",
+    "armor": 1.44,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 4.8,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "brood_crown",
+    "name": "Brood obsidian crown",
+    "slot": "head",
+    "description": "A spiked crown of black glass; the runes on it glow when the spider bites.",
+    "armor": 1.68,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 5.6,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "brood_crown",
+    "name": "Brood obsidian crown",
+    "slot": "head",
+    "description": "A spiked crown of black glass; the runes on it glow when the spider bites.",
+    "armor": 2.16,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 7.2,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "brood_crown",
+    "name": "Brood obsidian crown",
+    "slot": "head",
+    "description": "A spiked crown of black glass; the runes on it glow when the spider bites.",
+    "armor": 2.16,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 7.2,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   }
+  },
+  "brood_bulwark": {
+   "1": {
+    "id": "brood_bulwark",
+    "name": "Brood obsidian bulwark",
+    "slot": "carapace",
+    "description": "A heavy plate of black glass over the carapace, veined with violet runes.",
+    "armor": 2.8,
+    "max_hp": 16.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.02,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "brood_bulwark",
+    "name": "Brood obsidian bulwark",
+    "slot": "carapace",
+    "description": "A heavy plate of black glass over the carapace, veined with violet runes.",
+    "armor": 3.36,
+    "max_hp": 19.2,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.024,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "brood_bulwark",
+    "name": "Brood obsidian bulwark",
+    "slot": "carapace",
+    "description": "A heavy plate of black glass over the carapace, veined with violet runes.",
+    "armor": 3.9199999999999995,
+    "max_hp": 22.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.027999999999999997,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "brood_bulwark",
+    "name": "Brood obsidian bulwark",
+    "slot": "carapace",
+    "description": "A heavy plate of black glass over the carapace, veined with violet runes.",
+    "armor": 5.04,
+    "max_hp": 28.8,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "brood_bulwark",
+    "name": "Brood obsidian bulwark",
+    "slot": "carapace",
+    "description": "A heavy plate of black glass over the carapace, veined with violet runes.",
+    "armor": 5.04,
+    "max_hp": 28.8,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   }
+  },
+  "brood_plates": {
+   "1": {
+    "id": "brood_plates",
+    "name": "Brood obsidian plates",
+    "slot": "abdomen",
+    "description": "Rune-cut obsidian bands over the abdomen.",
+    "armor": 2.0,
+    "max_hp": 24.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.02,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "brood_plates",
+    "name": "Brood obsidian plates",
+    "slot": "abdomen",
+    "description": "Rune-cut obsidian bands over the abdomen.",
+    "armor": 2.4,
+    "max_hp": 28.799999999999997,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.024,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "brood_plates",
+    "name": "Brood obsidian plates",
+    "slot": "abdomen",
+    "description": "Rune-cut obsidian bands over the abdomen.",
+    "armor": 2.8,
+    "max_hp": 33.599999999999994,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.027999999999999997,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "brood_plates",
+    "name": "Brood obsidian plates",
+    "slot": "abdomen",
+    "description": "Rune-cut obsidian bands over the abdomen.",
+    "armor": 3.6,
+    "max_hp": 43.2,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "brood_plates",
+    "name": "Brood obsidian plates",
+    "slot": "abdomen",
+    "description": "Rune-cut obsidian bands over the abdomen.",
+    "armor": 3.6,
+    "max_hp": 43.2,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": -0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   }
+  },
+  "brood_spurs": {
+   "1": {
+    "id": "brood_spurs",
+    "name": "Brood obsidian leg spurs",
+    "slot": "legs",
+    "description": "Black-glass plates down each leg, spurred at the knee.",
+    "armor": 1.2,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.0,
+    "speed": -0.01,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "brood_spurs",
+    "name": "Brood obsidian leg spurs",
+    "slot": "legs",
+    "description": "Black-glass plates down each leg, spurred at the knee.",
+    "armor": 1.44,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.2,
+    "speed": -0.012,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "brood_spurs",
+    "name": "Brood obsidian leg spurs",
+    "slot": "legs",
+    "description": "Black-glass plates down each leg, spurred at the knee.",
+    "armor": 1.68,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.4,
+    "speed": -0.013999999999999999,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "brood_spurs",
+    "name": "Brood obsidian leg spurs",
+    "slot": "legs",
+    "description": "Black-glass plates down each leg, spurred at the knee.",
+    "armor": 2.16,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.8,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "brood_spurs",
+    "name": "Brood obsidian leg spurs",
+    "slot": "legs",
+    "description": "Black-glass plates down each leg, spurred at the knee.",
+    "armor": 2.16,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 1.8,
+    "speed": -0.018000000000000002,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   }
+  },
+  "brood_claws": {
+   "1": {
+    "id": "brood_claws",
+    "name": "Brood obsidian claws",
+    "slot": "pedipalps",
+    "description": "Glass-edged palp claws that cut as they grip.",
+    "armor": 0.6,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "2": {
+    "id": "brood_claws",
+    "name": "Brood obsidian claws",
+    "slot": "pedipalps",
+    "description": "Glass-edged palp claws that cut as they grip.",
+    "armor": 0.72,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.4,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "3": {
+    "id": "brood_claws",
+    "name": "Brood obsidian claws",
+    "slot": "pedipalps",
+    "description": "Glass-edged palp claws that cut as they grip.",
+    "armor": 0.84,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 2.8,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "5": {
+    "id": "brood_claws",
+    "name": "Brood obsidian claws",
+    "slot": "pedipalps",
+    "description": "Glass-edged palp claws that cut as they grip.",
+    "armor": 1.08,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.6,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   },
+   "9": {
+    "id": "brood_claws",
+    "name": "Brood obsidian claws",
+    "slot": "pedipalps",
+    "description": "Glass-edged palp claws that cut as they grip.",
+    "armor": 1.08,
+    "max_hp": 0.0,
+    "max_energy": 0.0,
+    "damage": 3.6,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "brood",
+    "tier": "epic"
+   }
+  },
+  "sun_crown": {
+   "1": {
+    "id": "sun_crown",
+    "name": "Sunforged crown",
+    "slot": "head",
+    "description": "A gold crown over the eye mound set with an ember-red stone.",
+    "armor": 1.5,
+    "max_hp": 0.0,
+    "max_energy": 6.0,
+    "damage": 3.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "2": {
+    "id": "sun_crown",
+    "name": "Sunforged crown",
+    "slot": "head",
+    "description": "A gold crown over the eye mound set with an ember-red stone.",
+    "armor": 1.7999999999999998,
+    "max_hp": 0.0,
+    "max_energy": 7.199999999999999,
+    "damage": 4.2,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "3": {
+    "id": "sun_crown",
+    "name": "Sunforged crown",
+    "slot": "head",
+    "description": "A gold crown over the eye mound set with an ember-red stone.",
+    "armor": 2.0999999999999996,
+    "max_hp": 0.0,
+    "max_energy": 8.399999999999999,
+    "damage": 4.8999999999999995,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "5": {
+    "id": "sun_crown",
+    "name": "Sunforged crown",
+    "slot": "head",
+    "description": "A gold crown over the eye mound set with an ember-red stone.",
+    "armor": 2.7,
+    "max_hp": 0.0,
+    "max_energy": 10.8,
+    "damage": 6.3,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "9": {
+    "id": "sun_crown",
+    "name": "Sunforged crown",
+    "slot": "head",
+    "description": "A gold crown over the eye mound set with an ember-red stone.",
+    "armor": 2.7,
+    "max_hp": 0.0,
+    "max_energy": 10.8,
+    "damage": 6.3,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   }
+  },
+  "sun_aegis": {
+   "1": {
+    "id": "sun_aegis",
+    "name": "Sunforged aegis",
+    "slot": "carapace",
+    "description": "A gold shield over the carapace with ember veins that never cool.",
+    "armor": 3.0,
+    "max_hp": 20.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "2": {
+    "id": "sun_aegis",
+    "name": "Sunforged aegis",
+    "slot": "carapace",
+    "description": "A gold shield over the carapace with ember veins that never cool.",
+    "armor": 3.5999999999999996,
+    "max_hp": 24.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "3": {
+    "id": "sun_aegis",
+    "name": "Sunforged aegis",
+    "slot": "carapace",
+    "description": "A gold shield over the carapace with ember veins that never cool.",
+    "armor": 4.199999999999999,
+    "max_hp": 28.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "5": {
+    "id": "sun_aegis",
+    "name": "Sunforged aegis",
+    "slot": "carapace",
+    "description": "A gold shield over the carapace with ember veins that never cool.",
+    "armor": 5.4,
+    "max_hp": 36.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "9": {
+    "id": "sun_aegis",
+    "name": "Sunforged aegis",
+    "slot": "carapace",
+    "description": "A gold shield over the carapace with ember veins that never cool.",
+    "armor": 5.4,
+    "max_hp": 36.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   }
+  },
+  "sun_scales": {
+   "1": {
+    "id": "sun_scales",
+    "name": "Sunforged scales",
+    "slot": "abdomen",
+    "description": "Gold bands over the abdomen, each lit from within.",
+    "armor": 2.2,
+    "max_hp": 30.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "2": {
+    "id": "sun_scales",
+    "name": "Sunforged scales",
+    "slot": "abdomen",
+    "description": "Gold bands over the abdomen, each lit from within.",
+    "armor": 2.64,
+    "max_hp": 36.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "3": {
+    "id": "sun_scales",
+    "name": "Sunforged scales",
+    "slot": "abdomen",
+    "description": "Gold bands over the abdomen, each lit from within.",
+    "armor": 3.08,
+    "max_hp": 42.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "5": {
+    "id": "sun_scales",
+    "name": "Sunforged scales",
+    "slot": "abdomen",
+    "description": "Gold bands over the abdomen, each lit from within.",
+    "armor": 3.9600000000000004,
+    "max_hp": 54.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "9": {
+    "id": "sun_scales",
+    "name": "Sunforged scales",
+    "slot": "abdomen",
+    "description": "Gold bands over the abdomen, each lit from within.",
+    "armor": 3.9600000000000004,
+    "max_hp": 54.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   }
+  },
+  "sun_legs": {
+   "1": {
+    "id": "sun_legs",
+    "name": "Sunforged leg plates",
+    "slot": "legs",
+    "description": "Gold plates down every leg; they hold their warmth, and the legs stay quick.",
+    "armor": 1.5,
+    "max_hp": 8.0,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.02,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "2": {
+    "id": "sun_legs",
+    "name": "Sunforged leg plates",
+    "slot": "legs",
+    "description": "Gold plates down every leg; they hold their warmth, and the legs stay quick.",
+    "armor": 1.7999999999999998,
+    "max_hp": 9.6,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.024,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "3": {
+    "id": "sun_legs",
+    "name": "Sunforged leg plates",
+    "slot": "legs",
+    "description": "Gold plates down every leg; they hold their warmth, and the legs stay quick.",
+    "armor": 2.0999999999999996,
+    "max_hp": 11.2,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.027999999999999997,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "5": {
+    "id": "sun_legs",
+    "name": "Sunforged leg plates",
+    "slot": "legs",
+    "description": "Gold plates down every leg; they hold their warmth, and the legs stay quick.",
+    "armor": 2.7,
+    "max_hp": 14.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "9": {
+    "id": "sun_legs",
+    "name": "Sunforged leg plates",
+    "slot": "legs",
+    "description": "Gold plates down every leg; they hold their warmth, and the legs stay quick.",
+    "armor": 2.7,
+    "max_hp": 14.4,
+    "max_energy": 0.0,
+    "damage": 0.0,
+    "speed": 0.036000000000000004,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   }
+  },
+  "sun_gauntlets": {
+   "1": {
+    "id": "sun_gauntlets",
+    "name": "Sunforged palp gauntlets",
+    "slot": "pedipalps",
+    "description": "Gold gauntlets over the palps, ember-hot at the tips.",
+    "armor": 0.8,
+    "max_hp": 0.0,
+    "max_energy": 10.0,
+    "damage": 2.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "2": {
+    "id": "sun_gauntlets",
+    "name": "Sunforged palp gauntlets",
+    "slot": "pedipalps",
+    "description": "Gold gauntlets over the palps, ember-hot at the tips.",
+    "armor": 0.96,
+    "max_hp": 0.0,
+    "max_energy": 12.0,
+    "damage": 3.0,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "3": {
+    "id": "sun_gauntlets",
+    "name": "Sunforged palp gauntlets",
+    "slot": "pedipalps",
+    "description": "Gold gauntlets over the palps, ember-hot at the tips.",
+    "armor": 1.1199999999999999,
+    "max_hp": 0.0,
+    "max_energy": 14.0,
+    "damage": 3.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "5": {
+    "id": "sun_gauntlets",
+    "name": "Sunforged palp gauntlets",
+    "slot": "pedipalps",
+    "description": "Gold gauntlets over the palps, ember-hot at the tips.",
+    "armor": 1.4400000000000002,
+    "max_hp": 0.0,
+    "max_energy": 18.0,
+    "damage": 4.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   },
+   "9": {
+    "id": "sun_gauntlets",
+    "name": "Sunforged palp gauntlets",
+    "slot": "pedipalps",
+    "description": "Gold gauntlets over the palps, ember-hot at the tips.",
+    "armor": 1.4400000000000002,
+    "max_hp": 0.0,
+    "max_energy": 18.0,
+    "damage": 4.5,
+    "speed": 0.0,
+    "size_min": 0.55,
+    "size_max": 2.25,
+    "set_id": "sun",
+    "tier": "legendary"
+   }
+  }
+ },
+ "abilities": [
+  {
+   "id": "vitality",
+   "name": "Vitality",
+   "level_required": 2,
+   "cost": 1,
+   "prerequisites": [],
+   "effects": {
+    "max_hp": 18.0
+   }
+  },
+  {
+   "id": "quick_step",
+   "name": "Quick step",
+   "level_required": 3,
+   "cost": 1,
+   "prerequisites": [],
+   "effects": {
+    "speed": 0.06
+   }
+  },
+  {
+   "id": "silk_sense",
+   "name": "Silk sense",
+   "level_required": 4,
+   "cost": 1,
+   "prerequisites": [],
+   "effects": {
+    "max_energy": 12.0,
+    "energy_regen": 0.8
+   }
+  },
+  {
+   "id": "carapace_harden",
+   "name": "Hardened carapace",
+   "level_required": 5,
+   "cost": 1,
+   "prerequisites": [
+    "vitality"
+   ],
+   "effects": {
+    "armor": 2.0
+   }
+  },
+  {
+   "id": "power_strike",
+   "name": "Power strike",
+   "level_required": 6,
+   "cost": 1,
+   "prerequisites": [],
+   "effects": {
+    "damage": 2.0
+   }
+  },
+  {
+   "id": "web_crafter",
+   "name": "Web crafter",
+   "level_required": 8,
+   "cost": 1,
+   "prerequisites": [
+    "silk_sense"
+   ],
+   "effects": {
+    "max_energy": 8.0
+   }
+  },
+  {
+   "id": "silk_tracking",
+   "name": "Silk tracking",
+   "level_required": 9,
+   "cost": 1,
+   "prerequisites": [
+    "web_crafter"
+   ],
+   "effects": {
+    "web_homing": 1.0
+   }
+  },
+  {
+   "id": "long_stride",
+   "name": "Long stride",
+   "level_required": 10,
+   "cost": 1,
+   "prerequisites": [
+    "quick_step"
+   ],
+   "effects": {
+    "speed": 0.08
+   }
+  },
+  {
+   "id": "apex_predator",
+   "name": "Apex predator",
+   "level_required": 15,
+   "cost": 1,
+   "prerequisites": [
+    "power_strike",
+    "carapace_harden"
+   ],
+   "effects": {
+    "damage": 4.0,
+    "max_energy": 16.0
+   }
+  }
+ ],
+ "sets": {
+  "forager": {
+   "pieces": [
+    "forager_hood",
+    "forager_shell",
+    "forager_mantle",
+    "forager_leggings",
+    "forager_wraps"
+   ],
+   "effects": {
+    "max_energy": 8.0,
+    "energy_regen": 0.5
+   }
+  },
+  "warden": {
+   "pieces": [
+    "warden_crest",
+    "warden_carapace",
+    "warden_tergites",
+    "warden_greaves",
+    "warden_bracers"
+   ],
+   "effects": {
+    "max_hp": 10.0,
+    "armor": 0.5,
+    "energy_regen": 1.5
+   }
+  },
+  "frost": {
+   "pieces": [
+    "frost_diadem",
+    "frost_aegis",
+    "frost_scales",
+    "frost_shards",
+    "frost_talons"
+   ],
+   "effects": {
+    "speed": 0.06,
+    "max_energy": 10.0,
+    "energy_regen": 2.0
+   }
+  },
+  "brood": {
+   "pieces": [
+    "brood_crown",
+    "brood_bulwark",
+    "brood_plates",
+    "brood_spurs",
+    "brood_claws"
+   ],
+   "effects": {
+    "damage": 3.0,
+    "max_hp": 15.0
+   }
+  },
+  "sun": {
+   "pieces": [
+    "sun_crown",
+    "sun_aegis",
+    "sun_scales",
+    "sun_legs",
+    "sun_gauntlets"
+   ],
+   "effects": {
+    "max_hp": 20.0,
+    "armor": 1.0,
+    "damage": 2.0,
+    "energy_regen": 2.0
+   }
+  }
+ },
+ "progression": [
+  {
+   "input": null,
+   "output": {
+    "level": 1,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {},
+   "output": {
+    "level": 1,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "level": 99,
+    "xp": -5,
+    "total_xp": 3,
+    "skill_points": -1
+   },
+   "output": {
+    "level": 30,
+    "xp": 0,
+    "total_xp": 3,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "level": "7",
+    "xp": "12",
+    "total_xp": "nope"
+   },
+   "output": {
+    "level": 7,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "level": 3.9,
+    "xp": 4.5,
+    "skill_points": 2
+   },
+   "output": {
+    "level": 3,
+    "xp": 4,
+    "total_xp": 4,
+    "skill_points": 2,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "unlocked_abilities": [
+     "vitality",
+     "fly",
+     3
+    ],
+    "inventory": [
+     "sun_crown",
+     "nope",
+     "frost_aegis"
+    ],
+    "equipped": {
+     "head": "sun_crown",
+     "carapace": "silk_carapace",
+     "legs": "frost_aegis"
+    }
+   },
+   "output": {
+    "level": 1,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [
+     "vitality"
+    ],
+    "inventory": [
+     "sun_crown",
+     "frost_aegis"
+    ],
+    "equipped": {
+     "head": "sun_crown",
+     "legs": "frost_aegis"
+    },
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "inventory": null,
+    "equipped": {
+     "carapace": "silk_carapace"
+    }
+   },
+   "output": {
+    "level": 1,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {
+     "carapace": "silk_carapace"
+    },
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "team_id": "  Porch   Guard ",
+    "relation_overrides": {
+     "a": "FOE",
+     "b": "enemy",
+     "c": 3
+    }
+   },
+   "output": {
+    "level": 1,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "porch_guard",
+    "relation_overrides": {
+     "a": "foe"
+    },
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "team_id": "",
+    "pin_level": 1,
+    "pin_health": "yes"
+   },
+   "output": {
+    "level": 1,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "neutral",
+    "relation_overrides": {},
+    "pin_level": true,
+    "pin_health": true,
+    "item_levels": {}
+   }
+  },
+  {
+   "input": {
+    "team_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "item_levels": {
+     "sun_crown": 9,
+     "frost_aegis": "2",
+     "nope": 3,
+     "brood_crown": "x"
+    }
+   },
+   "output": {
+    "level": 1,
+    "xp": 0,
+    "total_xp": 0,
+    "skill_points": 0,
+    "unlocked_abilities": [],
+    "inventory": [
+     "silk_carapace",
+     "leg_guard_set"
+    ],
+    "equipped": {},
+    "team_id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "relation_overrides": {},
+    "pin_level": false,
+    "pin_health": false,
+    "item_levels": {
+     "sun_crown": 5,
+     "frost_aegis": 2
+    }
+   }
+  }
+ ],
+ "set_bonus": [
+  {
+   "worn": [
+    "forager_hood",
+    "forager_shell",
+    "forager_mantle",
+    "forager_leggings",
+    "forager_wraps"
+   ],
+   "equipped": {
+    "head": "forager_hood",
+    "carapace": "forager_shell",
+    "abdomen": "forager_mantle",
+    "legs": "forager_leggings",
+    "pedipalps": "forager_wraps"
+   },
+   "bonus": {
+    "max_energy": 8.0,
+    "energy_regen": 0.5
+   },
+   "items": [
+    {
+     "id": "forager_hood",
+     "name": "Forager elytra hood",
+     "slot": "head",
+     "description": "A beetle's wing case bent over the eye mound and lashed with silk.",
+     "armor": 0.7,
+     "max_hp": 0.0,
+     "max_energy": 0.0,
+     "damage": 1.4,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "forager",
+     "tier": "uncommon"
+    },
+    {
+     "id": "forager_shell",
+     "name": "Forager shell",
+     "slot": "carapace",
+     "description": "Two elytra halves over the carapace, still green-bronze where the light hits.",
+     "armor": 1.2,
+     "max_hp": 8.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "forager",
+     "tier": "uncommon"
+    },
+    {
+     "id": "forager_mantle",
+     "name": "Forager mantle",
+     "slot": "abdomen",
+     "description": "Wing-case scales sewn on silk over the abdomen.",
+     "armor": 0.8,
+     "max_hp": 12.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": -0.01,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "forager",
+     "tier": "uncommon"
+    },
+    {
+     "id": "forager_leggings",
+     "name": "Forager leggings",
+     "slot": "legs",
+     "description": "Light chitin splints down each leg; barely heavier than bare legs.",
+     "armor": 0.6,
+     "max_hp": 0.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": 0.02,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "forager",
+     "tier": "uncommon"
+    },
+    {
+     "id": "forager_wraps",
+     "name": "Forager palp wraps",
+     "slot": "pedipalps",
+     "description": "Chitin slivers wrapped round the palps.",
+     "armor": 0.3,
+     "max_hp": 0.0,
+     "max_energy": 4.0,
+     "damage": 0.0,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "forager",
+     "tier": "uncommon"
+    }
+   ]
+  },
+  {
+   "worn": [
+    "sun_crown",
+    "sun_aegis",
+    "sun_scales",
+    "sun_legs",
+    "sun_gauntlets",
+    "warden_crest"
+   ],
+   "equipped": {
+    "head": "warden_crest",
+    "carapace": "sun_aegis",
+    "abdomen": "sun_scales",
+    "legs": "sun_legs",
+    "pedipalps": "sun_gauntlets"
+   },
+   "bonus": {},
+   "items": [
+    {
+     "id": "warden_crest",
+     "name": "Warden ocular crest",
+     "slot": "head",
+     "description": "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+     "armor": 1.0,
+     "max_hp": 0.0,
+     "max_energy": 0.0,
+     "damage": 2.5,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "warden",
+     "tier": "rare"
+    },
+    {
+     "id": "sun_aegis",
+     "name": "Sunforged aegis",
+     "slot": "carapace",
+     "description": "A gold shield over the carapace with ember veins that never cool.",
+     "armor": 3.0,
+     "max_hp": 20.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "sun",
+     "tier": "legendary"
+    },
+    {
+     "id": "sun_scales",
+     "name": "Sunforged scales",
+     "slot": "abdomen",
+     "description": "Gold bands over the abdomen, each lit from within.",
+     "armor": 2.2,
+     "max_hp": 30.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "sun",
+     "tier": "legendary"
+    },
+    {
+     "id": "sun_legs",
+     "name": "Sunforged leg plates",
+     "slot": "legs",
+     "description": "Gold plates down every leg; they hold their warmth, and the legs stay quick.",
+     "armor": 1.5,
+     "max_hp": 8.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": 0.02,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "sun",
+     "tier": "legendary"
+    },
+    {
+     "id": "sun_gauntlets",
+     "name": "Sunforged palp gauntlets",
+     "slot": "pedipalps",
+     "description": "Gold gauntlets over the palps, ember-hot at the tips.",
+     "armor": 0.8,
+     "max_hp": 0.0,
+     "max_energy": 10.0,
+     "damage": 2.5,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "sun",
+     "tier": "legendary"
+    }
+   ]
+  },
+  {
+   "worn": [
+    "warden_crest",
+    "warden_carapace",
+    "warden_tergites",
+    "warden_greaves",
+    "warden_bracers"
+   ],
+   "equipped": {
+    "head": "warden_crest",
+    "carapace": "warden_carapace",
+    "abdomen": "warden_tergites",
+    "legs": "warden_greaves",
+    "pedipalps": "warden_bracers"
+   },
+   "bonus": {
+    "max_hp": 10.0,
+    "armor": 0.5,
+    "energy_regen": 1.5
+   },
+   "items": [
+    {
+     "id": "warden_crest",
+     "name": "Warden ocular crest",
+     "slot": "head",
+     "description": "A ridged visor over the eye mound; the eight eyes stay clear and the chelicerae get capped tips.",
+     "armor": 1.4,
+     "max_hp": 0.0,
+     "max_energy": 0.0,
+     "damage": 3.5,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "warden",
+     "tier": "rare"
+    },
+    {
+     "id": "warden_carapace",
+     "name": "Warden carapace plate",
+     "slot": "carapace",
+     "description": "A shield moulded to the prosoma, the fovea left open; the orange rim still shows around it.",
+     "armor": 2.5,
+     "max_hp": 12.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": -0.02,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "warden",
+     "tier": "rare"
+    },
+    {
+     "id": "warden_tergites",
+     "name": "Warden tergite bands",
+     "slot": "abdomen",
+     "description": "Overlapping bands over the soft abdomen, the most vulnerable part; they flex as it breathes and leave the spinnerets free.",
+     "armor": 1.5,
+     "max_hp": 20.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": -0.02,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "warden",
+     "tier": "rare"
+    },
+    {
+     "id": "warden_greaves",
+     "name": "Warden leg plates",
+     "slot": "legs",
+     "description": "Plates down all eight legs, femur to metatarsus, with a cop over each knee; the clawed tarsi stay bare to grip.",
+     "armor": 1.0,
+     "max_hp": 6.0,
+     "max_energy": 0.0,
+     "damage": 0.0,
+     "speed": -0.01,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "warden",
+     "tier": "rare"
+    },
+    {
+     "id": "warden_bracers",
+     "name": "Warden palp bracers",
+     "slot": "pedipalps",
+     "description": "Bracers on both pedipalps; the palp tips stay free to feel and to hold prey.",
+     "armor": 0.5,
+     "max_hp": 0.0,
+     "max_energy": 6.0,
+     "damage": 1.0,
+     "speed": 0.0,
+     "size_min": 0.55,
+     "size_max": 2.25,
+     "set_id": "warden",
+     "tier": "rare"
+    }
+   ]
+  }
+ ],
+ "team_defaults": {
+  "neutral": {
+   "id": "neutral",
+   "color": [
+    255,
+    255,
+    255
+   ],
+   "name": "Neutral / solo"
+  },
+  "": {
+   "id": "neutral",
+   "color": [
+    255,
+    255,
+    255
+   ],
+   "name": "Neutral / solo"
+  },
+  "Rivals": {
+   "id": "rivals",
+   "color": [
+    209,
+    83,
+    79
+   ],
+   "name": "Rivals"
+  },
+  "pack_a": {
+   "id": "pack_a",
+   "color": [
+    79,
+    163,
+    209
+   ],
+   "name": "Pack A"
+  },
+  "porch_guard": {
+   "id": "porch_guard",
+   "color": [
+    114,
+    194,
+    212
+   ],
+   "name": "Porch Guard"
+  },
+  "shed_crew": {
+   "id": "shed_crew",
+   "color": [
+    212,
+    114,
+    152
+   ],
+   "name": "Shed Crew"
+  },
+  "Porch Guard": {
+   "id": "porch_guard",
+   "color": [
+    114,
+    194,
+    212
+   ],
+   "name": "Porch Guard"
+  },
+  "attic_watch": {
+   "id": "attic_watch",
+   "color": [
+    128,
+    224,
+    121
+   ],
+   "name": "Attic Watch"
+  },
+  "garden_patrol": {
+   "id": "garden_patrol",
+   "color": [
+    86,
+    72,
+    199
+   ],
+   "name": "Garden Patrol"
+  },
+  "roof": {
+   "id": "roof",
+   "color": [
+    121,
+    224,
+    188
+   ],
+   "name": "Roof"
+  },
+  "hearth": {
+   "id": "hearth",
+   "color": [
+    72,
+    199,
+    159
+   ],
+   "name": "Hearth"
+  },
+  "wanderers": {
+   "id": "wanderers",
+   "color": [
+    114,
+    212,
+    237
+   ],
+   "name": "Wanderers"
+  },
+  "night_shift": {
+   "id": "night_shift",
+   "color": [
+    199,
+    127,
+    95
+   ],
+   "name": "Night Shift"
+  },
+  "x-ray_team": {
+   "id": "x-ray_team",
+   "color": [
+    100,
+    159,
+    237
+   ],
+   "name": "X Ray Team"
+  },
+  "\u00e9migr\u00e9s": {
+   "id": "\u00e9migr\u00e9s",
+   "color": [
+    212,
+    166,
+    102
+   ],
+   "name": "\u00c9migr\u00e9s"
+  },
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa": {
+   "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "color": [
+    164,
+    60,
+    199
+   ],
+   "name": "Aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+ },
+ "distinct": [
+  {
+   "name": "neutral",
+   "taken": [],
+   "color": [
+    255,
+    255,
+    255
+   ]
+  },
+  {
+   "name": "neutral",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    255,
+    255,
+    255
+   ]
+  },
+  {
+   "name": "neutral",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    255,
+    255,
+    255
+   ]
+  },
+  {
+   "name": "",
+   "taken": [],
+   "color": [
+    255,
+    255,
+    255
+   ]
+  },
+  {
+   "name": "",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    255,
+    255,
+    255
+   ]
+  },
+  {
+   "name": "",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    255,
+    255,
+    255
+   ]
+  },
+  {
+   "name": "Rivals",
+   "taken": [],
+   "color": [
+    209,
+    83,
+    79
+   ]
+  },
+  {
+   "name": "Rivals",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    209,
+    83,
+    79
+   ]
+  },
+  {
+   "name": "Rivals",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    209,
+    83,
+    79
+   ]
+  },
+  {
+   "name": "pack_a",
+   "taken": [],
+   "color": [
+    79,
+    163,
+    209
+   ]
+  },
+  {
+   "name": "pack_a",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    79,
+    163,
+    209
+   ]
+  },
+  {
+   "name": "pack_a",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    79,
+    163,
+    209
+   ]
+  },
+  {
+   "name": "porch_guard",
+   "taken": [],
+   "color": [
+    114,
+    194,
+    212
+   ]
+  },
+  {
+   "name": "porch_guard",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    187,
+    114,
+    212
+   ]
+  },
+  {
+   "name": "porch_guard",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    114,
+    118,
+    212
+   ]
+  },
+  {
+   "name": "shed_crew",
+   "taken": [],
+   "color": [
+    212,
+    114,
+    152
+   ]
+  },
+  {
+   "name": "shed_crew",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    212,
+    114,
+    152
+   ]
+  },
+  {
+   "name": "shed_crew",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    212,
+    114,
+    152
+   ]
+  },
+  {
+   "name": "Porch Guard",
+   "taken": [],
+   "color": [
+    114,
+    194,
+    212
+   ]
+  },
+  {
+   "name": "Porch Guard",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    187,
+    114,
+    212
+   ]
+  },
+  {
+   "name": "Porch Guard",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    114,
+    118,
+    212
+   ]
+  },
+  {
+   "name": "attic_watch",
+   "taken": [],
+   "color": [
+    128,
+    224,
+    121
+   ]
+  },
+  {
+   "name": "attic_watch",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    128,
+    224,
+    121
+   ]
+  },
+  {
+   "name": "attic_watch",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    128,
+    224,
+    121
+   ]
+  },
+  {
+   "name": "garden_patrol",
+   "taken": [],
+   "color": [
+    86,
+    72,
+    199
+   ]
+  },
+  {
+   "name": "garden_patrol",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    86,
+    72,
+    199
+   ]
+  },
+  {
+   "name": "garden_patrol",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    86,
+    72,
+    199
+   ]
+  },
+  {
+   "name": "roof",
+   "taken": [],
+   "color": [
+    121,
+    224,
+    188
+   ]
+  },
+  {
+   "name": "roof",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    121,
+    224,
+    188
+   ]
+  },
+  {
+   "name": "roof",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    144,
+    121,
+    224
+   ]
+  },
+  {
+   "name": "hearth",
+   "taken": [],
+   "color": [
+    72,
+    199,
+    159
+   ]
+  },
+  {
+   "name": "hearth",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    72,
+    199,
+    159
+   ]
+  },
+  {
+   "name": "hearth",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    72,
+    199,
+    159
+   ]
+  },
+  {
+   "name": "wanderers",
+   "taken": [],
+   "color": [
+    114,
+    212,
+    237
+   ]
+  },
+  {
+   "name": "wanderers",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    114,
+    212,
+    237
+   ]
+  },
+  {
+   "name": "wanderers",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    114,
+    116,
+    237
+   ]
+  },
+  {
+   "name": "night_shift",
+   "taken": [],
+   "color": [
+    199,
+    127,
+    95
+   ]
+  },
+  {
+   "name": "night_shift",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    199,
+    127,
+    95
+   ]
+  },
+  {
+   "name": "night_shift",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    199,
+    127,
+    95
+   ]
+  },
+  {
+   "name": "x-ray_team",
+   "taken": [],
+   "color": [
+    100,
+    159,
+    237
+   ]
+  },
+  {
+   "name": "x-ray_team",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    148,
+    100,
+    237
+   ]
+  },
+  {
+   "name": "x-ray_team",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    100,
+    159,
+    237
+   ]
+  },
+  {
+   "name": "\u00e9migr\u00e9s",
+   "taken": [],
+   "color": [
+    212,
+    166,
+    102
+   ]
+  },
+  {
+   "name": "\u00e9migr\u00e9s",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    212,
+    166,
+    102
+   ]
+  },
+  {
+   "name": "\u00e9migr\u00e9s",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    212,
+    166,
+    102
+   ]
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "taken": [],
+   "color": [
+    164,
+    60,
+    199
+   ]
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "taken": [
+    [
+     79,
+     163,
+     209
+    ]
+   ],
+   "color": [
+    164,
+    60,
+    199
+   ]
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "taken": [
+    [
+     121,
+     224,
+     188
+    ],
+    [
+     0,
+     0,
+     0
+    ]
+   ],
+   "color": [
+    164,
+    60,
+    199
+   ]
+  }
+ ],
+ "normalize_teams": [
+  {
+   "raw": {
+    "porch_guard": {
+     "name": "Porch guard",
+     "color": "#3fa9d9"
+    },
+    "shed": "Shed crew",
+    "neutral": {
+     "name": "Nope"
+    }
+   },
+   "used": [],
+   "profiles": [
+    [
+     "porch_guard",
+     "Porch guard",
+     [
+      63,
+      169,
+      217
+     ]
+    ],
+    [
+     "shed",
+     "Shed crew",
+     [
+      237,
+      85,
+      108
+     ]
+    ]
+   ]
+  },
+  {
+   "raw": null,
+   "used": [
+    "pack_a",
+    "neutral",
+    "attic_watch"
+   ],
+   "profiles": [
+    [
+     "pack_a",
+     "Pack A",
+     [
+      79,
+      163,
+      209
+     ]
+    ],
+    [
+     "attic_watch",
+     "Attic Watch",
+     [
+      128,
+      224,
+      121
+     ]
+    ]
+   ]
+  },
+  {
+   "raw": {
+    "Porch Guard": {
+     "name": "Porch guard"
+    }
+   },
+   "used": [
+    "PORCH_guard",
+    "porch guard"
+   ],
+   "profiles": [
+    [
+     "porch_guard",
+     "Porch guard",
+     [
+      114,
+      194,
+      212
+     ]
+    ]
+   ]
+  },
+  {
+   "raw": null,
+   "used": [
+    "attic_watch",
+    "porch_guard",
+    "shed_crew",
+    "garden_patrol",
+    "roof",
+    "hearth",
+    "wanderers",
+    "night_shift"
+   ],
+   "profiles": [
+    [
+     "attic_watch",
+     "Attic Watch",
+     [
+      128,
+      224,
+      121
+     ]
+    ],
+    [
+     "porch_guard",
+     "Porch Guard",
+     [
+      114,
+      194,
+      212
+     ]
+    ],
+    [
+     "shed_crew",
+     "Shed Crew",
+     [
+      194,
+      212,
+      114
+     ]
+    ],
+    [
+     "garden_patrol",
+     "Garden Patrol",
+     [
+      86,
+      72,
+      199
+     ]
+    ],
+    [
+     "roof",
+     "Roof",
+     [
+      144,
+      121,
+      224
+     ]
+    ],
+    [
+     "hearth",
+     "Hearth",
+     [
+      72,
+      199,
+      159
+     ]
+    ],
+    [
+     "wanderers",
+     "Wanderers",
+     [
+      208,
+      114,
+      237
+     ]
+    ],
+    [
+     "night_shift",
+     "Night Shift",
+     [
+      199,
+      127,
+      95
+     ]
+    ]
+   ]
+  },
+  {
+   "raw": null,
+   "used": [
+    "night_shift",
+    "wanderers",
+    "hearth",
+    "roof",
+    "garden_patrol",
+    "shed_crew",
+    "porch_guard",
+    "attic_watch"
+   ],
+   "profiles": [
+    [
+     "night_shift",
+     "Night Shift",
+     [
+      199,
+      127,
+      95
+     ]
+    ],
+    [
+     "wanderers",
+     "Wanderers",
+     [
+      208,
+      114,
+      237
+     ]
+    ],
+    [
+     "hearth",
+     "Hearth",
+     [
+      72,
+      199,
+      159
+     ]
+    ],
+    [
+     "roof",
+     "Roof",
+     [
+      144,
+      121,
+      224
+     ]
+    ],
+    [
+     "garden_patrol",
+     "Garden Patrol",
+     [
+      86,
+      72,
+      199
+     ]
+    ],
+    [
+     "shed_crew",
+     "Shed Crew",
+     [
+      194,
+      212,
+      114
+     ]
+    ],
+    [
+     "porch_guard",
+     "Porch Guard",
+     [
+      114,
+      194,
+      212
+     ]
+    ],
+    [
+     "attic_watch",
+     "Attic Watch",
+     [
+      128,
+      224,
+      121
+     ]
+    ]
+   ]
+  },
+  {
+   "raw": {
+    "a_team": {
+     "color": "#3fa9d9"
+    },
+    "b_team": {
+     "color": "#3fa9d9"
+    }
+   },
+   "used": [],
+   "profiles": [
+    [
+     "a_team",
+     "A Team",
+     [
+      63,
+      169,
+      217
+     ]
+    ],
+    [
+     "b_team",
+     "B Team",
+     [
+      63,
+      169,
+      217
+     ]
+    ]
+   ]
+  },
+  {
+   "raw": {
+    "x": {
+     "name": "  ",
+     "color": [
+      300,
+      -4,
+      12.5
+     ]
+    },
+    "y": {
+     "name": "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+     "color": "abc"
+    }
+   },
+   "used": [
+    "q"
+   ],
+   "profiles": [
+    [
+     "x",
+     "X",
+     [
+      255,
+      0,
+      12
+     ]
+    ],
+    [
+     "y",
+     "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+     [
+      170,
+      187,
+      204
+     ]
+    ],
+    [
+     "q",
+     "Q",
+     [
+      224,
+      108,
+      178
+     ]
+    ]
+   ]
+  }
+ ],
+ "teams_payload": {
+  "porch_guard": {
+   "name": "Porch guard",
+   "color": "#3fa9d9"
+  },
+  "shed": {
+   "name": "Shed crew",
+   "color": "#ed556c"
+  }
+ },
+ "parse_color": [
+  {
+   "input": "#3fa9d9",
+   "output": [
+    63,
+    169,
+    217
+   ]
+  },
+  {
+   "input": "3fa9d9",
+   "output": [
+    63,
+    169,
+    217
+   ]
+  },
+  {
+   "input": "#abc",
+   "output": [
+    170,
+    187,
+    204
+   ]
+  },
+  {
+   "input": [
+    10,
+    20,
+    30
+   ],
+   "output": [
+    10,
+    20,
+    30
+   ]
+  },
+  {
+   "input": [
+    1.5,
+    2.5,
+    254.6
+   ],
+   "output": [
+    2,
+    2,
+    255
+   ]
+  },
+  {
+   "input": "not a colour",
+   "output": null
+  },
+  {
+   "input": null,
+   "output": null
+  },
+  {
+   "input": [
+    1,
+    2
+   ],
+   "output": null
+  },
+  {
+   "input": " #ABCDEF ",
+   "output": [
+    171,
+    205,
+    239
+   ]
+  },
+  {
+   "input": 123456,
+   "output": [
+    18,
+    52,
+    86
+   ]
+  }
+ ],
+ "stances": [
+  {
+   "raw": {
+    "pack_a": {
+     "rivals": "foe"
+    }
+   },
+   "normalized": {
+    "pack_a": {
+     "rivals": "foe"
+    },
+    "rivals": {
+     "pack_a": "foe"
+    }
+   },
+   "minimal": {
+    "pack_a": {
+     "rivals": "foe"
+    }
+   },
+   "pairs": [
+    [
+     "b",
+     "hunters",
+     "neutral"
+    ],
+    [
+     "b",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "b",
+     "rivals",
+     "foe"
+    ],
+    [
+     "b",
+     "x",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "rivals",
+     "foe"
+    ],
+    [
+     "hunters",
+     "x",
+     "neutral"
+    ],
+    [
+     "pack_a",
+     "rivals",
+     "foe"
+    ],
+    [
+     "pack_a",
+     "x",
+     "neutral"
+    ],
+    [
+     "rivals",
+     "x",
+     "foe"
+    ]
+   ]
+  },
+  {
+   "raw": {
+    "pack_a": {
+     "rivals": "neutral"
+    }
+   },
+   "normalized": {
+    "pack_a": {
+     "rivals": "neutral"
+    },
+    "rivals": {
+     "pack_a": "neutral"
+    }
+   },
+   "minimal": {
+    "pack_a": {
+     "rivals": "neutral"
+    }
+   },
+   "pairs": [
+    [
+     "b",
+     "hunters",
+     "neutral"
+    ],
+    [
+     "b",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "b",
+     "rivals",
+     "foe"
+    ],
+    [
+     "b",
+     "x",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "rivals",
+     "foe"
+    ],
+    [
+     "hunters",
+     "x",
+     "neutral"
+    ],
+    [
+     "pack_a",
+     "rivals",
+     "neutral"
+    ],
+    [
+     "pack_a",
+     "x",
+     "neutral"
+    ],
+    [
+     "rivals",
+     "x",
+     "foe"
+    ]
+   ]
+  },
+  {
+   "raw": {
+    "Pack A": {
+     "Rivals": "FRIEND",
+     "hunters": "enemy"
+    },
+    "b": [],
+    "hunters": {
+     "b": "foe"
+    }
+   },
+   "normalized": {
+    "pack_a": {
+     "rivals": "friend"
+    },
+    "rivals": {
+     "pack_a": "friend"
+    },
+    "hunters": {
+     "b": "foe"
+    },
+    "b": {
+     "hunters": "foe"
+    }
+   },
+   "minimal": {
+    "b": {
+     "hunters": "foe"
+    },
+    "pack_a": {
+     "rivals": "friend"
+    }
+   },
+   "pairs": [
+    [
+     "b",
+     "hunters",
+     "foe"
+    ],
+    [
+     "b",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "b",
+     "rivals",
+     "foe"
+    ],
+    [
+     "b",
+     "x",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "rivals",
+     "foe"
+    ],
+    [
+     "hunters",
+     "x",
+     "neutral"
+    ],
+    [
+     "pack_a",
+     "rivals",
+     "friend"
+    ],
+    [
+     "pack_a",
+     "x",
+     "neutral"
+    ],
+    [
+     "rivals",
+     "x",
+     "foe"
+    ]
+   ]
+  },
+  {
+   "raw": {
+    "neutral": {
+     "x": "foe"
+    },
+    "x": {
+     "x": "friend"
+    }
+   },
+   "normalized": {
+    "neutral": {
+     "x": "foe"
+    },
+    "x": {
+     "neutral": "foe",
+     "x": "friend"
+    }
+   },
+   "minimal": {},
+   "pairs": [
+    [
+     "b",
+     "hunters",
+     "neutral"
+    ],
+    [
+     "b",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "b",
+     "rivals",
+     "foe"
+    ],
+    [
+     "b",
+     "x",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "pack_a",
+     "neutral"
+    ],
+    [
+     "hunters",
+     "rivals",
+     "foe"
+    ],
+    [
+     "hunters",
+     "x",
+     "neutral"
+    ],
+    [
+     "pack_a",
+     "rivals",
+     "foe"
+    ],
+    [
+     "pack_a",
+     "x",
+     "neutral"
+    ],
+    [
+     "rivals",
+     "x",
+     "foe"
+    ]
+   ]
+  }
+ ],
+ "team_stance": [
+  {
+   "left": "pack_a",
+   "right": "rivals",
+   "none": "foe",
+   "declared": "neutral"
+  },
+  {
+   "left": "pack_a",
+   "right": "pack_b",
+   "none": null,
+   "declared": null
+  },
+  {
+   "left": "pack_a",
+   "right": "Pack A",
+   "none": "friend",
+   "declared": "friend"
+  },
+  {
+   "left": "neutral",
+   "right": "rivals",
+   "none": null,
+   "declared": null
+  },
+  {
+   "left": "rivals",
+   "right": "rivals",
+   "none": "friend",
+   "declared": "friend"
+  }
+ ],
+ "new_ids": [
+  "default|c735f7697fb9",
+  "default|1de970d3da1f",
+  "default|173401eaf614",
+  "default|f149e935b870",
+  "default|ce97f073eed1"
+ ],
+ "namespaces": {
+  "Default": "default",
+  "  COLONY  ": "colony",
+  "": "default",
+  "Stra\u00dfe": "strasse"
+ },
+ "keys": {
+  "Default|slot-0:0": [
+   "default|slot-0:0",
+   "slot-0",
+   0
+  ],
+  "a|b:c:12": [
+   "a|b:c:12",
+   "b:c",
+   12
+  ],
+  "runtime:0": [
+   null,
+   "runtime",
+   0
+  ],
+  "": [
+   null,
+   "",
+   null
+  ],
+  "default|": [
+   null,
+   "",
+   null
+  ],
+  "x|y": [
+   "x|y",
+   "y",
+   null
+  ],
+  "x|:3": [
+   "x|:3",
+   ":3",
+   null
+  ],
+  "noprefix:4": [
+   null,
+   "noprefix",
+   4
+  ]
+ },
+ "migration": {
+  "input": {
+   "Default|slot-0:0": {
+    "name": "Webster",
+    "progression": {
+     "level": 5,
+     "total_xp": 500
+    }
+   },
+   "default|slot-0:0": {
+    "progression": {
+     "level": 2
+    }
+   },
+   "runtime:0": {
+    "progression": {
+     "level": 9
+    }
+   },
+   "colony|slot-1:3": {
+    "level": 4,
+    "total_xp": 400,
+    "last_seen": 2.0,
+    "born": true
+   },
+   "colony|abc": {
+    "slot_id": null,
+    "last_seen": 3,
+    "born": "x"
+   },
+   "colony|def": "nonsense"
+  },
+  "output": {
+   "default|slot-0:0": {
+    "name": "Webster",
+    "progression": {
+     "level": 5,
+     "total_xp": 500
+    },
+    "last_seen": 7,
+    "slot_id": "slot-0",
+    "born": 0
+   },
+   "colony|slot-1:3": {
+    "level": 4,
+    "total_xp": 400,
+    "last_seen": 7,
+    "born": true,
+    "slot_id": "slot-1"
+   },
+   "colony|abc": {
+    "slot_id": null,
+    "last_seen": 3,
+    "born": 0
+   }
+  }
+ },
+ "slot_members": {
+  "slot-0": [
+   "default|slot-0:0"
+  ],
+  "slot-1": [
+   "colony|slot-1:3"
+  ],
+  "next_birth": 2
+ },
+ "evict": {
+  "a|1": {
+   "last_seen": 100
+  },
+  "a|2": {
+   "last_seen": 50
+  },
+  "a|4": {},
+  "a|5": {
+   "last_seen": "x"
+  }
+ },
+ "payload": {
+  "schema_version": 3,
+  "launch": 7,
+  "creatures": {
+   "default|slot-0:0": {
+    "name": "Webster",
+    "progression": {
+     "level": 5,
+     "total_xp": 500
+    },
+    "last_seen": 7,
+    "slot_id": "slot-0",
+    "born": 0
+   },
+   "colony|slot-1:3": {
+    "level": 4,
+    "total_xp": 400,
+    "last_seen": 7,
+    "born": true,
+    "slot_id": "slot-1"
+   },
+   "colony|abc": {
+    "slot_id": null,
+    "last_seen": 3,
+    "born": 0
+   }
+  },
+  "bases": [
+   {
+    "id": "b",
+    "x": 1.5
+   }
+  ],
+  "scene": {
+   "cages": [
+    {
+     "x": 1e-05,
+     "name": "\u00fcn\u00ef\n"
+    }
+   ],
+   "webs": [],
+   "nests": []
+  }
+ },
+ "payload_text": "{\n  \"schema_version\": 3,\n  \"launch\": 7,\n  \"creatures\": {\n    \"default|slot-0:0\": {\n      \"name\": \"Webster\",\n      \"progression\": {\n        \"level\": 5,\n        \"total_xp\": 500\n      },\n      \"last_seen\": 7,\n      \"slot_id\": \"slot-0\",\n      \"born\": 0\n    },\n    \"colony|slot-1:3\": {\n      \"level\": 4,\n      \"total_xp\": 400,\n      \"last_seen\": 7,\n      \"born\": true,\n      \"slot_id\": \"slot-1\"\n    },\n    \"colony|abc\": {\n      \"slot_id\": null,\n      \"last_seen\": 3,\n      \"born\": 0\n    }\n  },\n  \"bases\": [\n    {\n      \"id\": \"b\",\n      \"x\": 1.5\n    }\n  ],\n  \"scene\": {\n    \"cages\": [\n      {\n        \"x\": 1e-05,\n        \"name\": \"\\u00fcn\\u00ef\\n\"\n      }\n    ],\n    \"webs\": [],\n    \"nests\": []\n  }\n}\n"
+}
