@@ -6,7 +6,16 @@ license.workspace = true
 
 [dependencies]
 dc-core.workspace = true
-windows.workspace = true
+# Extra Win32 features on top of the workspace set (PORTING.md rule 2 allows
+# enabling features on an existing dependency): overlapped pipe I/O,
+# PrintWindow, GetLocalTime/GetTickCount64 and the layered-window blit.
+windows = { workspace = true, features = [
+    "Win32_Storage_Xps",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_SystemInformation",
+    "Win32_System_SystemServices",
+] }
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true
@@ -14,3 +23,12 @@ thiserror.workspace = true
 winit.workspace = true
 raw-window-handle.workspace = true
 tray-icon.workspace = true
+# Already workspace dependencies: wgpu for the overlay surface helper (the
+# DirectComposition presentation switch lives in its instance options), sha2
+# for the live-channel name, pollster to block on adapter/device requests.
+wgpu.workspace = true
+sha2.workspace = true
+pollster.workspace = true
+
+[dev-dependencies]
+bytemuck.workspace = true
