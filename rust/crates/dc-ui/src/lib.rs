@@ -1,14 +1,33 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+//! dc-ui: the egui windows of Desktop Bug Companion, ported from the PyQt5
+//! windows in `src/desktop_bug/app/`.
+//!
+//! * [`theme`] -- `wood_theme.py`: palette, fonts, visuals, frames.
+//! * [`widgets`] -- carved buttons, pill switches, key caps, `VitalBar`,
+//!   `StatTile`, section headers, tab bars.
+//! * [`assets`] -- the PNG emblems and wood textures of `assets/ui`.
+//! * [`art`] -- `skill_art.py` medallions and config_ui's small icons.
+//! * [`windows`] -- one struct per window; each has
+//!   `fn ui(&mut self, ctx: &egui::Context) -> Vec<UiAction>`.
+//! * [`runner`] -- [`run_window`], a native winit + egui-wgpu host.
+//! * [`model`], [`teams`], [`stat_text`] -- the view models the app fills in.
+//!
+//! dc-ui never spawns processes or writes files; the windows answer with
+//! [`UiAction`]s and the app layer carries them out.
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod action;
+pub mod art;
+pub mod assets;
+pub mod bridge;
+pub mod model;
+pub mod paint;
+pub mod probe;
+pub mod runner;
+pub mod sample;
+pub mod stat_text;
+pub mod teams;
+pub mod theme;
+pub mod widgets;
+pub mod windows;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use action::{OverlayMode, UiAction};
+pub use runner::{RunOptions, WindowApp, run_window, run_window_with};

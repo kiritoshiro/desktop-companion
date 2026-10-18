@@ -8,7 +8,8 @@ license.workspace = true
 dc-core.workspace = true
 dc-content.workspace = true
 dc-state.workspace = true
-dc-render.workspace = true
+dc-adventure.workspace = true
+# dc-render is not used yet (the windows paint with egui); it comes back with dc-paint portraits.
 egui.workspace = true
 egui-wgpu.workspace = true
 egui-winit.workspace = true
@@ -16,3 +17,8 @@ winit.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 log.workspace = true
+image.workspace = true
+
+[[example]]
+name = "settings_window"
+path = "examples/settings_window.rs"
