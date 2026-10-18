@@ -15,6 +15,7 @@
 
 mod engine;
 mod metrics;
+mod overlay_ui;
 mod settings;
 
 use std::path::PathBuf;
