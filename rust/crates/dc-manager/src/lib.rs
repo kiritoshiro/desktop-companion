@@ -1,14 +1,15 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+//! Port of `desktop_bug/manager`: colony ownership and frame orchestration.
+pub mod cages;
+pub mod colony;
+pub mod combat;
+pub mod constants;
+pub mod core;
+pub mod hunting;
+pub mod naming;
+pub mod persistence;
+pub mod prey;
+pub mod render;
+pub mod surfaces;
+pub use core::{CreatureManager, MouseInput};
+pub use surfaces::DesktopSurface;
+pub mod roster;
