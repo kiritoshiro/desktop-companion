@@ -610,12 +610,19 @@ dependencies = [
  "anyhow",
  "dc-content",
  "dc-core",
+ "dc-creature",
+ "dc-manager",
+ "dc-paint",
  "dc-platform",
  "dc-render",
  "dc-state",
  "dc-ui",
+ "dc-world",
  "env_logger",
  "log",
+ "serde_json",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]
