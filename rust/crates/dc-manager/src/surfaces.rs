@@ -479,6 +479,32 @@ impl CreatureManager {
         };
         ctx.awareness(&mut self.creatures[i], dt, rng);
     }
+    /// `creature_occlusion` for the creature at `i`, in place: Python's render
+    /// asked `_occluding_surfaces_for_creature`, which can end a stale hide.
+    pub fn occlusion_at(&mut self, i: usize) -> (bool, Vec<dc_render::Region>) {
+        if self.desktop_surfaces.is_empty() {
+            return (false, vec![]);
+        }
+        let ctx = Context {
+            surfaces: &self.desktop_surfaces,
+            w: self.screen_w,
+            h: self.screen_h,
+            mx: self.mouse_x,
+            my: self.mouse_y,
+            down: self.mouse_down,
+            metrics: self.label_metrics.as_ref(),
+        };
+        let c = &mut self.creatures[i];
+        let Some(s) = ctx.occluder(c) else {
+            return (false, vec![]);
+        };
+        let higher = ctx.higher(s).map(DesktopSurface::rect).collect::<Vec<_>>();
+        (
+            ctx.fully_covered(c, s),
+            vec![dc_paint::scene::surface_visible_region(self.desktop_surfaces[s].rect(), &higher)],
+        )
+    }
+
     pub fn creature_occlusion(&self, c: &mut Creature) -> (bool, Vec<dc_render::Region>) {
         let ctx = self.surface_context();
         let Some(i) = ctx.occluder(c) else {

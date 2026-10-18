@@ -5,7 +5,11 @@
 
 use dc_core::PyRandom;
 use dc_creature::{ApproxLabelMetrics, LabelMetrics};
+use dc_manager::paint::ScenePainter;
 use dc_manager::{CreatureManager, MouseInput};
+use dc_paint::PaintSwitches;
+use dc_paint::compare::{compare_images, diff_image};
+use dc_render::{CpuRenderer, Image, RenderHint, Scene};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -219,8 +223,61 @@ fn replay(name: &str) -> Result<usize, String> {
     if let Some(d) = diff("saved", &fx["saved"], &saved).or_else(|| extra_keys("saved", &fx["saved"], &saved)) {
         return Err(format!("{name}: creatures.json {d}"));
     }
+    let png = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/frames").join(format!("{name}.png"));
+    if png.exists() {
+        compare_frame(&mut m, &png, name)?;
+    }
     let _ = std::fs::remove_dir_all(&scratch);
     Ok(frames.len())
+}
+
+/// The last frame painted through `ScenePainter` on the CPU renderer against
+/// the Python manager's `render(painter)` (labels off on both sides). The
+/// painters themselves differ slightly in anti-aliasing (see dc-paint's
+/// comparison), so this asks for close, not identical: the same silhouettes
+/// and colours, which a wrong field in the bridge would break.
+fn compare_frame(m: &mut CreatureManager, png: &std::path::Path, name: &str) -> Result<(), String> {
+    m.set_always_show_names(false);
+    m.set_always_show_levels(false);
+    m.set_always_show_health(false);
+    m.set_always_show_xp(false);
+    m.set_always_show_stamina(false);
+    // The generator cleared these too: offscreen Qt draws text as boxes.
+    for c in &mut m.creatures {
+        c.damage_numbers.clear();
+    }
+    for c in &mut m.carcasses {
+        c.damage_numbers.clear();
+    }
+    let mut painter = ScenePainter::new(PaintSwitches::default());
+    let mut scene = Scene::new();
+    {
+        let mut c = scene.canvas();
+        c.set_render_hint(RenderHint::Antialiasing, true);
+        painter.paint(m, &mut c, None);
+    }
+    let rust = CpuRenderer::new().render(&scene, 1280, 720, None);
+    let qt = Image::load_png(png).map_err(|e| format!("{name}: {e:?}"))?;
+    let r = compare_images(&qt, &rust);
+    let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("frames");
+    let _ = std::fs::create_dir_all(&out);
+    let _ = rust.save_png(out.join(format!("{name}-rust.png")));
+    let _ = diff_image(&qt, &rust).save_png(out.join(format!("{name}-diff.png")));
+    println!(
+        "{name}: mean diff {:.2}, IoU {:.4}, 1px {:.4}, coverage {:.3}",
+        r.mean_diff, r.iou, r.iou_1px, r.coverage
+    );
+    if r.iou_1px < 0.97 || r.mean_diff > 8.0 || !(0.9..=1.1).contains(&r.coverage) {
+        return Err(format!(
+            "{name}: frame differs: mean diff {:.2}, IoU {:.4}, 1px {:.4}, coverage {:.3} (images in {})",
+            r.mean_diff,
+            r.iou,
+            r.iou_1px,
+            r.coverage,
+            out.display()
+        ));
+    }
+    Ok(())
 }
 
 fn check(scenario: &str) {

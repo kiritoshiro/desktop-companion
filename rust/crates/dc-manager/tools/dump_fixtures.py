@@ -49,6 +49,32 @@ def trace(m):
     }
 
 
+# Scenarios whose last frame is also painted. None pins a label, so with the
+# label switches off no text is drawn except damage numbers.
+RENDERED = ("colony", "fight", "hunt", "stalk", "duel")
+
+
+def render_frame(m, path):
+    """The manager's own `render(painter)` on a transparent 1280x720 image,
+    as the overlay paints it, after the run (so it changes nothing above)."""
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QImage, QPainter
+    for name in ("names", "levels", "health", "xp", "stamina"):
+        getattr(m, f"set_always_show_{name}")(False)
+    # Offscreen Qt has no fonts and draws text as empty boxes, so the floating
+    # damage numbers are cleared on both sides before painting.
+    for thing in list(m.creatures) + list(m.carcasses):
+        thing.damage_numbers.clear()
+    image = QImage(1280, 720, QImage.Format_ARGB32_Premultiplied)
+    image.fill(Qt.transparent)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.Antialiasing, True)
+    m.render(painter)
+    painter.end()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(str(path))
+
+
 def main():
     with tempfile.TemporaryDirectory(prefix="dc-manager-oracle-") as scratch:
         os.environ["DESKTOP_BUG_STATE_DIR"] = str(Path(scratch) / "initial")
@@ -139,6 +165,8 @@ def main():
                            "actions": actions, "frames": frames,
                            "rng_next": rng_next, "saved": saved}
                 (out / f"{scenario}-{seed}.json").write_text(json.dumps(payload, separators=(",", ":"), default=str) + "\n", encoding="utf-8")
+                if scenario in RENDERED:
+                    render_frame(m, out / "frames" / f"{scenario}-{seed}.png")
                 print(f"{scenario}-{seed}: {len(frames)} frames", flush=True)
         del app
 
