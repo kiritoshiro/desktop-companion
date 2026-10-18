@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 dc-core.workspace = true
+dc-content.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 serde.workspace = true
