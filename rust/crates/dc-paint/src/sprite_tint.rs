@@ -84,7 +84,7 @@ pub fn tint_pixmap(img: &Image, rgb: [f64; 3]) -> Image {
     }
     let mut data = img.to_straight_rgba();
     let mut lookup: HashMap<[u8; 3], [u8; 3]> = HashMap::new();
-    for px in data.chunks_exact_mut(4) {
+    for px in data.as_chunks_mut::<4>().0 {
         if px[3] == 0 {
             continue;
         }
@@ -111,7 +111,7 @@ pub fn shade_pixmap(img: &Image, rgb: [f64; 3]) -> Image {
     let tone = rgb.map(|c| (c as i64).clamp(0, 255) as f64);
     let mut data = img.to_straight_rgba();
     let mut lookup: HashMap<u8, [u8; 3]> = HashMap::new();
-    for px in data.chunks_exact_mut(4) {
+    for px in data.as_chunks_mut::<4>().0 {
         if px[3] == 0 {
             continue;
         }

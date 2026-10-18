@@ -23,7 +23,13 @@ pub struct AntennaDrive {
 }
 
 /// `antenna_drive_from_mood(mood, aiming=, inspecting=, cuddling=, aim_angle=)`.
-pub fn antenna_drive_from_mood(mood: &Mood, aiming: f64, inspecting: f64, cuddling: f64, aim_angle: f64) -> AntennaDrive {
+pub fn antenna_drive_from_mood(
+    mood: &Mood,
+    aiming: f64,
+    inspecting: f64,
+    cuddling: f64,
+    aim_angle: f64,
+) -> AntennaDrive {
     let happy = mood.happy();
     let sad = mood.sad();
     let sleepy = mood.sleepy();

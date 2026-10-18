@@ -3,18 +3,19 @@
 //! `_draw_leg_connections`, `_draw_antennae` and `_draw_eyes`. The leg
 //! geometry is `dc-kinematics` (see [`crate::resolve`]).
 
+use crate::PaintSwitches;
 use crate::antenna::{antenna_drive_from_mood, build_antenna_points};
 use crate::armour_art;
-use crate::batch::{LAYER_CORE, LAYER_FOOT, LAYER_FUZZ, LAYER_HAIR, LAYER_JOINT, LAYER_SEGMENT, LAYER_SHADOW, LegBatch};
+use crate::batch::{
+    LAYER_CORE, LAYER_FOOT, LAYER_FUZZ, LAYER_HAIR, LAYER_JOINT, LAYER_SEGMENT, LAYER_SHADOW, LegBatch,
+};
 use crate::color::mix;
 use crate::draw::CreatureDraw;
 use crate::look::{AntennaStyle, CreatureLook};
-use crate::PaintSwitches;
 use dc_core::math::clamp;
 use dc_core::{Color, Rect};
 use dc_kinematics::detail::{MERGED_HAIR_TINT, hair_detail, hair_pen_width, joint_node_shows};
 use dc_render::{Brush, Canvas, Cap, Join, Path, Pen, PenStyle};
-use std::f64::consts::PI;
 use std::sync::OnceLock;
 
 /// `QPen(color, width, Qt.SolidLine, cap)` (join defaults to bevel).
@@ -33,6 +34,9 @@ pub(crate) fn rect(x: f64, y: f64, w: f64, h: f64) -> Rect {
     Rect::new(x, y, w, h)
 }
 
+/// One armoured leg: its points and the width of each segment.
+type ArmouredLeg = (Vec<(f64, f64)>, Vec<f64>);
+
 /// `_enemy_shell_path(style)`: unit outlines, cached once.
 fn enemy_shell_path(style: &str) -> &'static Path {
     static CRAB: OnceLock<Path> = OnceLock::new();
@@ -48,7 +52,16 @@ fn enemy_shell_path(style: &str) -> &'static Path {
     };
     if style == "crab" {
         CRAB.get_or_init(|| {
-            build(&[(-0.46, -0.26), (-0.22, -0.50), (0.23, -0.47), (0.50, -0.25), (0.50, 0.25), (0.23, 0.47), (-0.22, 0.50), (-0.46, 0.26)])
+            build(&[
+                (-0.46, -0.26),
+                (-0.22, -0.50),
+                (0.23, -0.47),
+                (0.50, -0.25),
+                (0.50, 0.25),
+                (0.23, 0.47),
+                (-0.22, 0.50),
+                (-0.46, 0.26),
+            ])
         })
     } else {
         SPINY.get_or_init(|| {
@@ -92,7 +105,10 @@ impl<'a> Paint<'a> {
     }
     /// `_appearance_color(key, fallback)` for the two accents the painters use.
     pub fn fluff_rgb(&self) -> [f64; 3] {
-        self.d.palette.appearance_color("fluff_color", "highlight", self.look.fluff_color).unwrap_or([120.0, 80.0, 60.0])
+        self.d
+            .palette
+            .appearance_color("fluff_color", "highlight", self.look.fluff_color)
+            .unwrap_or([120.0, 80.0, 60.0])
     }
 }
 
@@ -144,7 +160,7 @@ pub(crate) fn render_procedural(p: &mut Canvas, cx: &Paint) {
 
     let mut batch = LegBatch::new(cx.sw.leg_width_step, !cx.sw.batch_legs);
     let leg_armour = d.worn.legs.as_deref();
-    let mut armoured_legs: Vec<(Vec<(f64, f64)>, Vec<f64>)> = Vec::new();
+    let mut armoured_legs: Vec<ArmouredLeg> = Vec::new();
     for leg in &d.legs {
         let (ax, ay, kx, ky) = (leg.ax, leg.ay, leg.kx, leg.ky);
         let (coxa_x, coxa_y, tarsus_x, tarsus_y) = (leg.coxa_x, leg.coxa_y, leg.tarsus_x, leg.tarsus_y);
@@ -152,7 +168,16 @@ pub(crate) fn render_procedural(p: &mut Canvas, cx: &Paint) {
         let chain_points = if chain_config.is_some() && segmented_legs { leg.chain_points.as_deref() } else { None };
         if let (Some(cp), Some((sdx, sdy, root_k, shadow_color, shadow_w))) = (chain_points, shadow) {
             let (end_x, end_y) = *cp.last().unwrap();
-            batch.line(p, LAYER_SHADOW, shadow_color, shadow_w, ax + sdx * root_k, ay + sdy * root_k, kx + sdx, ky + sdy);
+            batch.line(
+                p,
+                LAYER_SHADOW,
+                shadow_color,
+                shadow_w,
+                ax + sdx * root_k,
+                ay + sdy * root_k,
+                kx + sdx,
+                ky + sdy,
+            );
             batch.line(p, LAYER_SHADOW, shadow_color, shadow_w, kx + sdx, ky + sdy, end_x, end_y);
         }
 
@@ -526,7 +551,7 @@ pub(crate) fn render_procedural(p: &mut Canvas, cx: &Paint) {
 }
 
 /// `_draw_leg_armour(painter, item, legs)`.
-fn draw_leg_armour(p: &mut Canvas, item: Option<&str>, legs: &[(Vec<(f64, f64)>, Vec<f64>)]) {
+fn draw_leg_armour(p: &mut Canvas, item: Option<&str>, legs: &[ArmouredLeg]) {
     let Some(item) = item else { return };
     if legs.is_empty() {
         return;
@@ -848,8 +873,9 @@ pub(crate) fn draw_eyes(
         p.draw_ellipse(rect(ceph_offset_x - ceph_w * 0.05, ceph_h * 0.20, ceph_w * 0.17, ceph_h * 0.12));
     }
     let eye_startle = d.eye_startle_amount(startle);
-    let openness = clamp(0.62 + m.arousal * 0.5 + aiming * 0.32 - m.sleepy() * 0.55 - m.valence.max(0.0) * 0.16, 0.12, 1.3)
-        * (1.0 + eye_startle * 0.4);
+    let openness =
+        clamp(0.62 + m.arousal * 0.5 + aiming * 0.32 - m.sleepy() * 0.55 - m.valence.max(0.0) * 0.16, 0.12, 1.3)
+            * (1.0 + eye_startle * 0.4);
     let eff_open = clamp(openness * (1.0 - d.expression_blink * 0.92), 0.05, 1.4);
     let squint_happy = m.valence > 0.45 && m.arousal < 0.72 && aiming < 0.2 && d.expression_blink < 0.4;
 
@@ -881,6 +907,3 @@ pub(crate) fn draw_eyes(
         }
     }
 }
-
-#[allow(dead_code)]
-const _PI: f64 = PI;

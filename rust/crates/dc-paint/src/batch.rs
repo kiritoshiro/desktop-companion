@@ -29,6 +29,9 @@ fn rgba_key(c: Color) -> u32 {
     u32::from_be_bytes([c.a, c.r, c.g, c.b])
 }
 
+/// One `(layer, colour, width)` group of toe points.
+type PointRun = (i32, Color, f64, Vec<(f64, f64)>);
+
 /// `LegBatch`.
 pub struct LegBatch {
     width_step: f64,
@@ -37,7 +40,7 @@ pub struct LegBatch {
     stroke_index: HashMap<(i32, u32, u64), usize>,
     fills: Vec<(i32, Color, Path)>,
     fill_index: HashMap<(i32, u32), usize>,
-    points: Vec<(i32, Color, f64, Vec<(f64, f64)>)>,
+    points: Vec<PointRun>,
     point_index: HashMap<(i32, u32, u64), usize>,
 }
 
@@ -199,5 +202,95 @@ impl LegBatch {
         self.points.clear();
         self.point_index.clear();
         draws
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Port of the unit half of `tests/test_leg_batching.py`.
+    use super::*;
+    use dc_render::Scene;
+
+    fn c(r: u8) -> Color {
+        Color::rgba(r, 10, 10, 255)
+    }
+
+    #[test]
+    fn same_colour_and_width_share_one_draw() {
+        let mut scene = Scene::new();
+        let mut cv = scene.canvas();
+        let mut b = LegBatch::new(0.0, false);
+        b.line(&mut cv, LAYER_SEGMENT, c(1), 3.0, 0.0, 0.0, 5.0, 5.0);
+        b.line(&mut cv, LAYER_SEGMENT, c(1), 3.0, 5.0, 5.0, 9.0, 1.0);
+        assert_eq!(b.flush(&mut cv), 1);
+    }
+
+    #[test]
+    fn a_different_width_cannot_share_a_pen() {
+        let mut scene = Scene::new();
+        let mut cv = scene.canvas();
+        let mut b = LegBatch::new(0.0, false);
+        b.line(&mut cv, LAYER_SEGMENT, c(1), 3.0, 0.0, 0.0, 5.0, 5.0);
+        b.line(&mut cv, LAYER_SEGMENT, c(1), 3.5, 5.0, 5.0, 9.0, 1.0);
+        assert_eq!(b.flush(&mut cv), 2);
+    }
+
+    #[test]
+    fn ellipses_of_any_size_and_toes_share_one_draw() {
+        let mut scene = Scene::new();
+        let mut cv = scene.canvas();
+        let mut b = LegBatch::new(0.0, false);
+        for i in 0..5 {
+            b.dot(&mut cv, LAYER_JOINT, c(2), i as f64 * 4.0, 0.0, 1.0 + i as f64);
+        }
+        assert_eq!(b.flush(&mut cv), 1);
+        for i in 0..8 {
+            b.point(&mut cv, LAYER_FOOT, c(3), 2.0, i as f64, 1.0);
+        }
+        assert_eq!(b.flush(&mut cv), 1);
+    }
+
+    #[test]
+    fn the_width_step_snaps_widths() {
+        assert_eq!(LEG_WIDTH_STEP, 0.0);
+        let mut scene = Scene::new();
+        let mut cv = scene.canvas();
+        let mut stepped = LegBatch::new(0.5, false);
+        stepped.line(&mut cv, LAYER_SEGMENT, c(1), 2.9, 0.0, 0.0, 1.0, 1.0);
+        stepped.line(&mut cv, LAYER_SEGMENT, c(1), 3.1, 0.0, 0.0, 1.0, 1.0);
+        assert_eq!(stepped.flush(&mut cv), 1);
+        let mut apart = LegBatch::new(0.5, false);
+        apart.line(&mut cv, LAYER_SEGMENT, c(1), 3.0, 0.0, 0.0, 1.0, 1.0);
+        apart.line(&mut cv, LAYER_SEGMENT, c(1), 3.5, 0.0, 0.0, 1.0, 1.0);
+        assert_eq!(apart.flush(&mut cv), 2);
+    }
+
+    #[test]
+    fn empty_and_passthrough_batches_flush_nothing() {
+        let mut scene = Scene::new();
+        {
+            let mut cv = scene.canvas();
+            let mut b = LegBatch::new(0.0, false);
+            assert!(b.is_empty());
+            assert_eq!(b.flush(&mut cv), 0);
+            let mut direct = LegBatch::new(0.0, true);
+            direct.line(&mut cv, LAYER_SEGMENT, c(1), 3.0, 0.0, 0.0, 5.0, 5.0);
+            direct.dot(&mut cv, LAYER_JOINT, c(2), 1.0, 1.0, 2.0);
+            assert!(direct.is_empty());
+            assert_eq!(direct.flush(&mut cv), 0);
+        }
+        assert!(scene.stats().commands >= 2, "passthrough draws immediately");
+    }
+
+    #[test]
+    fn layers_are_issued_in_order() {
+        let mut scene = Scene::new();
+        let mut cv = scene.canvas();
+        let mut b = LegBatch::new(0.0, false);
+        b.point(&mut cv, LAYER_FOOT, c(9), 2.0, 0.0, 0.0);
+        b.dot(&mut cv, LAYER_JOINT, c(2), 1.0, 1.0, 2.0);
+        b.line(&mut cv, LAYER_SEGMENT, c(1), 3.0, 0.0, 0.0, 5.0, 5.0);
+        b.line(&mut cv, LAYER_SHADOW, c(4), 3.0, 0.0, 0.0, 5.0, 5.0);
+        assert_eq!(b.flush(&mut cv), 4);
     }
 }

@@ -54,11 +54,7 @@ fn resolve_leg(
             let (ax, ay, mut fx, mut fy) = (dax, day, dfx, dfy);
             let (mut kx, mut ky) = kin.solve_knee(i, ax, ay, fx, fy, ctx);
             let left = def.side == "left";
-            let raised = if def.name.starts_with("front_") {
-                if left { regal.left } else { regal.right }
-            } else {
-                0.0
-            };
+            let raised = if def.name.starts_with("front_") { if left { regal.left } else { regal.right } } else { 0.0 };
             if raised != 0.0 {
                 let side = if left { -1.0 } else { 1.0 };
                 let (px, py) = kin.body_local_to_world(size * (1.15 + raised * 0.3), side * size * 0.85);

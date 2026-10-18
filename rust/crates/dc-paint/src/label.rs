@@ -334,4 +334,3 @@ pub fn draw_name_label(p: &mut Canvas, d: &CreatureDraw, always_show_names: bool
     }
     draw_label_bars(p, d, box_y + box_h + 3.0);
 }
-

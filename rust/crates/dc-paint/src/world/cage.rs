@@ -49,11 +49,8 @@ pub fn draw_cage(p: &mut Canvas, cage: &CageDraw) {
     if cage.member_count > 0 {
         p.set_pen(Pen::new(Color::rgba(40, 120, 165, 220), 1.0));
         p.set_brush(Color::rgba(245, 252, 255, 220));
-        let label = if cage.member_count > 1 {
-            format!("\u{1F577} {}", cage.member_count)
-        } else {
-            "\u{1F577}".to_string()
-        };
+        let label =
+            if cage.member_count > 1 { format!("\u{1F577} {}", cage.member_count) } else { "\u{1F577}".to_string() };
         let mut font = Font::default();
         font.set_point_size_f(9.0);
         p.set_font(font);

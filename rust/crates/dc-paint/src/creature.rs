@@ -51,7 +51,14 @@ impl CreaturePainter {
     }
 
     /// `render(painter, always_show_names, numbers)`.
-    pub fn render(&mut self, p: &mut Canvas, d: &CreatureDraw, look: &CreatureLook, always_show_names: bool, numbers: bool) {
+    pub fn render(
+        &mut self,
+        p: &mut Canvas,
+        d: &CreatureDraw,
+        look: &CreatureLook,
+        always_show_names: bool,
+        numbers: bool,
+    ) {
         let camouflage_opacity = d.camouflage_opacity();
         let camouflage_saved = camouflage_opacity < 0.999;
         if camouflage_saved {

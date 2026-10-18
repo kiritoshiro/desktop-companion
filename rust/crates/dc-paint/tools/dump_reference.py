@@ -35,6 +35,10 @@ ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT / "src"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ.setdefault("DESKTOP_BUG_GL", "0")
+# The offscreen platform has no font database of its own: without this the
+# label cases render tofu boxes instead of text.
+if os.name == "nt":
+    os.environ.setdefault("QT_QPA_FONTDIR", os.path.join(os.environ.get("WINDIR", r"C:\Windows"), "Fonts"))
 os.environ.setdefault("DESKTOP_BUG_STATE_DIR", tempfile.mkdtemp(prefix="dc-paint-ref-"))
 
 from PyQt5.QtGui import QImage, QPainter  # noqa: E402
@@ -62,23 +66,27 @@ def personality():
 # --- armour -----------------------------------------------------------------
 # `equipped_items(progression)` is replaced so a stress case can wear every
 # slot without building a progression; everything else reads the real code.
-WORN: dict[int, dict] = {}
+# Keyed on id(progression) and holding the progression itself: without the
+# reference a freed stress creature's id is reused by a later creature, which
+# then wrongly "wears" the stress armour.
+WORN: dict[int, tuple] = {}
 _real_equipped = render_procedural.equipped_items
 
 
 def _fake_equipped(progression):
     owner = WORN.get(id(progression))
-    if owner is None:
+    if owner is None or owner[0] is not progression:
         return _real_equipped(progression)
-    return [SimpleNamespace(slot=slot, id=item) for slot, item in owner.items()]
+    return [SimpleNamespace(slot=slot, id=item) for slot, item in owner[1].items()]
 
 
 render_procedural.equipped_items = _fake_equipped
 
 
 def worn_of(c):
-    if id(c.progression) in WORN:
-        return dict(WORN[id(c.progression)])
+    owner = WORN.get(id(c.progression))
+    if owner is not None and owner[0] is c.progression:
+        return dict(owner[1])
     return {item.slot: item.id for item in _real_equipped(c.progression)}
 
 
@@ -350,9 +358,9 @@ def stress(c):
     """Startle, armour on every slot, a net, a hop, camouflage, blush."""
     c.startled_timer = 0.8
     c._startle_highlight_suppression = 0.0
-    WORN[id(c.progression)] = {"abdomen": "warden_abdomen", "carapace": "sun_carapace",
-                               "head": "brood_helm", "legs": "frost_greaves",
-                               "pedipalps": "pedipalp_cuffs"}
+    WORN[id(c.progression)] = (c.progression, {"abdomen": "warden_abdomen", "carapace": "sun_carapace",
+                                               "head": "brood_helm", "legs": "frost_greaves",
+                                               "pedipalps": "pedipalp_cuffs"})
     c.webbed_timer = 3.0
     c._pin_net()
     c.struggle = 0.6

@@ -99,9 +99,11 @@ pub fn plan_mounds(site_id: &str, radius: f64) -> Vec<(f64, f64, f64, f64)> {
 }
 
 type MoundKey = (String, u64);
+/// `(dx, dy, size, aspect)` per mound.
+type MoundLayout = Vec<(f64, f64, f64, f64)>;
 
-fn plan_mounds_cached(site_id: &str, radius: f64) -> Arc<Vec<(f64, f64, f64, f64)>> {
-    static CACHE: OnceLock<Mutex<HashMap<MoundKey, Arc<Vec<(f64, f64, f64, f64)>>>>> = OnceLock::new();
+fn plan_mounds_cached(site_id: &str, radius: f64) -> Arc<MoundLayout> {
+    static CACHE: OnceLock<Mutex<HashMap<MoundKey, Arc<MoundLayout>>>> = OnceLock::new();
     let key = (site_id.to_string(), (py_round(radius * 1000.0) / 1000.0).to_bits());
     let mut cache = CACHE.get_or_init(Default::default).lock().unwrap();
     cache.entry(key).or_insert_with(|| Arc::new(plan_mounds(site_id, radius))).clone()
@@ -235,16 +237,33 @@ pub fn render_bases(p: &mut Canvas, bases: &[BaseDraw], clip: Option<Clip>) {
                 p.draw_path(&patch(&recipe.body, mx, my, half * 1.62, grown * 1.48));
                 let (offset_x, offset_y) = recipe.crown_offset;
                 p.set_brush(rgba(crown, (20.0 + 34.0 * built) as i64));
-                p.draw_path(&patch(&recipe.crown, mx + half * offset_x, my + grown * offset_y, half * 1.05, grown * 0.94));
+                p.draw_path(&patch(
+                    &recipe.crown,
+                    mx + half * offset_x,
+                    my + grown * offset_y,
+                    half * 1.05,
+                    grown * 0.94,
+                ));
                 p.set_brush(rgba(shade, (30.0 + 46.0 * built) as i64));
-                p.draw_path(&patch(&recipe.crown, mx - half * offset_x * 0.6, my + grown * 0.46, half * 1.18, grown * 0.52));
+                p.draw_path(&patch(
+                    &recipe.crown,
+                    mx - half * offset_x * 0.6,
+                    my + grown * 0.46,
+                    half * 1.18,
+                    grown * 0.52,
+                ));
                 for &(cx_unit, cy_unit, clod_size, threshold) in &recipe.clods {
                     if built < threshold {
                         continue;
                     }
                     let r = grown * clod_size;
                     p.set_brush(rgba(earth, (55.0 + 60.0 * built) as i64));
-                    p.draw_ellipse(Rect::new(mx + cx_unit * half - r, my + cy_unit * grown - r * 0.62, r * 2.0, r * 1.24));
+                    p.draw_ellipse(Rect::new(
+                        mx + cx_unit * half - r,
+                        my + cy_unit * grown - r * 0.62,
+                        r * 2.0,
+                        r * 1.24,
+                    ));
                 }
             }
         }
@@ -257,7 +276,12 @@ pub fn render_bases(p: &mut Canvas, bases: &[BaseDraw], clip: Option<Clip>) {
                 dc_render::Join::Bevel,
             ));
             p.set_brush(Brush::None);
-            p.draw_ellipse(Rect::new(site.x - radius - 5.0, site.y - radius - 5.0, (radius + 5.0) * 2.0, (radius + 5.0) * 2.0));
+            p.draw_ellipse(Rect::new(
+                site.x - radius - 5.0,
+                site.y - radius - 5.0,
+                (radius + 5.0) * 2.0,
+                (radius + 5.0) * 2.0,
+            ));
         }
         p.restore();
     }

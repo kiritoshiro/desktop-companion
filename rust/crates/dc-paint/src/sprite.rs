@@ -4,8 +4,8 @@
 
 use crate::procedural::{Paint, draw_abdomen_marking, draw_antennae, draw_eyes, pen_cap, pen_full, rect};
 use crate::sprite_tint::{palette_signature, tint_assets};
-use dc_core::math::clamp;
 use dc_core::Rect;
+use dc_core::math::clamp;
 use dc_render::{Brush, Canvas, Cap, Image, Join, Pen, RenderHint};
 use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
@@ -30,12 +30,15 @@ impl SpriteAssets {
     }
 }
 
+/// The assets folder and the palette signature.
+type SpriteKey = (PathBuf, Vec<(String, [i64; 3])>);
+
 /// `Creature.SPRITE_CACHE`: keyed on the assets folder and the palette
 /// signature, so differently coloured spiders of one model each get their
 /// own tinted set and an untinted spider shares the files as loaded.
 #[derive(Default)]
 pub struct SpriteCache {
-    map: HashMap<(PathBuf, Vec<(String, [i64; 3])>), Arc<SpriteAssets>>,
+    map: HashMap<SpriteKey, Arc<SpriteAssets>>,
 }
 
 impl SpriteCache {
@@ -137,8 +140,7 @@ pub(crate) fn render_sprite_rig(p: &mut Canvas, cx: &Paint, assets: &SpriteAsset
         p.save();
         let parent = p.opacity();
         p.set_opacity(parent * 0.34 * shadow_shrink);
-        let shadow_w =
-            size * shadow_scale * (1.0 + clamp(d.current_speed / 180.0, 0.0, 1.0) * 0.10) * shadow_shrink;
+        let shadow_w = size * shadow_scale * (1.0 + clamp(d.current_speed / 180.0, 0.0, 1.0) * 0.10) * shadow_shrink;
         let shadow_h = shadow_w * 0.52;
         p.draw_pixmap(
             Rect::new(d.x - shadow_w * 0.5, d.y + size * 0.05, shadow_w, shadow_h),
@@ -270,7 +272,12 @@ pub(crate) fn render_sprite_rig(p: &mut Canvas, cx: &Paint, assets: &SpriteAsset
         ceph_offset_x + ceph_w * 0.54,
         -size * 0.21 * palp_span / size,
     );
-    p.draw_line(ceph_offset_x + ceph_w * 0.24, size * 0.10, ceph_offset_x + ceph_w * 0.54, size * 0.21 * palp_span / size);
+    p.draw_line(
+        ceph_offset_x + ceph_w * 0.24,
+        size * 0.10,
+        ceph_offset_x + ceph_w * 0.54,
+        size * 0.21 * palp_span / size,
+    );
 
     let eye_scale = look.eye_scale.unwrap_or(0.95);
     let eye_count = look.eye_count.unwrap_or(4).max(2);

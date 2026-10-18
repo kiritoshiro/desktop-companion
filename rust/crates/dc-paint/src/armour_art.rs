@@ -6,9 +6,7 @@
 
 use crate::color::{hex, qt_darker};
 use dc_core::{Color, Rect};
-use dc_render::{
-    Brush, Canvas, Cap, Image, Join, LinearGradient, Path, Pen, PenStyle, RadialGradient, RenderHint,
-};
+use dc_render::{Brush, Canvas, Cap, Image, Join, LinearGradient, Path, Pen, PenStyle, RadialGradient, RenderHint};
 use std::f64::consts::{PI, TAU};
 
 /// `Look`: how a piece is made.

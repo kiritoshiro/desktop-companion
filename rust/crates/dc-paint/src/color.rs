@@ -96,7 +96,12 @@ impl Palette {
     /// over the model's appearance accent. `appearance_value` is the model's
     /// `appearance[key]` when it is an RGB triple. `None` is Python's `None`
     /// (an overridden slot whose key is missing from `colors`).
-    pub fn appearance_color(&self, key: &str, fallback_key: &str, appearance_value: Option<[f64; 3]>) -> Option<[f64; 3]> {
+    pub fn appearance_color(
+        &self,
+        key: &str,
+        fallback_key: &str,
+        appearance_value: Option<[f64; 3]>,
+    ) -> Option<[f64; 3]> {
         if self.has_override(key) {
             return self.colors.get(key).copied();
         }
@@ -152,7 +157,7 @@ pub fn qt_lighter(c: Color, factor: i32) -> Color {
         return qt_darker(c, 10000 / factor);
     }
     let (h, mut s, v) = to_qt_hsv(c);
-    let mut v = (factor as i64 * v as i64 / 100) as i64;
+    let mut v = factor as i64 * v as i64 / 100;
     if v > 65535 {
         s -= (v - 65535) as i32;
         if s < 0 {

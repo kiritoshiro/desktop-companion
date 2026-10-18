@@ -21,10 +21,8 @@ use std::path::PathBuf;
 
 fn main() {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let reference = std::env::args()
-        .nth(1)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| crate_dir.join("target-review").join("reference"));
+    let reference =
+        std::env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| crate_dir.join("target-review").join("reference"));
     let out_dir = crate_dir.join("target-review");
     let renders = out_dir.join("rust");
     let sheets = out_dir.join("sheets");
@@ -38,8 +36,8 @@ fn main() {
     let mut results: Vec<(String, CaseResult, Image, Image)> = Vec::new();
     for entry in &index {
         let name = entry["name"].as_str().unwrap().to_string();
-        let case: Value = serde_json::from_str(&std::fs::read_to_string(reference.join(format!("{name}.json"))).unwrap())
-            .unwrap();
+        let case: Value =
+            serde_json::from_str(&std::fs::read_to_string(reference.join(format!("{name}.json"))).unwrap()).unwrap();
         let family = entry["family"].as_str().unwrap_or("other").to_string();
         let qt = Image::load_png(reference.join(format!("{name}.png"))).expect("reference png");
         let rust = render_case(&mut painter, &mut cpu, &case);
@@ -69,21 +67,42 @@ fn main() {
         fam.entry(r.family.clone()).or_default().push(r);
     }
     println!();
-    println!("{:<20} {:>5} {:>10} {:>10} {:>10} {:>10}", "family", "cases", "mean diff", "worst", "mean IoU", "min IoU");
-    let mut summary = String::from("| family | cases | mean diff | worst diff | mean IoU | min IoU |\n|---|---|---|---|---|---|\n");
+    println!(
+        "{:<20} {:>5} {:>10} {:>10} {:>10} {:>10} {:>10}",
+        "family", "cases", "mean diff", "worst", "mean IoU", "min IoU", "min 1px"
+    );
+    let mut summary = String::from(
+        "| family | cases | mean diff | worst diff | mean IoU | min IoU | min IoU (1 px) |
+|---|---|---|---|---|---|---|
+",
+    );
     for (f, rs) in &fam {
         let n = rs.len() as f64;
         let mean = rs.iter().map(|r| r.mean_diff).sum::<f64>() / n;
         let worst = rs.iter().map(|r| r.mean_diff).fold(0.0, f64::max);
         let iou = rs.iter().map(|r| r.iou).sum::<f64>() / n;
         let min_iou = rs.iter().map(|r| r.iou).fold(1.0, f64::min);
-        println!("{:<20} {:>5} {:>10.2} {:>10.2} {:>10.4} {:>10.4}", f, rs.len(), mean, worst, iou, min_iou);
-        summary.push_str(&format!("| {f} | {} | {mean:.2} | {worst:.2} | {iou:.4} | {min_iou:.4} |\n", rs.len()));
+        let min_tol = rs.iter().map(|r| r.iou_1px).fold(1.0, f64::min);
+        println!(
+            "{:<20} {:>5} {:>10.2} {:>10.2} {:>10.4} {:>10.4} {:>10.4}",
+            f,
+            rs.len(),
+            mean,
+            worst,
+            iou,
+            min_iou,
+            min_tol
+        );
+        summary.push_str(&format!(
+            "| {f} | {} | {mean:.2} | {worst:.2} | {iou:.4} | {min_iou:.4} | {min_tol:.4} |
+",
+            rs.len()
+        ));
     }
     std::fs::write(out_dir.join("summary.md"), summary).unwrap();
 
     // Contact sheets, one per family.
-    for (f, _) in &fam {
+    for f in fam.keys() {
         let cases: Vec<&(String, CaseResult, Image, Image)> = results.iter().filter(|r| &r.1.family == f).collect();
         let sheet = contact_sheet(&cases);
         let file = format!("{}.png", f.replace('/', "_"));
