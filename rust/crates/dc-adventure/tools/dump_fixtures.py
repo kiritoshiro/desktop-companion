@@ -21,6 +21,7 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+sys.dont_write_bytecode = True
 HERE = Path(__file__).resolve().parent
 WORKTREE = HERE.parents[3]
 sys.path.insert(0, str(WORKTREE / "src"))
@@ -188,10 +189,111 @@ def profiles():
     return cases
 
 
+
+def missions():
+    """Mission-level oracles, with real Python creatures but stationary capture traces."""
+    from unittest.mock import patch
+    from PyQt5.QtWidgets import QApplication
+    from desktop_bug.app.adventure_profile import fresh_profile, profile_path
+    from desktop_bug.app.mission_factory import create_mission
+    from desktop_bug.app.mission import TerritoryMission
+    from desktop_bug.manager import CreatureManager
+
+    app = QApplication.instance() or QApplication([])
+    original_random = random.Random
+    rects = [ScreenRect(0, 0, 1600, 1000), ScreenRect(1600, 0, 1600, 1000)]
+
+    def make(map_id, seed, count=1, two=False):
+        profile = fresh_profile()
+        profile.update(selected_map=map_id, admin=True, two_player=two)
+        save_profile(profile)
+        manager = CreatureManager(WORKTREE / "presets" / "colony.json", 1600 * count, 1000, seed=4)
+        with patch.object(random, "Random", side_effect=lambda *args: original_random(*args) if args else original_random(seed)):
+            return create_mission(manager, ControlSettings(), rects[:count])
+
+    def snapshot(m):
+        return dict(
+            sites=[dict(kind=s.kind, name=s.name, x=s.x, y=s.y, owned=s.owned,
+                        reserves=s.reserves, supply=s.supply, screen=s.screen) for s in m.sites],
+            spiders=[dict(serial=c.index, x=c.x, y=c.y, name=c.display_name,
+                          kind=c.enemy_kind, worn=c.mission_loot,
+                          progression=c.progression.to_dict()) for c in m.manager.creatures],
+            cap=m.CAP, wave_every=m.WAVE_EVERY,
+            actors=[dict(role=a.role, style=a.style, home=a.home, silk=a.silk,
+                         capacity=a.silk_capacity, from_outpost=a.from_outpost,
+                         aggro_range=a.aggro_range) for a in m.actors],
+            flies=[dict(x=f.x, y=f.y, heading=f.heading, length=f.length, size=f.size,
+                        cruise=f.cruise, panic=f.panic) for f in m.manager.fly_world.flies],
+        )
+
+    openings = []
+    for seed in (0, 6, 41):
+        for info in MAPS:
+            for count in (1, 2):
+                m = make(info.id, seed, count, two=(seed == 41))
+                openings.append(dict(map=info.id, seed=seed, screens=count, two=seed == 41,
+                                     snapshot=snapshot(m), next=m.rng.random()))
+
+    m = make("territory", 6)
+    for c in list(m.manager.creatures):
+        if c.progression.team_id == "rivals":
+            c.dead = True
+    m.manager._bury_the_dead()
+    m.actors = [a for a in m.actors if not a.creature.dead]
+    for c in m.manager.creatures:
+        c.update = lambda *args: None
+    food = m._site("food")
+    m.hero.x, m.hero.y = food.x, food.y
+    capture = []
+    for tick in range(1, 101):
+        m.update(0.05)
+        capture.append(dict(tick=tick, progress=food.progress, owned=food.owned,
+                            warning=m.nest.warning, pending=list(m.pending),
+                            counter=m.counter_started, elapsed=m.elapsed,
+                            xp=m.hero.progression.total_xp))
+
+    m = make("territory", 6)
+    m.wave_clock = 0
+    waves = []
+    for tick in range(1, 1501):
+        m._spawning(0.05)
+        if tick == 1 or tick % 10 == 0:
+            waves.append(dict(tick=tick, warning=m.hatchery.warning, reserves=m.hatchery.reserves,
+                              pending=m.pending.copy(), count=len(m.manager.creatures), clock=m.wave_clock))
+
+    loot = []
+    for seed in range(12):
+        m = make("queen", seed)
+        m.rng = original_random(seed)
+        m.guardian = m._spawn("guardian", (800, 500))
+        m.guardian.dead = True
+        m._drop_loot()
+        loot.append(dict(seed=seed, loot=[vars(l) for l in m.loot], next=m.rng.random()))
+    # Live raids: the real creature frames, controllers, combat and AI, with
+    # the hero left idle, for 30 seconds on one map of every kind.
+    battles = []
+    for map_id, seed in (("territory", 6), ("ember", 3), ("queen", 2), ("swarm", 5), ("reclaim", 7)):
+        m = make(map_id, seed)
+        trace = []
+        for tick in range(1, 601):
+            m.update(0.05)
+            if tick % 10 == 0:
+                trace.append(dict(
+                    tick=tick, state=m.state, elapsed=m.elapsed, pending=list(m.pending),
+                    spiders=[dict(serial=c.index, x=c.x, y=c.y, heading=c.heading, hp=c.hp,
+                                  energy=c.energy, airborne=c.airborne) for c in m.manager.creatures],
+                    sites=[dict(progress=s.progress, owned=s.owned, warning=s.warning,
+                                reserves=s.reserves) for s in m.sites],
+                    flies=[dict(x=f.x, y=f.y) for f in m.manager.fly_world.flies],
+                    carcasses=len(m.manager.carcasses)))
+        battles.append(dict(map=map_id, seed=seed, trace=trace, next=m.rng.random()))
+    return dict(openings=openings, capture=capture, waves=waves, loot=loot, battles=battles)
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for name, make in (("stat_text.json", stat_text), ("campaign.json", campaign), ("encounters.json", encounters),
-                       ("custom_maps.json", custom_maps), ("controls.json", controls), ("profiles.json", profiles)):
+                       ("custom_maps.json", custom_maps), ("controls.json", controls), ("profiles.json", profiles), ("missions.json", missions)):
         data = make()
         (OUT / name).write_text(json.dumps(data, separators=(",", ":")) + "\n", encoding="utf-8")
         print(name, len(data))
@@ -199,3 +301,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

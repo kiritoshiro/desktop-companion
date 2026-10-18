@@ -12,7 +12,7 @@
 use crate::creature::{After, Creature, JumpKind};
 use crate::progression::Relation;
 use crate::state::State;
-use crate::world::{BaseLookup, CreatureView, FlyWorldApi, MouseWebApi, PreyView, ShotKind, Shooter, WebWorldApi};
+use crate::world::{BaseLookup, CreatureView, FlyWorldApi, MouseWebApi, PreyView, Shooter, ShotKind, WebWorldApi};
 use crate::world::{CreatureId, FlyId, WebId};
 use dc_adventure::adventure::ControlledSpider;
 use dc_core::PyRandom;
@@ -452,5 +452,67 @@ impl ControlledSpider for Creature {
     }
     fn advance_pose(&mut self, dt: f64) {
         Creature::advance_pose(self, dt);
+    }
+}
+
+/// What `app/mission.py` read and wrote on a mission spider beyond the
+/// player controls.
+impl dc_adventure::mission::MissionSpider for Creature {
+    fn index(&self) -> usize {
+        self.index as usize
+    }
+    fn hp(&self) -> f64 {
+        self.hp
+    }
+    fn max_hp(&self) -> f64 {
+        self.max_hp
+    }
+    fn set_hp(&mut self, hp: f64) {
+        self.hp = hp;
+    }
+    fn set_max_hp(&mut self, hp: f64) {
+        self.max_hp = hp;
+    }
+    fn damage(&self) -> f64 {
+        self.damage
+    }
+    fn set_damage(&mut self, damage: f64) {
+        self.damage = damage;
+    }
+    fn size_scale(&self) -> f64 {
+        self.size_scale
+    }
+    fn set_size_scale(&mut self, scale: f64) {
+        Creature::set_size_scale(self, scale);
+    }
+    fn margin(&self) -> f64 {
+        self.margin
+    }
+    /// `c.x, c.y = ...`: the body moves, the planted feet stay.
+    fn set_position(&mut self, (x, y): (f64, f64)) {
+        self.kin.x = x;
+        self.kin.y = y;
+    }
+    fn progression(&self) -> &dc_state::progression::ProgressionState {
+        &self.progression
+    }
+    fn progression_mut(&mut self) -> &mut dc_state::progression::ProgressionState {
+        &mut self.progression
+    }
+    fn apply_progression_stats(&mut self, reset_resources: bool) {
+        Creature::apply_progression_stats(self, reset_resources, false);
+    }
+    fn set_name(&mut self, name: &str) {
+        Creature::set_name(self, name);
+    }
+    fn display_name(&self) -> String {
+        Creature::display_name(self)
+    }
+    fn heal(&mut self, amount: f64) {
+        Creature::heal(self, amount);
+    }
+    /// The reason only labelled the event in Python; nothing reads it.
+    fn gain_experience(&mut self, amount: i64, _reason: &str) {
+        Creature::gain_experience(self, amount as f64);
     }
 }

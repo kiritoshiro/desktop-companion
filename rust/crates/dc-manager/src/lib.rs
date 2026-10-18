@@ -12,4 +12,5 @@ pub mod render;
 pub mod surfaces;
 pub use core::{CreatureManager, MouseInput};
 pub use surfaces::DesktopSurface;
+pub mod mission_host;
 pub mod roster;

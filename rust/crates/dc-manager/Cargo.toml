@@ -12,6 +12,7 @@ dc-creature.workspace = true
 dc-world.workspace = true
 dc-kinematics.workspace = true
 dc-paint.workspace = true
+dc-adventure.workspace = true
 dc-render.workspace = true
 serde.workspace = true
 serde_json.workspace = true

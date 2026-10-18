@@ -17,6 +17,7 @@
 | `manager/persistence.py` | `src/persistence.rs` | **ported**; writes `creatures.json` in Python's layout |
 | `manager/surfaces.py` | `src/surfaces.rs` | **ported** (`_surface_visible_qregion` → `dc_paint::scene::surface_visible_region`) |
 | `manager/constants.py` | `src/constants.rs` | **ported** |
+| what `app/mission.py`, `swarm.py`, `reclaim.py` did to the manager | `src/mission_host.rs` | **ported**: `impl dc_adventure::mission::MissionHost for CreatureManager` (begin a mission, spawn from a `SpawnRequest`, one creature's frame, burial with a graveyard so the mission can still read its dead, carcasses, blows, silk, projectiles, swarm flies) |
 
 ## API for dc-app
 
@@ -60,6 +61,12 @@ foes, prey, cages, bases, flies, carcasses, hiding flags, label text; the
 manager RNG stream; and the saved `creatures.json`. The fixtures carry the
 oracle's Qt label metrics (`OracleMetrics`), because offscreen Qt measures
 labels much wider than the estimate.
+
+`tests/missions.rs` runs the ported missions on this manager against
+`dc-adventure/tests/fixtures/missions.json` (the unmodified Python
+`create_mission` on a real Python manager): all map openings, a held
+foothold, hatchery waves, guardian loot, and 30 s live raids on five maps.
+See dc-adventure's PORT_STATUS for what they cover.
 
 Regenerate fixtures with the main checkout's venv:
 

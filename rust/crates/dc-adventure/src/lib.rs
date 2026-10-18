@@ -15,10 +15,14 @@ pub mod controls;
 pub mod custom_maps;
 pub mod encounters;
 pub mod map_layouts;
+pub mod mission;
+pub mod mission_actor;
 pub mod mission_factory;
 pub mod progression;
 pub mod pyjson;
+pub mod reclaim;
 pub mod stat_text;
+pub mod swarm;
 
 pub use adventure::{ControlledSpider, PlayerController};
 pub use adventure_profile::AdventureProfile;

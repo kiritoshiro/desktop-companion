@@ -88,6 +88,13 @@ pub struct CreatureManager {
     /// metrics; headless use keeps the estimate. Labels widen the bounding box
     /// that decides hiding behind windows.
     pub label_metrics: Box<dyn LabelMetrics>,
+    /// The model and personality every mission hero is built from: the first
+    /// live preset spider when the first mission began (`mission.py` took the
+    /// previous mission's hero, which was built from the same pair).
+    pub mission_source: Option<(Value, Value)>,
+    /// Mission spiders taken out by `bury_the_dead`, kept so the mission can
+    /// still read the ids it holds (its hero, guardian, targets).
+    pub mission_graveyard: Vec<Creature>,
 }
 impl CreatureManager {
     /// Empty scene, useful for missions and tests. All OS capabilities are inputs.
@@ -167,6 +174,8 @@ impl CreatureManager {
             id_rng: world_rng("creature-ids"),
             next_id: 1,
             label_metrics: Box::new(ApproxLabelMetrics),
+            mission_source: None,
+            mission_graveyard: Vec::new(),
         }
     }
     /// Discover content from an explicit root and restore `state_folder/creatures.json`.
