@@ -18,8 +18,20 @@ pub const SCALE: u32 = 2;
 pub const SPRITE_H: f64 = 137.0;
 pub const SPRITE_MAX_W: f64 = 218.0;
 
-pub const BUILDING_KINDS: [&str; 12] =
-    ["home", "food", "silk", "hatchery", "nest", "outpost", "infestation", "venom", "lookout", "amber", "nursery", "flynest"];
+pub const BUILDING_KINDS: [&str; 12] = [
+    "home",
+    "food",
+    "silk",
+    "hatchery",
+    "nest",
+    "outpost",
+    "infestation",
+    "venom",
+    "lookout",
+    "amber",
+    "nursery",
+    "flynest",
+];
 
 /// The sprite a captured site switches to, where it has one.
 fn captured_asset(kind: &str, owned: bool) -> Option<&'static str> {

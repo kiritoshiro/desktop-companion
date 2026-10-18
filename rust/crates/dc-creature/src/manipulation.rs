@@ -146,7 +146,9 @@ impl Creature {
         let ap = self.appearance();
         let pair = |key: &str, default: [f64; 2]| -> [f64; 2] {
             match ap.get(key).and_then(Value::as_array) {
-                Some(a) if a.len() >= 2 => [py_float(&a[0]).unwrap_or(default[0]), py_float(&a[1]).unwrap_or(default[1])],
+                Some(a) if a.len() >= 2 => {
+                    [py_float(&a[0]).unwrap_or(default[0]), py_float(&a[1]).unwrap_or(default[1])]
+                }
                 _ => default,
             }
         };
@@ -190,8 +192,7 @@ impl Creature {
         }
         self.size_scale = new_scale;
         self.apply_progression_stats(false, false);
-        (self.kin.x, self.kin.y) =
-            clamp_point(self.kin.x, self.kin.y, self.margin * 0.4, self.screen_w, self.screen_h);
+        (self.kin.x, self.kin.y) = clamp_point(self.kin.x, self.kin.y, self.margin * 0.4, self.screen_w, self.screen_h);
         (self.kin.target_x, self.kin.target_y) =
             clamp_point(self.kin.target_x, self.kin.target_y, self.margin * 0.4, self.screen_w, self.screen_h);
         self.initialize_legs();

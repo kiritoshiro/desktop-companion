@@ -101,7 +101,8 @@ fn shell(p: &mut Canvas) {
     path.cubic_to(42.0, 48.0, 36.0, 51.0, 32.0, 52.0);
     path.cubic_to(28.0, 51.0, 22.0, 48.0, 18.0, 40.0);
     path.cubic_to(14.0, 30.0, 18.0, 16.0, 32.0, 14.0);
-    let grad = LinearGradient::new(20.0, 14.0, 44.0, 52.0).with_stop(0.0, hex("#a07a4c")).with_stop(1.0, hex("#4e3218"));
+    let grad =
+        LinearGradient::new(20.0, 14.0, 44.0, 52.0).with_stop(0.0, hex("#a07a4c")).with_stop(1.0, hex("#4e3218"));
     p.set_brush(grad);
     p.set_pen(pen(INK, 2.2));
     p.draw_path(&path);
@@ -139,7 +140,8 @@ fn crown(p: &mut Canvas) {
         path.line_to(x, y);
     }
     path.close_subpath();
-    let grad = LinearGradient::new(14.0, 16.0, 50.0, 44.0).with_stop(0.0, hex("#ffe08a")).with_stop(1.0, hex("#b07818"));
+    let grad =
+        LinearGradient::new(14.0, 16.0, 50.0, 44.0).with_stop(0.0, hex("#ffe08a")).with_stop(1.0, hex("#b07818"));
     p.set_brush(grad);
     p.set_pen(pen(INK, 2.2));
     p.draw_path(&path);
@@ -281,7 +283,9 @@ pub fn branch_picture(branch: &str) -> Option<Picture> {
 /// The round plate a picture sits on.
 fn medallion(p: &mut Canvas, rim: Color, look: SkillLook) {
     let face = if look == SkillLook::Locked {
-        RadialGradient::new(28.0, 24.0, 34.0).with_stop(0.0, Color::rgb(70, 56, 44)).with_stop(1.0, Color::rgb(30, 22, 16))
+        RadialGradient::new(28.0, 24.0, 34.0)
+            .with_stop(0.0, Color::rgb(70, 56, 44))
+            .with_stop(1.0, Color::rgb(30, 22, 16))
     } else {
         RadialGradient::new(28.0, 24.0, 34.0).with_stop(0.0, lighter(rim, 115)).with_stop(1.0, darker(rim, 260))
     };
@@ -291,7 +295,9 @@ fn medallion(p: &mut Canvas, rim: Color, look: SkillLook) {
     p.set_brush(face);
     p.draw_ellipse_at(32.0, 32.0, 29.0, 29.0);
     let ring = if look == SkillLook::Locked {
-        LinearGradient::new(0.0, 0.0, 64.0, 64.0).with_stop(0.0, Color::rgb(110, 96, 80)).with_stop(1.0, Color::rgb(60, 50, 40))
+        LinearGradient::new(0.0, 0.0, 64.0, 64.0)
+            .with_stop(0.0, Color::rgb(110, 96, 80))
+            .with_stop(1.0, Color::rgb(60, 50, 40))
     } else {
         LinearGradient::new(0.0, 0.0, 64.0, 64.0).with_stop(0.0, hex("#fbe3a0")).with_stop(1.0, hex("#8a5a1c"))
     };
@@ -328,7 +334,7 @@ pub fn render_medallion(picture: Picture, rim: Color, look: SkillLook, size: u32
         // Grey with the picture's own alpha (setAlphaChannel), then darkened.
         let grey = image.to_gray8();
         let mut data = image.data().to_vec();
-        for (px, g) in data.chunks_exact_mut(4).zip(grey) {
+        for (px, g) in data.as_chunks_mut::<4>().0.iter_mut().zip(grey) {
             let a = px[3] as u32;
             let v = div255(g as u32 * a) as u8;
             px[0] = v;
@@ -338,7 +344,10 @@ pub fn render_medallion(picture: Picture, rim: Color, look: SkillLook, size: u32
         let mut drained = Image::from_premultiplied(image.width(), image.height(), data).expect("size");
         drained.paint(|p| {
             p.set_composition_mode(CompositionMode::SourceAtop);
-            p.fill_rect(Rect::new(0.0, 0.0, (size * SCALE) as f64, (size * SCALE) as f64), Color::rgba(30, 20, 10, 120));
+            p.fill_rect(
+                Rect::new(0.0, 0.0, (size * SCALE) as f64, (size * SCALE) as f64),
+                Color::rgba(30, 20, 10, 120),
+            );
         });
         image = drained;
     }

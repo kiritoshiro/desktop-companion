@@ -101,7 +101,8 @@ impl Creature {
         if let Some(mate) = self.find_social_target(social_range, pop) {
             let m = pop.get(mate).unwrap();
             let dist_to_mate = distance(self.kin.x, self.kin.y, m.x, m.y);
-            if dist_to_cursor > cursor_range || dist_to_mate <= dist_to_cursor * 1.12 || self.rng.random() < social_pref {
+            if dist_to_cursor > cursor_range || dist_to_mate <= dist_to_cursor * 1.12 || self.rng.random() < social_pref
+            {
                 return Some((m.x, m.y, Some(mate)));
             }
         }
@@ -204,6 +205,14 @@ impl Creature {
         self.kin.target_heading = face_cursor;
         self.social_target = None;
         self.raise_wiggle_burst(0.85);
-        self.launch_jump(target_x, target_y, crate::creature::JumpKind::Escape, crate::creature::After::Nope, None, None, 1.0);
+        self.launch_jump(
+            target_x,
+            target_y,
+            crate::creature::JumpKind::Escape,
+            crate::creature::After::Nope,
+            None,
+            None,
+            1.0,
+        );
     }
 }

@@ -8,26 +8,26 @@
 //! [`world::Env`]; painters read [`Creature::render_snapshot`] and
 //! `creature.kin`. See `PORT_STATUS.md` for the full manager contract.
 
-pub mod constants;
-pub mod pymath;
-pub mod state;
-pub mod mood;
-pub mod world;
-pub mod phase_scheduler;
-pub mod creature;
-pub mod progression;
-pub mod expression;
-pub mod damage_numbers;
-pub mod web_net;
-pub mod regal;
-pub mod behaviour;
 pub mod arbiter;
-pub mod perception;
-pub mod update;
-pub mod manipulation;
+pub mod behaviour;
+pub mod constants;
+pub mod creature;
+pub mod damage_numbers;
+pub mod expression;
 pub mod labels;
-pub mod world_impls;
+pub mod manipulation;
+pub mod mood;
+pub mod perception;
+pub mod phase_scheduler;
+pub mod progression;
+pub mod pymath;
+pub mod regal;
 pub mod snapshot;
+pub mod state;
+pub mod update;
+pub mod web_net;
+pub mod world;
+pub mod world_impls;
 
 pub use creature::{Creature, CreatureConfig};
 pub use labels::{ApproxLabelMetrics, LabelMetrics, LabelSpec};

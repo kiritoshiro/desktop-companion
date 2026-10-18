@@ -33,9 +33,7 @@ use std::collections::HashMap;
 use std::f64::consts::TAU;
 
 use dc_core::{Color, PyRandom, Rect, Vec2};
-use dc_render::{
-    Brush, Canvas, CompositionMode, Image, LinearGradient, Path, Pen, RadialGradient, Region, RenderHint,
-};
+use dc_render::{Brush, Canvas, CompositionMode, Image, LinearGradient, Path, Pen, RadialGradient, Region, RenderHint};
 
 use crate::common::round_cap_pen;
 use crate::qt::{div255, fill_rect_pixels, intersected, is_empty, over, to_aligned_rect};
@@ -744,8 +742,7 @@ impl DesktopSurface {
             if is_empty(bounds) {
                 continue;
             }
-            let mut scratch =
-                Image::new(((bounds.w * ratio) as u32).max(1), ((bounds.h * ratio) as u32).max(1));
+            let mut scratch = Image::new(((bounds.w * ratio) as u32).max(1), ((bounds.h * ratio) as u32).max(1));
             scratch.set_device_pixel_ratio(ratio as f32);
             let area = draw(&mut scratch, lrect.x + bounds.x, lrect.y + bounds.y, &mut self.rng);
             let (ox, oy) = ((bounds.x * ratio).round() as i64, (bounds.y * ratio).round() as i64);
@@ -755,6 +752,36 @@ impl DesktopSurface {
                 None => bounds,
             };
             self.compose(i, area);
+        }
+    }
+
+    /// `_draw_on_glass(brk.region, _draw_lines(...))` for a break's new
+    /// lines. Rust: drawn straight onto the glass inside the region (source-
+    /// over is associative, so this equals drawing them on a clear scratch
+    /// and laying that over the glass), and each line's own small box is
+    /// recomposed rather than the box round all of them -- a ring of cracks
+    /// spans most of a 4K screen, and composing that every frame cost 50 ms.
+    fn draw_break_lines(&mut self, region: &Region, lines: &[WebLine]) {
+        if lines.is_empty() {
+            return;
+        }
+        for i in 0..self.layers.len() {
+            let lrect = self.layers[i].rect();
+            if !region.intersects_rect(&lrect) {
+                continue;
+            }
+            let local = region.translated(-lrect.x, -lrect.y);
+            let (ox, oy) = (lrect.x, lrect.y);
+            paint_logical(&mut self.layers[i].glass, |p| {
+                p.set_clip_region(&local);
+                draw_lines_on(p, lines, ox, oy);
+            });
+            let screen = Rect::new(0.0, 0.0, lrect.w, lrect.h);
+            let bounds = local.bounding_rect();
+            for l in lines {
+                let r = lines_extent(std::slice::from_ref(l)).translated(-ox, -oy);
+                self.compose(i, intersected(intersected(r, bounds), screen));
+            }
         }
     }
 
@@ -925,7 +952,7 @@ impl DesktopSurface {
                 let lines = brk.lines[brk.drawn..upto].to_vec();
                 let region = brk.region.clone();
                 self.breaks[k].drawn = upto;
-                self.draw_on_glass(&region, |glass, ox, oy, _| draw_lines(glass, &lines, ox, oy));
+                self.draw_break_lines(&region, &lines);
             }
             if self.breaks[k].age >= BREAK_SECONDS + BREAK_HOLD {
                 let brk = self.breaks.remove(k);
@@ -1149,7 +1176,7 @@ fn burn_away(image: &mut Image, blob: &Path, radius: f64, rng: &mut PyRandom) {
 /// `_draw_cracks`: jagged cracks radiating from a point; returns the area drawn over.
 fn draw_cracks(glass: &mut Image, x: f64, y: f64, force: f64, rng: &mut PyRandom) -> Rect {
     let rays = 3 + (force * 6.0) as i64;
-    let mut lines: Vec<((f64, f64), (f64, f64))> = Vec::new();
+    let mut lines: Vec<Segment> = Vec::new();
     for i in 0..rays {
         let angle = (i as f64 + rng.random() * 0.8) / rays as f64 * TAU;
         let length = (60.0 + rng.random() * 90.0) * (0.6 + force * 1.6);
@@ -1213,33 +1240,33 @@ pub fn web_lines(x: f64, y: f64, reach: f64, rng: &mut PyRandom) -> Vec<WebLine>
     lines
 }
 
-/// `_draw_lines`: web lines (overlay-local) on a screen's glass whose
-/// top-left is (ox, oy); returns the area drawn over.
-fn draw_lines(glass: &mut Image, lines: &[WebLine], ox: f64, oy: f64) -> Option<Rect> {
-    if lines.is_empty() {
-        return None;
+fn draw_lines_on(p: &mut Canvas, lines: &[WebLine], ox: f64, oy: f64) {
+    p.set_render_hint(RenderHint::Antialiasing, true);
+    p.translate(-ox, -oy);
+    p.set_pen(round_cap_pen(Color::rgba(0, 0, 0, 110), 2.4));
+    for l in lines {
+        p.draw_line(l.a.0 + 0.8, l.a.1 + 0.8, l.b.0 + 0.8, l.b.1 + 0.8);
     }
-    paint_logical(glass, |p| {
-        p.set_render_hint(RenderHint::Antialiasing, true);
-        p.translate(-ox, -oy);
-        p.set_pen(round_cap_pen(Color::rgba(0, 0, 0, 110), 2.4));
-        for l in lines {
-            p.draw_line(l.a.0 + 0.8, l.a.1 + 0.8, l.b.0 + 0.8, l.b.1 + 0.8);
-        }
-        p.set_pen(round_cap_pen(Color::rgba(236, 246, 255, 225), 1.1));
-        for l in lines {
-            p.draw_line(l.a.0, l.a.1, l.b.0, l.b.1);
-        }
-    });
+    p.set_pen(round_cap_pen(Color::rgba(236, 246, 255, 225), 1.1));
+    for l in lines {
+        p.draw_line(l.a.0, l.a.1, l.b.0, l.b.1);
+    }
+}
+
+/// The overlay-local area web lines can touch (ends, shadow offset and pen).
+fn lines_extent(lines: &[WebLine]) -> Rect {
     let xs = lines.iter().flat_map(|l| [l.a.0, l.b.0]);
     let ys = lines.iter().flat_map(|l| [l.a.1, l.b.1]);
     let (x0, x1) = xs.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(v), b.max(v)));
     let (y0, y1) = ys.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| (a.min(v), b.max(v)));
-    Some(Rect::new(x0 - ox - 4.0, y0 - oy - 4.0, x1 - x0 + 8.0, y1 - y0 + 8.0))
+    Rect::new(x0 - 4.0, y0 - 4.0, x1 - x0 + 8.0, y1 - y0 + 8.0)
 }
 
+/// A crack segment: its two ends.
+type Segment = ((f64, f64), (f64, f64));
+
 fn crack_ray(
-    lines: &mut Vec<((f64, f64), (f64, f64))>,
+    lines: &mut Vec<Segment>,
     mut x: f64,
     mut y: f64,
     mut angle: f64,
@@ -1275,10 +1302,7 @@ pub fn shards(bx: Rect, rng: &mut PyRandom) -> Vec<Shard> {
         for i in 0..=cols {
             let jx = if i == 0 || i == cols { 0.0 } else { (rng.random() - 0.5) * w / cols as f64 * 0.7 };
             let jy = if j == 0 || j == rows { 0.0 } else { (rng.random() - 0.5) * h / rows as f64 * 0.7 };
-            row.push(Vec2::new(
-                (x0 + w * i as f64 / cols as f64 + jx) as _,
-                (y0 + h * j as f64 / rows as f64 + jy) as _,
-            ));
+            row.push(Vec2::new(x0 + w * i as f64 / cols as f64 + jx, y0 + h * j as f64 / rows as f64 + jy));
         }
         grid.push(row);
     }
@@ -1288,8 +1312,8 @@ pub fn shards(bx: Rect, rng: &mut PyRandom) -> Vec<Shard> {
             let (a, b, c, d) = (grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i]);
             let tris = if rng.random() < 0.5 { [[a, b, c], [a, c, d]] } else { [[a, b, d], [b, c, d]] };
             for tri in tris {
-                let cx = tri.iter().map(|p| p.x as f64).sum::<f64>() / 3.0;
-                let cy = tri.iter().map(|p| p.y as f64).sum::<f64>() / 3.0;
+                let cx = tri.iter().map(|p| p.x).sum::<f64>() / 3.0;
+                let cy = tri.iter().map(|p| p.y).sum::<f64>() / 3.0;
                 let vx = (cx - x0 - w / 2.0) / w.max(1.0) * 220.0 + (rng.random() - 0.5) * 80.0;
                 let vy = -60.0 - rng.random() * 120.0;
                 let spin = (rng.random() - 0.5) * 3.0;

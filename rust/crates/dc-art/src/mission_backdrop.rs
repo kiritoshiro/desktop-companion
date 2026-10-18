@@ -34,13 +34,28 @@ pub struct Look {
 }
 
 pub const LOOKS: [Look; 7] = [
-    Look { name: "territory", ground: ("#76853f", "#5c6b33"), path: "#8f7248", props: &["grass", "pebbles", "logs", "flowers"] },
-    Look { name: "swarm", ground: ("#7c9444", "#5f7a36"), path: "#94784c", props: &["grass", "flowers", "flowers", "pebbles"] },
+    Look {
+        name: "territory",
+        ground: ("#76853f", "#5c6b33"),
+        path: "#8f7248",
+        props: &["grass", "pebbles", "logs", "flowers"],
+    },
+    Look {
+        name: "swarm",
+        ground: ("#7c9444", "#5f7a36"),
+        path: "#94784c",
+        props: &["grass", "flowers", "flowers", "pebbles"],
+    },
     Look { name: "ember", ground: ("#5c301d", "#3c1d12"), path: "#7c4c2c", props: &["ash", "lava", "embers", "rocks"] },
     Look { name: "reclaim", ground: ("#12264a", "#081328"), path: "#1e4a7c", props: &["shards", "glow"] },
     Look { name: "storm", ground: ("#3f4c37", "#2b3528"), path: "#5c5242", props: &["grass", "puddles", "rocks"] },
     Look { name: "obsidian", ground: ("#211b2c", "#120e1a"), path: "#3c3250", props: &["rocks", "crystals", "cracks"] },
-    Look { name: "queen", ground: ("#43201c", "#2a1110"), path: "#6c3c2a", props: &["roots", "thorns", "bones", "rocks"] },
+    Look {
+        name: "queen",
+        ground: ("#43201c", "#2a1110"),
+        path: "#6c3c2a",
+        props: &["roots", "thorns", "bones", "rocks"],
+    },
 ];
 
 /// The look by name (falls back to territory).
@@ -569,7 +584,11 @@ impl MissionBackdrop {
                 .iter()
                 .filter(|s| s.screen == screen.index)
                 .map(|s| {
-                    (dc_core::math::py_round(s.x - r.x) as i64, dc_core::math::py_round(s.y - r.y) as i64, s.kind.clone())
+                    (
+                        dc_core::math::py_round(s.x - r.x) as i64,
+                        dc_core::math::py_round(s.y - r.y) as i64,
+                        s.kind.clone(),
+                    )
                 })
                 .collect();
             let key: CacheKey = (map_id.to_string(), screen.index, r.w as i64, r.h as i64, local.clone());
@@ -631,8 +650,13 @@ mod tests {
     #[test]
     fn a_path_runs_from_home_to_each_building() {
         let bare = paint_backdrop("territory", 800, 450, &[], 0);
-        let with_sites =
-            paint_backdrop("territory", 800, 450, &[Site::new(100.0, 225.0, "home"), Site::new(700.0, 225.0, "nest")], 0);
+        let with_sites = paint_backdrop(
+            "territory",
+            800,
+            450,
+            &[Site::new(100.0, 225.0, "home"), Site::new(700.0, 225.0, "nest")],
+            0,
+        );
         assert_ne!(name(with_sites.pixel(700, 245)), name(bare.pixel(700, 245)));
     }
 
@@ -653,7 +677,10 @@ mod tests {
         let sites = [BackdropSite { x: 100.4, y: 50.6, kind: "home".into(), screen: 0 }];
         let first = backdrop.pixmaps("territory", "raid", &screens, &sites);
         let second = backdrop.pixmaps("territory", "raid", &screens, &sites);
-        assert_eq!(first.iter().map(|(_, i)| i.id()).collect::<Vec<_>>(), second.iter().map(|(_, i)| i.id()).collect::<Vec<_>>());
+        assert_eq!(
+            first.iter().map(|(_, i)| i.id()).collect::<Vec<_>>(),
+            second.iter().map(|(_, i)| i.id()).collect::<Vec<_>>()
+        );
         assert_eq!(backdrop.cached(), 2);
         let mut image = Image::new(64, 64);
         image.paint(|p| backdrop.paint(p, "territory", "raid", &screens, &sites));

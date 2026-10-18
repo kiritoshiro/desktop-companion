@@ -21,9 +21,15 @@ use std::f64::consts::PI;
 pub enum Action {
     Idle,
     /// `engage_cursor`: Alert on a still cursor (hunter), else Approach.
-    EngageCursor { cursor_still: bool },
+    EngageCursor {
+        cursor_still: bool,
+    },
     Hop,
-    Observe { ax: f64, ay: f64, target: Option<CreatureId> },
+    Observe {
+        ax: f64,
+        ay: f64,
+        target: Option<CreatureId>,
+    },
     AlertRetreat,
     AlertChase,
     AlertApproach,
@@ -32,11 +38,28 @@ pub enum Action {
     AdoptWeb(WebId),
     WeaveNew,
     WebWalk(WebId),
-    ShootWebCursor { dist_to_cursor: f64 },
-    SocialPlay { mate: CreatureId, mate_x: f64, mate_y: f64, d: f64 },
-    SocialInspect { mate: CreatureId, mate_x: f64, mate_y: f64 },
-    SocialCuddle { mate: CreatureId, mate_x: f64, mate_y: f64 },
-    CursorPounce { abort_chance: f64 },
+    ShootWebCursor {
+        dist_to_cursor: f64,
+    },
+    SocialPlay {
+        mate: CreatureId,
+        mate_x: f64,
+        mate_y: f64,
+        d: f64,
+    },
+    SocialInspect {
+        mate: CreatureId,
+        mate_x: f64,
+        mate_y: f64,
+    },
+    SocialCuddle {
+        mate: CreatureId,
+        mate_x: f64,
+        mate_y: f64,
+    },
+    CursorPounce {
+        abort_chance: f64,
+    },
     CursorInspect,
     CursorCuddle,
     CursorPlayfulPounce,
@@ -44,7 +67,9 @@ pub enum Action {
     SelfRoll,
     SelfSpring,
     SelfZoomies,
-    ScheduledPhase { focus: Focus },
+    ScheduledPhase {
+        focus: Focus,
+    },
 }
 
 /// `Candidate`: one thing a creature could commit to doing next.

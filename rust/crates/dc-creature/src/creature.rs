@@ -603,7 +603,8 @@ impl Creature {
         let screen_w = (cfg.screen_w.trunc()).max(200.0);
         let screen_h = (cfg.screen_h.trunc()).max(200.0);
         let margin = 50.0;
-        let progression_id = cfg.progression_id.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| format!("runtime:{}", cfg.index));
+        let progression_id =
+            cfg.progression_id.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| format!("runtime:{}", cfg.index));
         let seeded = cfg.seed.is_some();
         let mut rng = match cfg.seed {
             Some(seed) => PyRandom::from_str_seed(&format!("{seed}:{progression_id}")),

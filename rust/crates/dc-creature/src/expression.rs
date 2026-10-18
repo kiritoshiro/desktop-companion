@@ -303,7 +303,8 @@ impl Creature {
             *l = l.max(free_rom[i] * 1.12);
         }
 
-        let probing = if dragging { 0.0 } else { clamp(self.kin.feeler_pulse.max(self.kin.inspect_intent * 0.55), 0.0, 1.0) };
+        let probing =
+            if dragging { 0.0 } else { clamp(self.kin.feeler_pulse.max(self.kin.inspect_intent * 0.55), 0.0, 1.0) };
         let catch_blend = self.kin.catch_blend;
         let inspect_intent = self.kin.inspect_intent;
         let explicit_hand_target = !dragging && (catch_blend > 0.08 || inspect_intent > 0.40 || self.aim_intent > 0.55);
@@ -363,7 +364,8 @@ impl Creature {
 
         let shared_phase = (self.antenna_phase[0] + self.antenna_phase[1]) * 0.5;
         let rub_phase = shared_phase * rub_frequency;
-        let observing = matches!(self.state, State::Observe | State::Inspect | State::Aim | State::Catch | State::Alert);
+        let observing =
+            matches!(self.state, State::Observe | State::Inspect | State::Aim | State::Catch | State::Alert);
         let attention_level = clamp(
             inspect_intent.max(self.aim_intent).max(catch_blend).max(if observing && self.focus_strength > 0.15 {
                 0.82
@@ -467,7 +469,8 @@ impl Creature {
                 if !dragging {
                     let joint_wave_scale = joint_rub_profile[segment_index.min(joint_rub_profile.len() - 1)];
                     let knuckle_phase = rub_phase - si * knuckle_wave_delay + side_index as f64 * 0.08;
-                    target_angle += side_sign * knuckle_phase.sin() * rub_joint_angle * gesture_level * joint_wave_scale;
+                    target_angle +=
+                        side_sign * knuckle_phase.sin() * rub_joint_angle * gesture_level * joint_wave_scale;
                     let side_wave = (side_phase * 0.82 + 0.65 + si * 0.04).sin();
                     target_angle += side_wave * rub_joint_angle * gesture_level * 0.24;
                     if attention_level > 0.01 {

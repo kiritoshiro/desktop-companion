@@ -93,7 +93,15 @@ impl Noise {
 
 /// `wood(width, height, light, dark, seed, rings, warp_amount)`:
 /// plain-sawn grain running left to right; tiles in both directions. Opaque.
-pub fn wood(width: u32, height: u32, light: (u8, u8, u8), dark: (u8, u8, u8), seed: i64, rings: i64, warp_amount: f64) -> Image {
+pub fn wood(
+    width: u32,
+    height: u32,
+    light: (u8, u8, u8),
+    dark: (u8, u8, u8),
+    seed: i64,
+    rings: i64,
+    warp_amount: f64,
+) -> Image {
     let noise = Noise::new(seed);
     let mut data = vec![0u8; (width * height * 4) as usize];
     let lerp = |l: u8, d: u8, t: f64| (l as f64 + (d as f64 - l as f64) * t) as u8;
@@ -247,6 +255,7 @@ pub fn polyline(points: &[(f64, f64)], closed: bool) -> Path {
 }
 
 /// A web from (cx, cy) between angles `a0` and `a1`, burned in.
+#[allow(clippy::too_many_arguments)] // the Python's own signature
 pub fn web(p: &mut Canvas, cx: f64, cy: f64, radius: f64, a0: f64, a1: f64, spokes: usize, turns: usize) {
     let mut ends = Vec::new();
     for i in 0..spokes {
@@ -490,7 +499,16 @@ pub fn menu_emblem(name: &str) -> Image {
             }
             "interaction" => {
                 e.stroke(
-                    &[(24.0, 18.0), (24.0, 48.0), (32.0, 41.0), (38.0, 53.0), (44.0, 50.0), (38.0, 38.0), (49.0, 38.0), (24.0, 18.0)],
+                    &[
+                        (24.0, 18.0),
+                        (24.0, 48.0),
+                        (32.0, 41.0),
+                        (38.0, 53.0),
+                        (44.0, 50.0),
+                        (38.0, 38.0),
+                        (49.0, 38.0),
+                        (24.0, 18.0),
+                    ],
                     2.5,
                     pale,
                 );
@@ -609,7 +627,11 @@ pub fn menu_emblem(name: &str) -> Image {
                 }
             }
             "strategy" => {
-                e.stroke(&[(21.0, 48.0), (27.0, 33.0), (41.0, 38.0), (48.0, 23.0), (54.0, 48.0), (21.0, 48.0)], 2.2, gold);
+                e.stroke(
+                    &[(21.0, 48.0), (27.0, 33.0), (41.0, 38.0), (48.0, 23.0), (54.0, 48.0), (21.0, 48.0)],
+                    2.2,
+                    gold,
+                );
                 e.stroke(&[(29.0, 27.0), (29.0, 18.0), (46.0, 22.0), (29.0, 26.0)], 2.3, pale);
                 e.dot(28.0, 48.0, 2.5, pale);
             }

@@ -93,7 +93,10 @@ impl Creature {
         abort_chance: f64,
         pop: &Population,
     ) {
-        if !self.phase_allowed(Phase::PrepareJumpAttack) || !self.has_skill("prepare_jump_attack") || !self.has_skill("jump") {
+        if !self.phase_allowed(Phase::PrepareJumpAttack)
+            || !self.has_skill("prepare_jump_attack")
+            || !self.has_skill("jump")
+        {
             if after == After::Play
                 && let Some(t) = target
                 && self.phase_allowed(Phase::SocialPlay)
@@ -396,7 +399,8 @@ impl Creature {
         self.kin.drift.drift_dir = self.drift_run_dir;
         let size = self.kin.size;
         self.state_timer = rand_range(self.personality.get("drift_run_time"), 2.2, 4.6, &mut self.rng);
-        self.drift_run_turn_rate = rand_range(self.personality.get("drift_circle_turn_rate"), 0.95, 1.85, &mut self.rng);
+        self.drift_run_turn_rate =
+            rand_range(self.personality.get("drift_circle_turn_rate"), 0.95, 1.85, &mut self.rng);
         self.drift_run_radius = rand_range(
             self.personality.get("drift_circle_radius"),
             92.0f64.max(size * 4.0),
@@ -414,10 +418,8 @@ impl Creature {
             Some(m) => m,
             None => {
                 let edge_band = self.margin + 120.0f64.max(self.drift_run_radius * 0.85);
-                let near_edge = x < edge_band
-                    || x > self.screen_w - edge_band
-                    || y < edge_band
-                    || y > self.screen_h - edge_band;
+                let near_edge =
+                    x < edge_band || x > self.screen_w - edge_band || y < edge_band || y > self.screen_h - edge_band;
                 let corner_chance =
                     clamp(self.pf("drift_corner_chance", 0.46) + if near_edge { 0.20 } else { 0.0 }, 0.0, 0.92);
                 if self.rng.random() < corner_chance { DriftRunMode::Corner } else { DriftRunMode::Circle }
@@ -436,13 +438,12 @@ impl Creature {
             ];
             let mut ranked: Vec<(usize, (f64, f64))> = corners.iter().copied().enumerate().collect();
             ranked.sort_by(|a, b| {
-                distance(x, y, a.1.0, a.1.1).partial_cmp(&distance(x, y, b.1.0, b.1.1)).unwrap_or(std::cmp::Ordering::Equal)
+                distance(x, y, a.1.0, a.1.1)
+                    .partial_cmp(&distance(x, y, b.1.0, b.1.1))
+                    .unwrap_or(std::cmp::Ordering::Equal)
             });
-            let (idx, (cx, cy)) = if ranked.len() > 1 && self.rng.random() < 0.32 {
-                *self.rng.choice(&ranked[..2])
-            } else {
-                ranked[0]
-            };
+            let (idx, (cx, cy)) =
+                if ranked.len() > 1 && self.rng.random() < 0.32 { *self.rng.choice(&ranked[..2]) } else { ranked[0] };
             self.drift_run_corner_index = idx;
             self.drift_run_center_x = clamp(cx, self.margin, self.screen_w - self.margin);
             self.drift_run_center_y = clamp(cy, self.margin, self.screen_h - self.margin);
@@ -473,17 +474,18 @@ impl Creature {
         self.kin.speed = self.drift_run_speed * self.speed_mult();
         self.drift_run_phase_timer = (self.drift_run_phase_timer - dt).max(0.0);
         let mut phase = self.drift_run_phase;
-        if phase == DriftRunPhase::Charge
-            && (self.drift_run_phase_timer <= 0.0 || self.kin.drift.drift_momentum > 0.54)
+        if phase == DriftRunPhase::Charge && (self.drift_run_phase_timer <= 0.0 || self.kin.drift.drift_momentum > 0.54)
         {
             self.drift_run_phase = DriftRunPhase::Slide;
-            self.drift_run_phase_timer = rand_range(self.personality.get("drift_slide_time"), 0.95, 1.65, &mut self.rng);
+            self.drift_run_phase_timer =
+                rand_range(self.personality.get("drift_slide_time"), 0.95, 1.65, &mut self.rng);
             self.prime_drift(1.18, Some(self.drift_run_dir));
             self.raise_wiggle_burst(0.42);
             phase = DriftRunPhase::Slide;
         } else if phase == DriftRunPhase::Slide && self.drift_run_phase_timer <= 0.0 && self.state_timer > 0.45 {
             self.drift_run_phase = DriftRunPhase::Charge;
-            self.drift_run_phase_timer = rand_range(self.personality.get("drift_charge_time"), 0.45, 0.95, &mut self.rng);
+            self.drift_run_phase_timer =
+                rand_range(self.personality.get("drift_charge_time"), 0.45, 0.95, &mut self.rng);
             phase = DriftRunPhase::Charge;
         }
         let slide01 = if phase == DriftRunPhase::Slide { smootherstep(self.kin.drift.drift_momentum) } else { 0.0 };
@@ -507,8 +509,7 @@ impl Creature {
         };
         (self.kin.target_x, self.kin.target_y) = clamp_point(tx, ty, margin, self.screen_w, self.screen_h);
         let tangent_heading = self.drift_run_angle + self.drift_run_dir * PI * 0.5;
-        self.kin.target_heading =
-            tangent_heading - self.drift_run_dir * slide01 * self.pf("drift_countersteer", 0.42);
+        self.kin.target_heading = tangent_heading - self.drift_run_dir * slide01 * self.pf("drift_countersteer", 0.42);
         self.set_focus(self.kin.target_x, self.kin.target_y, 0.55);
 
         if self.decision_timer <= 0.0 {

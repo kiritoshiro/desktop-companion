@@ -6,7 +6,7 @@ use crate::bump;
 use crate::creature::Creature;
 use crate::pymath::{angle_to, clamp, distance, rand_range};
 use crate::state::State;
-use crate::world::{CreatureId, Env, FlyId, PreyView, ShotKind, Shooter, WebId, WebWorldApi};
+use crate::world::{CreatureId, Env, FlyId, PreyView, Shooter, ShotKind, WebId, WebWorldApi};
 
 /// `Option<&mut dyn WebWorldApi>` re-borrowed from an [`Env`].
 pub type WebsMut<'b> = Option<&'b mut dyn WebWorldApi>;

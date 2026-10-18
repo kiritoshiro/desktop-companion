@@ -228,8 +228,10 @@ pub fn picture_look(map_id: &str, kind: &str) -> &'static str {
     crate::mission_backdrop::kind_look(kind).unwrap_or("territory")
 }
 
-fn cache() -> &'static Mutex<HashMap<(String, String, bool, u32, u32), Image>> {
-    static C: OnceLock<Mutex<HashMap<(String, String, bool, u32, u32), Image>>> = OnceLock::new();
+type PictureKey = (String, String, bool, u32, u32);
+
+fn cache() -> &'static Mutex<HashMap<PictureKey, Image>> {
+    static C: OnceLock<Mutex<HashMap<PictureKey, Image>>> = OnceLock::new();
     C.get_or_init(Default::default)
 }
 

@@ -424,9 +424,7 @@ impl Creature {
                     self.enter_idle();
                 }
             }
-            After::Play
-                if self.social_target.is_some_and(|id| env.population.get(id).is_some_and(|t| !t.dragging)) =>
-            {
+            After::Play if self.social_target.is_some_and(|id| env.population.get(id).is_some_and(|t| !t.dragging)) => {
                 let target = self.social_target.unwrap();
                 let role = match self.social_role {
                     SocialRole::Chase | SocialRole::Flee => Some(self.social_role),

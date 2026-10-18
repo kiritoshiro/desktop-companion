@@ -209,7 +209,11 @@ impl BehaviourPhaseScheduler {
         Self::from_ref(PersonalityRef::Def(personality), enabled_behaviours, rng)
     }
 
-    pub fn from_ref<S: AsRef<str>>(personality: PersonalityRef<'_>, enabled_behaviours: &[S], rng: &mut PyRandom) -> Self {
+    pub fn from_ref<S: AsRef<str>>(
+        personality: PersonalityRef<'_>,
+        enabled_behaviours: &[S],
+        rng: &mut PyRandom,
+    ) -> Self {
         let table = phase_scores_for(personality);
         let mut scores = [0.0; 12];
         for (i, p) in PHASES.iter().enumerate() {
@@ -372,8 +376,13 @@ impl BehaviourPhaseScheduler {
             return None;
         }
         let duration = self.duration_for(phase, rng);
-        self.current =
-            Some(PhasePlan { phase_id: phase, focus, score: self.scores[phase.index()], duration, remaining: duration });
+        self.current = Some(PhasePlan {
+            phase_id: phase,
+            focus,
+            score: self.scores[phase.index()],
+            duration,
+            remaining: duration,
+        });
         Some(duration)
     }
 }

@@ -174,7 +174,8 @@ impl Creature {
         let (dx, dy) = (tx - x, ty - y);
         let side = -heading.sin() * dx + heading.cos() * dy;
         let forward = heading.cos() * dx + heading.sin() * dy;
-        let yaw = if target != RegalTarget::None { clamp(side / 160.0, -0.65, 0.65) } else { (r.clock * 0.55).sin() * 0.22 };
+        let yaw =
+            if target != RegalTarget::None { clamp(side / 160.0, -0.65, 0.65) } else { (r.clock * 0.55).sin() * 0.22 };
         let pitch = if target != RegalTarget::None { clamp(forward / 220.0, -0.2, 0.65) } else { 0.12 };
         let blend = 1.0 - (-dt * 5.0).exp();
         r.yaw += (yaw - r.yaw) * blend;

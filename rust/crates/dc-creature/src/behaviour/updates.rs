@@ -369,8 +369,13 @@ impl Creature {
                 self.kin.target_heading = angle_to(x, y, tx, ty);
                 self.set_wiggle_burst(0.4);
             } else {
-                (self.kin.target_x, self.kin.target_y) =
-                    clamp_point(x + away.cos() * 90.0, y + away.sin() * 90.0, self.margin, self.screen_w, self.screen_h);
+                (self.kin.target_x, self.kin.target_y) = clamp_point(
+                    x + away.cos() * 90.0,
+                    y + away.sin() * 90.0,
+                    self.margin,
+                    self.screen_w,
+                    self.screen_h,
+                );
                 self.kin.speed = 104.0 * self.speed_mult();
                 self.kin.target_heading = away;
             }

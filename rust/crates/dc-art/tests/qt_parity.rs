@@ -80,7 +80,8 @@ fn layout() -> UiLayout {
 }
 
 fn mission() -> MissionView {
-    let site = |x, y, kind: &str, name: &str| UiSite { x, y, kind: kind.into(), name: name.into(), ..Default::default() };
+    let site =
+        |x, y, kind: &str, name: &str| UiSite { x, y, kind: kind.into(), name: name.into(), ..Default::default() };
     MissionView {
         area: Rect::new(0.0, 0.0, 1600.0, 1000.0),
         layout: Some(layout()),
@@ -162,7 +163,9 @@ fn scenes() -> Vec<(&'static str, String, Image)> {
         out.push(("map", format!("map_{id}_locked"), map_picture(id, kind, true)));
     }
     for id in SKILL_IDS {
-        for (look, name) in [(SkillLook::Learned, "learned"), (SkillLook::Available, "available"), (SkillLook::Locked, "locked")] {
+        for (look, name) in
+            [(SkillLook::Learned, "learned"), (SkillLook::Available, "available"), (SkillLook::Locked, "locked")]
+        {
             out.push(("skill", format!("skill_{id}_{name}"), skill_icon(id, look, 46)));
         }
     }
@@ -196,7 +199,8 @@ fn scenes() -> Vec<(&'static str, String, Image)> {
     let crashed =
         MissionView { state: "crashed".into(), blue_screen: 2.0, crash_screen_seconds: 7.0, ended: true, ..mission() };
     out.push(("hud", "hud_bluescreen".into(), canvas(|p| draw_blue_screen(p, &crashed))));
-    let won = MissionView { state: "victory".into(), ended: true, end_clock: 1.0, found: 2, amber_mined: 5, ..mission() };
+    let won =
+        MissionView { state: "victory".into(), ended: true, end_clock: 1.0, found: 2, amber_mined: 5, ..mission() };
     out.push(("hud", "hud_end".into(), canvas(|p| draw_end_title(p, &won))));
     out.push((
         "hud",
@@ -218,7 +222,9 @@ fn scenes() -> Vec<(&'static str, String, Image)> {
 fn over_grey(image: &Image) -> Vec<[f64; 3]> {
     image
         .data()
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .map(|p| {
             let a = p[3] as f64 / 255.0;
             [p[0] as f64 + 128.0 * (1.0 - a), p[1] as f64 + 128.0 * (1.0 - a), p[2] as f64 + 128.0 * (1.0 - a)]
@@ -267,7 +273,11 @@ fn score(a: &Image, b: &Image) -> Score {
             n += 1;
         }
     }
-    Score { mean: sum / pa.len() as f64, ssim: if n > 0 { total / n as f64 } else { 1.0 }, bad: bad as f64 / pa.len() as f64 }
+    Score {
+        mean: sum / pa.len() as f64,
+        ssim: if n > 0 { total / n as f64 } else { 1.0 },
+        bad: bad as f64 / pa.len() as f64,
+    }
 }
 
 /// Qt | Rust | |difference| x 4, side by side.

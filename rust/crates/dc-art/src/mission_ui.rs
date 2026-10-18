@@ -179,14 +179,16 @@ pub fn hud_rect(window: &HudWindow, player_index: usize) -> IRect {
     match window.hud_position {
         None => {
             let area = home_area(window);
-            IRect::new(8.max(area.x + (area.w - width).div_euclid(2)), 8.max(qbottom(area) - height - 14), width, height)
+            IRect::new(
+                8.max(area.x + (area.w - width).div_euclid(2)),
+                8.max(qbottom(area) - height - 14),
+                width,
+                height,
+            )
         }
-        Some((x, y)) => IRect::new(
-            8.max(x.min(window.width - width - 8)),
-            8.max(y.min(window.height - height - 8)),
-            width,
-            height,
-        ),
+        Some((x, y)) => {
+            IRect::new(8.max(x.min(window.width - width - 8)), 8.max(y.min(window.height - height - 8)), width, height)
+        }
     }
 }
 
@@ -377,7 +379,8 @@ pub fn draw_hud(p: &mut Canvas, window: &HudWindow, player: &HudPlayer, player_i
             }
             "web" => {
                 p.draw_ellipse(Rect::new(cx - 8.0, cy - 8.0, 16.0, 16.0));
-                for (x1, y1, x2, y2) in [(-10.0, 0.0, 10.0, 0.0), (0.0, -10.0, 0.0, 10.0), (-7.0, -7.0, 7.0, 7.0), (-7.0, 7.0, 7.0, -7.0)]
+                for (x1, y1, x2, y2) in
+                    [(-10.0, 0.0, 10.0, 0.0), (0.0, -10.0, 0.0, 10.0), (-7.0, -7.0, 7.0, 7.0), (-7.0, 7.0, 7.0, -7.0)]
                 {
                     p.draw_line(cx + x1, cy + y1, cx + x2, cy + y2);
                 }
@@ -1036,6 +1039,57 @@ pub fn draw_desktop_health(p: &mut Canvas, window: &HudWindow, m: &MissionView, 
     );
 }
 
+/// `QFontMetrics(Segoe UI at pixel size px).lineSpacing()` as Qt 5.15 on
+/// Windows (GDI, hinted) reports it, px 6..=60, Normal and Light alike.
+/// dc-render's emulated metrics are off by one or two pixels at scattered
+/// sizes here (e.g. 10 px: Qt 12, dc-render 14), which spread the blue
+/// screen's wrapped paragraphs; see PORT_STATUS.md.
+const QT_SEGOE_LINE_SPACING: [i32; 55] = [
+    8, 10, 11, 12, 12, 13, 15, 17, 19, 20, 21, 23, 25, 25, 28, 30, 30, 31, 32, 35, 36, 37, 38, 40, 41, 42, 45, 45, 46,
+    47, 48, 50, 51, 52, 54, 55, 57, 59, 60, 61, 62, 62, 65, 66, 67, 68, 70, 71, 72, 74, 74, 76, 77, 78, 81,
+];
+
+/// Qt's line spacing for the painter's Segoe UI pixel-size font, else dc-render's.
+fn qt_line_spacing(font: &Font) -> f64 {
+    let px = font.pixel_size_f().round() as i32;
+    if font.family().eq_ignore_ascii_case(UI_FONT) && (6..=60).contains(&px) {
+        return QT_SEGOE_LINE_SPACING[(px - 6) as usize] as f64;
+    }
+    font.metrics().line_spacing() as f64
+}
+
+/// `drawText(rect, AlignLeft | AlignTop | TextWordWrap, text)`, wrapped at
+/// spaces and laid out line by line at Qt's line spacing (the workaround
+/// above), clipped to `rect` as Qt clips.
+fn draw_wrapped_qt(p: &mut Canvas, rect: Rect, text: &str) {
+    let font = p.font();
+    let fm = font.metrics();
+    let step = qt_line_spacing(&font);
+    let mut lines: Vec<String> = Vec::new();
+    for paragraph in text.split('\n') {
+        let mut line = String::new();
+        for word in paragraph.split(' ') {
+            let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+            if !line.is_empty() && fm.horizontal_advance_f(&candidate) > rect.w {
+                lines.push(std::mem::take(&mut line));
+                line = word.to_string();
+            } else {
+                line = candidate;
+            }
+        }
+        lines.push(line);
+    }
+    p.save();
+    p.set_clip_rect_op(rect, ClipOp::Intersect);
+    for (i, line) in lines.iter().enumerate() {
+        let r = Rect::new(rect.x, rect.y + i as f64 * step, rect.w, step);
+        if !line.is_empty() {
+            p.draw_text_in(r, TextFlags::ALIGN_LEFT | TextFlags::ALIGN_TOP | TextFlags::TEXT_DONT_CLIP, line);
+        }
+    }
+    p.restore();
+}
+
 /// The blue screen's progress, 0..100 (`draw_blue_screen`'s `percent`).
 pub fn blue_screen_percent(shown: f64, total: f64) -> i64 {
     100.min((shown / (total - 0.8).max(0.1) * 100.0) as i64)
@@ -1068,14 +1122,18 @@ pub fn draw_blue_screen(p: &mut Canvas, m: &MissionView) {
         let mut face = Font::with_weight(UI_FONT, 12.0, Weight::LIGHT);
         face.set_pixel_size((150.0 * unit) as i32);
         p.set_font(face);
-        p.draw_text_in(Rect::new(left, top, r.w * 0.8, 190.0 * unit), TextFlags::ALIGN_LEFT | TextFlags::ALIGN_TOP, ":(");
+        p.draw_text_in(
+            Rect::new(left, top, r.w * 0.8, 190.0 * unit),
+            TextFlags::ALIGN_LEFT | TextFlags::ALIGN_TOP,
+            ":(",
+        );
         top += 210.0 * unit;
         let mut text = Font::with_weight(UI_FONT, 12.0, Weight::LIGHT);
         text.set_pixel_size((34.0 * unit) as i32);
         p.set_font(text);
-        p.draw_text_in(
+        draw_wrapped_qt(
+            p,
             Rect::new(left, top, r.w * 0.78, 110.0 * unit),
-            TextFlags::ALIGN_LEFT | TextFlags::ALIGN_TOP | TextFlags::TEXT_WORD_WRAP,
             "Your desktop ran into a problem: the spiders broke it. We're just collecting the pieces, and then \
              we'll take you back.",
         );
@@ -1107,9 +1165,9 @@ pub fn draw_blue_screen(p: &mut Canvas, m: &MissionView) {
         p.set_font(small);
         p.set_pen(white);
         let info = Rect::new(code.right() + 24.0 * unit, code.y, r.w * 0.6, code.h * 1.6);
-        p.draw_text_in(
+        draw_wrapped_qt(
+            p,
             info,
-            TextFlags::ALIGN_LEFT | TextFlags::ALIGN_TOP | TextFlags::TEXT_WORD_WRAP,
             "The raid is over. Nothing you found or earned in it is kept, and nothing was lost:\n\
              your spider is just as it was before the raid.\n\n\
              Your real desktop was never touched. Back to Adventure in a moment.\n\n\
@@ -1349,16 +1407,32 @@ mod tests {
 
     #[test]
     fn end_titles_count_what_was_won() {
-        let mut m = MissionView { hero_name: "Webby".into(), hero_level: 4, state: "victory".into(), ..Default::default() };
+        let mut m =
+            MissionView { hero_name: "Webby".into(), hero_level: 4, state: "victory".into(), ..Default::default() };
         m.found = 1;
         m.words_eaten = 2;
         let (t, s) = end_title_text(&m);
         assert_eq!(t, "VICTORY");
-        assert_eq!(s, "The desktop is yours  \u{b7}  Webby reached level 4  \u{b7}  found 1 piece of armour  \u{b7}  2 words devoured");
+        assert_eq!(
+            s,
+            "The desktop is yours  \u{b7}  Webby reached level 4  \u{b7}  found 1 piece of armour  \u{b7}  2 words devoured"
+        );
         m.state = "defeat".into();
         m.found = 0;
         m.words_eaten = 1;
-        assert_eq!(end_title_text(&m).1, "Webby has fallen  \u{b7}  level, XP and loot are kept  \u{b7}  1 word devoured");
+        assert_eq!(
+            end_title_text(&m).1,
+            "Webby has fallen  \u{b7}  level, XP and loot are kept  \u{b7}  1 word devoured"
+        );
+    }
+
+    #[test]
+    fn qt_line_spacing_replaces_dc_renders_at_small_pixel_sizes() {
+        let mut f = Font::new(UI_FONT, 12.0);
+        f.set_pixel_size(10);
+        assert_eq!(qt_line_spacing(&f), 12.0);
+        f.set_pixel_size(20);
+        assert_eq!(qt_line_spacing(&f), 28.0);
     }
 
     #[test]
@@ -1381,9 +1455,15 @@ mod tests {
     fn the_desktop_health_bar_flashes_and_shortens() {
         let w = window();
         let m = MissionView::default();
-        let full = painted(|p| draw_desktop_health(p, &w, &m, &SurfaceHud { desktop_hp: 1.0, intact_windows: 2, hit_flash: 0.0 }));
-        let low = painted(|p| draw_desktop_health(p, &w, &m, &SurfaceHud { desktop_hp: 0.2, intact_windows: 0, hit_flash: 0.0 }));
-        let hit = painted(|p| draw_desktop_health(p, &w, &m, &SurfaceHud { desktop_hp: 1.0, intact_windows: 2, hit_flash: 0.5 }));
+        let full = painted(|p| {
+            draw_desktop_health(p, &w, &m, &SurfaceHud { desktop_hp: 1.0, intact_windows: 2, hit_flash: 0.0 })
+        });
+        let low = painted(|p| {
+            draw_desktop_health(p, &w, &m, &SurfaceHud { desktop_hp: 0.2, intact_windows: 0, hit_flash: 0.0 })
+        });
+        let hit = painted(|p| {
+            draw_desktop_health(p, &w, &m, &SurfaceHud { desktop_hp: 1.0, intact_windows: 2, hit_flash: 0.5 })
+        });
         let banner = mission_banner_rect(&w);
         // Bar from x = banner.x + 14 + 10 + 78 + 4 ..; sample near its right end.
         let (x, y) = ((banner.x + banner.w - 40) as u32, (qbottom(banner) + 6 + 15) as u32);

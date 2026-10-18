@@ -44,7 +44,13 @@ impl Creature {
             for t in ring_tears.iter_mut() {
                 *t = rng.uniform(0.0, 1.0);
             }
-            spokes.push(NetSpoke { angle, rings, anchor: (x + angle.cos() * anchor, y + angle.sin() * anchor), tear, ring_tears });
+            spokes.push(NetSpoke {
+                angle,
+                rings,
+                anchor: (x + angle.cos() * anchor, y + angle.sin() * anchor),
+                tear,
+                ring_tears,
+            });
         }
         self.web_anchors = spokes.iter().map(|s| s.anchor).collect();
         self.web_net = spokes;
