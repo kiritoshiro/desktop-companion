@@ -593,7 +593,13 @@ checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 name = "dc-adventure"
 version = "0.1.0"
 dependencies = [
+ "dc-content",
  "dc-core",
+ "dc-state",
+ "dc-world",
+ "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -609,6 +615,15 @@ dependencies = [
  "dc-ui",
  "env_logger",
  "log",
+]
+
+[[package]]
+name = "dc-art"
+version = "0.1.0"
+dependencies = [
+ "dc-content",
+ "dc-core",
+ "dc-render",
 ]
 
 [[package]]
@@ -645,6 +660,7 @@ version = "0.1.0"
 dependencies = [
  "dc-core",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -658,20 +674,28 @@ dependencies = [
 name = "dc-paint"
 version = "0.1.0"
 dependencies = [
+ "dc-content",
  "dc-core",
+ "dc-kinematics",
+ "dc-render",
+ "dc-state",
 ]
 
 [[package]]
 name = "dc-platform"
 version = "0.1.0"
 dependencies = [
+ "bytemuck",
  "dc-core",
  "log",
+ "pollster",
  "raw-window-handle",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.21",
  "tray-icon",
+ "wgpu",
  "windows",
  "winit",
 ]
@@ -695,6 +719,7 @@ dependencies = [
 name = "dc-state"
 version = "0.1.0"
 dependencies = [
+ "dc-content",
  "dc-core",
  "log",
  "serde",
@@ -706,13 +731,14 @@ dependencies = [
 name = "dc-ui"
 version = "0.1.0"
 dependencies = [
+ "dc-adventure",
  "dc-content",
  "dc-core",
- "dc-render",
  "dc-state",
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "image",
  "log",
  "serde",
  "serde_json",
@@ -724,6 +750,8 @@ name = "dc-world"
 version = "0.1.0"
 dependencies = [
  "dc-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

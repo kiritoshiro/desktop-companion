@@ -17,7 +17,8 @@ reference and keeps working until the Rust build reaches parity.
 | `dc-creature` | `creature/*` simulation: mood, perception, phase scheduler, arbiter, expression, behaviour, `Creature` | core, content, state, kinematics, world |
 | `dc-world` | `world/*`: playfield, screen layout, tactics, webs, flies, mouse webs, bases, cages, carcasses, aimed silk | core, content |
 | `dc-manager` | `manager/*`: `CreatureManager` | creature, world, … |
-| `dc-paint` | Every painter (`render_procedural`, sprites, armour art, webs, flies, bases, mission art, HUD) onto `dc-render` | render, creature, world |
+| `dc-paint` | Creature and world painters (`render_procedural`, sprites, batching, tint, regal, armour art, web net, damage numbers, labels; webs, flies, mouse webs, bases, cages, carcasses; the manager's layer order) onto `dc-render`, from plain snapshot structs | render, kinematics, content |
+| `dc-art` | Mission and menu art: `mission_art`, `mission_backdrop`, `map_art`, `skill_art`, `mission_ui` HUD, `desktop_surface`, `screen_text`, `tools/generate_ui_art.py` | render, content |
 | `dc-adventure` | `app/` Qt-free game logic: campaign, map layouts, custom maps, controls, armoury, adventure profile, encounters, mission, swarm, reclaim | world, creature, manager |
 | `dc-ui` | egui windows: settings (`config_ui`), mode menu, character/inspector/armour, controls editor, admin, map editor, wood theme | content, state, render |
 | `dc-app` | The binary: settings process and `--engine` overlay process (`app/engine.py`) | everything |

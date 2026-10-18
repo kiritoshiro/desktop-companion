@@ -6,3 +6,7 @@ license.workspace = true
 
 [dependencies]
 dc-core.workspace = true
+dc-content.workspace = true
+dc-state.workspace = true
+dc-kinematics.workspace = true
+dc-render.workspace = true

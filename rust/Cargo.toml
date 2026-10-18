@@ -22,6 +22,7 @@ dc-manager = { path = "crates/dc-manager" }
 dc-paint = { path = "crates/dc-paint" }
 dc-adventure = { path = "crates/dc-adventure" }
 dc-ui = { path = "crates/dc-ui" }
+dc-art = { path = "crates/dc-art" }
 
 # External crates (one version for the whole workspace; do not add new ones
 # without coordinating, so Cargo.lock stays stable while agents work in parallel)
