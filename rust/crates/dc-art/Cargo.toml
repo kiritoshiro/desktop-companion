@@ -8,3 +8,7 @@ license.workspace = true
 dc-core.workspace = true
 dc-content.workspace = true
 dc-render.workspace = true
+log.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

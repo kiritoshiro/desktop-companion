@@ -624,6 +624,8 @@ dependencies = [
  "dc-content",
  "dc-core",
  "dc-render",
+ "log",
+ "serde_json",
 ]
 
 [[package]]
@@ -651,7 +653,15 @@ dependencies = [
 name = "dc-creature"
 version = "0.1.0"
 dependencies = [
+ "dc-adventure",
+ "dc-content",
  "dc-core",
+ "dc-kinematics",
+ "dc-state",
+ "dc-world",
+ "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -679,6 +689,8 @@ dependencies = [
  "dc-kinematics",
  "dc-render",
  "dc-state",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -749,6 +761,7 @@ dependencies = [
 name = "dc-world"
 version = "0.1.0"
 dependencies = [
+ "dc-content",
  "dc-core",
  "serde",
  "serde_json",

@@ -6,3 +6,11 @@ license.workspace = true
 
 [dependencies]
 dc-core.workspace = true
+dc-content.workspace = true
+dc-state.workspace = true
+dc-kinematics.workspace = true
+dc-world.workspace = true
+dc-adventure.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
