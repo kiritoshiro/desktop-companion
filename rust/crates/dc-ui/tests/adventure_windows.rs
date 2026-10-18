@@ -80,6 +80,8 @@ fn missions_are_listed_and_the_maps_open_one_by_one() {
     h.probe("map:ember:play");
     h.probe("map:obsidian:locked");
     h.assert_label("Win \u{201c}Ember hollow\u{201d} to unlock");
+    let card = h.probe("map:ember");
+    assert!(card.right() <= 1200.0 && card.width() <= 240.0, "cards fit the window: {card:?}");
     let actions = h.click("map:ember:play", &mut shell_frame(&mut shell));
     assert!(actions.contains(&UiAction::PlayMap { map_id: "ember".into() }));
 }

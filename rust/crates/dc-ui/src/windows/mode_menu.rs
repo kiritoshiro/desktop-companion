@@ -400,6 +400,22 @@ impl ModeShell {
         });
     }
 
+    /// One row of mission cards, each in a fixed 232px column, centred.
+    fn card_row(ui: &mut Ui, count: usize, mut card: impl FnMut(&mut Ui, usize)) {
+        let column = 232.0;
+        let full = MISSION_COLUMNS as f32 * column + (MISSION_COLUMNS as f32 - 1.0) * 12.0;
+        ui.allocate_ui_with_layout(vec2(full, 0.0), Layout::left_to_right(Align::Min), |ui| {
+            ui.spacing_mut().item_spacing.x = 12.0;
+            for i in 0..count {
+                ui.allocate_ui_with_layout(vec2(column, 0.0), Layout::top_down(Align::Min), |ui| {
+                    ui.set_max_width(column);
+                    card(ui, i);
+                });
+            }
+        });
+        ui.add_space(12.0);
+    }
+
     fn heading(ui: &mut Ui, text: &str) {
         ui.vertical_centered(|ui| {
             let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
@@ -446,26 +462,16 @@ impl ModeShell {
                 });
                 Self::heading(ui, "Skirmish missions");
                 let maps = self.adventure.maps.clone();
-                egui::Grid::new("missions").spacing(vec2(12.0, 12.0)).show(ui, |ui| {
-                    for (index, map) in maps.iter().enumerate() {
-                        self.mission_card(ui, map, actions);
-                        if index % MISSION_COLUMNS == MISSION_COLUMNS - 1 {
-                            ui.end_row();
-                        }
-                    }
-                });
+                for row in maps.chunks(MISSION_COLUMNS) {
+                    Self::card_row(ui, row.len(), |ui, i| self.mission_card(ui, &row[i], actions));
+                }
                 // Maps made in the map editor.
                 let customs = self.adventure.custom_maps.clone();
                 if !customs.is_empty() {
                     Self::heading(ui, "Your maps");
-                    egui::Grid::new("custom-maps").spacing(vec2(12.0, 12.0)).show(ui, |ui| {
-                        for (index, data) in customs.iter().enumerate() {
-                            self.custom_card(ui, data, actions);
-                            if index % MISSION_COLUMNS == MISSION_COLUMNS - 1 {
-                                ui.end_row();
-                            }
-                        }
-                    });
+                    for row in customs.chunks(MISSION_COLUMNS) {
+                        Self::card_row(ui, row.len(), |ui, i| self.custom_card(ui, &row[i], actions));
+                    }
                 }
                 ui.add_space(8.0);
                 self.setup_card(ui, actions);
