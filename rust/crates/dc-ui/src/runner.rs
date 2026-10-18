@@ -33,6 +33,25 @@ pub trait WindowApp {
         }
         keep
     }
+    /// Called about every [`POLL_INTERVAL`], also while the window is hidden
+    /// (a hidden window gets no frames): watch a child process, a channel.
+    fn poll(&mut self) -> PollOutcome {
+        PollOutcome::default()
+    }
+    /// The window's close button, before the loop ends.
+    fn on_close(&mut self) {}
+}
+
+/// How often [`WindowApp::poll`] runs.
+pub const POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// What a [`WindowApp::poll`] asks of the window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PollOutcome {
+    /// Draw a frame.
+    pub repaint: bool,
+    /// Show (`Some(true)`, also raised and focused) or hide the window.
+    pub visible: Option<bool>,
 }
 
 /// How to open the window.
@@ -96,6 +115,7 @@ pub fn run_window_with(options: RunOptions, app: impl WindowApp) -> Result<(), R
         error: None,
         set_up: false,
         next_repaint: None,
+        next_poll: Instant::now(),
     };
     event_loop.run_app(&mut host).map_err(|e| RunError::EventLoop(e.to_string()))?;
     match host.error {
@@ -115,6 +135,19 @@ struct Host<A: WindowApp> {
     error: Option<RunError>,
     set_up: bool,
     next_repaint: Option<Instant>,
+    next_poll: Instant,
+}
+
+/// The window commands an app may send with `ctx.send_viewport_cmd`.
+fn apply_viewport_commands(window: &Window, commands: &[egui::ViewportCommand]) {
+    for command in commands {
+        match command {
+            egui::ViewportCommand::Visible(v) => window.set_visible(*v),
+            egui::ViewportCommand::Minimized(m) => window.set_minimized(*m),
+            egui::ViewportCommand::Focus => window.focus_window(),
+            _ => {}
+        }
+    }
 }
 
 /// Drive a future to completion on this thread (wgpu's native futures are
@@ -170,6 +203,9 @@ impl<A: WindowApp> Host<A> {
             Vec::new(),
             &window,
         );
+        if let Some(out) = full.viewport_output.get(&ViewportId::ROOT) {
+            apply_viewport_commands(&window, &out.commands);
+        }
         let delay = full.viewport_output.get(&ViewportId::ROOT).map(|v| v.repaint_delay).unwrap_or(Duration::MAX);
         self.next_repaint = if delay == Duration::ZERO {
             window.request_redraw();
@@ -239,7 +275,10 @@ impl<A: WindowApp> ApplicationHandler for Host<A> {
             }
         }
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.app.on_close();
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
                 if let (Some(painter), Some(w), Some(h)) =
                     (self.painter.as_mut(), NonZeroU32::new(size.width), NonZeroU32::new(size.height))
@@ -260,7 +299,23 @@ impl<A: WindowApp> ApplicationHandler for Host<A> {
             event_loop.exit();
             return;
         }
-        let mut wake = self.next_repaint;
+        if Instant::now() >= self.next_poll {
+            self.next_poll = Instant::now() + POLL_INTERVAL;
+            let outcome = self.app.poll();
+            if let Some(window) = &self.window {
+                if let Some(v) = outcome.visible {
+                    window.set_visible(v);
+                    if v {
+                        window.set_minimized(false);
+                        window.focus_window();
+                    }
+                }
+                if outcome.repaint || outcome.visible == Some(true) {
+                    window.request_redraw();
+                }
+            }
+        }
+        let mut wake = Some(self.next_repaint.map_or(self.next_poll, |w| w.min(self.next_poll)));
         if let Some(limit) = self.options.exit_after {
             let end = self.started + limit;
             wake = Some(wake.map_or(end, |w| w.min(end)));

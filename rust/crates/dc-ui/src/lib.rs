@@ -30,4 +30,4 @@ pub mod widgets;
 pub mod windows;
 
 pub use action::{OverlayMode, UiAction};
-pub use runner::{RunOptions, WindowApp, run_window, run_window_with};
+pub use runner::{POLL_INTERVAL, PollOutcome, RunOptions, WindowApp, run_window, run_window_with};

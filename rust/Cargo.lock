@@ -608,6 +608,7 @@ name = "dc-app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dc-adventure",
  "dc-content",
  "dc-core",
  "dc-creature",
@@ -618,6 +619,7 @@ dependencies = [
  "dc-state",
  "dc-ui",
  "dc-world",
+ "egui",
  "env_logger",
  "log",
  "serde_json",
