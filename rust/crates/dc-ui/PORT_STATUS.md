@@ -16,7 +16,8 @@ setters (`load_preset`, `set_status`, `set_party`, `saved`, ...).
 | `app/controls_ui.py` | `windows/controls.rs` | ported | Movement, aim cone, face-mouse (disabled in turn mode), rebinding by key, modifier or mouse button with swap, Esc cancels, reset, `lock_bindings` for two players; `ControlsDialog`. |
 | `app/character_ui.py` | `windows/character.rs` | ported | `skill_tree` (Body/Fangs/Legs/Silk columns, crests, linked medallion nodes), `CharacterSheet` (badge, name, XP, Armour/Skills tabs, who buttons, doll above bag, item panel with upgrade/sell, bonuses and set lines), `CharacterDialog`, `PartyDialog` (two sheets sharing one bag), `CharacterWindow::open` (`show_party_windows`). Armoury rules are applied to the view at once and reported as actions. |
 | `app/armour_ui.py` | `windows/armour.rs` | ported | `SpiderDoll` geometry, hit zones, plaques and callouts, drag-and-drop both ways, double-click to take off, click to pick; `InventoryBag` with tier-sorted tiles, level/spare badges and tooltips. Worn pieces are tier-coloured overlays until dc-paint's `armour_art` painters are wired (`ArmourIconFn` already accepted for icons). |
-| `app/inspector_ui.py` | `windows/inspector.rs` | ported | Portrait header (`ThumbnailFn`), team chip, level badge, XP, Overview (vitals, four stat tiles, pins, team picker + typed name committed on Enter, relationships), Skill tree, Inventory & armour (doll, bag, item label, Add to bag). `InspectorView` is filled by the overlay (TODO: from dc-creature/dc-manager). |
+| `app/inspector_ui.py` | `windows/inspector.rs` | ported | Portrait header (`ThumbnailFn`), team chip, level badge, XP, Overview (vitals, four stat tiles, pins, team picker + typed name committed on Enter, relationships), Skill tree, Inventory & armour (doll, bag, item label, Add to bag). `InspectorView` is filled from the live creature by dc-app (`overlay_ui::live::inspector_view`), with a dc-paint portrait. |
+| `app/engine.py` right-click `QMenu`, `_prompt_name` | `windows/menu.rs`, `windows/prompt.rs` | ported | `WoodMenu`: the `app_qss` `QMenu` look (dark wood, walnut border, 22 px emblems, oak highlight, check indicators, disabled bold title, separators); submenus open in place; tooltips are shown in a parchment strip at the bottom (a pop-up as small as the menu would clip a tooltip); Esc, arrows, Enter. `TextPrompt` is `QInputDialog.getText`. dc-app builds the entries (`overlay_ui::context_menu`). |
 | `app/adventure_ui.py` | `windows/adventure.rs` | partial | `PauseDialog`, `AdventureSettingsDialog`, `short_binding`, `hud_rect` ported. `draw_hud`, `_board`, `_well` paint the overlay and belong to dc-paint. |
 | `app/admin_ui.py` | `windows/admin.rs` | ported | The window. Its profile edits (`reset_progress`, `give_amber`, ...) are dc-adventure's (`admin.rs`) and arrive as actions. |
 | `app/map_editor.py` | `windows/map_editor.rs` | ported | Two-screen canvas with drag to move (and to the second screen), Map/Buildings/Enemies/Boss tabs, `SpiderEditor`, guards (max 8), problems line, New/Save/Delete (confirmed)/Save and play/Close. Rules (`clean_map`, `problems`, `new_map`) are dc-adventure's. Building pictures are placeholders until dc-paint's `building_art`. |
@@ -32,13 +33,24 @@ jobs, palettes, body plans, enemy kinds), `progression_catalog` and
 checks they equal the real ones, and that `teams.rs` agrees with
 `dc_state::teams`.
 
-Remaining `TODO(content)`: `InspectorView` from a live creature
-(dc-creature/dc-manager), dc-paint portraits/thumbnails/armour/map/building
-art via the callback types, and `teams.rs` could delegate to `dc_state::teams`
+Remaining `TODO(content)`: dc-paint thumbnails/map/building art via the
+callback types in the settings process (the overlay now passes live
+portraits and `armour_icon` pictures), and `teams.rs` could delegate to `dc_state::teams`
 outright (it is checked equal instead). dc-paint's `armour_icon` and dc-art's
 `building_art`/`map_art` now exist and return `dc_render` images; the app
 layer turns them into textures and passes them through `ArmourIconFn`,
 `MapPictureFn` and `ThumbnailFn` (dc-ui does not depend on dc-paint/dc-art).
+
+## Hosting in another event loop
+
+`host.rs`: `HostedWindow` is the runner's winit + egui-winit +
+`egui_wgpu::winit::Painter` stack for a window inside someone else's event
+loop (the overlay process opens its menus and dialogs this way), with one
+wgpu device shared through `GpuShare`; `headless_pass` runs a window's egui
+before the window exists so a pop-up can be sized to its content.
+`bridge::apply_profile_action` carries out the character window's actions on
+an `AdventureProfile` (no I/O) and `bridge::team_profiles` maps the manager's
+teams for the inspector.
 
 ## Runner
 
@@ -59,10 +71,12 @@ test_ingame_polish, test_inspector_ui, test_adventure_controls,
 test_local_coop, test_editor_and_admin, test_wood_theme and
 test_mission_list_and_close (window side).
 
-Result (2026-10-18): `cargo test -p dc-ui` 99 passed (58 unit, 16 adventure
-windows, 25 settings window); `cargo clippy -p dc-ui --all-targets` has no
-dc-ui warnings; the example ran with `--seconds 3` and `--page skirmish
---seconds 2` and closed itself.
+Result (2026-10-18): `cargo test -p dc-ui` 104 passed (63 unit, 16 adventure
+windows, 25 settings window; the menu, prompt and bridge additions brought
+the unit tests from 58 to 63); `cargo clippy -p dc-ui --all-targets` has no
+dc-ui warnings. The example ran earlier with `--seconds 3` and `--page
+skirmish --seconds 2` and closed itself; the hosted pop-up windows have not
+been opened on a real desktop (headless tests only).
 
 Layout fixes made while finishing: mission and custom-map cards stack top to
 bottom (a grid cell is a horizontal layout, which had spread the cards past

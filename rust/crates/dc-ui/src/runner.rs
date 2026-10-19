@@ -152,7 +152,7 @@ fn apply_viewport_commands(window: &Window, commands: &[egui::ViewportCommand]) 
 
 /// Drive a future to completion on this thread (wgpu's native futures are
 /// ready almost at once).
-fn block_on<F: std::future::Future>(future: F) -> F::Output {
+pub(crate) fn block_on<F: std::future::Future>(future: F) -> F::Output {
     use std::task::{Context, Poll, Wake, Waker};
     struct ThreadWaker(std::thread::Thread);
     impl Wake for ThreadWaker {

@@ -432,3 +432,31 @@ fn the_editor_builds_a_map_and_will_not_play_a_broken_one() {
     let actions = h.click("dialog:Yes", &mut |ctx| editor.ui(ctx));
     assert!(actions.contains(&UiAction::DeleteMap("custom-my-map".into())));
 }
+
+#[test]
+fn the_inspectors_done_button_stays_inside_the_window() {
+    let mut h = Harness::new(1200.0, 780.0);
+    let view = InspectorView {
+        key: "spider-1".into(),
+        display_name: "Bo".into(),
+        model_name: "Tarantula".into(),
+        job_name: "Guard".into(),
+        hp: 30.0,
+        max_hp: 60.0,
+        others: vec![OtherSpider { key: "spider-2".into(), name: "Mo".into(), relation: "neutral".into() }],
+        alive: true,
+        ..Default::default()
+    };
+    let mut inspector = CreatureInspector::new(view, sample::progression_catalog());
+    h.settle(&mut |ctx| inspector.ui(ctx));
+    let done = h.probe("button:Done");
+    assert!(done.right() <= 1200.0 && done.bottom() <= 780.0, "{done:?}");
+    // The two Overview columns sit side by side, each stacked top to bottom.
+    let level_pin = h.probe("check:level-pin");
+    let health_pin = h.probe("check:health-pin");
+    assert!(health_pin.top() > level_pin.top(), "{level_pin:?} {health_pin:?}");
+    assert!(level_pin.right() < h.probe("inspector:team").left());
+    assert!(h.probe("relation:spider-2").right() <= 1200.0);
+    let actions = h.click("button:Done", &mut |ctx| inspector.ui(ctx));
+    assert!(actions.contains(&UiAction::CloseWindow), "{actions:?}");
+}

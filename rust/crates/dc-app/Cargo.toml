@@ -16,6 +16,7 @@ dc-world.workspace = true
 dc-manager.workspace = true
 dc-paint.workspace = true
 dc-adventure.workspace = true
+dc-art.workspace = true
 egui.workspace = true
 anyhow.workspace = true
 env_logger.workspace = true

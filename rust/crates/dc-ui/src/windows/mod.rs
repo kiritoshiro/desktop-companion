@@ -9,7 +9,9 @@ pub mod config;
 pub mod controls;
 pub mod inspector;
 pub mod map_editor;
+pub mod menu;
 pub mod mode_menu;
+pub mod prompt;
 
 pub use admin::AdminDialog;
 pub use adventure::{AdventureSettingsDialog, PauseDialog};
@@ -19,4 +21,6 @@ pub use config::ConfigWindow;
 pub use controls::{ControlsDialog, ControlsEditor};
 pub use inspector::CreatureInspector;
 pub use map_editor::MapEditor;
+pub use menu::{MenuEntry, MenuIcon, MenuOutput, WoodMenu};
 pub use mode_menu::ModeShell;
+pub use prompt::{PromptAnswer, TextPrompt};

@@ -34,6 +34,14 @@ pub fn isolate() -> PathBuf {
     .clone()
 }
 
+/// Held by tests that write user presets into the shared state dir, or
+/// resolve preset paths that such a copy would shadow; tests in one binary
+/// run in parallel and the state dir is process-wide.
+pub fn preset_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 pub fn oracle() -> &'static Value {
     static ORACLE: OnceLock<Value> = OnceLock::new();
     ORACLE.get_or_init(|| {

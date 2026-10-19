@@ -611,8 +611,9 @@ impl ConfigWindow {
     pub fn current_settings_data(&mut self) -> Value {
         self.ensure_team_profiles();
         let mut settings = self.loaded_settings.clone();
+        // `dict.pop` keeps the order of the rest (a plain `remove` swaps).
         for retired in ["mood_mode", "social_play", "gait_style"] {
-            settings.remove(retired);
+            settings.shift_remove(retired);
         }
         settings.insert("size_scale".into(), json!(self.size_scale()));
         settings.insert("interferable".into(), json!(self.interferable));

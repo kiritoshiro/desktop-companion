@@ -9,6 +9,8 @@
 //! * [`windows`] -- one struct per window; each has
 //!   `fn ui(&mut self, ctx: &egui::Context) -> Vec<UiAction>`.
 //! * [`runner`] -- [`run_window`], a native winit + egui-wgpu host.
+//! * [`host`] -- [`host::HostedWindow`], the same stack inside another
+//!   program's event loop (the overlay's menus and dialogs).
 //! * [`model`], [`teams`], [`stat_text`] -- the view models the app fills in.
 //!
 //! dc-ui never spawns processes or writes files; the windows answer with
@@ -18,6 +20,7 @@ pub mod action;
 pub mod art;
 pub mod assets;
 pub mod bridge;
+pub mod host;
 pub mod model;
 pub mod paint;
 pub mod probe;

@@ -20,6 +20,7 @@ use dc_ui::windows::controls::ControlsDialog;
 use dc_ui::windows::map_editor::MapEditor;
 use dc_ui::{OverlayMode, PollOutcome, RunOptions, UiAction, WindowApp, bridge};
 use serde_json::Value;
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -33,6 +34,12 @@ pub trait Launcher {
     fn take_exit(&mut self) -> Option<i32>;
 }
 
+/// The overlay's arguments after the executable: the frozen build's
+/// `[exe, "--engine", "--preset", path, "--mode", mode]`.
+pub fn engine_args(preset: &Path, mode: OverlayMode) -> Vec<OsString> {
+    vec!["--engine".into(), "--preset".into(), preset.as_os_str().to_owned(), "--mode".into(), mode.as_str().into()]
+}
+
 /// This executable with `--engine` (the frozen build's command).
 #[derive(Default)]
 pub struct ProcessLauncher {
@@ -42,14 +49,8 @@ pub struct ProcessLauncher {
 impl Launcher for ProcessLauncher {
     fn launch(&mut self, preset: &Path, mode: OverlayMode) -> Result<(), String> {
         let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let mut child = std::process::Command::new(exe)
-            .arg("--engine")
-            .arg("--preset")
-            .arg(preset)
-            .arg("--mode")
-            .arg(mode.as_str())
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        let mut child =
+            std::process::Command::new(exe).args(engine_args(preset, mode)).spawn().map_err(|e| e.to_string())?;
         // Spawning succeeds whenever the executable starts; an overlay that
         // fails a moment later shows up as an exit code (DC-43).
         std::thread::sleep(Duration::from_millis(600));
@@ -84,7 +85,7 @@ impl Launcher for ProcessLauncher {
 
 /// A dialog open over the settings window.
 pub enum Dialog {
-    Character(CharacterWindow),
+    Character(Box<CharacterWindow>),
     Controls(ControlsDialog),
     MapEditor(Box<MapEditor>),
     Admin(AdminDialog),
@@ -103,6 +104,12 @@ pub struct SettingsHost<L: Launcher> {
     hidden_for_adventure: bool,
     /// Set by the handlers, read by `poll`.
     visibility: Option<bool>,
+    /// The frame that asked for Adventure hid the window before the launch
+    /// (`start_adventure` hid it before starting the overlay); shown again
+    /// unless the Adventure overlay is now running.
+    hid_for_start: bool,
+    /// The monitors for the raid setup card (dc-platform; tests pass their own).
+    screens: fn() -> Vec<ScreenInfo>,
 }
 
 impl<L: Launcher> SettingsHost<L> {
@@ -110,10 +117,18 @@ impl<L: Launcher> SettingsHost<L> {
         let catalog = bridge::settings_catalog(root.as_deref());
         let presets = bridge::presets(root.as_deref());
         let mut window = ConfigWindow::new(catalog);
-        let default = presets.iter().find(|p| p.label == "Default").cloned();
         window.set_presets(presets);
-        if let Some(data) = default.and_then(|p| dc_content::preset_io::load_preset_value(Path::new(&p.path)).ok()) {
-            window.load_preset(&data);
+        // `find_data_file("presets", "default.json", root=self.root)`; with
+        // none the window keeps its one fresh slot.
+        let default = dc_content::discovery::find_data_file(&["presets", "default.json"], root.as_deref());
+        if default.exists() {
+            match dc_content::preset_io::load_preset_value(&default) {
+                Ok(data) => {
+                    window.load_preset(&data);
+                    window.set_status(format!("Loaded preset: {}", default.display()));
+                }
+                Err(e) => window.set_status(format!("Could not load preset: {e}")),
+            }
         }
         let client = SettingsChannelClient::new(channel_name(&state_dir));
         let mut host = Self {
@@ -127,6 +142,8 @@ impl<L: Launcher> SettingsHost<L> {
             launched_preset: None,
             hidden_for_adventure: false,
             visibility: None,
+            hid_for_start: false,
+            screens: Self::system_screens,
         };
         host.refresh_adventure();
         host
@@ -146,8 +163,15 @@ impl<L: Launcher> SettingsHost<L> {
         }
     }
 
+    /// Use `screens` for the raid setup card instead of the real monitors.
+    #[cfg(test)]
+    pub fn set_screens(&mut self, screens: fn() -> Vec<ScreenInfo>) {
+        self.screens = screens;
+        self.refresh_adventure();
+    }
+
     /// The monitors for the raid setup card (`mode_menu.py`).
-    fn screens() -> Vec<ScreenInfo> {
+    fn system_screens() -> Vec<ScreenInfo> {
         let list = dc_platform::monitors::monitors();
         let primary = dc_platform::monitors::primary_index(&list);
         let states = dc_platform::screen_activity::monitor_states();
@@ -168,11 +192,11 @@ impl<L: Launcher> SettingsHost<L> {
     pub fn refresh_adventure(&mut self) {
         let profile = self.profile();
         let controls = controls_mod::load_controls(&controls_mod::controls_path(&self.state_dir));
-        let view = bridge::adventure_view(&profile, &self.state_dir, Self::screens(), &controls);
+        let view = bridge::adventure_view(&profile, &self.state_dir, (self.screens)(), &controls);
         self.window.shell.refresh_adventure(view);
         if let Some(Dialog::Character(c)) = self.dialog.as_mut() {
             let party = bridge::party_view(&profile);
-            match c {
+            match c.as_mut() {
                 CharacterWindow::Single(d) => d.set_party(party),
                 CharacterWindow::Party(d) => d.set_party(party),
             }
@@ -208,6 +232,12 @@ impl<L: Launcher> SettingsHost<L> {
         match dc_content::preset_io::save_preset_value(data, None) {
             Ok(path) => {
                 self.window.set_presets(bridge::presets(self.root.as_deref()));
+                // `preset_combo.findData(str(path))`: select what was saved
+                // when the library lists it.
+                let saved = path.to_string_lossy().into_owned();
+                if self.window.presets.iter().any(|p| p.path == saved) {
+                    self.window.preset_choice = Some(saved);
+                }
                 let applied = self.apply_live_if_running(data);
                 self.window.set_status(if applied {
                     format!("Saved your preset to {}\nApplied changes to the running overlay.", path.display())
@@ -364,9 +394,23 @@ impl<L: Launcher> SettingsHost<L> {
         true
     }
 
+    /// The saved maps for the editor's chooser (`_refresh_chooser`).
+    fn map_library(&self) -> Vec<(String, String)> {
+        custom_maps::list_maps(&self.state_dir).into_iter().map(|m| (m.id, m.title)).collect()
+    }
+
+    fn refresh_map_library(&mut self) {
+        let library = self.map_library();
+        if let Some(Dialog::MapEditor(e)) = self.dialog.as_mut() {
+            e.set_library(library);
+        }
+    }
+
     fn open_map_editor(&mut self, map_id: Option<&str>) {
         let map = map_id.and_then(|id| custom_maps::load_map(id, &self.state_dir)).map(|m| m.to_value());
-        self.dialog = Some(Dialog::MapEditor(Box::new(MapEditor::new(map.as_ref(), bridge::progression_catalog()))));
+        let mut editor = MapEditor::new(map.as_ref(), bridge::progression_catalog());
+        editor.set_library(self.map_library());
+        self.dialog = Some(Dialog::MapEditor(Box::new(editor)));
     }
 
     fn save_map(&mut self, raw: &Value) -> Option<String> {
@@ -376,6 +420,7 @@ impl<L: Launcher> SettingsHost<L> {
                 if let Some(Dialog::MapEditor(e)) = self.dialog.as_mut() {
                     e.saved(&id);
                 }
+                self.refresh_map_library();
                 self.refresh_adventure();
                 Some(id)
             }
@@ -386,8 +431,8 @@ impl<L: Launcher> SettingsHost<L> {
         }
     }
 
-    /// Carry out one action. Returns false to close the window.
-    pub fn act(&mut self, action: UiAction) -> bool {
+    /// Carry out one action.
+    pub fn act(&mut self, action: UiAction) {
         let mut profile_changed = false;
         match action {
             UiAction::SavePreset { preset } => self.save_preset(&preset),
@@ -442,11 +487,11 @@ impl<L: Launcher> SettingsHost<L> {
             }
             UiAction::OpenCharacter => {
                 let p = self.profile();
-                self.dialog = Some(Dialog::Character(CharacterWindow::open(
+                self.dialog = Some(Dialog::Character(Box::new(CharacterWindow::open(
                     bridge::party_view(&p),
                     bridge::progression_catalog(),
                     None,
-                )));
+                ))));
             }
             UiAction::OpenControls => {
                 let c = controls_mod::load_controls(&controls_mod::controls_path(&self.state_dir));
@@ -534,9 +579,10 @@ impl<L: Launcher> SettingsHost<L> {
             UiAction::SaveMap(raw) => {
                 self.save_map(&raw);
             }
+            // The editor stays open on a new map (`MapEditor.delete`).
             UiAction::DeleteMap(id) => {
                 custom_maps::delete_map(&id, &self.state_dir);
-                self.dialog = None;
+                self.refresh_map_library();
                 profile_changed = true;
             }
             UiAction::OpenMap(id) => {
@@ -552,12 +598,13 @@ impl<L: Launcher> SettingsHost<L> {
                     self.play_map(&id);
                 }
             }
+            // Only the dialogs send it: the settings window itself closes
+            // through its title bar (`WindowApp::on_close`). A dialog that
+            // already closed itself in this batch ("Save and play" sends
+            // `SaveAndPlayMap` then `CloseWindow`) leaves nothing to close.
             UiAction::CloseWindow => {
                 if self.dialog.take().is_some() {
                     profile_changed = true;
-                } else {
-                    self.on_close();
-                    return false;
                 }
             }
             // Spider and pause actions belong to the overlay's own dialogs.
@@ -566,7 +613,31 @@ impl<L: Launcher> SettingsHost<L> {
         if profile_changed {
             self.refresh_adventure();
         }
-        true
+    }
+
+    /// Carry out a frame's actions, as the runner does after drawing it.
+    pub fn handle_actions(&mut self, actions: Vec<UiAction>) {
+        let mut played = false;
+        for action in actions {
+            match action {
+                UiAction::PlayMap { .. } => played = true,
+                // The window adds this beside `PlayMap`; `play_map` already
+                // started Adventure, or refused a locked map.
+                UiAction::LaunchOverlay { mode: OverlayMode::Adventure, .. } if played => continue,
+                _ => {}
+            }
+            self.act(action);
+        }
+        if std::mem::take(&mut self.hid_for_start) && !self.hidden_for_adventure {
+            self.visibility = Some(true);
+        }
+    }
+
+    /// Will these actions start Adventure (and so hide the window first)?
+    fn starts_adventure(actions: &[UiAction]) -> bool {
+        actions.iter().any(|a| {
+            matches!(a, UiAction::LaunchOverlay { mode: OverlayMode::Adventure, .. } | UiAction::SaveAndPlayMap(_))
+        })
     }
 
     /// `update_process_status` and the channel, every poll.
@@ -627,8 +698,10 @@ impl<L: Launcher> SettingsHost<L> {
             .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
             .show(ctx, |ui| {
                 actions.extend(match dialog {
-                    Dialog::Character(CharacterWindow::Single(d)) => d.show(ui),
-                    Dialog::Character(CharacterWindow::Party(d)) => d.show(ui),
+                    Dialog::Character(c) => match c.as_mut() {
+                        CharacterWindow::Single(d) => d.show(ui),
+                        CharacterWindow::Party(d) => d.show(ui),
+                    },
                     Dialog::Controls(d) => d.show(ui),
                     Dialog::MapEditor(d) => d.show(ui),
                     Dialog::Admin(d) => d.show(ui),
@@ -639,19 +712,29 @@ impl<L: Launcher> SettingsHost<L> {
         }
         actions
     }
+
+    /// [`Self::draw`], hiding the window before an Adventure launch: the
+    /// runner applies this frame's viewport commands before it hands the
+    /// actions to [`WindowApp::handle`], so the window is gone before the
+    /// overlay starts, as `start_adventure` hid it before `launch_engine`.
+    pub fn frame(&mut self, ctx: &egui::Context) -> Vec<UiAction> {
+        let actions = self.draw(ctx);
+        if Self::starts_adventure(&actions) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            self.hid_for_start = true;
+        }
+        actions
+    }
 }
 
 impl<L: Launcher> WindowApp for SettingsHost<L> {
     fn ui(&mut self, ctx: &egui::Context) -> Vec<UiAction> {
-        self.draw(ctx)
+        self.frame(ctx)
     }
 
+    /// The window closes only through its title bar.
     fn handle(&mut self, actions: Vec<UiAction>) -> bool {
-        for action in actions {
-            if !self.act(action) {
-                return false;
-            }
-        }
+        self.handle_actions(actions);
         true
     }
 
@@ -673,3 +756,6 @@ pub fn run(state_dir: PathBuf, seconds: Option<f64>) -> Result<(), String> {
     options.exit_after = seconds.map(Duration::from_secs_f64);
     dc_ui::run_window_with(options, host).map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests;

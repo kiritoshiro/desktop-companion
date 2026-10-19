@@ -13,10 +13,13 @@
 //! that way never moves the real mouse pointer; `--snapshot` saves a screen
 //! capture of the primary monitor 3 s in (with the overlay on it).
 
+mod adventure;
 mod engine;
 mod metrics;
 mod overlay_ui;
 mod settings;
+#[cfg(test)]
+mod test_support;
 
 use std::path::PathBuf;
 use std::process::ExitCode;

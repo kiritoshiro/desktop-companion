@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use dc_adventure::adventure_profile::{self as profile_mod, AdventureProfile};
-use dc_adventure::{campaign, custom_maps};
+use dc_adventure::{armoury, campaign, custom_maps};
 use dc_content::{discovery, enemy_kinds, jobs, palettes, personality_profiles, skills};
 use dc_state::progression as prog;
 
@@ -323,6 +323,60 @@ pub fn enemy_kind_list() -> Vec<(String, String, bool)> {
     enemy_kinds::enemy_kinds().iter().map(|k| (k.id.to_owned(), k.name.to_owned(), k.boss)).collect()
 }
 
+/// The manager's team profiles (dc-state) as the inspector shows them.
+pub fn team_profiles(profiles: &dc_state::teams::TeamProfiles) -> crate::teams::TeamProfiles {
+    profiles
+        .iter()
+        .map(|(id, p)| {
+            (id.to_owned(), crate::teams::TeamProfile { id: p.id.clone(), name: p.name.clone(), color: rgb(p.color) })
+        })
+        .collect()
+}
+
+/// Carry out one character-window action on the Adventure profile with the
+/// rules of `character_ui.py` (`_rename`, `_unlock`) and `armoury.py`
+/// (`wear`, `take_off`, `upgrade`, `sell_spares`). No file is written; the
+/// caller saves when this returns true (the profile changed).
+pub fn apply_profile_action(profile: &mut AdventureProfile, action: &crate::UiAction) -> bool {
+    use crate::UiAction;
+    match action {
+        UiAction::RenameSpider { who, name } => {
+            let name = profile_mod::clean_name(Some(&serde_json::Value::String(name.clone())));
+            let entry = if who == profile_mod::HERO {
+                &mut profile.name
+            } else if who == profile_mod::PLAYER_TWO {
+                &mut profile.player_two.name
+            } else {
+                match profile.companions.iter_mut().find(|(k, _)| k == who) {
+                    Some((_, e)) => &mut e.name,
+                    None => return false,
+                }
+            };
+            if *entry == name {
+                return false;
+            }
+            *entry = name;
+            true
+        }
+        UiAction::UnlockSkill { who, ability_id } => {
+            let mut state = profile_mod::spider_progression(profile, who);
+            if !state.can_unlock(ability_id) {
+                return false;
+            }
+            let Some(node) = prog::ability_by_id(ability_id) else { return false };
+            state.skill_points -= node.cost;
+            state.unlocked_abilities.push(ability_id.clone());
+            profile_mod::store_progression(profile, who, state);
+            true
+        }
+        UiAction::Equip { who, item_id } => armoury::wear(profile, who, item_id),
+        UiAction::Unequip { who, slot } => armoury::take_off(profile, who, slot),
+        UiAction::UpgradeItem { item_id } => armoury::upgrade(profile, item_id),
+        UiAction::SellSpares { item_id, count } => armoury::sell_spares(profile, item_id, *count as i64) > 0,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,5 +449,30 @@ mod tests {
         let party = party_view(&profile);
         assert_eq!(party.members[0].who, HERO);
         assert_eq!(party.sell_prices["legendary"], 160);
+    }
+
+    #[test]
+    fn profile_actions_follow_the_armoury_rules() {
+        use crate::UiAction;
+        let mut profile = profile_mod::fresh_profile();
+        let rename = UiAction::RenameSpider { who: HERO.into(), name: "  Webster   the  Bold ".into() };
+        assert!(apply_profile_action(&mut profile, &rename));
+        assert_eq!(profile.name, "Webster the Bold");
+        assert!(!apply_profile_action(&mut profile, &rename), "the same name again changes nothing");
+        let item = profile.armoury.owned[0].clone();
+        assert!(apply_profile_action(&mut profile, &UiAction::Equip { who: HERO.into(), item_id: item.clone() }));
+        let slot = prog::armor_by_id(&item).unwrap().slot.to_owned();
+        assert_eq!(profile_mod::hero_progression(&profile).equipped.get(&slot), Some(&item));
+        assert!(apply_profile_action(&mut profile, &UiAction::Unequip { who: HERO.into(), slot }));
+        assert!(!apply_profile_action(&mut profile, &UiAction::CloseWindow));
+    }
+
+    #[test]
+    fn team_profiles_keep_names_and_colours() {
+        let raw = serde_json::json!({"porch_guard": {"name": "Porch guard"}});
+        let theirs = dc_state::teams::normalize_teams(Some(&raw), &[] as &[String]);
+        let mine = team_profiles(&theirs);
+        assert_eq!(mine["porch_guard"].name, "Porch guard");
+        assert_eq!(mine["porch_guard"].color, rgb(theirs.get("porch_guard").unwrap().color));
     }
 }

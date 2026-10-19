@@ -1,0 +1,42 @@
+{
+  "source": "src/desktop_bug/app/config_ui.py ConfigWindow.save_current_preset (offscreen)",
+  "unchanged": "{\n  \"name\": \"Default\",\n  \"slots\": [\n    {\n      \"model\": \"tarantula\",\n      \"personality\": \"bold\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-0\",\n      \"team\": \"neutral\",\n      \"job\": \"scout\",\n      \"abilities\": [\n        \"web_walk\"\n      ],\n      \"colors\": {\n        \"highlight\": [\n          185,\n          110,\n          112\n        ],\n        \"leg_dark\": [\n          2,\n          29,\n          9\n        ],\n        \"leg_tip\": [\n          0,\n          255,\n          255\n        ]\n      }\n    },\n    {\n      \"model\": \"plush_snow_hybrid_2\",\n      \"personality\": \"curious\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-1\",\n      \"team\": \"neutral\",\n      \"job\": \"webber\",\n      \"abilities\": [\n        \"web_walk\"\n      ]\n    },\n    {\n      \"model\": \"spider_fluffy_snow\",\n      \"personality\": \"balanced\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-3fe031e00ed1\",\n      \"team\": \"neutral\",\n      \"job\": \"hunter\"\n    },\n    {\n      \"model\": \"legendary_seraph_cloudweaver\",\n      \"personality\": \"balanced\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-f8390820264f\",\n      \"team\": \"neutral\",\n      \"job\": \"guard\"\n    },\n    {\n      \"model\": \"coppercurl_soft_tarantula\",\n      \"personality\": \"balanced\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-179e8d8c0663\",\n      \"team\": \"neutral\",\n      \"job\": \"builder\"\n    }\n  ],\n  \"settings\": {\n    \"size_scale\": 1.0,\n    \"interferable\": true,\n    \"flies\": {\n      \"enabled\": false,\n      \"min_interval\": 4.0,\n      \"max_interval\": 9.0,\n      \"max_flies\": 6,\n      \"spawner\": false\n    },\n    \"always_show_names\": true,\n    \"always_show_levels\": true,\n    \"always_show_health\": true,\n    \"always_show_xp\": false,\n    \"always_show_stamina\": true,\n    \"teams\": {},\n    \"team_relations\": {}\n  }\n}\n",
+  "edited": "{\n  \"name\": \"Default\",\n  \"slots\": [\n    {\n      \"model\": \"plush_snow_hybrid_2\",\n      \"personality\": \"curious\",\n      \"count\": 4,\n      \"count_random\": false,\n      \"slot_id\": \"slot-0\",\n      \"team\": \"neutral\",\n      \"job\": \"scout\",\n      \"abilities\": [\n        \"web_walk\"\n      ],\n      \"colors\": {\n        \"highlight\": [\n          185,\n          110,\n          112\n        ],\n        \"leg_dark\": [\n          2,\n          29,\n          9\n        ],\n        \"leg_tip\": [\n          0,\n          255,\n          255\n        ]\n      }\n    },\n    {\n      \"model\": \"plush_snow_hybrid_2\",\n      \"personality\": \"curious\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-1\",\n      \"team\": \"neutral\",\n      \"job\": \"webber\",\n      \"abilities\": [\n        \"web_walk\"\n      ]\n    },\n    {\n      \"model\": \"spider_fluffy_snow\",\n      \"personality\": \"cautious\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-3fe031e00ed1\",\n      \"team\": \"neutral\",\n      \"job\": \"hunter\"\n    },\n    {\n      \"model\": \"velvet_regal_jumper\",\n      \"personality\": \"balanced\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-f8390820264f\",\n      \"team\": \"neutral\",\n      \"job\": \"guard\"\n    },\n    {\n      \"model\": \"coppercurl_soft_tarantula\",\n      \"personality\": \"balanced\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-179e8d8c0663\",\n      \"team\": \"neutral\",\n      \"job\": \"builder\"\n    }\n  ],\n  \"settings\": {\n    \"size_scale\": 1.0,\n    \"interferable\": true,\n    \"flies\": {\n      \"enabled\": false,\n      \"min_interval\": 4.0,\n      \"max_interval\": 9.0,\n      \"max_flies\": 6,\n      \"spawner\": false\n    },\n    \"always_show_names\": true,\n    \"always_show_levels\": true,\n    \"always_show_health\": true,\n    \"always_show_xp\": false,\n    \"always_show_stamina\": true,\n    \"teams\": {},\n    \"team_relations\": {}\n  }\n}\n",
+  "colony": "{\n  \"name\": \"Colony\",\n  \"slots\": [\n    {\n      \"model\": \"plush_snow_hybrid\",\n      \"personality\": \"balanced\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-0\",\n      \"team\": \"pack_a\",\n      \"job\": \"builder\"\n    },\n    {\n      \"model\": \"tarantula\",\n      \"personality\": \"cautious\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-1\",\n      \"team\": \"pack_a\",\n      \"job\": \"guard\"\n    },\n    {\n      \"model\": \"blue_jewel\",\n      \"personality\": \"curious\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-2\",\n      \"team\": \"pack_a\",\n      \"job\": \"scout\"\n    },\n    {\n      \"model\": \"moss_velvet_orbweaver\",\n      \"personality\": \"webber\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-3\",\n      \"team\": \"pack_a\",\n      \"job\": \"webber\"\n    },\n    {\n      \"model\": \"spider\",\n      \"personality\": \"bold\",\n      \"count\": 1,\n      \"count_random\": false,\n      \"slot_id\": \"slot-4\",\n      \"team\": \"rivals\",\n      \"job\": \"hunter\"\n    }\n  ],\n  \"settings\": {\n    \"size_scale\": 1.0,\n    \"interferable\": true,\n    \"flies\": {\n      \"enabled\": true,\n      \"min_interval\": 4.0,\n      \"max_interval\": 9.0,\n      \"max_flies\": 6,\n      \"spawner\": true\n    },\n    \"teams\": {\n      \"pack_a\": {\n        \"name\": \"Home colony\",\n        \"color\": \"#4fa3d1\"\n      },\n      \"rivals\": {\n        \"name\": \"Intruders\",\n        \"color\": \"#d1534f\"\n      }\n    },\n    \"team_relations\": {\n      \"pack_a\": {\n        \"rivals\": \"foe\"\n      }\n    },\n    \"always_show_names\": true,\n    \"always_show_levels\": true,\n    \"always_show_health\": true,\n    \"always_show_xp\": false,\n    \"always_show_stamina\": true\n  }\n}\n",
+  "reset_input": {
+    "schema_version": 3,
+    "launch": 7,
+    "creatures": {
+      "spider-abc": {
+        "name": "Shelob",
+        "progression": {
+          "level": 7,
+          "xp": 900.0
+        }
+      }
+    },
+    "bases": [
+      {
+        "site": "porch",
+        "build_progress": 80.0
+      }
+    ],
+    "scene": {
+      "cages": [
+        {
+          "x": 10,
+          "y": 20,
+          "w": 200,
+          "h": 150
+        }
+      ],
+      "webs": [],
+      "extra": [
+        1
+      ]
+    },
+    "unknown_top_level": true
+  },
+  "reset": "{\n  \"schema_version\": 3,\n  \"launch\": 7,\n  \"creatures\": {},\n  \"bases\": [],\n  \"scene\": {\n    \"cages\": [\n      {\n        \"x\": 10,\n        \"y\": 20,\n        \"w\": 200,\n        \"h\": 150\n      }\n    ],\n    \"webs\": [],\n    \"nests\": []\n  }\n}\n",
+  "jumper_skin": "velvet_regal_jumper"
+}

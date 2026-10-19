@@ -42,7 +42,8 @@ pub struct OtherSpider {
 
 /// One live spider as the inspector shows it (`progression_snapshot` and friends).
 ///
-/// TODO(content): fill from `dc_creature::Creature` / `dc_manager` once they land.
+/// The overlay fills it from the live `dc_creature::Creature` in the
+/// manager (dc-app `overlay_ui::live::inspector_view`).
 #[derive(Clone, Debug, Default)]
 pub struct InspectorView {
     pub key: String,
@@ -288,7 +289,9 @@ impl CreatureInspector {
     fn overview(&mut self, ui: &mut Ui, actions: &mut Vec<UiAction>) {
         let half = (ui.available_width() - 14.0) / 2.0;
         ui.horizontal_top(|ui| {
-            ui.allocate_ui(vec2(half, 0.0), |ui| {
+            // Each column stacks top to bottom (`allocate_ui` alone would inherit
+            // the row's left-to-right layout and spread the panel sideways).
+            ui.allocate_ui_with_layout(vec2(half, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                 theme::sheet_panel().show(ui, |ui| {
                     ui.set_width(half - 30.0);
                     widgets::brass_title(ui, "Vitals", 13.0);
@@ -332,7 +335,9 @@ impl CreatureInspector {
                     }
                 });
             });
-            ui.allocate_ui(vec2(half, 0.0), |ui| {
+            // Each column stacks top to bottom (`allocate_ui` alone would inherit
+            // the row's left-to-right layout and spread the panel sideways).
+            ui.allocate_ui_with_layout(vec2(half, 0.0), egui::Layout::top_down(egui::Align::Min), |ui| {
                 theme::sheet_panel().show(ui, |ui| {
                     ui.set_width(half - 30.0);
                     widgets::brass_title(ui, "Team", 13.0);

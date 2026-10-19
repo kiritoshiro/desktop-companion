@@ -447,6 +447,7 @@ fn small_preset(name: &str, model: &str) -> Value {
 #[test]
 fn a_relative_preset_path_resolves_in_a_source_build() {
     isolate();
+    let _presets = common::preset_lock();
     let resolved = resolve_preset_path(Path::new("presets/colony.json"));
     assert!(resolved.is_file(), "{}", resolved.display());
     assert_eq!(
@@ -480,6 +481,7 @@ fn shipped_presets_are_detected_case_insensitively() {
 #[test]
 fn saving_never_touches_a_shipped_preset_and_user_copies_shadow() {
     isolate();
+    let _presets = common::preset_lock();
     let shipped = root().join("presets");
     let before = std::fs::read(shipped.join("default.json")).unwrap();
     let saved = save_preset_value(&small_preset("Default", "tarantula"), None).unwrap();

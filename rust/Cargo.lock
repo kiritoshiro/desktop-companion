@@ -609,6 +609,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dc-adventure",
+ "dc-art",
  "dc-content",
  "dc-core",
  "dc-creature",
