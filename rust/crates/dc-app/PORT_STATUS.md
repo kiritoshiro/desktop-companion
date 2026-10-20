@@ -43,6 +43,23 @@ real settings window against the overlay's end). Tests
 that touch dc-content's process-wide state-dir override hold
 `test_support::state_lock()`; the others pass their folder explicitly.
 
+## Live run 2026-10-21 (release build, 2560x1440 main + 3840x2160, both 100%)
+
+Seen working: the settings window (mode menu; fixed: third card cut off,
+window not centred), Play Adventure from it (a 2 min territory raid at
+59.5 fps, map key, defeat recorded in the profile only), the Companion
+overlay on the GPU (5 spiders on both monitors, labels and bars), the live
+channel against the real overlay (state on connect, pushed preset applied
+at once, stop in 179 ms with the colony saved), `--software` (draws, but 99%
+of a core at 51.6 fps: whole-desktop repaints), Reclaim on both monitors
+(item 4: the frozen picture lines up, no overlay in it), the wallpaper
+decoded, and the packaged build from outside the repository. With 40
+spiders the overlay used 22% of a core at 59.8 fps; Python 84% (fps not
+logged). Two Reclaim starts saw one screen while the 4K monitor was waking
+(Kernel-Power 566); later runs saw both.
+
+Still needs someone at the mouse: items 1-3, 5-7 and 9-21 below.
+
 ## Owner should check live (not verifiable headlessly)
 
 Adventure:
