@@ -674,15 +674,20 @@ fn accept_loop(path: Vec<u16>, first: OwnedHandle, shared: Arc<ServerShared>, st
             move || shared.emit(ServerEvent::ClientDisconnected(id))
         };
         // Report the connection before the reader can report its first
-        // message, as Qt's newConnection preceded readyRead.
+        // message, as Qt's newConnection preceded readyRead. The client
+        // table stays locked from the event until the client is in it, so a
+        // broadcast made on the event (Python's `client_connected` handler)
+        // waits for it instead of reaching nobody.
+        let mut clients = shared.clients.lock().ok();
         shared.emit(ServerEvent::ClientConnected(id));
         match Connection::start(pipe, true, on_message, on_close) {
             Ok(conn) => {
-                if let Ok(mut clients) = shared.clients.lock() {
+                if let Some(clients) = clients.as_mut() {
                     clients.insert(id, conn);
                 }
             }
             Err(e) => {
+                drop(clients);
                 log::warn!(target: "live_channel", "Could not serve a live-channel client: {e}");
                 shared.emit(ServerEvent::ClientDisconnected(id));
             }
@@ -974,6 +979,25 @@ mod tests {
         // After close the name is free again.
         assert!(rival.listen());
         rival.close();
+    }
+
+    #[test]
+    fn a_broadcast_on_client_connected_reaches_that_client() {
+        let name = unique_name("welcome");
+        let mut server = OverlayChannelServer::new(&name);
+        assert!(server.listen());
+        for round in 0..25 {
+            let mut client = SettingsChannelClient::new(&name);
+            assert!(client.try_connect(500), "round {round}: no connection");
+            let connected = server.recv_timeout(Duration::from_secs(2));
+            assert!(matches!(connected, Some(ServerEvent::ClientConnected(_))), "round {round}: {connected:?}");
+            // What the overlay does on the event: welcome the new window.
+            assert_eq!(server.broadcast(&ChannelMessage::Hello.to_map()), 1, "round {round}: nobody to welcome");
+            client.close();
+            assert!(wait_for(|| (server.client_count() == 0).then_some(())).is_some(), "round {round}");
+            let _ = server.poll();
+        }
+        server.close();
     }
 
     #[test]

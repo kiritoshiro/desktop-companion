@@ -15,6 +15,7 @@
 
 mod adventure;
 mod engine;
+mod live;
 mod metrics;
 mod overlay_ui;
 mod settings;

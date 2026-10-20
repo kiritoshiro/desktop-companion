@@ -16,13 +16,16 @@
 //! manager every tick before `frame`, applies every [`EngineCommand`] in
 //! [`Engine::apply_command`], and keeps the tray's check marks current.
 //!
-//! Not ported yet: the live channel to the settings window, camouflage
-//! sampling, partial repaints, DPI scaling (everything is in physical
-//! pixels).
+//! The live channel to the settings window is [`LiveChannel`]; the preset
+//! file and the stop-request file stay polled as its fallbacks.
+//!
+//! Not ported yet: camouflage sampling, partial repaints, DPI scaling
+//! (everything is in physical pixels).
 
 use crate::adventure::draw::AdventureDrawer;
 use crate::adventure::screens::{self, PlayableScreens};
 use crate::adventure::{AdventureGame, Effect, StartOptions, input};
+use crate::live::LiveChannel;
 use crate::metrics::FontLabelMetrics;
 use crate::overlay_ui::{
     AdventureContext, EngineCommand, OverlayUi, UiRequest, apply_overlay_action, apply_spider_action, initial_status,
@@ -87,6 +90,8 @@ struct Engine {
     ui: OverlayUi,
     rng: PyRandom,
     tray: Option<Tray>,
+    /// The settings window's live channel (`_channel_server`).
+    channel: Option<LiveChannel>,
     policy: FramePolicy,
     /// The frame rate running now (the policy may run below the target).
     fps: f64,
@@ -297,6 +302,32 @@ impl Engine {
             tray.set_text("status", message);
             tray.show_message("Desktop Bug Companion", message, MessageIcon::Information, ANNOUNCE_MS);
         }
+        self.broadcast_session_state();
+    }
+
+    /// `_broadcast_session_state`.
+    fn broadcast_session_state(&mut self) {
+        let Some(channel) = self.channel.take() else { return };
+        self.with_manager(|m, _| channel.broadcast(m));
+        self.channel = Some(channel);
+    }
+
+    /// `_on_channel_message`: what the settings window pushed since the last
+    /// pass. False when it asked the overlay to stop.
+    fn service_channel(&mut self, el: &ActiveEventLoop) -> bool {
+        let Some(mut channel) = self.channel.take() else { return true };
+        let done = self.with_manager(|m, rng| channel.service(m, rng)).unwrap_or_default();
+        self.channel = Some(channel);
+        if done.preset_applied {
+            // Keep the file poll from applying the same content again.
+            self.preset_mtime = dc_platform::session_control::file_mtime(&self.preset);
+        }
+        if done.stop {
+            log::info!("Stop requested over the live channel");
+            self.quit(el);
+            return false;
+        }
+        true
     }
 
     /// `set_target_fps`: the ceiling the frame policy works from (10..60).
@@ -335,6 +366,9 @@ impl Engine {
             && let Err(e) = m.borrow_mut().save_runtime_state()
         {
             log::warn!("Could not save on quit: {e}");
+        }
+        if let Some(channel) = self.channel.as_mut() {
+            channel.close();
         }
         el.exit();
     }
@@ -735,6 +769,7 @@ impl ApplicationHandler for Engine {
             return;
         }
         self.create_tray();
+        self.channel = Some(LiveChannel::open(&self.state_dir, &self.preset, self.adventure()));
         self.start = Instant::now();
         self.last_tick = self.start;
         self.next_tick = self.start;
@@ -788,7 +823,7 @@ impl ApplicationHandler for Engine {
             return;
         }
         self.poll_tray(el);
-        if self.exiting {
+        if self.exiting || !self.service_channel(el) {
             return;
         }
         let events = self.overlay.as_ref().map(|o| o.drain_events()).unwrap_or_default();
@@ -843,6 +878,7 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
         ui,
         rng,
         tray: None,
+        channel: None,
         policy: FramePolicy::new(fps),
         fps,
         target_fps: fps,
@@ -871,6 +907,7 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
     );
     // The UI's windows, GPU objects, then the overlay window.
     engine.ui = OverlayUi::with_state_dir(engine.state_dir.clone());
+    engine.channel = None;
     engine.drawer = None;
     engine.overlay = None;
     match engine.error {

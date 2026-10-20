@@ -534,6 +534,53 @@ fn a_second_launch_applies_live_instead_of_relaunching() {
     assert_eq!(host.window.size_scale(), 1.25);
 }
 
+/// Both ends in Rust: the settings window's live apply reaches the overlay's
+/// `LiveChannel` and its manager, and the overlay's state comes back.
+#[test]
+fn the_overlay_side_applies_what_the_window_pushes() {
+    let state = TempState::new("live-overlay");
+    let mut host = host(&state);
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    let preset = user_preset(&state, "Default.json");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let mut rng = dc_core::PyRandom::from_int(7);
+    let mut manager =
+        dc_manager::CreatureManager::new(&root, &preset, (1920.0, 1080.0), Some(7), &state.dir, false, &mut rng)
+            .expect("the launched preset loads");
+    let mut channel = crate::live::LiveChannel::open(&state.dir, &preset, false);
+    assert!(channel.is_listening());
+    let before = manager.always_show_xp;
+
+    screen.click("check:XP", &mut host);
+    screen.click("button:Save and launch overlay", &mut host);
+    assert_eq!(host.launcher.launches.len(), 1, "a running overlay was launched again");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut applied = false;
+    while !applied && Instant::now() < deadline {
+        applied = channel.service(&mut manager, &mut rng).preset_applied;
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(applied, "the pushed preset never reached the overlay");
+    assert_eq!(manager.always_show_xp, !before);
+    assert_eq!(manager.always_show_xp, host.window.label_switches["always_show_xp"]);
+
+    // The overlay's answer: what a tray toggle would publish. Earlier
+    // broadcasts (on connect, after the preset) may still be queued.
+    let names = !host.window.label_switches["always_show_names"];
+    manager.always_show_names = names;
+    channel.broadcast(&manager);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while host.window.label_switches["always_show_names"] != names && Instant::now() < deadline {
+        host.watch();
+        channel.service(&mut manager, &mut rng);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(host.window.label_switches["always_show_names"], names, "the overlay's state never came back");
+    assert_eq!(host.window.status, "Live update received from the running overlay.");
+    channel.close();
+}
+
 #[test]
 fn with_no_overlay_running_save_only_saves() {
     let state = TempState::new("save");

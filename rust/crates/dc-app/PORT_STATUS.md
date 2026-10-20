@@ -17,7 +17,7 @@ DC_ADVENTURE_FRAMES=<dir> cargo test -p dc-app frames_to_png_on_request   # Adve
 | `app/engine.py` `OverlayWindow` (Companion) | `engine.rs` | **ported**: one window over the virtual desktop (GPU on DirectComposition, `UpdateLayeredWindow` fallback), manager ticked at the frame policy's rate, global left button polled, desktop windows refreshed every 1.25 s, monitor changes, preset live-reload and stop requests (700 ms), label metrics from Segoe UI, hover, cursor capture by mouse webs (never in `--seconds` runs). **Missing:** camouflage sampling, partial repaints, the profile HUD, DPI scaling (all physical pixels). |
 | `app/engine.py` `OverlayWindow` (Adventure) | `adventure/mod.rs`, `adventure/input.rs`, `adventure/draw.rs`, `adventure/screens.rs` | **ported**: mission from the profile (`create_mission`), `mission.update` per tick, victory / defeat / Reclaim crash and blue screen, close after the end title, progress saved (never `creatures.json`); P1/P2 keys (turn-and-walk), Esc always pauses, K character, `` ` ``/`~`/VK_OEM_3 map view, F8 release as a Windows hotkey (raid paused, banner), mouse shot at the pointer, companion command buttons, HUD drag, `_adventure_captures_mouse`, NOTOPMOST + keyboard focus, controls reload. **Partial:** no free-roam (possess a spider outside a raid), so "Release spider" just resumes. |
 | `app/engine.py` `_show_context_menu`, `create_tray`, `_add_label_switches`, `_prompt_name`, `_announce` | `overlay_ui.rs`, `overlay_ui/*` (`OVERLAY_UI.md`) | **ported**: spider and overlay right-click menus, base carrying, cages, label switches, rename prompt, inspector, pause / character / controls / Adventure settings windows, Python's tray menu with live check marks and status line, balloons. |
-| `app/engine.py` live channel (`OverlayChannelServer`) | — | **missing** on the overlay side: the settings window falls back to the preset file and the stop-request file, as Python did when the channel failed to bind. |
+| `app/engine.py` live channel (`_channel_server`, `_on_channel_message`, `_apply_pushed_preset`, `_broadcast_session_state`) | `live.rs` | **ported**: one pipe server per overlay (dc-platform), serviced every loop pass; pushed presets for the running preset applied at once (and the file poll told), progress reset, stop request (save and quit), `session_state` on connect, after a pushed preset and on every announcement. Adventure honours only stop, as Python. The preset-file poll and stop-request file stay as fallbacks. |
 | `app/engine.py` `main`, `support/logging_setup.py` use | `main.rs` | **ported**: arguments, legacy state migration, logging. `--software`, `--seconds`, `--snapshot` are development additions. |
 | `app/config_ui.py` `main` and process control | `settings.rs`, `settings/tests.rs` | **ported**: dc-ui `ConfigWindow` + mode menu, launch/stop of the overlay (stop request, then kill), live channel client, preset save/load and live apply, reset progress, Adventure profile edits (map, two players, screens), the window hidden while an Adventure overlay runs. |
 | `app/character_ui.py`, `armour_ui.py`, `controls_ui.py`, `map_editor.py`, `admin_ui.py`, `inspector_ui.py`, `mode_menu.py`, `adventure_ui.py` (dialogs), `wood_theme.py` | dc-ui windows, opened by `settings.rs` and `overlay_ui` | **ported** (see dc-ui's PORT_STATUS); dc-app supplies thumbnails, portraits and armour icons from dc-paint. |
@@ -30,14 +30,16 @@ DC_ADVENTURE_FRAMES=<dir> cargo test -p dc-app frames_to_png_on_request   # Adve
 
 ## Tests
 
-`cargo test -p dc-app` (87, all headless): the Adventure engine
+`cargo test -p dc-app` (91, all headless): the Adventure engine
 (`adventure/tests.rs`: raid from the profile's map, keys move the player,
 bindings and Esc, pause and the UI hand-off, K and `ProfileChanged`, map
 view and tilde, release and hotkey, two players, mouse drag/shot/commands,
 victory/defeat recorded, Reclaim blue screen, restart, controls reload,
 menu commands, CPU-rendered frames), key mapping and capture conversion,
 the overlay UI layer (`overlay_ui/tests.rs`) and the settings process
-(`settings/tests.rs`, byte-for-byte preset saves against Python). Tests
+(`settings/tests.rs`, byte-for-byte preset saves against Python), and
+the live channel (`live.rs`: real pipe, real manager; one test drives the
+real settings window against the overlay's end). Tests
 that touch dc-content's process-wide state-dir override hold
 `test_support::state_lock()`; the others pass their folder explicitly.
 
@@ -68,3 +70,6 @@ Settings window:
 18. Non-modal dialogs: the window behind stays usable and nothing doubles.
 19. Stop can freeze the window for up to 5 s (stop request, then kill).
 20. Missing slot thumbnails (a fallback spider is drawn).
+21. Live channel: Save while the overlay runs changes the spiders at once
+    (no restart), a tray toggle shows up in the window, and Stop closes the
+    overlay quickly instead of waiting for the file poll.
