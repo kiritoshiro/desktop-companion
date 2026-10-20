@@ -13,6 +13,11 @@
 //! that way never moves the real mouse pointer; `--snapshot` saves a screen
 //! capture of the primary monitor 3 s in (with the overlay on it).
 
+// No console window beside the app in a release build, as the PyInstaller
+// build's `console=False`. Logs still go to the state folder, and to a
+// redirected stderr.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod adventure;
 mod engine;
 mod live;

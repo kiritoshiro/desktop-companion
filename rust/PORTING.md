@@ -23,6 +23,18 @@ reference and keeps working until the Rust build reaches parity.
 | `dc-ui` | egui windows: settings (`config_ui`), mode menu, character/inspector/armour, controls editor, admin, map editor, wood theme | content, state, render |
 | `dc-app` | The binary: settings process and `--engine` overlay process (`app/engine.py`) | everything |
 
+## Running and packaging
+
+- Settings window: `cargo run --release -p dc-app`; the overlay alone:
+  `cargo run --release -p dc-app -- --engine [--mode adventure] [--seconds S]`.
+  Set `DESKTOP_BUG_STATE_DIR` to a scratch folder for test runs; otherwise
+  the app shares `%LOCALAPPDATA%\DesktopBugCompanion\state` with the Python
+  app.
+- `pwsh rust/package.ps1` builds a release and packs `rust/dist/DesktopBugCompanion/`
+  (the exe beside `models`, `personalities`, `presets`, `assets`) and a zip.
+  Release builds have no console window. The exe has no embedded icon yet
+  (the windows and the tray set theirs at run time).
+
 ## Rules for everyone working in parallel
 
 1. **Stay in your crate.** Edit only files inside the crate(s) you own. Read
