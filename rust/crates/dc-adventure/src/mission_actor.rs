@@ -263,10 +263,10 @@ impl MissionActor {
                     m.layout.clamp(anchor.0 + behind.cos() * 85.0, anchor.1 + behind.sin() * 85.0, c.size() * 2.0)
                 };
                 targets.retain(|&id| distance(point(host.creature(id)), anchor) < 220.0);
-                if m.command == "attack" {
-                    if let Some(id) = m.attack_target.filter(|&id| !host.creature(id).dead()) {
-                        targets = vec![id];
-                    }
+                if m.command == "attack"
+                    && let Some(id) = m.attack_target.filter(|&id| !host.creature(id).dead())
+                {
+                    targets = vec![id];
                 }
             } else if let Some(reach) = self.aggro_range {
                 targets.retain(|&id| distance(point(host.creature(id)), point(c)) < reach);
@@ -288,10 +288,10 @@ impl MissionActor {
         }
         let mut dest = self.target.map(|id| point(host.creature(id))).unwrap_or(self.home);
         let order_point = self.order.as_ref().and_then(|o| o.point);
-        if self.target.is_none() {
-            if let Some(goal) = env.actor_goal(m, host, self) {
-                dest = goal;
-            }
+        if self.target.is_none()
+            && let Some(goal) = env.actor_goal(m, host, self)
+        {
+            dest = goal;
         }
         let c = host.creature(self.creature);
         let gap = distance(dest, point(c));

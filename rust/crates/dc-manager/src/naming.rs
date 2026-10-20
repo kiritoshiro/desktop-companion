@@ -141,17 +141,16 @@ impl CreatureManager {
     }
     pub fn set_interferable(&mut self, e: bool) {
         self.interferable = e;
-        if !e {
-            if let Some(id) = self.dragged_creature.take() {
-                if let Some(c) = self.creature_mut(id) {
-                    c.dragging = false;
-                    c.kin.motion_paused = false;
-                    c.kin.inertia_vx = 0.0;
-                    c.kin.inertia_vy = 0.0;
-                    c.kin.inertia_timer = 0.0;
-                    c.enter_idle();
-                }
-            }
+        if !e
+            && let Some(id) = self.dragged_creature.take()
+            && let Some(c) = self.creature_mut(id)
+        {
+            c.dragging = false;
+            c.kin.motion_paused = false;
+            c.kin.inertia_vx = 0.0;
+            c.kin.inertia_vy = 0.0;
+            c.kin.inertia_timer = 0.0;
+            c.enter_idle();
         }
     }
     pub fn set_size_scale(&mut self, scale: f64) {

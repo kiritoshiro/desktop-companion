@@ -245,10 +245,10 @@ impl CreatureManager {
         if let Some(name) = stored.get("name").and_then(Value::as_str) {
             c.set_name(name);
         }
-        if stored.get("progression").and_then(|p| p.get("team_id")).is_none() {
-            if let Some(t) = team {
-                c.set_team(t);
-            }
+        if stored.get("progression").and_then(|p| p.get("team_id")).is_none()
+            && let Some(t) = team
+        {
+            c.set_team(t);
         }
         c.team_stances = Some(self.team_stances.clone());
         c.team_profiles = Some(self.team_profiles.clone());

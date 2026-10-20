@@ -66,10 +66,10 @@ impl CreatureManager {
             .collect();
         let mut counts = vec![0; self.cages.len()];
         for c in &self.creatures {
-            if let Some(r) = c.cage {
-                if let Some(count) = counts.get_mut(r.id as usize) {
-                    *count += 1;
-                }
+            if let Some(r) = c.cage
+                && let Some(count) = counts.get_mut(r.id as usize)
+            {
+                *count += 1;
             }
         }
         FrameDraw {

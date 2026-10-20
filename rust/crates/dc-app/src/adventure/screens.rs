@@ -95,7 +95,7 @@ pub fn fill(paper: &image::RgbaImage, w: u32, h: u32) -> RgbaImage {
     let scaled = image::imageops::resize(paper, sw, sh, image::imageops::FilterType::Triangle);
     let cropped = image::imageops::crop_imm(&scaled, (sw - w) / 2, (sh - h) / 2, w, h).to_image();
     let mut pixels = cropped.into_raw();
-    for px in pixels.chunks_exact_mut(4) {
+    for px in pixels.as_chunks_mut::<4>().0 {
         px[3] = 255;
     }
     RgbaImage { width: w, height: h, pixels }

@@ -210,27 +210,29 @@ impl CreatureManager {
                     handled = true;
                 }
             }
-            if !handled && self.interferable {
-                if let Some(id) = self.fly_world.hit_fly_at(x, y) {
-                    self.fly_world.start_drag_fly(id, x, y);
-                    let hunters = self.fly_world.fly(id).unwrap().hunters.clone();
-                    for c in &mut self.creatures {
-                        if hunters.contains(&dc_world::CreatureId(c.id)) {
-                            c.prey = None;
-                            c.hunting_prey = false;
-                        }
+            if !handled
+                && self.interferable
+                && let Some(id) = self.fly_world.hit_fly_at(x, y)
+            {
+                self.fly_world.start_drag_fly(id, x, y);
+                let hunters = self.fly_world.fly(id).unwrap().hunters.clone();
+                for c in &mut self.creatures {
+                    if hunters.contains(&dc_world::CreatureId(c.id)) {
+                        c.prey = None;
+                        c.hunting_prey = false;
                     }
-                    self.fly_world.fly_mut(id).unwrap().hunters.clear();
-                    self.dragged_fly = Some(id);
-                    handled = true;
                 }
+                self.fly_world.fly_mut(id).unwrap().hunters.clear();
+                self.dragged_fly = Some(id);
+                handled = true;
             }
-            if !handled && self.interferable {
-                if let Some(i) = self.fly_world.hit_spawner_at(x, y) {
-                    self.fly_world.spawners[i].start_drag(x, y);
-                    self.dragged_spawner = Some(i);
-                    handled = true;
-                }
+            if !handled
+                && self.interferable
+                && let Some(i) = self.fly_world.hit_spawner_at(x, y)
+            {
+                self.fly_world.spawners[i].start_drag(x, y);
+                self.dragged_spawner = Some(i);
+                handled = true;
             }
             if !handled && hit.is_some_and(|(_, c)| c.is_none()) {
                 handled = self.start_cage_drag(x, y);

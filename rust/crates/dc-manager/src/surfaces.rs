@@ -54,10 +54,10 @@ pub fn personality_float(c: &Creature, key: &str, default: f64) -> f64 {
 pub fn personality_range(c: &Creature, key: &str, low: f64, high: f64, rng: &mut PyRandom) -> f64 {
     if let Some(v) = c.personality.get(key) {
         if let Some(a) = v.as_array() {
-            if a.len() >= 2 {
-                if let (Some(a), Some(b)) = (dc_content::util::py_float(&a[0]), dc_content::util::py_float(&a[1])) {
-                    return rng.uniform(a.min(b), a.max(b));
-                }
+            if a.len() >= 2
+                && let (Some(a), Some(b)) = (dc_content::util::py_float(&a[0]), dc_content::util::py_float(&a[1]))
+            {
+                return rng.uniform(a.min(b), a.max(b));
             }
         } else if let Some(n) = dc_content::util::py_float(v) {
             return n;
@@ -416,16 +416,17 @@ impl Context<'_> {
         if hidden && !c.dragging && c.cage.is_none() {
             c.social_target = None;
             c.desktop_hidden_timer += dt;
-            if c.desktop_hidden_timer > personality_float(c, "desktop_hidden_linger", 1.8) && !c.airborne {
-                if let Some(i) = occluder.or_else(|| self.containing(c, None, 0.0)) {
-                    (c.kin.target_x, c.kin.target_y) = self.exit_target(c, &self.surfaces[i]);
-                    c.kin.target_heading = (c.kin.target_y - c.kin.y).atan2(c.kin.target_x - c.kin.x);
-                    c.state = State::Wander;
-                    c.kin.motion_paused = false;
-                    c.kin.speed = 48.0 * c.speed_mult();
-                    c.state_timer = rng.uniform(1.0, 2.0);
-                    c.desktop_hidden_timer = 0.0;
-                }
+            if c.desktop_hidden_timer > personality_float(c, "desktop_hidden_linger", 1.8)
+                && !c.airborne
+                && let Some(i) = occluder.or_else(|| self.containing(c, None, 0.0))
+            {
+                (c.kin.target_x, c.kin.target_y) = self.exit_target(c, &self.surfaces[i]);
+                c.kin.target_heading = (c.kin.target_y - c.kin.y).atan2(c.kin.target_x - c.kin.x);
+                c.state = State::Wander;
+                c.kin.motion_paused = false;
+                c.kin.speed = 48.0 * c.speed_mult();
+                c.state_timer = rng.uniform(1.0, 2.0);
+                c.desktop_hidden_timer = 0.0;
             }
         } else {
             c.desktop_hidden_timer = 0.0;

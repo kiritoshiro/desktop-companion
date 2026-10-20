@@ -663,10 +663,10 @@ impl TerritoryMission {
         };
         progress.team_id = if ours { "adventurers" } else { "rivals" }.into();
         let mut kind = if ours { None } else { self.enemy_kind(role, rng) };
-        if let Some(s) = &chosen_spec {
-            if let Some(k) = enemy_kinds::enemy_kinds().iter().find(|k| k.id == s.kind) {
-                kind = Some(k);
-            }
+        if let Some(s) = &chosen_spec
+            && let Some(k) = enemy_kinds::enemy_kinds().iter().find(|k| k.id == s.kind)
+        {
+            kind = Some(k);
         }
         let mut colors = None;
         let mut model_id = None;
@@ -872,10 +872,10 @@ impl TerritoryMission {
                 }
             }
         }
-        if command == "defend" {
-            if let Some(id) = self.ally {
-                self.defend_point = point(host.creature(id));
-            }
+        if command == "defend"
+            && let Some(id) = self.ally
+        {
+            self.defend_point = point(host.creature(id));
         }
         let who = if self.allies.len() <= 1 { "Scout" } else { "Companions" };
         let what = match command {
@@ -939,7 +939,7 @@ impl TerritoryMission {
             let before = point(c);
             let p = self.players.iter().position(|p| p.creature == id);
             let a = self.actors.iter().position(|a| a.creature == id);
-            let struggling = p.map_or(true, |p| self.players[p].control.struggling());
+            let struggling = p.is_none_or(|p| self.players[p].control.struggling());
             // Creature.update clamps independently, including dt=0.
             let creature_dt = dt.max(0.001);
             if host.update_creature(id, creature_dt, struggling) {
@@ -1158,19 +1158,20 @@ impl TerritoryMission {
             self.sites[i].warning = 0.0;
             self.pending.retain(|e| e.0 != "hatchery");
         }
-        if !Self::NOT_FOOTHOLDS.contains(&kind.as_str()) && !self.counter_started {
-            if let Some(nest) = self.site("nest") {
-                self.counter_started = true;
-                self.pending.push(("nest".into(), "hunter".into(), true));
-                if self.map_info.tier >= 2 {
-                    self.pending.push(("nest".into(), "guard".into(), true));
-                }
-                if self.map_info.tier >= 4 {
-                    self.pending.push(("nest".into(), "weaver".into(), true));
-                }
-                self.sites[nest].warning = 4.0;
-                self.announce("Outpost secured! Counterattack from Thorn nest in 4 seconds.");
+        if !Self::NOT_FOOTHOLDS.contains(&kind.as_str())
+            && !self.counter_started
+            && let Some(nest) = self.site("nest")
+        {
+            self.counter_started = true;
+            self.pending.push(("nest".into(), "hunter".into(), true));
+            if self.map_info.tier >= 2 {
+                self.pending.push(("nest".into(), "guard".into(), true));
             }
+            if self.map_info.tier >= 4 {
+                self.pending.push(("nest".into(), "weaver".into(), true));
+            }
+            self.sites[nest].warning = 4.0;
+            self.announce("Outpost secured! Counterattack from Thorn nest in 4 seconds.");
         }
         if kind == "outpost" || kind == "infestation" {
             self.sites[i].reserves = 0;
@@ -1609,10 +1610,11 @@ impl TerritoryMission {
             pairs.push((id, spider_progression(&self.profile, PLAYER_TWO)));
         }
         for a in &self.actors {
-            if a.role == "ally" && !host.creature(a.creature).dead() {
-                if let Some(id) = &a.companion_id {
-                    pairs.push((a.creature, companion_progression(&self.profile, id)));
-                }
+            if a.role == "ally"
+                && !host.creature(a.creature).dead()
+                && let Some(id) = &a.companion_id
+            {
+                pairs.push((a.creature, companion_progression(&self.profile, id)));
             }
         }
         for (id, p) in pairs {
@@ -1636,12 +1638,11 @@ impl TerritoryMission {
         }
         let first_win = won && mission_record(&self.profile, &self.map_info.id).victories == 0;
         record_result(&mut self.profile, &self.map_info.id, won, self.elapsed);
-        if first_win {
-            if let Some(reward) = &self.map_info.reward_companion {
-                if unlock_companion(&mut self.profile, reward) {
-                    self.reward_text = format!("{} joins you", campaign::companion_by_id(reward).unwrap().name);
-                }
-            }
+        if first_win
+            && let Some(reward) = &self.map_info.reward_companion
+            && unlock_companion(&mut self.profile, reward)
+        {
+            self.reward_text = format!("{} joins you", campaign::companion_by_id(reward).unwrap().name);
         }
         self.save_progress(host);
     }
@@ -1651,10 +1652,10 @@ impl TerritoryMission {
             store_progression(&mut self.profile, PLAYER_TWO, host.creature(id).progression().clone());
         }
         for a in &self.actors {
-            if a.role == "ally" {
-                if let Some(id) = &a.companion_id {
-                    store_progression(&mut self.profile, id, host.creature(a.creature).progression().clone());
-                }
+            if a.role == "ally"
+                && let Some(id) = &a.companion_id
+            {
+                store_progression(&mut self.profile, id, host.creature(a.creature).progression().clone());
             }
         }
         if save_profile(&self.profile, &self.progress_path) {

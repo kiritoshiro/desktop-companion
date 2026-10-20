@@ -89,10 +89,10 @@ impl CreatureManager {
         if let Some(v) = settings.get("conflict") {
             self.set_conflict_enabled(py_truthy(v));
         }
-        if let Some(v) = settings.get("gait_style") {
-            if live || !v.is_null() {
-                self.set_gait_style(v.as_str().unwrap_or("classic"));
-            }
+        if let Some(v) = settings.get("gait_style")
+            && (live || !v.is_null())
+        {
+            self.set_gait_style(v.as_str().unwrap_or("classic"));
         }
         for (key, default) in dc_content::preset::LABEL_SWITCH_DEFAULTS {
             if live && settings.get(key).is_none() {

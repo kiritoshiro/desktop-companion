@@ -35,10 +35,10 @@ impl CreatureManager {
             self.fly_world.flies.iter().filter(|f| f.alive() && !f.eaten() && !f.dragging).map(|f| f.id).collect();
         if !self.flies_enabled || flies.is_empty() {
             for c in &mut self.creatures {
-                if let Some(p) = c.prey.take() {
-                    if let Some(f) = self.fly_world.fly_mut(FlyId(p.id)) {
-                        f.remove_hunter(CreatureId(c.id));
-                    }
+                if let Some(p) = c.prey.take()
+                    && let Some(f) = self.fly_world.fly_mut(FlyId(p.id))
+                {
+                    f.remove_hunter(CreatureId(c.id));
                 }
             }
             return;
@@ -88,10 +88,10 @@ impl CreatureManager {
                 }
             }
             if best != prey {
-                if let Some(p) = prey {
-                    if let Some(f) = self.fly_world.fly_mut(p) {
-                        f.remove_hunter(id);
-                    }
+                if let Some(p) = prey
+                    && let Some(f) = self.fly_world.fly_mut(p)
+                {
+                    f.remove_hunter(id);
                 }
                 if let Some(p) = best {
                     self.fly_world.fly_mut(p).unwrap().add_hunter(id);
@@ -102,15 +102,16 @@ impl CreatureManager {
     }
     pub fn creature_focus(&self, i: usize, mx: f64, my: f64) -> (f64, f64, bool) {
         let c = &self.creatures[i];
-        if let Some(f) = c.prey.and_then(|p| self.fly_world.fly(FlyId(p.id))) {
-            if f.alive() && !f.eaten() {
-                return (f.x, f.y, true);
-            }
+        if let Some(f) = c.prey.and_then(|p| self.fly_world.fly(FlyId(p.id)))
+            && f.alive()
+            && !f.eaten()
+        {
+            return (f.x, f.y, true);
         }
-        if let Some(f) = c.foe.and_then(|id| self.creature(id)) {
-            if !f.dead {
-                return (f.kin.x, f.kin.y, false);
-            }
+        if let Some(f) = c.foe.and_then(|id| self.creature(id))
+            && !f.dead
+        {
+            return (f.kin.x, f.kin.y, false);
         }
         (mx, my, false)
     }
@@ -120,16 +121,16 @@ impl CreatureManager {
             if !f.alive() || f.eaten() || f.dragging {
                 continue;
             }
-            if f.trapped() && f.tether_from.is_some() {
-                if let Some(c) = f.trapper.and_then(|id| self.creature(id.0)) {
-                    if !c.dragging {
-                        let p = (
-                            c.kin.x + c.kin.heading.cos() * c.kin.size * 0.6,
-                            c.kin.y + c.kin.heading.sin() * c.kin.size * 0.6,
-                        );
-                        self.fly_world.flies[fi].tether_from = Some(p);
-                    }
-                }
+            if f.trapped()
+                && f.tether_from.is_some()
+                && let Some(c) = f.trapper.and_then(|id| self.creature(id.0))
+                && !c.dragging
+            {
+                let p = (
+                    c.kin.x + c.kin.heading.cos() * c.kin.size * 0.6,
+                    c.kin.y + c.kin.heading.sin() * c.kin.size * 0.6,
+                );
+                self.fly_world.flies[fi].tether_from = Some(p);
             }
             let f = &self.fly_world.flies[fi];
             let mut best = None;

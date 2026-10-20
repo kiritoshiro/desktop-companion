@@ -48,36 +48,10 @@ pub fn plan_mission(profile: &AdventureProfile, state_dir: &Path, rects: &[Scree
     MissionPlan { info, layout }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn side() -> Vec<ScreenRect> {
-        vec![ScreenRect::new(0.0, 0.0, 1600.0, 1000.0), ScreenRect::new(1600.0, 0.0, 1600.0, 1000.0)]
-    }
-
-    #[test]
-    fn the_layout_follows_the_setting_and_the_monitors() {
-        assert!(!build_layout(&side(), 0, false).multi());
-        assert_eq!(build_layout(&side(), 1, true).primary().rect, side()[1]);
-        assert!(!build_layout(&side()[..1], 0, true).multi());
-        assert_eq!(build_layout(&side(), 7, false).primary().rect, side()[0]);
-    }
-
-    #[test]
-    fn reclaim_takes_its_screens_from_the_snapshot() {
-        let dir = std::env::temp_dir().join(format!("dc-factory-{}", std::process::id()));
-        let profile = AdventureProfile { selected_map: "reclaim".into(), admin: true, ..Default::default() };
-        let plan = plan_mission(&profile, &dir, &side(), 0);
-        assert_eq!(plan.info.kind, MapKind::Reclaim);
-        assert!(plan.layout.is_none());
-        let raid = plan_mission(&AdventureProfile::default(), &dir, &side(), 0);
-        assert!(raid.layout.unwrap().multi());
-    }
-}
-
 /// The constructed mode. State is plain data; the caller supplies its host and
 /// the mission RNG on every tick. Screen capture itself belongs to dc-app.
+// One mission exists at a time, so the variants' size gap costs nothing.
+#[allow(clippy::large_enum_variant)]
 pub enum Mission {
     Territory(crate::mission::TerritoryMission),
     Swarm(crate::swarm::FlySwarmMission),
@@ -173,5 +147,33 @@ pub fn create_mission(
         crate::swarm::FlySwarmMission::new(host, controls, layout, state_dir, rng).map(Mission::Swarm)
     } else {
         crate::mission::TerritoryMission::new(host, controls, layout, state_dir, rng).map(Mission::Territory)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn side() -> Vec<ScreenRect> {
+        vec![ScreenRect::new(0.0, 0.0, 1600.0, 1000.0), ScreenRect::new(1600.0, 0.0, 1600.0, 1000.0)]
+    }
+
+    #[test]
+    fn the_layout_follows_the_setting_and_the_monitors() {
+        assert!(!build_layout(&side(), 0, false).multi());
+        assert_eq!(build_layout(&side(), 1, true).primary().rect, side()[1]);
+        assert!(!build_layout(&side()[..1], 0, true).multi());
+        assert_eq!(build_layout(&side(), 7, false).primary().rect, side()[0]);
+    }
+
+    #[test]
+    fn reclaim_takes_its_screens_from_the_snapshot() {
+        let dir = std::env::temp_dir().join(format!("dc-factory-{}", std::process::id()));
+        let profile = AdventureProfile { selected_map: "reclaim".into(), admin: true, ..Default::default() };
+        let plan = plan_mission(&profile, &dir, &side(), 0);
+        assert_eq!(plan.info.kind, MapKind::Reclaim);
+        assert!(plan.layout.is_none());
+        let raid = plan_mission(&AdventureProfile::default(), &dir, &side(), 0);
+        assert!(raid.layout.unwrap().multi());
     }
 }
