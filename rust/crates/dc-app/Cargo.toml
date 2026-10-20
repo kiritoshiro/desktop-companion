@@ -18,6 +18,8 @@ dc-paint.workspace = true
 dc-adventure.workspace = true
 dc-art.workspace = true
 egui.workspace = true
+# Decoders for the Reclaim wallpaper (Python read it with QImage).
+image = { workspace = true, features = ["jpeg", "bmp"] }
 anyhow.workspace = true
 env_logger.workspace = true
 log.workspace = true

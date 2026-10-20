@@ -622,6 +622,7 @@ dependencies = [
  "dc-world",
  "egui",
  "env_logger",
+ "image",
  "log",
  "serde_json",
  "wgpu",
@@ -1764,6 +1765,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

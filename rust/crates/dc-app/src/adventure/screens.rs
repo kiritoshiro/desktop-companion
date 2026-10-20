@@ -75,6 +75,32 @@ fn image(rgba: &RgbaImage, ratio: f64) -> Option<Image> {
 /// dc-platform's capture as the frozen desktop. The wallpaper is not
 /// decoded (dc-platform has no JPEG decoder), so a broken window shows the
 /// plain desktop colour instead of the wallpaper behind it.
+/// `_wallpaper_image`: the wallpaper file, decoded.
+pub fn load_wallpaper(path: &Path) -> Result<image::RgbaImage, String> {
+    image::ImageReader::open(path)
+        .and_then(|r| r.with_guessed_format())
+        .map_err(|e| e.to_string())?
+        .decode()
+        .map(|i| i.to_rgba8())
+        .map_err(|e| e.to_string())
+}
+
+/// `_fill`: the wallpaper scaled smoothly to cover `w x h` and centre-cropped,
+/// as Windows' "Fill" and Qt's `KeepAspectRatioByExpanding`.
+pub fn fill(paper: &image::RgbaImage, w: u32, h: u32) -> RgbaImage {
+    let (pw, ph) = (paper.width().max(1) as f64, paper.height().max(1) as f64);
+    let scale = (w as f64 / pw).max(h as f64 / ph);
+    let sw = ((pw * scale).round() as u32).max(w);
+    let sh = ((ph * scale).round() as u32).max(h);
+    let scaled = image::imageops::resize(paper, sw, sh, image::imageops::FilterType::Triangle);
+    let cropped = image::imageops::crop_imm(&scaled, (sw - w) / 2, (sh - h) / 2, w, h).to_image();
+    let mut pixels = cropped.into_raw();
+    for px in pixels.chunks_exact_mut(4) {
+        px[3] = 255;
+    }
+    RgbaImage { width: w, height: h, pixels }
+}
+
 pub fn surface_snapshot(snapshot: &DesktopSnapshot) -> SurfaceSnapshot {
     let mut screens = Vec::new();
     for shot in &snapshot.screens {
@@ -96,7 +122,18 @@ pub fn surface_snapshot(snapshot: &DesktopSnapshot) -> SurfaceSnapshot {
 
 /// A picture of the playable monitors taken now (before the overlay shows).
 pub fn capture(origin: (i32, i32), list: &[MonitorInfo]) -> Option<SurfaceSnapshot> {
-    let snapshot = capture_desktop(origin, list, false)?;
+    let mut snapshot = capture_desktop(origin, list, false)?;
+    let started = std::time::Instant::now();
+    match snapshot.wallpaper_path.as_deref().map(load_wallpaper) {
+        Some(Ok(paper)) => {
+            for shot in &mut snapshot.screens {
+                shot.wallpaper = Some(fill(&paper, shot.image.width, shot.image.height));
+            }
+            log::info!("Wallpaper {}x{} filled in {:?}", paper.width(), paper.height(), started.elapsed());
+        }
+        Some(Err(e)) => log::warn!("Wallpaper not read ({e}); a broken window shows a plain desktop"),
+        None => {}
+    }
     let surface = surface_snapshot(&snapshot);
     log::info!(
         "Captured {} of {} playable screen(s): {:?}",
@@ -134,6 +171,52 @@ mod tests {
         assert_eq!(s.screens[0].image.pixel(3, 3).r, 10);
         assert_eq!(s.windows.len(), 1);
         assert!(s.window_images[0].is_some());
+    }
+
+    #[test]
+    fn the_wallpaper_fills_each_screen_like_windows() {
+        // 4:1 picture, left half red, right half blue, on a 2:1 screen: it
+        // is scaled to cover the height and the middle is kept.
+        let mut paper = image::RgbaImage::new(400, 100);
+        for (x, _, px) in paper.enumerate_pixels_mut() {
+            *px = if x < 200 { image::Rgba([255, 0, 0, 128]) } else { image::Rgba([0, 0, 255, 128]) };
+        }
+        let out = fill(&paper, 100, 50);
+        assert_eq!((out.width, out.height), (100, 50));
+        assert_eq!(out.pixels.len(), 100 * 50 * 4);
+        assert_eq!(out.pixel(5, 25), [255, 0, 0, 255], "left edge is the picture's red half, opaque");
+        assert_eq!(out.pixel(94, 25), [0, 0, 255, 255]);
+        // Only the middle 100 of 200 scaled columns: the halves meet mid-screen.
+        let mid = out.pixel(50, 25);
+        assert!(mid[0] > 0 && mid[2] > 0, "{mid:?}");
+    }
+
+    #[test]
+    fn a_png_wallpaper_decodes_and_garbage_is_an_error() {
+        let dir = std::env::temp_dir().join(format!("dc-wallpaper-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let png = dir.join("paper.png");
+        image::RgbaImage::from_pixel(8, 4, image::Rgba([1, 2, 3, 255])).save(&png).unwrap();
+        // No extension, as Windows' TranscodedWallpaper: the format is sniffed.
+        let bare = dir.join("TranscodedWallpaper");
+        std::fs::copy(&png, &bare).unwrap();
+        for path in [&png, &bare] {
+            let paper = load_wallpaper(path).unwrap();
+            assert_eq!(paper.dimensions(), (8, 4));
+        }
+        let junk = dir.join("junk.jpg");
+        std::fs::write(&junk, b"not a picture").unwrap();
+        assert!(load_wallpaper(&junk).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The real wallpaper of this machine, when there is one (JPEG on stock
+    /// Windows).
+    #[test]
+    fn this_machines_wallpaper_decodes() {
+        let Some(path) = dc_platform::desktop_capture::wallpaper_path() else { return };
+        let paper = load_wallpaper(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        assert!(paper.width() > 0 && paper.height() > 0);
     }
 
     #[test]
