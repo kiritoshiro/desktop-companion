@@ -193,7 +193,8 @@ impl Shell {
         let point = match s.placement {
             Placement::AtPoint(x, y) => Some((x.round() as i32, y.round() as i32)),
             Placement::Centered(Some((x, y))) => Some((x.round() as i32, y.round() as i32)),
-            Placement::Centered(None) => dc_platform::input::cursor_pos(),
+            // `window_placement.center_on_primary`: the main monitor.
+            Placement::Centered(None) => None,
         };
         let monitor = point
             .and_then(|(x, y)| dc_platform::monitors::monitor_at(x, y))

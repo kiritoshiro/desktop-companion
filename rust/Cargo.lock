@@ -767,6 +767,7 @@ dependencies = [
  "dc-adventure",
  "dc-content",
  "dc-core",
+ "dc-platform",
  "dc-state",
  "egui",
  "egui-wgpu",

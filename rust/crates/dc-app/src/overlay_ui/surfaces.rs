@@ -36,7 +36,7 @@ pub type SurfaceId = u64;
 pub enum Placement {
     /// A pop-up whose top-left corner is at this desktop point (physical px).
     AtPoint(f64, f64),
-    /// Centred on the monitor holding this desktop point, or the cursor's.
+    /// Centred on the monitor holding this desktop point, or the main one.
     Centered(Option<(f64, f64)>),
 }
 

@@ -238,10 +238,14 @@ impl<A: WindowApp> ApplicationHandler for Host<A> {
         {
             attributes = attributes.with_window_icon(Some(icon));
         }
+        // Hidden until it is placed, so it never shows where Windows put it.
+        attributes = attributes.with_visible(false);
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(e) => return self.fail(event_loop, RunError::Window(e.to_string())),
         };
+        center_on_primary(&window);
+        window.set_visible(true);
         let mut painter = block_on(egui_wgpu::winit::Painter::new(
             self.ctx.clone(),
             egui_wgpu::WgpuConfiguration::default(),
@@ -339,4 +343,18 @@ impl<A: WindowApp> ApplicationHandler for Host<A> {
             painter.destroy();
         }
     }
+}
+
+/// `window_placement.center_on_primary`: the whole window, frame included,
+/// in the middle of the main monitor's work area (without the taskbar).
+fn center_on_primary(window: &Window) {
+    let list = dc_platform::monitors::monitors();
+    let Some(primary) = list.get(dc_platform::monitors::primary_index(&list)) else { return };
+    let area = primary.work;
+    let frame = window.outer_size();
+    let w = (frame.width as i32).min(area.w);
+    let h = (frame.height as i32).min(area.h);
+    let x = area.x + (area.w - w) / 2;
+    let y = area.y + (area.h - h) / 2;
+    window.set_outer_position(winit::dpi::PhysicalPosition::new(x, y));
 }

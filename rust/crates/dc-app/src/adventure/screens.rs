@@ -44,7 +44,15 @@ pub fn playable(origin: (i32, i32), state_dir: &Path) -> PlayableScreens {
     let profile = load_profile(&profile_path(state_dir));
     let disabled: HashSet<String> = profile.disabled_screens.iter().cloned().collect();
     let names: Vec<String> = all.iter().map(|m| m.name.clone()).collect();
-    let keep = playable_screens(&names, primary_index(&all), &disabled, &monitor_states());
+    let states = monitor_states();
+    let keep = playable_screens(&names, primary_index(&all), &disabled, &states);
+    if keep.len() < all.len() {
+        let dropped: Vec<_> = (0..all.len())
+            .filter(|i| !keep.contains(i))
+            .map(|i| (names[i].as_str(), states.get(&names[i]), disabled.contains(&names[i])))
+            .collect();
+        log::info!("Screens left out of the mission (name, power state, switched off): {dropped:?}");
+    }
     let list: Vec<MonitorInfo> = keep.into_iter().map(|i| all[i].clone()).collect();
     let (rects, primary) = available_rects_local(origin, &list);
     let mut rects: Vec<ScreenRect> = rects.into_iter().map(|r| ScreenRect::new(r.x, r.y, r.w, r.h)).collect();
@@ -90,6 +98,12 @@ pub fn surface_snapshot(snapshot: &DesktopSnapshot) -> SurfaceSnapshot {
 pub fn capture(origin: (i32, i32), list: &[MonitorInfo]) -> Option<SurfaceSnapshot> {
     let snapshot = capture_desktop(origin, list, false)?;
     let surface = surface_snapshot(&snapshot);
+    log::info!(
+        "Captured {} of {} playable screen(s): {:?}",
+        surface.screens.len(),
+        list.len(),
+        snapshot.screens.iter().map(|s| (s.rect, s.image.width, s.image.height)).collect::<Vec<_>>()
+    );
     (!surface.screens.is_empty()).then_some(surface)
 }
 

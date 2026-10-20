@@ -721,9 +721,15 @@ pub fn carved_card<R>(ui: &mut Ui, width: f32, padding: f32, add: impl FnOnce(&m
     let inner = ui.allocate_ui_with_layout(vec2(width, 0.0), egui::Layout::top_down(egui::Align::Center), |ui| {
         ui.set_width(width);
         ui.add_space(padding);
+        // The padding alone, without the row's item spacing either side of
+        // it, or the card grows past `width` (the mode menu's third card
+        // was cut off).
+        let spacing = ui.spacing().item_spacing.x;
         let r = ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
             ui.add_space(padding);
             let r = ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.x = spacing;
                 ui.set_width(width - padding * 2.0);
                 add(ui)
             });
