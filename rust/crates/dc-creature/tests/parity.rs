@@ -27,7 +27,12 @@ fn f(v: &Value) -> f64 {
 fn build(spec: &Value, id: u64) -> Creature {
     let ctor = &spec["ctor"];
     let kw = &ctor["kw"];
-    let mut cfg = CreatureConfig::new(ctor["model"].clone(), ctor["personality"].clone(), f(&ctor["screen_w"]), f(&ctor["screen_h"]));
+    let mut cfg = CreatureConfig::new(
+        ctor["model"].clone(),
+        ctor["personality"].clone(),
+        f(&ctor["screen_w"]),
+        f(&ctor["screen_h"]),
+    );
     cfg.id = id;
     cfg.index = kw["index"].as_i64().unwrap();
     cfg.size_scale = f(&kw["size_scale"]);
@@ -146,7 +151,8 @@ fn check_init(c: &Creature, init: &Value) -> Vec<String> {
     num("damage", c.damage);
     num("armor", c.armor);
     let deck: Vec<String> = c.phase_scheduler.deck.iter().map(|p| p.as_str().to_string()).collect();
-    let py_deck: Vec<String> = init["deck"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
+    let py_deck: Vec<String> =
+        init["deck"].as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect();
     if deck != py_deck {
         bad.push(format!("init deck: rust {deck:?} python {py_deck:?}"));
     }
@@ -191,9 +197,8 @@ fn replay(name: &str) -> (usize, usize, Option<Mismatch>) {
     let mut pop = Population::from_views(creatures.iter().map(|c| c.view()));
     let mut dragging: Vec<usize> = Vec::new();
     let mut commands: Vec<Command> = Vec::new();
-    let mut web_world = data["web_seed"]
-        .as_str()
-        .map(|seed| dc_world::WebWorld::new(sw, sh, dc_core::PyRandom::from_str_seed(seed)));
+    let mut web_world =
+        data["web_seed"].as_str().map(|seed| dc_world::WebWorld::new(sw, sh, dc_core::PyRandom::from_str_seed(seed)));
     let webs_trace = data["webs"].as_array().cloned().unwrap_or_default();
     for (frame, expected) in trace.iter().enumerate() {
         let (mx, my) = (f(&path[frame][0]), f(&path[frame][1]));
@@ -266,13 +271,9 @@ fn replay(name: &str) -> (usize, usize, Option<Mismatch>) {
         if let Some(ww) = web_world.as_mut() {
             ww.update(dt, Some((mx, my)));
             let want = webs_trace[frame].as_array().unwrap();
-            let got: Vec<Value> = ww
-                .webs
-                .iter()
-                .map(|w| serde_json::json!([w.state_str(), w.progress(), w.intact_fraction()]))
-                .collect();
-            let ok = got.len() == want.len()
-                && got.iter().zip(want).all(|(g, w)| (0..3).all(|k| same(&g[k], &w[k])));
+            let got: Vec<Value> =
+                ww.webs.iter().map(|w| serde_json::json!([w.state_str(), w.progress(), w.intact_fraction()])).collect();
+            let ok = got.len() == want.len() && got.iter().zip(want).all(|(g, w)| (0..3).all(|k| same(&g[k], &w[k])));
             if !ok {
                 return (
                     frame,

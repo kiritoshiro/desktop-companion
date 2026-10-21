@@ -54,7 +54,11 @@ fn test_job_duty_outranks_the_arbiter() {
     guard.state_timer = 0.0;
     for _ in 0..30 {
         common::step(&mut guard, DT, AWAY.0, AWAY.1, &[]);
-        assert_eq!(guard.state, State::JobPatrol, "the arbiter must never run while a job is actively claiming the tick");
+        assert_eq!(
+            guard.state,
+            State::JobPatrol,
+            "the arbiter must never run while a job is actively claiming the tick"
+        );
     }
 }
 

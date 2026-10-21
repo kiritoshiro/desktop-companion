@@ -24,12 +24,10 @@ fn tick(c: &mut Creature) {
 }
 
 fn build(seed: i64) -> Creature {
-    let mut c = common::spider_with(
-        common::load_model("tarantula"),
-        common::load_personality("playful"),
-        seed,
-        |cfg| cfg.progression_id = Some(format!("roll:{seed}")),
-    );
+    let mut c =
+        common::spider_with(common::load_model("tarantula"), common::load_personality("playful"), seed, |cfg| {
+            cfg.progression_id = Some(format!("roll:{seed}"))
+        });
     c.kin.x = 800.0;
     c.kin.y = 450.0;
     c.initialize_legs();

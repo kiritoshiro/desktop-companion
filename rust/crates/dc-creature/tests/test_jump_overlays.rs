@@ -31,15 +31,10 @@ fn balanced() -> serde_json::Value {
 
 /// `_airborne(content)`: a spider hand-placed at the top of a hop.
 fn airborne() -> Creature {
-    let mut spider = common::spider_with(
-        common::load_model("tarantula"),
-        balanced(),
-        3,
-        |cfg| {
-            cfg.screen_w = 800.0;
-            cfg.screen_h = 600.0;
-        },
-    );
+    let mut spider = common::spider_with(common::load_model("tarantula"), balanced(), 3, |cfg| {
+        cfg.screen_w = 800.0;
+        cfg.screen_h = 600.0;
+    });
     spider.kin.x = 400.0;
     spider.kin.y = 300.0;
     spider.skills.set_enabled("jump", true);

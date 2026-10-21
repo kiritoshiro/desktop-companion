@@ -30,10 +30,11 @@ const SCREEN: (f64, f64) = (1200.0, 800.0);
 const AWAY: (f64, f64) = (-5000.0, -5000.0);
 
 fn spider(personality: &str, seed: i64, team: &str, x: f64, y: f64) -> Creature {
-    let mut c = common::spider_with(common::load_model("tarantula"), common::load_personality(personality), seed, |cfg| {
-        cfg.screen_w = SCREEN.0;
-        cfg.screen_h = SCREEN.1;
-    });
+    let mut c =
+        common::spider_with(common::load_model("tarantula"), common::load_personality(personality), seed, |cfg| {
+            cfg.screen_w = SCREEN.0;
+            cfg.screen_h = SCREEN.1;
+        });
     c.set_team(team);
     c.kin.x = x;
     c.kin.y = y;

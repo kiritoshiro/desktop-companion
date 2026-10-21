@@ -18,9 +18,9 @@
 
 mod common;
 
+use dc_creature::Creature;
 use dc_creature::constants::{LUNGE_REACH, RECOIL_REACH};
 use dc_creature::world::CreatureView;
-use dc_creature::Creature;
 
 const DT: f64 = 1.0 / 60.0;
 const SCREEN: (f64, f64) = (420.0, 300.0);

@@ -22,9 +22,9 @@
 
 mod common;
 
+use dc_creature::Creature;
 use dc_creature::constants::{FLEE_HEALTH_FRACTION, RALLY_HEALTH_FRACTION};
 use dc_creature::world::{BaseLookup, CreatureView, Env, Population};
-use dc_creature::Creature;
 use dc_state::progression::normalize_team_stances;
 use serde_json::json;
 use std::sync::Arc;

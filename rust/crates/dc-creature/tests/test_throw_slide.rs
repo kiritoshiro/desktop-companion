@@ -20,18 +20,14 @@ fn dist(a: (f64, f64), b: (f64, f64)) -> f64 {
 /// `Creature(model, personality, *SCREEN, index=, progression_id=)` placed at
 /// `(x, y)` with its legs initialised there.
 fn build(personality: &str, seed: i64, index: i64, progression_id: &str, x: f64, y: f64) -> Creature {
-    let mut c = common::spider_with(
-        common::load_model("tarantula"),
-        common::load_personality(personality),
-        seed,
-        |cfg| {
+    let mut c =
+        common::spider_with(common::load_model("tarantula"), common::load_personality(personality), seed, |cfg| {
             cfg.screen_w = SCREEN.0;
             cfg.screen_h = SCREEN.1;
             cfg.index = index;
             cfg.id = seed as u64 * 10 + index as u64 + 1;
             cfg.progression_id = Some(progression_id.to_string());
-        },
-    );
+        });
     c.kin.x = x;
     c.kin.y = y;
     c.initialize_legs();
@@ -71,10 +67,7 @@ fn test_slide_decelerates() {
     let third = (steps.len() / 3).max(1);
     let first_third = steps[..steps.len() / 3].iter().sum::<f64>() / third as f64;
     let last_third = steps[steps.len() - steps.len() / 3..].iter().sum::<f64>() / third as f64;
-    assert!(
-        last_third < first_third * 0.5,
-        "the slide did not decelerate: {first_third:.2} -> {last_third:.2}"
-    );
+    assert!(last_third < first_third * 0.5, "the slide did not decelerate: {first_third:.2} -> {last_third:.2}");
 
     let dx = sliding.last().unwrap().0 - sliding[0].0;
     let dy = sliding.last().unwrap().1 - sliding[0].1;
@@ -122,10 +115,7 @@ fn test_no_projected_target() {
         let mut spider = build("mellow", seed, 0, "throw:5", 400.0, 700.0);
         throw(&mut spider, 900.0, 0.0, (400.0, 700.0));
         let aimed = dist((spider.kin.x, spider.kin.y), (spider.kin.target_x, spider.kin.target_y));
-        assert!(
-            aimed < 1.0,
-            "seed {seed}: a throw aimed the spider {aimed:.0}px further along the throw heading"
-        );
+        assert!(aimed < 1.0, "seed {seed}: a throw aimed the spider {aimed:.0}px further along the throw heading");
         assert!(spider.throw_recovery > 0.0, "seed {seed}: a throw scheduled no recovery beat");
     }
 }

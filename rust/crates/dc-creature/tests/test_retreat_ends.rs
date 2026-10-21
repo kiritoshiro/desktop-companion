@@ -23,9 +23,9 @@
 
 mod common;
 
+use dc_creature::Creature;
 use dc_creature::constants::{ESCAPED_RADIUS, ESCAPED_SECONDS, THREAT_SCAN_RADIUS};
 use dc_creature::world::{BaseLookup, CreatureView, Env, Population};
-use dc_creature::Creature;
 use dc_state::progression::normalize_team_stances;
 use serde_json::json;
 use std::sync::Arc;
@@ -144,10 +144,7 @@ fn test_it_will_not_limp_home_into_the_enemy() {
         assert!(!me.dead);
     }
     let after = dist(&me, site);
-    assert!(
-        after > ESCAPED_RADIUS * 0.5,
-        "limped to {after:.0}px of a base with a foe on it (from {before:.0})"
-    );
+    assert!(after > ESCAPED_RADIUS * 0.5, "limped to {after:.0}px of a base with a foe on it (from {before:.0})");
 }
 
 #[test]

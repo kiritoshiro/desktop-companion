@@ -9,10 +9,10 @@
 use super::draw::AdventureDrawer;
 use super::input::KeyInput;
 use super::*;
+use dc_adventure::adventure::ControlledSpider;
 use dc_adventure::adventure_profile::{AdventureProfile, fresh_profile, load_profile, mission_record, save_profile};
 use dc_adventure::campaign::MapKind;
 use dc_adventure::controls::save_controls;
-use dc_adventure::adventure::ControlledSpider;
 use dc_adventure::mission::MissionSpider;
 use dc_art::mission_ui::hud_rect;
 use dc_paint::PaintSwitches;
