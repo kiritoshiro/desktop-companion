@@ -34,6 +34,9 @@ pub const NEW_TEAM_SENTINEL: &str = "__new_team__";
 pub const DEFAULT_CATEGORY_ID: &str = "tarantula";
 pub const MODEL_ICON_SIZE: f32 = 34.0;
 pub const SWATCH_ICON_SIZE: f32 = 20.0;
+/// Qt's team picker is 52 px wide: enough for its 14 px swatch and arrow.
+pub const TEAM_COMBO_WIDTH: f32 = 52.0;
+pub const TEAM_ICON_SIZE: f32 = 14.0;
 
 pub const SIZE_OPTIONS: [(&str, f64); 5] = [
     ("Tiny (60%)", 0.60),
@@ -1144,8 +1147,15 @@ impl ConfigWindow {
             vec![(teams::default_name("neutral"), "neutral".into(), teams::default_color("neutral"))];
         options.extend(self.team_profiles.values().map(|p| (p.name.clone(), p.id.clone(), p.color)));
         let mut picked = None;
-        let combo =
-            egui::ComboBox::from_id_salt(("team", &row.slot_id)).width(30.0).selected_text("").show_ui(ui, |ui| {
+        let icon_probe = format!("slot{index}:team-icon");
+        let selected_team = egui::Atom::paint(Vec2::splat(TEAM_ICON_SIZE), move |ui, args| {
+            art::team_icon(ui.painter(), args.rect, team_color);
+            probe::record(ui.ctx(), &icon_probe, args.rect);
+        });
+        let combo = egui::ComboBox::from_id_salt(("team", &row.slot_id))
+            .width(TEAM_COMBO_WIDTH)
+            .selected_text(selected_team)
+            .show_ui(ui, |ui| {
                 for (name, id, color) in &options {
                     let (rect, resp) = ui.allocate_exact_size(vec2(60.0, 20.0), Sense::click());
                     resp.widget_info(|| {
@@ -1154,7 +1164,11 @@ impl ConfigWindow {
                     if resp.hovered() || *id == row.team {
                         ui.painter().rect_filled(rect, egui::CornerRadius::same(3), TABLE_SELECTION);
                     }
-                    art::team_icon(ui.painter(), Rect::from_center_size(rect.center(), Vec2::splat(14.0)), *color);
+                    art::team_icon(
+                        ui.painter(),
+                        Rect::from_center_size(rect.center(), Vec2::splat(TEAM_ICON_SIZE)),
+                        *color,
+                    );
                     if resp.on_hover_text(name).clicked() {
                         picked = Some(id.clone());
                     }
@@ -1165,11 +1179,6 @@ impl ConfigWindow {
                 }
             });
         let team_rect = combo.response.rect;
-        art::team_icon(
-            ui.painter(),
-            Rect::from_center_size(team_rect.center() - vec2(6.0, 0.0), Vec2::splat(14.0)),
-            team_color,
-        );
         combo.response.widget_info(|| {
             egui::WidgetInfo::labeled(egui::accesskit::Role::ComboBox, true, format!("Team: {team_name}"))
         });

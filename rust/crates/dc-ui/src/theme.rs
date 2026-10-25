@@ -349,6 +349,21 @@ pub fn dialog_visuals() -> Visuals {
     v
 }
 
+/// The global style used by egui's floating areas (tooltips and popups).
+///
+/// Egui creates those areas from the context's global style rather than the
+/// scoped visuals of the widget that opened them.  The dialog style has cream
+/// non-interactive text for walnut panels, but floating areas use its light
+/// parchment `window_fill`; keeping that combination made ordinary
+/// `Response::on_hover_text` tooltips look empty.  Floating labels use ink,
+/// matching the Python `QToolTip` rule, while window contents continue to opt
+/// into [`dialog_visuals`] or [`companion_visuals`] in their own scope.
+pub fn floating_visuals() -> Visuals {
+    let mut v = dialog_visuals();
+    v.widgets.noninteractive.fg_stroke.color = TOOLTIP_TEXT;
+    v
+}
+
 /// `companion_qss`: parchment panels on an oak board, ink text, cream inputs.
 pub fn companion_visuals() -> Visuals {
     let mut v = Visuals::light();
@@ -394,7 +409,7 @@ pub fn apply_app_theme(ctx: &egui::Context) -> FontReport {
     let report = install_fonts(ctx);
     ctx.set_theme(egui::Theme::Dark);
     ctx.all_styles_mut(|style| {
-        style.visuals = dialog_visuals();
+        style.visuals = floating_visuals();
         style.spacing.item_spacing = egui::vec2(6.0, 5.0);
         style.spacing.button_padding = egui::vec2(12.0, 5.0);
         style.spacing.interact_size = egui::vec2(36.0, 24.0);
@@ -566,5 +581,22 @@ mod tests {
     fn group_tabs_have_their_colours() {
         assert_eq!(group_tab_color("launchGroup"), hex("#4f5f25"));
         assert_eq!(group_tab_color("nope"), WALNUT);
+    }
+
+    #[test]
+    fn floating_tooltips_use_parchment_and_ink() {
+        let ctx = egui::Context::default();
+        apply_app_theme(&ctx);
+        let mut seen = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let response = ui.label("tooltip owner");
+            response.show_tooltip_ui(|ui| {
+                let frame = egui::Frame::popup(ui.style());
+                seen = Some((frame.fill, frame.stroke.color, ui.visuals().text_color()));
+            });
+        });
+        output.textures_delta.clear();
+
+        assert_eq!(seen, Some((PARCHMENT, WALNUT_DEEP, TOOLTIP_TEXT)));
     }
 }

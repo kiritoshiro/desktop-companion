@@ -6,7 +6,9 @@
 mod common;
 
 use common::Harness;
-use dc_ui::windows::config::{ConfigWindow, RANDOM_CATEGORY_ID, RANDOM_MODEL_ID, SlotSpec};
+use dc_ui::windows::config::{
+    ConfigWindow, RANDOM_CATEGORY_ID, RANDOM_MODEL_ID, SlotSpec, TEAM_COMBO_WIDTH, TEAM_ICON_SIZE,
+};
 use dc_ui::windows::mode_menu::Page;
 use dc_ui::{OverlayMode, UiAction, sample};
 use serde_json::{Value, json};
@@ -102,6 +104,16 @@ fn the_team_column_shows_a_colour_and_no_words() {
     h.assert_label("Team: Porch guard");
     h.assert_label("Team: Rivals");
     h.assert_label("Team: Neutral / solo");
+    let combo = h.probe("slot0:team");
+    let icon = h.probe("slot0:team-icon");
+    assert!(combo.width() >= TEAM_COMBO_WIDTH, "team combo is only {} px wide", combo.width());
+    assert!((icon.width() - TEAM_ICON_SIZE).abs() < 0.1, "team swatch is {} px wide", icon.width());
+    assert!((icon.height() - TEAM_ICON_SIZE).abs() < 0.1, "team swatch is {} px high", icon.height());
+    assert!(
+        combo.right() - icon.right() >= 20.0,
+        "team swatch leaves only {} px for the arrow and spacing",
+        combo.right() - icon.right()
+    );
     assert!(w.team_tooltip(0).starts_with("Team: Porch guard."));
     assert!(w.team_tooltip(0).contains("Foes fight."));
     assert_eq!(dc_ui::teams::default_color("neutral"), [255, 255, 255]);
