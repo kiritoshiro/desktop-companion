@@ -60,6 +60,26 @@ logged). Two Reclaim starts saw one screen while the 4K monitor was waking
 
 Still needs someone at the mouse: items 1-3, 5-7 and 9-21 below.
 
+## Owner's live check 2026-10-25 (same setup)
+
+Found by the owner:
+- Dragging a spider also clicked the desktop under it, and right-click on
+  a spider did nothing. Cause: the DC-79 click-through check never ran.
+  Its 50 ms `WM_TIMER` (and the style and geometry timers) starve, because
+  winit always has a paint queued while the overlay draws every vsync, and
+  Windows delivers timers only when no paint is pending. The window stayed
+  `WS_EX_TRANSPARENT` all the time; dragging still worked only because the
+  left button is polled globally. Measured: the hit test was called 0 times
+  in 20 s; with `OverlayWindow::service_timers` called on every loop pass,
+  about 17 times a second.
+- Settings window: tooltip text nearly invisible; the Team colour bubble and
+  its arrow squashed.
+- Adventure plays a spider other than the tarantula the owner had in the
+  colony (no spider choice yet; a later feature, not a port bug).
+
+Observation: the first Adventure raid that day ran at 31.4 fps (later
+ones 57-59).
+
 ## Owner should check live (not verifiable headlessly)
 
 Adventure:

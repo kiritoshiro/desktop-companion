@@ -826,6 +826,9 @@ impl ApplicationHandler for Engine {
         if self.exiting || !self.service_channel(el) {
             return;
         }
+        // The DC-79 click-through decision, the style refresh and the monitor
+        // check: their WM_TIMERs starve while a paint is always queued.
+        let overlay_due = self.overlay.as_ref().map(|o| o.service_timers());
         let events = self.overlay.as_ref().map(|o| o.drain_events()).unwrap_or_default();
         for e in events {
             match e {
@@ -854,6 +857,7 @@ impl ApplicationHandler for Engine {
             self.run_ui(el);
         }
         let wake = if self.ui.is_open() { self.next_tick.min(self.next_ui_frame) } else { self.next_tick };
+        let wake = overlay_due.map_or(wake, |due| wake.min(due));
         el.set_control_flow(ControlFlow::WaitUntil(wake));
     }
 }

@@ -11,10 +11,14 @@
 //! Input: the window answers `WM_NCHITTEST` from a closure the engine
 //! installs ([`OverlayWindow::set_hit_test`]): `HTCLIENT` over something
 //! interactive, `HTTRANSPARENT` elsewhere. `HTTRANSPARENT` only forwards to
-//! windows of the same thread, so (DC-79) a 50 ms Win32 timer also asks the
-//! closure about the cursor position and toggles `WS_EX_TRANSPARENT` for the
-//! whole window. The timer runs inside the window procedure, independent of
-//! the engine's frame rate, which is the reason DC-79 gave it its own timer.
+//! windows of the same thread, so (DC-79) every 50 ms the closure is also
+//! asked about the cursor position and `WS_EX_TRANSPARENT` toggled for the
+//! whole window. Win32 timers drive that check, the style refresh and the
+//! geometry check, but Windows only delivers `WM_TIMER` when no paint is
+//! pending, and winit's loop always has one queued while the engine draws
+//! every vsync. So the event loop must also call
+//! [`OverlayWindow::service_timers`] on every pass; whichever runs first
+//! does the job and the other skips it.
 //!
 //! Styles: `WS_EX_LAYERED | WS_EX_TOOLWINDOW` (+ `WS_EX_NOACTIVATE` in
 //! companion mode) are re-applied every second as in the Python, and
@@ -38,6 +42,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use dc_core::IRect;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -154,6 +159,10 @@ struct State {
     waker: RefCell<Option<Box<dyn Fn()>>>,
     hotkeys: RefCell<HashMap<i32, (u32, u32)>>,
     alive: Cell<bool>,
+    /// When the input, style and geometry checks are next due.
+    next_input: Cell<Instant>,
+    next_style: Cell<Instant>,
+    next_geometry: Cell<Instant>,
 }
 
 impl State {
@@ -202,6 +211,37 @@ impl State {
             self.set_input_transparent(transparent);
             self.push(OverlayEvent::InputTransparencyChanged(transparent));
         }
+    }
+
+    fn run_input_check(&self, now: Instant) {
+        self.next_input.set(now + Duration::from_millis(INPUT_CHECK_MS.into()));
+        if self.auto_input.get() {
+            self.update_input_transparency();
+        }
+    }
+
+    fn run_style_refresh(&self, now: Instant) {
+        self.next_style.set(now + Duration::from_millis(STYLE_REFRESH_MS.into()));
+        self.apply_styles();
+    }
+
+    fn run_geometry_check(&self, now: Instant) {
+        self.next_geometry.set(now + Duration::from_millis(SCREEN_GEOMETRY_CHECK_MS.into()));
+        self.check_geometry();
+    }
+
+    /// Run whichever periodic checks are due; returns when the next one is.
+    fn service_timers(&self, now: Instant) -> Instant {
+        if now >= self.next_input.get() {
+            self.run_input_check(now);
+        }
+        if now >= self.next_style.get() {
+            self.run_style_refresh(now);
+        }
+        if now >= self.next_geometry.get() {
+            self.run_geometry_check(now);
+        }
+        self.next_input.get().min(self.next_style.get()).min(self.next_geometry.get())
     }
 
     fn check_geometry(&self) {
@@ -278,17 +318,15 @@ unsafe extern "system" fn subclass_proc(
         }
         WM_TIMER => match wparam.0 {
             TIMER_INPUT => {
-                if state.auto_input.get() {
-                    state.update_input_transparency();
-                }
+                state.run_input_check(Instant::now());
                 LRESULT(0)
             }
             TIMER_STYLE => {
-                state.apply_styles();
+                state.run_style_refresh(Instant::now());
                 LRESULT(0)
             }
             TIMER_GEOMETRY => {
-                state.check_geometry();
+                state.run_geometry_check(Instant::now());
                 LRESULT(0)
             }
             _ => unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) },
@@ -382,6 +420,9 @@ impl OverlayWindow {
             waker: RefCell::new(None),
             hotkeys: RefCell::new(HashMap::new()),
             alive: Cell::new(true),
+            next_input: Cell::new(Instant::now()),
+            next_style: Cell::new(Instant::now()),
+            next_geometry: Cell::new(Instant::now()),
         });
         let ok = unsafe { SetWindowSubclass(hwnd, Some(subclass_proc), SUBCLASS_ID, Rc::as_ptr(&state) as usize) };
         if !ok.as_bool() {
@@ -462,6 +503,14 @@ impl OverlayWindow {
     /// [`Self::set_input_transparent`] itself).
     pub fn set_auto_input_transparency(&self, on: bool) {
         self.state.auto_input.set(on);
+    }
+
+    /// Run the input, style and geometry checks that are due and return when
+    /// the next one is. Call it on every pass of the event loop: while the
+    /// overlay redraws every frame, `WM_TIMER` never arrives (see the module
+    /// documentation).
+    pub fn service_timers(&self) -> Instant {
+        self.state.service_timers(Instant::now())
     }
 
     /// Run the DC-79 decision now instead of waiting for the timer.
@@ -691,5 +740,57 @@ mod tests {
         assert_eq!(c.title, WINDOW_TITLE);
         assert_eq!(RELEASE_HOTKEY_ID, 0xD0C1);
         assert_eq!(WM_HOTKEY_MSG, WM_HOTKEY);
+    }
+
+    /// The live run of 2026-10-25: WM_TIMER never arrived while the overlay
+    /// drew every vsync, so the window never took the mouse over a spider.
+    /// The event loop's pass must run the checks on its own schedule.
+    #[test]
+    fn service_timers_runs_due_checks_without_wm_timer() {
+        if cursor_pos().is_none() {
+            return; // no interactive desktop to read the cursor from
+        }
+        let start = Instant::now();
+        let state = State {
+            hwnd: HWND::default(),
+            adventure: false,
+            no_activate: true,
+            follow_desktop: false,
+            composition: false,
+            geometry: Cell::new(IRect::new(0, 0, 100, 100)),
+            input_transparent: Cell::new(true),
+            auto_input: Cell::new(true),
+            hit_test: RefCell::new(None),
+            last_hit: Cell::new(false),
+            events: RefCell::new(VecDeque::new()),
+            waker: RefCell::new(None),
+            hotkeys: RefCell::new(HashMap::new()),
+            alive: Cell::new(true),
+            next_input: Cell::new(start),
+            next_style: Cell::new(start),
+            next_geometry: Cell::new(start),
+        };
+        let asked = Rc::new(Cell::new(0));
+        let counter = asked.clone();
+        *state.hit_test.borrow_mut() = Some(Box::new(move |_, _| {
+            counter.set(counter.get() + 1);
+            true
+        }));
+        let input = Duration::from_millis(INPUT_CHECK_MS.into());
+
+        assert_eq!(state.service_timers(start), start + input, "the input check is the next one due");
+        assert_eq!(asked.get(), 1);
+        assert!(!state.input_transparent.get(), "the window takes the mouse where the hit test wants it");
+        assert_eq!(state.events.borrow().front(), Some(&OverlayEvent::InputTransparencyChanged(false)));
+
+        state.service_timers(start + input / 2);
+        assert_eq!(asked.get(), 1, "not due yet");
+        state.service_timers(start + input);
+        assert_eq!(asked.get(), 2);
+        assert_eq!(state.next_style.get(), start + Duration::from_millis(STYLE_REFRESH_MS.into()));
+
+        state.auto_input.set(false);
+        state.service_timers(start + input * 2);
+        assert_eq!(asked.get(), 2, "auto input off leaves the decision to the caller");
     }
 }
