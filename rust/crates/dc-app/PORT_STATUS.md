@@ -77,8 +77,17 @@ Found by the owner:
 - Adventure plays a spider other than the tarantula the owner had in the
   colony (no spider choice yet; a later feature, not a port bug).
 
+Fixed the same day (`834185d` the overlay check; `1f6f670` the tooltip
+ink and a 14 px bubble in a 52 px combo, as Qt) and rechecked live by the
+owner: dragging no longer clicks the desktop, right-click on a spider
+opens its menu, tooltips are readable, the team bubble is round.
+
 Observation: the first Adventure raid that day ran at 31.4 fps (later
 ones 57-59).
+
+Not yet confirmed: whether menus close on an outside click and Esc
+(item 11), and that text on the walnut panels is still cream after the
+tooltip change (the global default text colour is now ink).
 
 ## Owner should check live (not verifiable headlessly)
 
