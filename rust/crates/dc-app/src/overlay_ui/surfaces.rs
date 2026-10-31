@@ -671,8 +671,10 @@ impl UiCore {
                 self.commands.push(EngineCommand::Resume);
             }
             "release" => {
-                // Offered only outside a raid, which the Rust engine does not
-                // run: `player.release()` has no command yet.
+                // Offered only outside a raid (`self.mission is None`), which
+                // Python has not run since Adventure became the territory
+                // mission (5e57876): its free-roam code is unreachable there
+                // too, so `player.release()` has no command here.
                 log::warn!("Release spider: no free-roaming Adventure to release from");
                 self.remove(id);
                 self.commands.push(EngineCommand::Resume);
