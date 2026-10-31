@@ -233,8 +233,7 @@ impl<A: WindowApp> ApplicationHandler for Host<A> {
             attributes = attributes.with_min_inner_size(winit::dpi::LogicalSize::new(w as f64, h as f64));
         }
         if self.options.icon
-            && let Some(image) = crate::assets::UiAssets::app_icon_rgba()
-            && let Ok(icon) = winit::window::Icon::from_rgba(image.rgba, image.width, image.height)
+            && let Some(icon) = crate::assets::UiAssets::app_window_icon()
         {
             attributes = attributes.with_window_icon(Some(icon));
         }

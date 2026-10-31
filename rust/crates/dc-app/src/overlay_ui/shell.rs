@@ -248,9 +248,7 @@ impl Shell {
             attributes = attributes.with_decorations(false).with_resizable(false).with_skip_taskbar(true);
         } else {
             attributes = attributes.with_resizable(!matches!(sizing, Sizing::FitHeight(_)));
-            if let Some(image) = dc_ui::assets::UiAssets::app_icon_rgba()
-                && let Ok(icon) = winit::window::Icon::from_rgba(image.rgba, image.width, image.height)
-            {
+            if let Some(icon) = dc_ui::assets::UiAssets::app_window_icon() {
                 attributes = attributes.with_window_icon(Some(icon));
             }
         }

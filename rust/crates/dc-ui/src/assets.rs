@@ -194,6 +194,20 @@ impl UiAssets {
     pub fn app_icon_rgba() -> Option<DecodedImage> {
         find_assets_dir().and_then(|dir| decode_png(&dir.join("app_icon.png")))
     }
+
+    /// The window icon: the exe's own icon (resource 1, which dc-app's
+    /// `build.rs` embeds from `app_icon.ico`), else `app_icon.png`.
+    pub fn app_window_icon() -> Option<winit::window::Icon> {
+        #[cfg(windows)]
+        {
+            use winit::platform::windows::IconExtWindows;
+            if let Ok(icon) = winit::window::Icon::from_resource(1, None) {
+                return Some(icon);
+            }
+        }
+        let image = Self::app_icon_rgba()?;
+        winit::window::Icon::from_rgba(image.rgba, image.width, image.height).ok()
+    }
 }
 
 #[cfg(test)]

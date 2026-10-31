@@ -115,3 +115,14 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// `build.rs` links `app_icon.ico` into every binary of this crate, this
+    /// test harness included, as icon group 1.
+    #[test]
+    fn exe_carries_the_app_icon() {
+        use winit::platform::windows::IconExtWindows;
+        assert!(winit::window::Icon::from_resource(1, None).is_ok());
+    }
+}
