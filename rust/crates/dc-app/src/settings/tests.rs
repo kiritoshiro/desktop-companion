@@ -439,6 +439,13 @@ fn launch_companion(screen: &mut Screen, host: &mut Host) {
     assert_eq!(host.window.status, LAUNCHED);
 }
 
+/// The window gives the overlay's channel only 100 ms before it falls back
+/// to the files the overlay polls, and a busy CI runner can miss that. Tests
+/// that check a channel message connect first.
+fn connect_channel(host: &mut Host) {
+    assert!(host.channel_connected(5000), "the settings window never reached the overlay's channel");
+}
+
 // -- launch -------------------------------------------------------------------
 
 #[test]
@@ -495,6 +502,7 @@ fn a_second_launch_applies_live_instead_of_relaunching() {
     let mut screen = Screen::new();
     launch_companion(&mut screen, &mut host);
     let preset = user_preset(&state, "Default.json");
+    connect_channel(&mut host);
 
     // An edit, then Save and launch again while it runs.
     screen.click("check:XP", &mut host);
@@ -605,6 +613,7 @@ fn stop_asks_over_the_channel_and_leaves_the_stop_request_file() {
     let mut host = host(&state);
     let mut screen = Screen::new();
     launch_companion(&mut screen, &mut host);
+    connect_channel(&mut host);
     screen.click("button:Stop overlay", &mut host);
     received(&server, "stop_request");
     let stops = &host.launcher.stops;
@@ -683,6 +692,7 @@ fn reset_asks_a_listening_overlay_and_leaves_the_file_to_it() {
     let mut host = host(&state);
     let mut screen = Screen::new();
     open_page(&mut screen, &mut host, Page::Companion);
+    connect_channel(&mut host);
     confirm_reset(&mut screen, &mut host);
     received(&server, "reset_progress");
     assert_eq!(host.window.status, "Saved progress reset in the running overlay.");
@@ -1080,6 +1090,7 @@ fn closing_the_window_saves_and_stops_the_overlay_without_asking() {
     let mut host = host(&state);
     let mut screen = Screen::new();
     launch_companion(&mut screen, &mut host);
+    connect_channel(&mut host);
     WindowApp::on_close(&mut host);
     received(&server, "stop_request");
     assert_eq!(host.launcher.stops.len(), 1);

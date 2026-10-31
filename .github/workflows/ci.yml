@@ -42,8 +42,9 @@ jobs:
           cargo --version
 
       # Saved from main, where pull requests can restore it; a cache saved on
-      # a pull request is visible to that pull request only. v2 added the
-      # package smoke test's release build; the old key still seeds it.
+      # a pull request is visible to that pull request only. A cache matches
+      # only the exact path list it was saved with, so the release build of
+      # the package smoke test has a cache of its own.
       - name: Cache Cargo registry and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -52,11 +53,15 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             rust/target
-            rust/target-release
-          key: rust-v2-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/rust-toolchain.toml') }}
-          restore-keys: |
-            rust-v2-${{ runner.os }}-
-            rust-${{ runner.os }}-
+          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/rust-toolchain.toml') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Cache the package's release build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: rust/target-release
+          key: rust-release-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/rust-toolchain.toml') }}
+          restore-keys: rust-release-${{ runner.os }}-
 
       - name: Formatting
         run: cargo fmt --all --check
