@@ -12,6 +12,11 @@ fn rect(i: usize, c: &Cage) -> CageRect {
     CageRect { id: i as u64, x: c.x, y: c.y, w: c.w, h: c.h }
 }
 impl CreatureManager {
+    /// The cage being dragged or resized (drawn with its active wash).
+    pub fn dragged_cage(&self) -> Option<usize> {
+        self.cage_drag.map(|d| d.index)
+    }
+
     pub fn add_cage(&mut self, cx: Option<f64>, cy: Option<f64>, w: f64, h: f64) -> String {
         let mut c =
             Cage::new(cx.unwrap_or(self.screen_w * 0.5) - w * 0.5, cy.unwrap_or(self.screen_h * 0.5) - h * 0.5, w, h);

@@ -35,6 +35,9 @@ use crate::runner::{RunError, block_on};
 #[derive(Default)]
 pub struct GpuShare {
     existing: Option<WgpuSetupExisting>,
+    /// DX12 could not start: use wgpu's default backends instead, so menus
+    /// still open where the overlay fell back to software.
+    dx12_failed: bool,
 }
 
 impl GpuShare {
@@ -65,6 +68,11 @@ impl GpuShare {
                     queue: rs.queue,
                 })
             }
+            Err(e) if !self.dx12_failed && cfg!(windows) => {
+                log::warn!("Could not prepare DX12 for menus ({e}); trying the other backends");
+                self.dx12_failed = true;
+                self.warm();
+            }
             Err(e) => log::warn!("Could not prepare the GPU for menus: {e}"),
         }
     }
@@ -85,7 +93,7 @@ impl GpuShare {
             // DX12 only, like the overlay: every new window's painter
             // enumerates the instance's adapters, and Vulkan and GL make
             // that slow.
-            None if cfg!(windows) => {
+            None if cfg!(windows) && !self.dx12_failed => {
                 if let WgpuSetup::CreateNew(create) = &mut config.wgpu_setup {
                     create.instance_descriptor.backends = wgpu::Backends::DX12;
                 }
@@ -263,4 +271,30 @@ pub fn headless_pass(
     );
     let mut full = ctx.run_pass(input, |ctx| run(ctx));
     std::mem::take(&mut full.textures_delta)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn backends(share: &GpuShare) -> Option<wgpu::Backends> {
+        match share.configuration().wgpu_setup {
+            WgpuSetup::CreateNew(create) => Some(create.instance_descriptor.backends),
+            WgpuSetup::Existing(_) => None,
+        }
+    }
+
+    #[test]
+    fn menus_try_dx12_first_then_every_backend() {
+        let mut share = GpuShare::new();
+        let config = share.configuration();
+        assert_eq!(config.surface.present_mode, wgpu::PresentMode::AutoNoVsync, "no second vsync wait");
+        if cfg!(windows) {
+            assert_eq!(backends(&share), Some(wgpu::Backends::DX12));
+            share.dx12_failed = true;
+            let fallback = backends(&share).expect("a new device");
+            assert_ne!(fallback, wgpu::Backends::DX12, "a failed DX12 start falls back");
+            assert!(fallback.contains(wgpu::Backends::DX12) || fallback.contains(wgpu::Backends::VULKAN));
+        }
+    }
 }

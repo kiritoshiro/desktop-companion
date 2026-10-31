@@ -87,6 +87,10 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn main() -> ExitCode {
+    // `enable_high_dpi_scaling()` before anything reads a monitor: winit
+    // would make the process per-monitor aware only once its event loop
+    // exists, and geometry read before that is DPI-virtualized.
+    dc_platform::dpi::enable_high_dpi_scaling();
     let args = match parse_args() {
         Ok(a) => a,
         Err(e) => {
@@ -122,6 +126,19 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
+    /// Like Python's DPI test: the process is made per-monitor aware before
+    /// either the settings window or the overlay can read a monitor.
+    #[test]
+    fn dpi_awareness_comes_first_in_main() {
+        let src = include_str!("main.rs");
+        let main = &src[src.find("fn main() -> ExitCode {").expect("main")..];
+        let dpi = main.find("enable_high_dpi_scaling()").expect("main makes the process DPI aware");
+        for later in ["parse_args()", "settings::run(", "engine::run("] {
+            let at = main.find(later).unwrap_or_else(|| panic!("main calls {later}"));
+            assert!(dpi < at, "DPI awareness after {later}");
+        }
+    }
+
     /// `build.rs` links `app_icon.ico` into every binary of this crate, this
     /// test harness included, as icon group 1.
     #[test]

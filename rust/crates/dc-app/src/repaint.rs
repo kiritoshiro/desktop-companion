@@ -90,8 +90,15 @@ pub struct RepaintState {
     /// `_cage_fp_prev`, by cage index (Python keyed it by `id(cage)`; adding
     /// or removing a cage asks for a full repaint here).
     cage_fp_prev: Vec<Xywh>,
+    /// The cage drawn with its active wash last frame.
+    cage_active_prev: Option<usize>,
     carcass_fp_prev: Vec<Xywh>,
+    /// Each base's footprint and what changes its look, by base id.
+    base_prev: Vec<(String, BaseLook)>,
 }
+
+/// What a base's pixels depend on: its place, size, build and alert.
+type BaseLook = (Xywh, f64, f64);
 
 impl RepaintState {
     pub fn new() -> Self {
@@ -165,7 +172,50 @@ impl RepaintState {
             }
             cage_fp.push(fp);
         }
+        // A cage starting or ending a drag gains or loses its interior wash.
+        let active = m.dragged_cage();
+        if active != self.cage_active_prev {
+            for i in [active, self.cage_active_prev].into_iter().flatten() {
+                if let Some(&fp) = cage_fp.get(i).or(self.cage_fp_prev.get(i)) {
+                    add(&mut region, rect_from_xywh(fp));
+                }
+            }
+        }
+        self.cage_active_prev = active;
         self.cage_fp_prev = cage_fp;
+        // Bases: moved, rebuilt, grown or alerting (the alert ring fades),
+        // old and new footprints. Python left bases out of the region; on
+        // the software path that left a carried base's old pixels behind.
+        let bases: Vec<(String, BaseLook)> = m
+            .base_world
+            .bases
+            .iter()
+            .map(|b| {
+                let half = (30.0 + b.level as f64 * 10.0) * 1.25 + 8.0;
+                (b.id.clone(), ((b.x - half, b.y - half, half * 2.0, half * 2.0), b.build_progress, b.alert))
+            })
+            .collect();
+        for (id, look) in &bases {
+            let prev = self.base_prev.iter().find(|(p, _)| p == id).map(|(_, l)| *l);
+            if prev != Some(*look) || look.2 > 0.0 {
+                add(&mut region, rect_from_xywh(look.0));
+                if let Some(p) = prev {
+                    add(&mut region, rect_from_xywh(p.0));
+                }
+            }
+        }
+        for (id, look) in &self.base_prev {
+            if !bases.iter().any(|(b, _)| b == id) {
+                add(&mut region, rect_from_xywh(look.0));
+            }
+        }
+        self.base_prev = bases;
+        // Fly spawners breathe and can be dragged: always their footprint
+        // (the previous one comes from last frame's region).
+        for sp in &m.fly_world.spawners {
+            let half = sp.radius * 1.2 + 4.0;
+            add(&mut region, rect_from_xywh((sp.x - half, sp.y - half, half * 2.0, half * 2.0)));
+        }
         let carcass_fp = m.carcass_dirty_rects();
         for fp in self.carcass_fp_prev.iter().chain(&carcass_fp) {
             add(&mut region, rect_from_xywh(*fp));
@@ -488,5 +538,62 @@ mod tests {
         }
         assert_eq!(partial, frames - 2, "all but the first and the 150th");
         assert!(share / (partial as f64) < 0.9, "partial frames repainted {:.0}%", 100.0 * share / partial as f64);
+    }
+
+    /// A carried and rebuilt base, a dragged spawner and a cage taking and
+    /// losing its drag wash leave nothing behind on a partial frame.
+    #[test]
+    fn bases_spawners_and_cage_drags_leave_no_stale_pixels() {
+        let state = TempDir::new("movers");
+        let size = (720u32, 460u32);
+        let (mut m, mut rng) = manager(&state.0, (size.0 as f64, size.1 as f64));
+        m.creatures.truncate(1);
+        m.add_cage(Some(500.0), Some(300.0), 200.0, 140.0);
+        m.add_fly_spawner();
+        let mut base = dc_world::jobs::BaseSite::new("test-base", "owner", "neutral", 150.0, 150.0);
+        base.build_progress = 100.0;
+        m.base_world.bases.push(base);
+        let mut soft = SoftOverlay::new();
+        let mut painter = ScenePainter::new(PaintSwitches::default());
+        let mut reference = ScenePainter::new(PaintSwitches::default());
+        let mut cpu = CpuRenderer::new();
+        let mut window = Image::new(size.0, size.1);
+        for frame in 0..120 {
+            match frame {
+                10..=30 => m.base_world.bases[0].x += 6.0,
+                31 => m.base_world.bases[0].level += 1,
+                35 => m.base_world.bases[0].alert = 1.0,
+                40..=60 => {
+                    let sp = &mut m.fly_world.spawners[0];
+                    sp.x = 120.0 + (frame - 40) as f64 * 9.0;
+                    sp.y = 380.0;
+                }
+                70 => {
+                    let c = &m.cages[0];
+                    let (x, y) = (c.x, c.y + c.h * 0.5);
+                    assert!(m.start_cage_drag(x, y), "the left fence takes the drag");
+                }
+                80 => {
+                    let input = MouseInput { released: true, ..MouseInput::default() };
+                    m.update(1.0 / 60.0, -100000.0, -100000.0, input, &mut rng);
+                }
+                _ => {}
+            }
+            step(&mut m, &mut rng);
+            let clip = soft.plan(&mut m, size);
+            let s = scene(&mut painter, &mut m, clip);
+            let (pixels, dirty) = soft.render(&s, size);
+            present(&mut window, pixels, dirty.as_deref());
+            let full = cpu.render(&scene(&mut reference, &mut m, None), size.0, size.1, None);
+            let differing = window
+                .data()
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(full.data().as_chunks::<4>().0)
+                .filter(|(a, b)| a != b)
+                .count();
+            assert_eq!(differing, 0, "frame {frame}: pixels differing from a full repaint");
+        }
     }
 }
