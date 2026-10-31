@@ -1,5 +1,7 @@
 # Take back the desktop
 
+> Written for the Python app, now on the `legacy` branch: file paths, tests and commands here refer to it. Where the Rust app on `main` differs, its crates' `PORT_STATUS.md` files say so.
+
 Implemented on `codex/adventure-territory-mission`, based on freshly fetched
 `origin/main` 4208e7c. Launch with the existing Adventure button.
 

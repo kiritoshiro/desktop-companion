@@ -19,10 +19,23 @@ try:
 except (ValueError, TypeError):
     print('Semgrep did not return valid JSON; scan incomplete.', file=sys.stderr)
     sys.exit(2)
-for finding in report.get('results', []):
+# Reviewed exceptions: a rule in the listed files only (exact paths, no
+# patterns, so a new file is never covered), each justified in
+# docs/cybersecurity.md. The same rule anywhere else still fails the scan.
+reviewed = policy.get('reviewed_findings', [])
+
+
+def is_reviewed(finding):
+    return any(finding['check_id'] == entry['rule'] and finding['path'] in entry['paths']
+               for entry in reviewed)
+
+
+results = [finding for finding in report.get('results', []) if not is_reviewed(finding)]
+for finding in results:
     print(f"{finding['path']}:{finding['start']['line']}: {finding['check_id']}")
-print(f"Semgrep: {len(report.get('results', []))} findings; {len(report.get('errors', []))} scan errors")
+print(f"Semgrep: {len(results)} findings ({len(report.get('results', [])) - len(results)} reviewed); "
+      f"{len(report.get('errors', []))} scan errors")
 if result.returncode not in (0, 1) or report.get('errors'):
     print('Scanner/configuration/parse failure; inspect locally with the same profile.', file=sys.stderr)
     sys.exit(2)
-sys.exit(1 if report.get('results') else result.returncode)
+sys.exit(1 if results else 0)

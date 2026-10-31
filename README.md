@@ -5,31 +5,33 @@ desktop. They walk with planted-foot IK, react to the cursor, hunt flies, spin
 webs, form teams, build bases and fight rivals. Empty overlay space stays
 click-through; spider pixels can be grabbed and thrown.
 
+The app is written in Rust (`rust/`). The original Python/PyQt5 app is kept on
+the [`legacy`](https://github.com/kiritoshiro/desktop-companion/tree/legacy)
+branch.
+
 ## Requirements
 
 - Windows 10/11 (click-through and cursor behaviour are Windows-only).
-- Python 3.10+ and `requirements.txt` (PyQt5, PyInstaller) for development.
+- To build: a Rust toolchain from [rustup](https://rustup.rs/);
+  `rust/rust-toolchain.toml` picks the channel.
 
 ## Setup and run
 
-Run everything from the repository root; the app loads `models/`,
-`personalities/` and `presets/` relative to it.
+Download `DesktopBugCompanion-<version>-windows-x64.zip` from the
+[Releases](https://github.com/kiritoshiro/desktop-companion/releases), unzip it
+and run `DesktopBugCompanion.exe`. Keep the `models`, `personalities`, `presets`
+and `assets` folders beside the exe; the app loads them from there.
+
+From a checkout, in `rust/`:
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-.\run_dev.bat
+cargo run --release -p dc-app                                             # settings window
+cargo run --release -p dc-app -- --engine --preset presets\default.json  # overlay only
 ```
 
-`run_dev.bat` sets `PYTHONPATH` and prefers `.venv`. To start the settings
-window or the overlay yourself:
-
-```powershell
-$env:PYTHONPATH = "$PWD\src"
-.\.venv\Scripts\python.exe -m desktop_bug.app.config_ui
-.\.venv\Scripts\python.exe -m desktop_bug.app.engine --preset presets\default.json
-```
+The overlay also takes `--mode adventure`, `--seed N`, `--verbose`,
+`--software`, `--seconds S` (quit after that long) and `--snapshot out.png`
+(save a screenshot of the primary monitor 3 s in).
 
 ## Using it
 
@@ -109,66 +111,67 @@ Progress is saved to `%LOCALAPPDATA%\DesktopBugCompanion\state\creatures.json`
 (levels, XP, talents, equipment, names, teams, relations, bases, and the
 cages, webs and nests you placed). Your own presets go to `state\presets\` and
 take precedence over the shipped ones. Logs are in
-`state\logs\desktop-bug.log` (run with `--verbose` for more detail).
+`state\logs\desktop-bug.log` (run with `--verbose` for more detail). The Python
+app on `legacy` uses the same folder and format.
 
 - `portable.txt` beside the project or `.exe` keeps state there instead.
 - `DESKTOP_BUG_STATE_DIR` overrides the location entirely (the tests use it).
 
 ## Troubleshooting
 
-- **Overlay blank, black, or swallowing clicks:** the overlay draws with OpenGL
-  by default. Set `DESKTOP_BUG_GL=0` to use the CPU path.
+- **Overlay blank, black, or swallowing clicks:** the overlay draws on the GPU
+  (DirectX 12 through DirectComposition) and falls back to a CPU path
+  (`UpdateLayeredWindow`) when that fails. `--software` forces the CPU path.
 - **Black rectangle over the desktop:** some screen recorders, remote desktops
   and GPU overlay tools break per-pixel transparency; try a normal local
   session.
+- **Frame rate:** 60 FPS, or lower with `DESKTOP_BUG_FPS` (10–60). It drops to
+  30 on battery, and to 10 while a fullscreen window covers every monitor.
 - To quit: **Stop overlay** in the settings window, or **Quit overlay** in the
   tray menu.
 
 ## Content
 
 Models (`models/<id>/model.json`), personalities (`personalities/*.json`) and
-presets (`presets/*.json`) are auto-discovered; no code changes are needed.
+presets (`presets/*.json`) are auto-discovered; the app needs no code changes.
 A model needs `id`, `display_name`, `base_size`, `default_personality`,
 `colors` and `legs` (or a `body_plan`); its look is tuned in its `appearance`
 block. A personality needs `id`, `display_name`, `speed_multiplier`,
 `reaction_radius`, `boldness`, `wander_frequency`, and a `temperament` of six
-0-10 traits. Validate with:
-
-```powershell
-python tools\validate_model.py models\spider\model.json
-python tools\validate_preset.py presets\default.json
-```
+0-10 traits. The tests load every shipped model, personality and preset, so
+`cargo test -p dc-content` (in `rust/`) checks a new one. They also count the
+shipped files: update the counts in `rust/crates/dc-content/tests/ported.rs`
+when you add or remove one.
 
 ## Development
 
+In `rust/`:
+
 ```powershell
-python tools\run_all_checks.py      # compile, validate content, pytest, ruff -- what CI runs
-python -m pytest tests\test_tarantula.py -v
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked   # what CI runs
+cargo test -p dc-kinematics       # one crate
 ```
 
-The carved-wood interface art in `assets/ui/` (mode pictures, wood textures,
-card frame) is generated: `python tools\generate_ui_art.py` redraws it,
-burning the current tarantula model into the pictures.
+Tests are headless and write only to temporary folders, so a run never touches
+your saved spiders. `rust/PORTING.md` lists the crates and what each one
+covers; each crate's `PORT_STATUS.md` notes where it differs from the Python
+app.
 
-Tests are headless: `tests/conftest.py` forces Qt's offscreen platform and a
-private state folder, so a run never touches your saved spiders.
-
-Code lives in `src/desktop_bug/`: `app/` (settings window, overlay engine,
-Win32 glue), `creature/` (behaviour, kinematics, rendering), `manager/`
-(the colony, input, persistence), `world/` (flies, webs, cages, bases and
-jobs), `content/` (discovery, body plans, skills), `state/` (progression and
-the saved-state format).
+The carved-wood interface art in `assets/ui/` is generated:
+`cargo run --release -p dc-art --example generate_ui_art ../assets/ui` redraws
+the textures, card frame and menu emblems. The mode pictures and app icon are
+still drawn by `tools/generate_ui_art.py` on `legacy`.
 
 ## Build and release
 
-`build_exe.bat` builds `dist\DesktopBugCompanion.exe` from
-`DesktopBugCompanion.spec`, whose entry point is `launcher.py`. It is one
-file with the content bundled; a `models`, `personalities` or `presets` folder
-beside the `.exe` overrides it. The
-packaged exe accepts `--engine --preset <file>` as well.
+`pwsh rust\package.ps1` builds a release and packs
+`rust\dist\DesktopBugCompanion\` (the exe beside `models`, `personalities`,
+`presets` and `assets`) and `rust\dist\DesktopBugCompanion-<version>-windows-x64.zip`.
+Release builds have no console window.
 
-CI (`.github/workflows/ci.yml`) runs `tools/run_all_checks.py` and a build
-smoke test on pushes and pull requests to `main`. Pushing a tag such as
-`v1.0.0` runs `release-windows.yml`, which refuses a tag that disagrees with
-`__version__` in `src/desktop_bug/__init__.py` and publishes the `.exe` to a
-GitHub Release.
+CI (`.github/workflows/ci.yml`) runs formatting, clippy and the tests on pushes
+to `main` and on every pull request. Pushing a tag such as `v1.0.0` runs
+`release-windows.yml`, which refuses a tag that disagrees with `version` in
+`rust/Cargo.toml`, runs the tests and publishes the zip to a GitHub Release.

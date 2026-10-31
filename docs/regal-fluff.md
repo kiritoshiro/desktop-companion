@@ -1,5 +1,7 @@
 # Regal Fluff — Phidippus regius
 
+> Written for the Python app, now on the `legacy` branch: file paths, tests and commands here refer to it. Where the Rust app on `main` differs, its crates' `PORT_STATUS.md` files say so.
+
 Select **Jumper → Regal Fluff · Phidippus regius** in a Companion slot, then
 save and launch the overlay. The model is also in the all-types skin list.
 Choose the Curious personality for approach/pause behavior. No existing saved
