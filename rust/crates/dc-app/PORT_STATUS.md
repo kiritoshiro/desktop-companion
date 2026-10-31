@@ -14,7 +14,8 @@ DC_ADVENTURE_FRAMES=<dir> cargo test -p dc-app frames_to_png_on_request   # Adve
 
 | Python | Rust | Status |
 |---|---|---|
-| `app/engine.py` `OverlayWindow` (Companion) | `engine.rs` | **ported**: one window over the virtual desktop (GPU on DirectComposition, `UpdateLayeredWindow` fallback), manager ticked at the frame policy's rate, global left button polled, desktop windows refreshed every 1.25 s, monitor changes, preset live-reload and stop requests (700 ms), label metrics from Segoe UI, hover, cursor capture by mouse webs (never in `--seconds` runs). **Missing:** camouflage sampling, partial repaints, the profile HUD, DPI scaling (all physical pixels). |
+| `app/engine.py` `OverlayWindow` (Companion) | `engine.rs` | **ported**: one window over the virtual desktop (GPU on DirectComposition, `UpdateLayeredWindow` fallback), manager ticked at the frame policy's rate, global left button polled, desktop windows refreshed every 1.25 s, monitor changes, preset live-reload and stop requests (700 ms), label metrics from Segoe UI, hover, cursor capture by mouse webs (never in `--seconds` runs), DPI scaling (see the `dpi.rs` row). **Missing:** camouflage sampling, partial repaints, the profile HUD. |
+| `enable_high_dpi_scaling` + the `support/dpi.py` crossings in `app/engine.py` (`_refresh_desktop_surfaces`, the cursor trap) | `dpi.rs`, dc-platform `dpi::DpiMap` and `OverlayConfig::logical_pixels`, dc-render `Scene::append_transformed` | **ported**: the manager, the Adventure game and the menus' click positions work in logical pixels, Qt 5's layout (each monitor keeps its physical corner, its size divided by its scale; a point converts on the monitor it is on). The window, its surface and Win32 stay physical. The overlay converts the cursor, the hit test and the cursor trap; desktop windows convert whole on the monitor holding most of them; Adventure's work areas and main area too; the Reclaim picture keeps native pixels in logical rectangles. The frame is recorded once and drawn once per monitor, scaled about its corner and clipped to it, so spiders, labels, bars and the Adventure HUD are 1.5x on a 150% monitor. A scale change alone is noticed by the geometry check (and `WM_DPICHANGED`). At 100% nothing converts: the identity map skips every step (pixel-identical). Rust difference: a Qt 5 window has one ratio, so Python's single overlay over mixed monitors drew everything at one scale and only partly covered the other monitor; this draws each monitor at its own scale. Python's window rectangles (one ratio for all, or corner by corner about (0, 0)) are converted whole per monitor instead. |
 | `app/engine.py` `OverlayWindow` (Adventure) | `adventure/mod.rs`, `adventure/input.rs`, `adventure/draw.rs`, `adventure/screens.rs` | **ported**: mission from the profile (`create_mission`), `mission.update` per tick, victory / defeat / Reclaim crash and blue screen, close after the end title, progress saved (never `creatures.json`); P1/P2 keys (turn-and-walk), Esc always pauses, K character, `` ` ``/`~`/VK_OEM_3 map view, F8 release as a Windows hotkey (raid paused, banner), mouse shot at the pointer, companion command buttons, HUD drag, `_adventure_captures_mouse`, NOTOPMOST + keyboard focus, controls reload. **Partial:** no free-roam (possess a spider outside a raid), so "Release spider" just resumes. |
 | `app/engine.py` `_show_context_menu`, `create_tray`, `_add_label_switches`, `_prompt_name`, `_announce` | `overlay_ui.rs`, `overlay_ui/*` (`OVERLAY_UI.md`) | **ported**: spider and overlay right-click menus, base carrying, cages, label switches, rename prompt, inspector, pause / character / controls / Adventure settings windows, Python's tray menu with live check marks and status line, balloons. |
 | `app/engine.py` live channel (`_channel_server`, `_on_channel_message`, `_apply_pushed_preset`, `_broadcast_session_state`) | `live.rs` | **ported**: one pipe server per overlay (dc-platform), serviced every loop pass; pushed presets for the running preset applied at once (and the file poll told), progress reset, stop request (save and quit), `session_state` on connect, after a pushed preset and on every announcement. Adventure honours only stop, as Python. The preset-file poll and stop-request file stay as fallbacks. |
@@ -30,7 +31,10 @@ DC_ADVENTURE_FRAMES=<dir> cargo test -p dc-app frames_to_png_on_request   # Adve
 
 ## Tests
 
-`cargo test -p dc-app` (91, all headless): the Adventure engine
+`cargo test -p dc-app` (101, all headless): DPI scaling (`dpi.rs`: logical
+size, screens, desktop windows, the per-monitor frame drawn on the CPU for
+1.0 + 1.5 and a negative origin, and 100% converting nothing; a menu click
+on a 150% monitor in `overlay_ui/tests.rs`), the Adventure engine
 (`adventure/tests.rs`: raid from the profile's map, keys move the player,
 bindings and Esc, pause and the UI hand-off, K and `ProfileChanged`, map
 view and tilde, release and hotkey, two players, mouse drag/shot/commands,
@@ -119,3 +123,15 @@ Settings window:
 21. Live channel: Save while the overlay runs changes the spiders at once
     (no restart), a tray toggle shows up in the window, and Stop closes the
     overlay quickly instead of waiting for the file poll.
+
+DPI scaling (needs a monitor above 100%; the owner's two are at 100%, where
+nothing is converted):
+22. Spiders, labels, bars and the Adventure HUD are 1.5x on a 150% monitor
+    and line up with the cursor (grab, hover, right-click, the cursor trap);
+    a spider crossing to a monitor of another scale changes size at the edge.
+23. Spiders hide behind real windows on the scaled monitor in the right place.
+24. Reclaim on a scaled monitor: the frozen picture is sharp (1:1) and lines
+    up with the real desktop; windows break where they are.
+25. Changing a monitor's scale while the overlay runs re-lays it out within
+    1.5 s. Frame rate with a scaled monitor (the frame is drawn once per
+    monitor, so tessellation work roughly doubles with two).

@@ -1,9 +1,11 @@
 # dc-platform port status
 
 Windows-only Win32 shell. All coordinates are **physical pixels** (winit makes
-the process per-monitor-v2 DPI aware), so the Qt logical/physical crossings
-of the Python mostly disappear; `dpi.rs` keeps the conversions for callers
-that still want logical units.
+the process per-monitor-v2 DPI aware), except where a caller asks for
+logical ones: `dpi::DpiMap` converts the whole desktop the way Qt 5 lays a
+mixed-DPI layout out, and an overlay created with
+`OverlayConfig::logical_pixels` (the engine's) hands its hit test and takes
+and gives cursor positions in logical pixels.
 
 | Python module | Rust | Status | Notes / missing |
 |---|---|---|---|
@@ -11,10 +13,10 @@ that still want logical units.
 | `app/engine.py` (window parts) | `overlay.rs`, `monitors.rs`, `input.rs` | ported | One winit window over the virtual desktop (as the Python). `nativeEvent` → window subclass (`WM_NCHITTEST` → closure, `WM_HOTKEY` → `OverlayEvent::Hotkey`, `WM_MOUSEACTIVATE` → `MA_NOACTIVATE`). `_update_input_transparency` → 50 ms Win32 timer in the window procedure. Style refresh 1000 ms, geometry check 1500 ms (+ `WM_DISPLAYCHANGE`). Styles are also enforced in `WM_STYLECHANGING` so winit cannot strip them. Release hotkey (`RELEASE_HOTKEY_ID` 0xD0C1, `MOD_NOREPEAT`), `virtual_key_for`, `left_mouse_button_down`, cursor position. The rest of engine.py (tick, tray actions, missions, painting) belongs to dc-app. |
 | (`QOpenGLWidget` surface, `configure_gl_surface`) | `gpu.rs` | new | DX12 + `Dx12SwapchainKind::DxgiFromVisual` (DirectComposition), `PreMultiplied` alpha. See findings below. |
 | `support/frame_policy.py` | `frame_policy.rs` | ported | Probes are injectable closures. |
-| `support/dpi.py` | `dpi.rs` | ported | `enable_high_dpi_scaling` = `SetProcessDpiAwarenessContext(PMv2)`; ratio lookup via `GetDpiForMonitor`. |
+| `support/dpi.py` | `dpi.rs` | ported | `enable_high_dpi_scaling` = `SetProcessDpiAwarenessContext(PMv2)`; ratio lookup via `GetDpiForMonitor`. Added `DpiMap` (monitors with scales: points converted on the monitor they are on, about its corner; rectangles whole on the monitor holding most of them; identity at 100%) and `desktop_dpi_map`. The overlay keeps one current (`OverlayWindow::dpi_map`; a scale change alone raises `GeometryChanged`). |
 | `support/logging_setup.py` | `logging_setup.rs` | ported | `log` backend; same path, format, 512 KiB × 3 rotation (Python 3.13 rules, incl. "never roll an empty file"). Targets map to `desktop_bug.<name>`; foreign crates filtered to warnings. `install_excepthook` → `install_panic_hook` (panics still unwind). |
 | `world/desktop_environment.py` | `desktop_environment.rs` | ported | EnumWindows snapshot with cloaked/DWM frame/layered-alpha filters. Desktop icons (SysListView32 + `VirtualAllocEx`/`ReadProcessMemory`) ported but **off by default** (`SnapshotOptions::default()`). Surfaces carry their `hwnd` in addition. |
-| `app/desktop_capture.py` | `desktop_capture.rs` | ported (partial art) | GDI `BitBlt` per monitor (`CAPTUREBLT`), window list, `PrintWindow(PW_RENDERFULLCONTENT)` pictures (≤12, hung/blank skipped), wallpaper **path**. Images are `RgbaImage` (RGBA8). Missing: wallpaper decoding (no JPEG decoder dependency; `apply_wallpaper` takes a decoded image, nearest-neighbour "Fill"); `synthetic_snapshot` fills by pixel centre without antialiasing. |
+| `app/desktop_capture.py` | `desktop_capture.rs` | ported (partial art) | GDI `BitBlt` per monitor (`CAPTUREBLT`), window list, `PrintWindow(PW_RENDERFULLCONTENT)` pictures (≤12, hung/blank skipped), wallpaper **path**. Images are `RgbaImage` (RGBA8). In logical mode a window rectangle converts whole on the monitor holding most of it (`window_rect_local`); Python's corner-by-corner `physical_to_local` left a maximised window's bottom-right corner unconverted on a scaled monitor. Same result at 100%. Missing: wallpaper decoding (no JPEG decoder dependency; `apply_wallpaper` takes a decoded image, nearest-neighbour "Fill"); `synthetic_snapshot` fills by pixel centre without antialiasing. |
 | `app/screen_activity.py` | `screen_activity.rs` | ported | `playable_screens` works on monitor names/indices instead of `QScreen`s. DDC/CI is not exercised by tests (slow, hardware dependent). |
 | `app/live_channel.py` | `live_channel.rs` | ported | Named pipe `\\.\pipe\DesktopBugCompanion-<16 hex>` with overlapped I/O, reader + writer thread per peer, NDJSON, `v` = 1, five message types. Name uses **SHA-256** (sha1 is not a dependency), so a Rust peer never pairs with a Python peer (both fall back to files). First instance uses `FILE_FLAG_FIRST_PIPE_INSTANCE` (a second overlay on the same state dir cannot bind). Keys sorted recursively, compact separators. Events are polled (`poll()`) or signalled through a waker instead of Qt signals. |
 | `app/session_control.py` | `session_control.rs` | ported | Plus `MtimeWatcher` for the preset (`PRESET_WATCH_MS` 700) and controls mtime polling. `stop_process` over a `StoppableProcess` trait (implemented for `std::process::Child`). |
@@ -45,7 +47,10 @@ that still want logical units.
 
 ## Tests
 
-`cargo test -p dc-platform`: 51 unit tests + 1 integration test
+`cargo test -p dc-platform`: 63 unit tests (DPI: mixed 1.0 + 1.5 and
+1.0 + 1.5 + 1.25 layouts with negative origins, round trips, gaps, window
+rectangles, the window procedure's hit test fed logical points, and 100%
+converting nothing bit for bit) + 1 integration test
 (`tests/overlay_smoke.rs`: real winit window off-screen, styles, hit test,
 `WM_HOTKEY` delivery, software present, tray menu groups). Includes a real
 pipe server/client round trip (hello, 40 000-element preset, broadcast, two
@@ -55,6 +60,7 @@ enumeration of monitors, windows and display devices.
 
 ## Not done
 
-- No check on a mixed-DPI multi-monitor layout (only this machine's setup).
+- No check on a real mixed-DPI multi-monitor layout (only this machine's
+  setup, both at 100%); the DPI conversions are tested on synthetic layouts.
 - DXGI desktop duplication (GDI `BitBlt` used; fine for a one-shot capture).
 - Balloon notification and DDC/CI only compile-checked.

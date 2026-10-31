@@ -19,8 +19,13 @@
 //! The live channel to the settings window is [`LiveChannel`]; the preset
 //! file and the stop-request file stay polled as its fallbacks.
 //!
-//! Not ported yet: camouflage sampling, partial repaints, DPI scaling
-//! (everything is in physical pixels).
+//! DPI scaling (`enable_high_dpi_scaling`): the manager, the Adventure game
+//! and the UI's click positions work in logical pixels; the window, its
+//! surface and Win32 in physical ones. The overlay converts the cursor and
+//! the hit test, and [`crate::dpi`] the rest and the frame (once per
+//! monitor at its scale). At 100% nothing is converted.
+//!
+//! Not ported yet: camouflage sampling, partial repaints.
 
 use crate::adventure::draw::AdventureDrawer;
 use crate::adventure::screens::{self, PlayableScreens};
@@ -37,10 +42,11 @@ use dc_manager::paint::ScenePainter;
 use dc_manager::{CreatureManager, DesktopSurface, MouseInput};
 use dc_paint::PaintSwitches;
 use dc_platform::desktop_environment::{SnapshotOptions, snapshot_desktop_surfaces};
+use dc_platform::dpi::{DpiMap, desktop_dpi_map};
 use dc_platform::frame_policy::FramePolicy;
 use dc_platform::gpu::OverlayGpu;
 use dc_platform::input::left_mouse_button_down;
-use dc_platform::monitors::{monitors, screen_rects_local, virtual_screen_geometry};
+use dc_platform::monitors::monitors;
 use dc_platform::overlay::{
     OverlayBackend, OverlayConfig, OverlayEvent, OverlayMode, OverlayWindow, RELEASE_HOTKEY_ID,
 };
@@ -109,7 +115,10 @@ struct Engine {
     last_surface_check: f64,
     last_preset_check: f64,
     preset_mtime: Option<SystemTime>,
+    /// The window: physical pixels.
     geometry: dc_core::IRect,
+    /// The monitors overlay-local, with their scales (`crate::dpi`).
+    dpi: DpiMap,
     last_left_down: bool,
     frames: u64,
     error: Option<String>,
@@ -129,13 +138,19 @@ impl Engine {
     }
 
     fn screen_rects(&self) -> Vec<ScreenRect> {
-        let g = self.geometry;
-        screen_rects_local((g.x, g.y), &monitors()).into_iter().map(|r| ScreenRect::new(r.x, r.y, r.w, r.h)).collect()
+        crate::dpi::screen_rects(&self.dpi)
+    }
+
+    /// The manager's size: logical pixels.
+    fn logical_size(&self) -> (f64, f64) {
+        crate::dpi::logical_size(&self.dpi, self.geometry)
     }
 
     fn create_overlay(&mut self, el: &ActiveEventLoop, backend: OverlayBackend) -> Result<(), String> {
         let mode = if self.adventure() { OverlayMode::Adventure } else { OverlayMode::Companion };
-        let overlay = OverlayWindow::create(el, &OverlayConfig::new(mode, backend)).map_err(|e| e.to_string())?;
+        let mut config = OverlayConfig::new(mode, backend);
+        config.logical_pixels = true;
+        let overlay = OverlayWindow::create(el, &config).map_err(|e| e.to_string())?;
         let g = overlay.geometry();
         let drawer = match backend {
             OverlayBackend::Composition => {
@@ -151,19 +166,20 @@ impl Engine {
             }
         };
         self.geometry = g;
+        self.dpi = overlay.dpi_map();
         self.ui.set_overlay_origin((g.x, g.y));
+        self.ui.set_overlay_dpi(self.dpi.clone());
         self.overlay = Some(overlay);
         self.drawer = Some(drawer);
         Ok(())
     }
 
     fn create_manager(&mut self) -> Result<(), String> {
-        let g = self.geometry;
         let root = dc_content::discovery::app_root();
         let mut m = CreatureManager::new(
             &root,
             &self.preset,
-            (g.w as f64, g.h as f64),
+            self.logical_size(),
             self.args.seed,
             &self.state_dir,
             true,
@@ -197,7 +213,8 @@ impl Engine {
     fn create_game(&mut self) -> Result<(), String> {
         let g = self.geometry;
         let origin = (g.x, g.y);
-        let PlayableScreens { rects, primary, primary_rect, monitors } = screens::playable(origin, &self.state_dir);
+        let PlayableScreens { rects, primary, primary_rect, monitors } =
+            screens::playable(origin, &self.dpi, &self.state_dir);
         let root = dc_content::discovery::app_root();
         let mut capture = || screens::capture(origin, &monitors);
         let game = AdventureGame::start(
@@ -205,7 +222,7 @@ impl Engine {
                 root: &root,
                 preset: &self.preset,
                 state_dir: &self.state_dir,
-                size: (g.w as f64, g.h as f64),
+                size: self.logical_size(),
                 rects,
                 primary,
                 primary_rect,
@@ -487,7 +504,8 @@ impl Engine {
         let (Some(manager), Some(o)) = (self.manager.as_ref(), self.overlay.as_ref()) else { return };
         let Some((x, y)) = o.cursor_local() else { return };
         let g = self.geometry;
-        let at = (x + g.x as f64, y + g.y as f64);
+        let (px, py) = self.dpi.to_physical(x, y);
+        let at = (px + g.x as f64, py + g.y as f64);
         let request = {
             let m = manager.borrow();
             match m.creature_at(x, y).and_then(|id| m.creature(id)) {
@@ -504,24 +522,29 @@ impl Engine {
             return;
         }
         self.last_screen_check = now_ms;
-        let rect = virtual_screen_geometry();
-        if rect == self.geometry {
+        // The overlay re-reads the monitors (and their scales: a scale can
+        // change while the rectangle stays the same).
+        let Some(o) = self.overlay.as_ref() else { return };
+        o.sync_geometry();
+        let (rect, dpi) = (o.geometry(), o.dpi_map());
+        if rect == self.geometry && dpi == self.dpi {
             return;
         }
-        if let Some(o) = self.overlay.as_ref() {
-            o.sync_geometry();
-        }
         self.geometry = rect;
+        self.dpi = dpi;
         self.ui.set_overlay_origin((rect.x, rect.y));
+        self.ui.set_overlay_dpi(self.dpi.clone());
         let rects = self.screen_rects();
+        let (w, h) = self.logical_size();
         if let Some(m) = &self.manager {
             let mut m = m.borrow_mut();
-            m.resize(rect.w as f64, rect.h as f64);
+            m.resize(w, h);
             m.set_screen_rects(&rects);
         }
         if let Some(game) = &self.game {
-            let primary = screens::primary_rect_local((rect.x, rect.y), &monitors());
-            game.borrow_mut().resize((rect.w as f64, rect.h as f64), &rects, primary);
+            let primary = screens::primary_rect_local((rect.x, rect.y), &monitors())
+                .map(|r| crate::dpi::irect_to_logical(&self.dpi, r));
+            game.borrow_mut().resize((w, h), &rects, primary);
         }
         if let Some(Drawer::Gpu { gpu, .. }) = self.drawer.as_mut() {
             gpu.resize(rect.w as u32, rect.h as u32);
@@ -600,7 +623,7 @@ impl Engine {
                 screen_h: Some(self.geometry.h),
                 include_desktop_icons: m.desktop_icons_enabled,
             };
-            let surfaces = snapshot_desktop_surfaces(&opts)
+            let mut surfaces: Vec<DesktopSurface> = snapshot_desktop_surfaces(&opts)
                 .into_iter()
                 .map(|s| DesktopSurface {
                     kind: s.kind.as_str().to_string(),
@@ -611,6 +634,8 @@ impl Engine {
                     h: s.h,
                 })
                 .collect();
+            // Win32 rectangles are physical; the manager's are logical.
+            crate::dpi::surfaces_to_logical(&self.dpi, &mut surfaces);
             m.set_desktop_surfaces(surfaces);
         }
         if now_ms - self.last_preset_check >= PRESET_WATCH_MS {
@@ -685,6 +710,8 @@ impl Engine {
                 self.painter.paint(&mut manager.borrow_mut(), &mut canvas, None);
             }
         }
+        // Recorded in logical pixels; drawn per monitor at its scale.
+        let scene = crate::dpi::physical_scene(&self.dpi, &scene).unwrap_or(scene);
         let (w, h) = (self.geometry.w as u32, self.geometry.h as u32);
         match self.drawer.as_mut() {
             Some(Drawer::Gpu { gpu, renderer }) => {
@@ -727,7 +754,11 @@ impl Engine {
                         }
                     }
                 }
-                WindowEvent::CursorMoved { position, .. } => g.cursor_moved(position.x, position.y),
+                WindowEvent::CursorMoved { position, .. } => {
+                    // winit reports physical client pixels.
+                    let (x, y) = self.dpi.to_logical(position.x, position.y);
+                    g.cursor_moved(x, y)
+                }
                 WindowEvent::Focused(false) => g.focus_lost(),
                 _ => {}
             }
@@ -870,6 +901,8 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
         None => PyRandom::from_entropy(),
     };
     let ui = OverlayUi::with_state_dir(state_dir.clone());
+    // Read before the window exists: Adventure lays its screens out first.
+    let (geometry, dpi) = desktop_dpi_map();
     let mut engine = Engine {
         args,
         preset,
@@ -897,7 +930,8 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
         last_surface_check: f64::NEG_INFINITY,
         last_preset_check: 0.0,
         preset_mtime: None,
-        geometry: virtual_screen_geometry(),
+        geometry,
+        dpi,
         last_left_down: false,
         frames: 0,
         error: None,

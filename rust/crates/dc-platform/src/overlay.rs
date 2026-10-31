@@ -32,8 +32,13 @@
 //! premultiplied RGBA and [`OverlayWindow::present_premultiplied`] hands it
 //! to `UpdateLayeredWindow`.
 //!
-//! Coordinates are physical pixels; overlay-local means relative to
-//! [`OverlayWindow::geometry`]'s origin.
+//! Coordinates: the window itself is placed in physical pixels;
+//! overlay-local means relative to [`OverlayWindow::geometry`]'s origin.
+//! With [`OverlayConfig::logical_pixels`] (the engine's choice), the local
+//! points the overlay hands out and takes (hit test, cursor) are logical,
+//! converted per monitor by the window's [`DpiMap`], which the geometry
+//! check keeps current (a scale change alone also counts as a change).
+//! Without it, or with every monitor at 100%, local points are physical.
 //!
 //! Threading: everything here must stay on the winit event-loop thread
 //! (`OverlayWindow` is `!Send`).
@@ -63,8 +68,8 @@ use winit::event_loop::ActiveEventLoop;
 use winit::platform::windows::{CornerPreference, WindowAttributesExtWindows};
 use winit::window::{Window, WindowLevel};
 
+use crate::dpi::{DpiMap, desktop_dpi_map};
 use crate::input::{cursor_pos, virtual_key_for};
-use crate::monitors::virtual_screen_geometry;
 use crate::overlay_win32::{apply_click_through, overlay_ex_style, set_cursor_pos};
 use crate::win::{ex_style, set_ex_style};
 
@@ -115,6 +120,9 @@ pub struct OverlayConfig {
     /// Never activate on click. Defaults to `mode == Companion`
     /// (`WA_ShowWithoutActivating`).
     pub no_activate: Option<bool>,
+    /// Overlay-local points in logical pixels (Qt's high-DPI scaling, per
+    /// monitor) instead of physical ones. Only with `geometry: None`.
+    pub logical_pixels: bool,
 }
 
 impl OverlayConfig {
@@ -126,6 +134,7 @@ impl OverlayConfig {
             geometry: None,
             auto_input_transparency: true,
             no_activate: None,
+            logical_pixels: false,
         }
     }
 }
@@ -136,7 +145,8 @@ impl OverlayConfig {
 pub enum OverlayEvent {
     /// `WM_HOTKEY` with this id (pressed anywhere on the desktop).
     Hotkey(i32),
-    /// The window was moved/resized to a new virtual-desktop geometry.
+    /// The window was moved/resized to a new virtual-desktop geometry, or
+    /// (logical pixels) a monitor's scale changed.
     GeometryChanged(IRect),
     /// The DC-79 timer flipped whole-window input transparency.
     InputTransparencyChanged(bool),
@@ -151,6 +161,10 @@ struct State {
     follow_desktop: bool,
     composition: bool,
     geometry: Cell<IRect>,
+    /// `OverlayConfig::logical_pixels`.
+    logical: bool,
+    /// Overlay-local physical ↔ logical (identity without `logical`).
+    dpi: RefCell<DpiMap>,
     input_transparent: Cell<bool>,
     auto_input: Cell<bool>,
     hit_test: RefCell<Option<HitTest>>,
@@ -202,11 +216,21 @@ impl State {
         ok
     }
 
+    /// A desktop point (physical) as an overlay-local point.
+    fn local_point(&self, x: i32, y: i32) -> (f64, f64) {
+        let g = self.geometry.get();
+        let (lx, ly) = ((x - g.x) as f64, (y - g.y) as f64);
+        match self.dpi.try_borrow() {
+            Ok(map) => map.to_logical(lx, ly),
+            Err(_) => (lx, ly),
+        }
+    }
+
     /// `_update_input_transparency`.
     fn update_input_transparency(&self) {
         let Some((cx, cy)) = cursor_pos() else { return };
-        let g = self.geometry.get();
-        let transparent = !self.wants_mouse((cx - g.x) as f64, (cy - g.y) as f64);
+        let (x, y) = self.local_point(cx, cy);
+        let transparent = !self.wants_mouse(x, y);
         if transparent != self.input_transparent.get() {
             self.set_input_transparent(transparent);
             self.push(OverlayEvent::InputTransparencyChanged(transparent));
@@ -248,14 +272,26 @@ impl State {
         if !self.follow_desktop {
             return;
         }
-        let rect = virtual_screen_geometry();
-        if rect != self.geometry.get() {
+        let (rect, map) = desktop_layout(self.logical);
+        let moved = rect != self.geometry.get();
+        let rescaled = *self.dpi.borrow() != map;
+        if moved || rescaled {
             self.geometry.set(rect);
-            move_window(self.hwnd, rect);
-            self.apply_styles();
+            self.dpi.replace(map);
+            if moved {
+                move_window(self.hwnd, rect);
+                self.apply_styles();
+            }
             self.push(OverlayEvent::GeometryChanged(rect));
         }
     }
+}
+
+/// The overlay's rectangle and its local DPI map (identity unless
+/// `logical`).
+fn desktop_layout(logical: bool) -> (IRect, DpiMap) {
+    let (rect, map) = desktop_dpi_map();
+    (rect, if logical { map } else { DpiMap::default() })
 }
 
 /// A redirected layered window shows nothing until it has layered
@@ -297,9 +333,7 @@ unsafe extern "system" fn subclass_proc(
     }
     match msg {
         WM_NCHITTEST => {
-            let g = state.geometry.get();
-            let (sx, sy) = (signed_lo(lparam.0), signed_hi(lparam.0));
-            let local = ((sx - g.x) as f64, (sy - g.y) as f64);
+            let local = state.local_point(signed_lo(lparam.0), signed_hi(lparam.0));
             if state.wants_mouse(local.0, local.1) {
                 LRESULT(HTCLIENT as isize)
             } else {
@@ -333,9 +367,10 @@ unsafe extern "system" fn subclass_proc(
         },
         WM_DPICHANGED => {
             // winit resizes to the suggested rectangle; the overlay keeps
-            // covering the desktop instead.
+            // covering the desktop instead, and picks up the new scale.
             let r = unsafe { DefSubclassProc(hwnd, msg, wparam, lparam) };
             move_window(hwnd, state.geometry.get());
+            state.check_geometry();
             r
         }
         WM_DISPLAYCHANGE => {
@@ -378,7 +413,10 @@ impl OverlayWindow {
     /// Create (hidden), style and show the overlay. Call from
     /// `ApplicationHandler::resumed`.
     pub fn create(event_loop: &ActiveEventLoop, config: &OverlayConfig) -> Result<Self, OverlayError> {
-        let geometry = config.geometry.unwrap_or_else(virtual_screen_geometry);
+        let (geometry, dpi) = match config.geometry {
+            Some(g) => (g, DpiMap::default()),
+            None => desktop_layout(config.logical_pixels),
+        };
         let adventure = config.mode == OverlayMode::Adventure;
         let no_activate = config.no_activate.unwrap_or(!adventure);
         let composition = config.backend == OverlayBackend::Composition;
@@ -410,6 +448,8 @@ impl OverlayWindow {
             follow_desktop: config.geometry.is_none(),
             composition,
             geometry: Cell::new(geometry),
+            logical: config.logical_pixels && config.geometry.is_none(),
+            dpi: RefCell::new(dpi),
             // Companion starts out letting the desktop keep its mouse; the
             // input timer takes it back only over something to grab.
             input_transparent: Cell::new(!adventure),
@@ -468,8 +508,14 @@ impl OverlayWindow {
         self.state.geometry.get()
     }
 
-    /// Install the hit test: `f(x, y)` with overlay-local physical
-    /// coordinates returns whether the overlay wants the mouse there
+    /// The monitors in overlay-local coordinates with their scales: how
+    /// local points convert (identity unless `logical_pixels`).
+    pub fn dpi_map(&self) -> DpiMap {
+        self.state.dpi.borrow().clone()
+    }
+
+    /// Install the hit test: `f(x, y)` with overlay-local coordinates
+    /// (logical with `logical_pixels`) returns whether the overlay wants the mouse there
     /// (`manager.wants_mouse`, `_adventure_captures_mouse`). Keep it cheap;
     /// it runs on every `WM_NCHITTEST` and every 50 ms.
     pub fn set_hit_test(&self, f: impl FnMut(f64, f64) -> bool + 'static) {
@@ -528,16 +574,17 @@ impl OverlayWindow {
         self.state.check_geometry();
     }
 
-    /// The cursor in overlay-local physical pixels.
+    /// The cursor as an overlay-local point.
     pub fn cursor_local(&self) -> Option<(f64, f64)> {
-        let g = self.geometry();
-        cursor_pos().map(|(x, y)| ((x - g.x) as f64, (y - g.y) as f64))
+        cursor_pos().map(|(x, y)| self.state.local_point(x, y))
     }
 
     /// Move the OS pointer to an overlay-local point (the cursor-trapping
-    /// silk). Physical pixels throughout, so no DPI conversion is needed.
+    /// silk), converted to physical pixels on the monitor it falls on
+    /// (`logical_to_physical` in `tick`).
     pub fn set_cursor_local(&self, x: f64, y: f64) -> bool {
         let g = self.geometry();
+        let (x, y) = self.state.dpi.borrow().to_physical(x, y);
         set_cursor_pos(dc_core::math::py_round(g.x as f64 + x) as i32, dc_core::math::py_round(g.y as f64 + y) as i32)
     }
 
@@ -751,25 +798,7 @@ mod tests {
             return; // no interactive desktop to read the cursor from
         }
         let start = Instant::now();
-        let state = State {
-            hwnd: HWND::default(),
-            adventure: false,
-            no_activate: true,
-            follow_desktop: false,
-            composition: false,
-            geometry: Cell::new(IRect::new(0, 0, 100, 100)),
-            input_transparent: Cell::new(true),
-            auto_input: Cell::new(true),
-            hit_test: RefCell::new(None),
-            last_hit: Cell::new(false),
-            events: RefCell::new(VecDeque::new()),
-            waker: RefCell::new(None),
-            hotkeys: RefCell::new(HashMap::new()),
-            alive: Cell::new(true),
-            next_input: Cell::new(start),
-            next_style: Cell::new(start),
-            next_geometry: Cell::new(start),
-        };
+        let state = test_state(IRect::new(0, 0, 100, 100), DpiMap::default(), start);
         let asked = Rc::new(Cell::new(0));
         let counter = asked.clone();
         *state.hit_test.borrow_mut() = Some(Box::new(move |_, _| {
@@ -792,5 +821,89 @@ mod tests {
         state.auto_input.set(false);
         state.service_timers(start + input * 2);
         assert_eq!(asked.get(), 2, "auto input off leaves the decision to the caller");
+    }
+
+    /// A window-less `State` (no Win32 calls are made on its handle).
+    fn test_state(geometry: IRect, dpi: DpiMap, start: Instant) -> State {
+        State {
+            hwnd: HWND::default(),
+            adventure: false,
+            no_activate: true,
+            follow_desktop: false,
+            composition: false,
+            geometry: Cell::new(geometry),
+            logical: !dpi.is_identity(),
+            dpi: RefCell::new(dpi),
+            input_transparent: Cell::new(true),
+            auto_input: Cell::new(true),
+            hit_test: RefCell::new(None),
+            last_hit: Cell::new(false),
+            events: RefCell::new(VecDeque::new()),
+            waker: RefCell::new(None),
+            hotkeys: RefCell::new(HashMap::new()),
+            alive: Cell::new(true),
+            next_input: Cell::new(start),
+            next_style: Cell::new(start),
+            next_geometry: Cell::new(start),
+        }
+    }
+
+    /// Ask the window procedure's `WM_NCHITTEST` about a desktop point and
+    /// return the overlay-local point the hit test was handed.
+    fn hit_test_sees(state: &State, x: i32, y: i32) -> (f64, f64) {
+        let seen = Rc::new(Cell::new((f64::NAN, f64::NAN)));
+        let out = seen.clone();
+        *state.hit_test.borrow_mut() = Some(Box::new(move |lx, ly| {
+            out.set((lx, ly));
+            true
+        }));
+        let lparam = LPARAM(((x as u32 & 0xFFFF) | ((y as u32 & 0xFFFF) << 16)) as i32 as isize);
+        let r = unsafe {
+            subclass_proc(HWND::default(), WM_NCHITTEST, WPARAM(0), lparam, SUBCLASS_ID, state as *const State as usize)
+        };
+        assert_eq!(r.0, HTCLIENT as isize);
+        seen.get()
+    }
+
+    /// 3840x2160 at 150% left of and above a 1920x1080 main monitor at 100%:
+    /// the overlay starts at (-3840, -400) and its hit test gets logical
+    /// points, converted on the monitor under the cursor.
+    #[test]
+    fn mixed_scales_reach_the_hit_test_as_logical_points() {
+        use crate::dpi::ScaledScreen;
+        let g = IRect::new(-3840, -400, 5760, 2160);
+        let map = DpiMap::new([
+            ScaledScreen::new(IRect::new(0, 0, 1920, 1080), 1.0),
+            ScaledScreen::new(IRect::new(-3840, -400, 3840, 2160), 1.5),
+        ])
+        .translated(-g.x, -g.y);
+        let state = test_state(g, map, Instant::now());
+        // On the main monitor: plain physical offset.
+        assert_eq!(hit_test_sees(&state, 100, 50), (3940.0, 450.0));
+        // On the 150% monitor: 1500 x 900 physical pixels in, 1000 x 600 logical.
+        let (x, y) = hit_test_sees(&state, -3840 + 1500, -400 + 900);
+        assert!((x - 1000.0).abs() < 1e-9 && (y - 600.0).abs() < 1e-9, "{x} {y}");
+        // Its last pixel is still on it (the logical box has a gap after it).
+        let (x, _) = hit_test_sees(&state, -1, 0);
+        assert!((x - 3839.0 / 1.5).abs() < 1e-9 && x < 2560.0);
+        assert_eq!(state.local_point(-3840, -400), (0.0, 0.0));
+    }
+
+    #[test]
+    fn at_one_hundred_percent_the_hit_test_sees_physical_points() {
+        let g = IRect::new(-1920, 0, 4480, 1440);
+        for map in [
+            DpiMap::default(),
+            crate::dpi::DpiMap::new([
+                crate::dpi::ScaledScreen::new(IRect::new(-1920, 0, 1920, 1080), 1.0),
+                crate::dpi::ScaledScreen::new(IRect::new(0, 0, 2560, 1440), 1.0),
+            ])
+            .translated(1920, 0),
+        ] {
+            let state = test_state(g, map, Instant::now());
+            for (x, y) in [(-1920, 0), (-1, 1079), (0, 0), (2559, 1439), (5000, -20)] {
+                assert_eq!(hit_test_sees(&state, x, y), ((x + 1920) as f64, y as f64));
+            }
+        }
     }
 }

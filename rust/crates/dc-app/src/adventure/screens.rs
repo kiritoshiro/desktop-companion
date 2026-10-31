@@ -6,6 +6,7 @@ use dc_adventure::adventure_profile::{load_profile, profile_path};
 use dc_art::desktop_surface::{SurfaceShot, SurfaceSnapshot};
 use dc_core::{IRect, Rect};
 use dc_platform::desktop_capture::{DesktopSnapshot, RgbaImage, capture_desktop};
+use dc_platform::dpi::DpiMap;
 use dc_platform::monitors::{MonitorInfo, available_rects_local, monitors, primary_index};
 use dc_platform::screen_activity::{monitor_states, playable_screens};
 use dc_render::Image;
@@ -35,9 +36,10 @@ pub fn primary_rect_local(origin: (i32, i32), list: &[MonitorInfo]) -> Option<IR
 
 /// Only monitors really in use: not asleep, off, or switched off by the
 /// player on the Adventure page (`screen_activity.py`). The main one always.
-pub fn playable(origin: (i32, i32), state_dir: &Path) -> PlayableScreens {
+/// Rectangles in the overlay's logical pixels (`dpi`: its local DPI map).
+pub fn playable(origin: (i32, i32), dpi: &DpiMap, state_dir: &Path) -> PlayableScreens {
     let all = monitors();
-    let primary_rect = primary_rect_local(origin, &all);
+    let primary_rect = primary_rect_local(origin, &all).map(|r| crate::dpi::irect_to_logical(dpi, r));
     if all.is_empty() {
         return PlayableScreens { rects: Vec::new(), primary: 0, primary_rect, monitors: all };
     }
@@ -55,7 +57,11 @@ pub fn playable(origin: (i32, i32), state_dir: &Path) -> PlayableScreens {
     }
     let list: Vec<MonitorInfo> = keep.into_iter().map(|i| all[i].clone()).collect();
     let (rects, primary) = available_rects_local(origin, &list);
-    let mut rects: Vec<ScreenRect> = rects.into_iter().map(|r| ScreenRect::new(r.x, r.y, r.w, r.h)).collect();
+    let mut rects: Vec<ScreenRect> = rects
+        .into_iter()
+        .map(|r| if dpi.is_identity() { r } else { dpi.rect_to_logical(r) })
+        .map(|r| ScreenRect::new(r.x, r.y, r.w, r.h))
+        .collect();
     let mut primary = primary;
     if rects.is_empty()
         && let Some(p) = primary_rect
@@ -120,9 +126,12 @@ pub fn surface_snapshot(snapshot: &DesktopSnapshot) -> SurfaceSnapshot {
     }
 }
 
-/// A picture of the playable monitors taken now (before the overlay shows).
+/// A picture of the playable monitors taken now (before the overlay shows):
+/// native pixels in logical rectangles, as Qt's `grabWindow` gave Python, so
+/// the overlay's per-monitor scaling puts every pixel back where it was
+/// (at 100% the rectangles are the physical ones).
 pub fn capture(origin: (i32, i32), list: &[MonitorInfo]) -> Option<SurfaceSnapshot> {
-    let mut snapshot = capture_desktop(origin, list, false)?;
+    let mut snapshot = capture_desktop(origin, list, true)?;
     let started = std::time::Instant::now();
     match snapshot.wallpaper_path.as_deref().map(load_wallpaper) {
         Some(Ok(paper)) => {
