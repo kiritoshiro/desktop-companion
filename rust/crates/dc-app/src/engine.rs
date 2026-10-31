@@ -23,12 +23,15 @@
 //! only the dirty region of each Companion frame ([`SoftOverlay`], Python's
 //! partial repaints); the GPU path repaints everything, as Python's GL path.
 //!
-//! Not ported yet: camouflage sampling, DPI scaling (everything is in
-//! physical pixels).
+//! Camouflage strength is refreshed every 120 ms ([`CamouflageSampler`]);
+//! like Python's, it animates opacity only and grabs no desktop pixels.
+//!
+//! Not ported yet: DPI scaling (everything is in physical pixels).
 
 use crate::adventure::draw::AdventureDrawer;
 use crate::adventure::screens::{self, PlayableScreens};
 use crate::adventure::{AdventureGame, Effect, StartOptions, input};
+use crate::camouflage::CamouflageSampler;
 use crate::live::LiveChannel;
 use crate::metrics::FontLabelMetrics;
 use crate::overlay_ui::{
@@ -92,6 +95,7 @@ struct Engine {
     game: Option<Rc<RefCell<AdventureGame>>>,
     painter: ScenePainter,
     adventure_drawer: AdventureDrawer,
+    camouflage: CamouflageSampler,
     ui: OverlayUi,
     rng: PyRandom,
     tray: Option<Tray>,
@@ -596,6 +600,10 @@ impl Engine {
                 g.cursor = c;
             }
             g.set_ui_open(self.ui.is_open(), dt);
+            // Not while the raid waits (released controls, paused).
+            if !(g.controls_released || g.paused || g.is_stopping()) {
+                self.camouflage.tick(now_ms, &mut g.manager.creatures);
+            }
             g.tick(dt);
         }
         self.update_adventure_context();
@@ -650,6 +658,7 @@ impl Engine {
                 }
             }
         }
+        self.camouflage.tick(now_ms, &mut manager.borrow_mut().creatures);
         let (mx, my) = self.overlay.as_ref().and_then(|o| o.cursor_local()).unwrap_or((-100000.0, -100000.0));
         // A menu or dialog has the mouse while it is open.
         let down = left_mouse_button_down() && !self.ui.is_open();
@@ -904,6 +913,7 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
         game: None,
         painter: ScenePainter::new(PaintSwitches::from_env()),
         adventure_drawer: AdventureDrawer::new(PaintSwitches::from_env()),
+        camouflage: CamouflageSampler::default(),
         ui,
         rng,
         tray: None,

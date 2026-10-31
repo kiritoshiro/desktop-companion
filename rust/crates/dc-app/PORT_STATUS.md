@@ -14,7 +14,7 @@ DC_ADVENTURE_FRAMES=<dir> cargo test -p dc-app frames_to_png_on_request   # Adve
 
 | Python | Rust | Status |
 |---|---|---|
-| `app/engine.py` `OverlayWindow` (Companion) | `engine.rs` | **ported**: one window over the virtual desktop (GPU on DirectComposition, `UpdateLayeredWindow` fallback), manager ticked at the frame policy's rate, global left button polled, desktop windows refreshed every 1.25 s, monitor changes, preset live-reload and stop requests (700 ms), label metrics from Segoe UI, hover, cursor capture by mouse webs (never in `--seconds` runs), partial repaints on the software path (`repaint.rs`: `_current_paint_region`'s creature, cage, web, cursor-silk and fly footprints united with last frame's, full repaint on request and every 150 frames; only the dirty rects are cleared, copied to the window's bitmap and passed to `UpdateLayeredWindowIndirect`; carcass footprints added, which Python left out; the GPU path repaints everything, as Python's GL path). **Missing:** camouflage sampling, the profile HUD, DPI scaling (all physical pixels). |
+| `app/engine.py` `OverlayWindow` (Companion) | `engine.rs` | **ported**: one window over the virtual desktop (GPU on DirectComposition, `UpdateLayeredWindow` fallback), manager ticked at the frame policy's rate, global left button polled, desktop windows refreshed every 1.25 s, monitor changes, preset live-reload and stop requests (700 ms), label metrics from Segoe UI, hover, cursor capture by mouse webs (never in `--seconds` runs), partial repaints on the software path (`repaint.rs`: `_current_paint_region`'s creature, cage, web, cursor-silk and fly footprints united with last frame's, full repaint on request and every 150 frames; only the dirty rects are cleared, copied to the window's bitmap and passed to `UpdateLayeredWindowIndirect`; carcass footprints added, which Python left out; the GPU path repaints everything, as Python's GL path), camouflage every 120 ms (`camouflage.rs`, `_refresh_camouflage_samples`: drag, motion or a moving leg reveals, a still spider fades to its `camouflage_strength` after `camouflage_idle_delay`, which dc-paint draws as opacity; Python grabs no desktop pixels for it any more, so neither does the port; also in Adventure unless the raid waits). **Missing:** the profile HUD, DPI scaling (all physical pixels). |
 | `app/engine.py` `OverlayWindow` (Adventure) | `adventure/mod.rs`, `adventure/input.rs`, `adventure/draw.rs`, `adventure/screens.rs` | **ported**: mission from the profile (`create_mission`), `mission.update` per tick, victory / defeat / Reclaim crash and blue screen, close after the end title, progress saved (never `creatures.json`); P1/P2 keys (turn-and-walk), Esc always pauses, K character, `` ` ``/`~`/VK_OEM_3 map view, F8 release as a Windows hotkey (raid paused, banner), mouse shot at the pointer, companion command buttons, HUD drag, `_adventure_captures_mouse`, NOTOPMOST + keyboard focus, controls reload. **Partial:** no free-roam (possess a spider outside a raid), so "Release spider" just resumes. |
 | `app/engine.py` `_show_context_menu`, `create_tray`, `_add_label_switches`, `_prompt_name`, `_announce` | `overlay_ui.rs`, `overlay_ui/*` (`OVERLAY_UI.md`) | **ported**: spider and overlay right-click menus, base carrying, cages, label switches, rename prompt, inspector, pause / character / controls / Adventure settings windows, Python's tray menu with live check marks and status line, balloons. |
 | `app/engine.py` live channel (`_channel_server`, `_on_channel_message`, `_apply_pushed_preset`, `_broadcast_session_state`) | `live.rs` | **ported**: one pipe server per overlay (dc-platform), serviced every loop pass; pushed presets for the running preset applied at once (and the file poll told), progress reset, stop request (save and quit), `session_state` on connect, after a pushed preset and on every announcement. Adventure honours only stop, as Python. The preset-file poll and stop-request file stay as fallbacks. |
@@ -31,7 +31,7 @@ DC_ADVENTURE_FRAMES=<dir> cargo test -p dc-app frames_to_png_on_request   # Adve
 
 ## Tests
 
-`cargo test -p dc-app` (101, all headless): the Adventure engine
+`cargo test -p dc-app` (104, all headless): the Adventure engine
 (`adventure/tests.rs`: raid from the profile's map, keys move the player,
 bindings and Esc, pause and the UI hand-off, K and `ProfileChanged`, map
 view and tilde, release and hotkey, two players, mouse drag/shot/commands,
@@ -43,8 +43,10 @@ the live channel (`live.rs`: real pipe, real manager; one test drives the
 real settings window against the overlay's end), the partial repaints
 (`repaint.rs`: QRect rounding, first/requested/150th frames whole, a
 throw's streak, cage fences and moves, and 200 frames of the default
-preset with a cage and flies equal to full repaints pixel for pixel), and
-the embedded icon. Tests
+preset with a cage and flies equal to full repaints pixel for pixel),
+camouflage (`camouflage.rs`: 140 samples of three scripted spiders equal
+to Python's trace bit for bit, from `src/fixtures/gen_camouflage.py`; the
+120 ms rate; fade and drag reveal), and the embedded icon. Tests
 that touch dc-content's process-wide state-dir override hold
 `test_support::state_lock()`; the others pass their folder explicitly.
 
