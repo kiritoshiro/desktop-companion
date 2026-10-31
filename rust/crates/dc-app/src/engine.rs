@@ -589,7 +589,7 @@ impl Engine {
         let now_ms = self.now_ms();
         let own = self.overlay.as_ref().map(|o| o.hwnd_raw());
         if let Some(fps) = self.policy.poll(now_ms, own) {
-            log::info!("frame rate now {fps:.0} FPS");
+            log::info!("frame rate now {fps:.0} FPS ({})", self.policy.reason);
             self.fps = fps;
         }
         self.check_screens(now_ms);
