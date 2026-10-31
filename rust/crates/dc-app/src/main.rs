@@ -19,12 +19,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod adventure;
+mod camouflage;
 mod dpi;
 mod engine;
 mod live;
 mod metrics;
 mod overlay_ui;
 mod profile_hud;
+mod repaint;
 mod settings;
 #[cfg(test)]
 mod test_support;
@@ -115,5 +117,16 @@ fn main() -> ExitCode {
             eprintln!("dc-app: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// `build.rs` links `app_icon.ico` into every binary of this crate, this
+    /// test harness included, as icon group 1.
+    #[test]
+    fn exe_carries_the_app_icon() {
+        use winit::platform::windows::IconExtWindows;
+        assert!(winit::window::Icon::from_resource(1, None).is_ok());
     }
 }

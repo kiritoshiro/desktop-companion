@@ -32,8 +32,9 @@ reference and keeps working until the Rust build reaches parity.
   app.
 - `pwsh rust/package.ps1` builds a release and packs `rust/dist/DesktopBugCompanion/`
   (the exe beside `models`, `personalities`, `presets`, `assets`) and a zip.
-  Release builds have no console window. The exe has no embedded icon yet
-  (the windows and the tray set theirs at run time).
+  Release builds have no console window. `crates/dc-app/build.rs` embeds
+  `assets/ui/app_icon.ico` as the exe's icon (no resource compiler needed);
+  the windows reuse it, and the tray sets its own from `app_icon.png`.
 
 ## Rules for everyone working in parallel
 

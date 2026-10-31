@@ -737,10 +737,7 @@ fn preset_edits_save_exactly_what_python_saves() {
     let newest = host.window.catalog.skins_for(Some(&category))[0].id.clone();
     assert_eq!(host.window.slots[3].model, newest);
     let python_pick = oracle["jumper_skin"].as_str().unwrap();
-    let expected = oracle["edited"]
-        .as_str()
-        .unwrap()
-        .replace(&format!("\"{python_pick}\""), &format!("\"{newest}\""));
+    let expected = oracle["edited"].as_str().unwrap().replace(&format!("\"{python_pick}\""), &format!("\"{newest}\""));
 
     screen.click("button:Save", &mut host);
     assert_eq!(std::fs::read_to_string(&saved).unwrap(), expected);

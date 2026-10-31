@@ -1,0 +1,2621 @@
+{
+ "samples": 140,
+ "spiders": {
+  "hider": {
+   "personality": "camouflage",
+   "overrides": {},
+   "size": 30.0,
+   "strength": 0.0,
+   "visible_timer": 1.0,
+   "trace": [
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.88,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.76,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.64,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.52,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.4,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.28,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.16000000000000003,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.040000000000000036,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.12
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.24
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.48
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.6
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.72
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.84
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.96
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.08
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.2000000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.3200000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.4400000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.5600000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.6800000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.8000000000000007
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.9200000000000008
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.040000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.160000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.280000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.4000000000000012
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.5200000000000014
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.6400000000000015
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.7600000000000016
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 2.8800000000000017
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.0000000000000018
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.120000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.240000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.360000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.480000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.6000000000000023
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.7200000000000024
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.8400000000000025
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 3.9600000000000026
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.080000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.200000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.320000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.440000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.560000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.680000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.800000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 4.9200000000000035
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 5.040000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 5.160000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 5.280000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 5.400000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.0029740060573669146,
+     "visible_timer": 0.0,
+     "idle_timer": 5.520000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.007756707460072461,
+     "visible_timer": 0.0,
+     "idle_timer": 5.640000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.014856114266460992,
+     "visible_timer": 0.0,
+     "idle_timer": 5.760000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.02472611833443615,
+     "visible_timer": 0.0,
+     "idle_timer": 5.880000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.037744220316188834,
+     "visible_timer": 0.0,
+     "idle_timer": 6.000000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.05419607632506787,
+     "visible_timer": 0.0,
+     "idle_timer": 6.1200000000000045
+    },
+    {
+     "in": {},
+     "strength": 0.07426577312705065,
+     "visible_timer": 0.0,
+     "idle_timer": 6.240000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.09803091529287764,
+     "visible_timer": 0.0,
+     "idle_timer": 6.360000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.12546175439714455,
+     "visible_timer": 0.0,
+     "idle_timer": 6.480000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.15642371353683904,
+     "visible_timer": 0.0,
+     "idle_timer": 6.600000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.19068276391821082,
+     "visible_timer": 0.0,
+     "idle_timer": 6.720000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.2279131971810416,
+     "visible_timer": 0.0,
+     "idle_timer": 6.840000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.2677074101423312,
+     "visible_timer": 0.0,
+     "idle_timer": 6.960000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.3095873799722929,
+     "visible_timer": 0.0,
+     "idle_timer": 7.080000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.3530175593334891,
+     "visible_timer": 0.0,
+     "idle_timer": 7.2000000000000055
+    },
+    {
+     "in": {},
+     "strength": 0.3974189642890042,
+     "visible_timer": 0.0,
+     "idle_timer": 7.320000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.44218426413660905,
+     "visible_timer": 0.0,
+     "idle_timer": 7.440000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.4866937128607585,
+     "visible_timer": 0.0,
+     "idle_timer": 7.560000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.5303317875435684,
+     "visible_timer": 0.0,
+     "idle_timer": 7.680000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.5725044206213354,
+     "visible_timer": 0.0,
+     "idle_timer": 7.800000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.6126567309713132,
+     "visible_timer": 0.0,
+     "idle_timer": 7.920000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.6502911740159033,
+     "visible_timer": 0.0,
+     "idle_timer": 8.040000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.6849860438014748,
+     "visible_timer": 0.0,
+     "idle_timer": 8.160000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.7164142707358719,
+     "visible_timer": 0.0,
+     "idle_timer": 8.280000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.7443624676792207,
+     "visible_timer": 0.0,
+     "idle_timer": 8.400000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.7687501846515031,
+     "visible_timer": 0.0,
+     "idle_timer": 8.520000000000003
+    },
+    {
+     "in": {
+      "leg": [
+       3,
+       false,
+       false,
+       0.02
+      ]
+     },
+     "strength": 0.0,
+     "visible_timer": 1.0299999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.9099999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.7899999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.6699999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.5499999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.4299999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.30999999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.18999999999999984,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.06999999999999984,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "dragging": true
+     },
+     "strength": 0.0,
+     "visible_timer": 4.38,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "dragging": true
+     },
+     "strength": 0.0,
+     "visible_timer": 4.38,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "dragging": true
+     },
+     "strength": 0.0,
+     "visible_timer": 4.38,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 4.26,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 4.14,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 4.02,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.8999999999999995,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.7799999999999994,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.6599999999999993,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.539999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.419999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.299999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.179999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 3.0599999999999987,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.9399999999999986,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_x": 2.0
+     },
+     "strength": 0.0,
+     "visible_timer": 2.8199999999999985,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_x": 2.0
+     },
+     "strength": 0.0,
+     "visible_timer": 2.6999999999999984,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_x": 2.0
+     },
+     "strength": 0.0,
+     "visible_timer": 2.5799999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_x": 2.0
+     },
+     "strength": 0.0,
+     "visible_timer": 2.459999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_x": 2.0
+     },
+     "strength": 0.0,
+     "visible_timer": 2.339999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_y": -3.0,
+      "hidden": true
+     },
+     "strength": 0.0,
+     "visible_timer": 2.219999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_y": -3.0,
+      "hidden": true
+     },
+     "strength": 0.0,
+     "visible_timer": 2.099999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_y": -3.0,
+      "hidden": true
+     },
+     "strength": 0.0,
+     "visible_timer": 1.9799999999999978,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_y": -3.0,
+      "hidden": true
+     },
+     "strength": 0.0,
+     "visible_timer": 1.8599999999999977,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "vel_y": -3.0,
+      "hidden": true
+     },
+     "strength": 0.0,
+     "visible_timer": 1.7399999999999975,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.6199999999999974,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.4999999999999973,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.3799999999999972,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.2599999999999971,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.139999999999997,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "leg": [
+       6,
+       false,
+       true,
+       0.0
+      ]
+     },
+     "strength": 0.0,
+     "visible_timer": 1.0299999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "current_speed": 1.1
+     },
+     "strength": 0.0,
+     "visible_timer": 0.9099999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.7899999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.6699999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.5499999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.4299999999999998,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.30999999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.18999999999999984,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.06999999999999984,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.12
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.24
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.48
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.6
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.72
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.84
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.96
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.08
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 1.2000000000000002
+    }
+   ]
+  },
+  "plain": {
+   "personality": "curious",
+   "overrides": {},
+   "size": 24.0,
+   "strength": 0.5,
+   "visible_timer": 0.0,
+   "trace": [
+    {
+     "in": {},
+     "strength": 0.04999999999999999,
+     "visible_timer": 0.0,
+     "idle_timer": 0.12
+    },
+    {
+     "in": {},
+     "strength": 0.0049999999999999975,
+     "visible_timer": 0.0,
+     "idle_timer": 0.24
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    }
+   ]
+  },
+  "tuned": {
+   "personality": "camouflage",
+   "overrides": {
+    "camouflage_idle_delay": 0.5,
+    "camouflage_hide_fade_time": 1.0,
+    "camouflage_reveal_speed": "0.5",
+    "camouflage_fade_speed": "fast",
+    "camouflage_motion_visible_time": 9.0
+   },
+   "size": 60.0,
+   "strength": 0.0,
+   "visible_timer": 0.0,
+   "trace": [
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.12
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.24
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.48
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.6
+    },
+    {
+     "in": {},
+     "strength": 0.012058272230399998,
+     "visible_timer": 0.0,
+     "idle_timer": 0.72
+    },
+    {
+     "in": {},
+     "strength": 0.045503621641728,
+     "visible_timer": 0.0,
+     "idle_timer": 0.84
+    },
+    {
+     "in": {},
+     "strength": 0.10621471021341694,
+     "visible_timer": 0.0,
+     "idle_timer": 0.96
+    },
+    {
+     "in": {},
+     "strength": 0.19198452742460193,
+     "visible_timer": 0.0,
+     "idle_timer": 1.08
+    },
+    {
+     "in": {},
+     "strength": 0.2930083524881736,
+     "visible_timer": 0.0,
+     "idle_timer": 1.2000000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.39518625983070244,
+     "visible_timer": 0.0,
+     "idle_timer": 1.3200000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.48573355003397606,
+     "visible_timer": 0.0,
+     "idle_timer": 1.4400000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.5603015110278604,
+     "visible_timer": 0.0,
+     "idle_timer": 1.5600000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.6214472390428455,
+     "visible_timer": 0.0,
+     "idle_timer": 1.6800000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.6715867360151333,
+     "visible_timer": 0.0,
+     "idle_timer": 1.8000000000000007
+    },
+    {
+     "in": {},
+     "strength": 0.7127011235324093,
+     "visible_timer": 0.0,
+     "idle_timer": 1.9200000000000008
+    },
+    {
+     "in": {},
+     "strength": 0.7464149212965756,
+     "visible_timer": 0.0,
+     "idle_timer": 2.040000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.774060235463192,
+     "visible_timer": 0.0,
+     "idle_timer": 2.160000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.7967293930798175,
+     "visible_timer": 0.0,
+     "idle_timer": 2.280000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.8153181023254503,
+     "visible_timer": 0.0,
+     "idle_timer": 2.4000000000000012
+    },
+    {
+     "in": {},
+     "strength": 0.8305608439068692,
+     "visible_timer": 0.0,
+     "idle_timer": 2.5200000000000014
+    },
+    {
+     "in": {},
+     "strength": 0.8430598920036327,
+     "visible_timer": 0.0,
+     "idle_timer": 2.6400000000000015
+    },
+    {
+     "in": {},
+     "strength": 0.8533091114429788,
+     "visible_timer": 0.0,
+     "idle_timer": 2.7600000000000016
+    },
+    {
+     "in": {},
+     "strength": 0.8617134713832426,
+     "visible_timer": 0.0,
+     "idle_timer": 2.8800000000000017
+    },
+    {
+     "in": {},
+     "strength": 0.868605046534259,
+     "visible_timer": 0.0,
+     "idle_timer": 3.0000000000000018
+    },
+    {
+     "in": {},
+     "strength": 0.8742561381580923,
+     "visible_timer": 0.0,
+     "idle_timer": 3.120000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.8788900332896357,
+     "visible_timer": 0.0,
+     "idle_timer": 3.240000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.8826898272975012,
+     "visible_timer": 0.0,
+     "idle_timer": 3.360000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.885805658383951,
+     "visible_timer": 0.0,
+     "idle_timer": 3.480000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.8883606398748398,
+     "visible_timer": 0.0,
+     "idle_timer": 3.6000000000000023
+    },
+    {
+     "in": {},
+     "strength": 0.8904557246973687,
+     "visible_timer": 0.0,
+     "idle_timer": 3.7200000000000024
+    },
+    {
+     "in": {},
+     "strength": 0.8921736942518423,
+     "visible_timer": 0.0,
+     "idle_timer": 3.8400000000000025
+    },
+    {
+     "in": {},
+     "strength": 0.8935824292865108,
+     "visible_timer": 0.0,
+     "idle_timer": 3.9600000000000026
+    },
+    {
+     "in": {},
+     "strength": 0.8947375920149389,
+     "visible_timer": 0.0,
+     "idle_timer": 4.080000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8956848254522498,
+     "visible_timer": 0.0,
+     "idle_timer": 4.200000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8964615568708448,
+     "visible_timer": 0.0,
+     "idle_timer": 4.320000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8970984766340928,
+     "visible_timer": 0.0,
+     "idle_timer": 4.440000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8976207508399561,
+     "visible_timer": 0.0,
+     "idle_timer": 4.560000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8980490156887639,
+     "visible_timer": 0.0,
+     "idle_timer": 4.680000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8984001928647865,
+     "visible_timer": 0.0,
+     "idle_timer": 4.800000000000003
+    },
+    {
+     "in": {
+      "inertia_vx": 50.0
+     },
+     "strength": 0.0,
+     "visible_timer": 2.88,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.76,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.6399999999999997,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.5199999999999996,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.3999999999999995,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.2799999999999994,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.1599999999999993,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.039999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.919999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.799999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.6799999999999988,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.5599999999999987,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.4399999999999986,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.3199999999999985,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.1999999999999984,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.0799999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.9599999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.8399999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.7199999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.5999999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.4799999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.3599999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.23999999999999833,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.11999999999999833,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.12
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.24
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.48
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.6
+    },
+    {
+     "in": {
+      "leg": [
+       0,
+       true,
+       false,
+       0.0
+      ]
+     },
+     "strength": 0.0,
+     "visible_timer": 2.88,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {
+      "leg": [
+       1,
+       false,
+       false,
+       0.012
+      ]
+     },
+     "strength": 0.0,
+     "visible_timer": 2.76,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.6399999999999997,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.5199999999999996,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.3999999999999995,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.2799999999999994,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.1599999999999993,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 2.039999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.919999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.799999999999999,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.6799999999999988,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.5599999999999987,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.4399999999999986,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.3199999999999985,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.1999999999999984,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 1.0799999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.9599999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.8399999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.7199999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.5999999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.4799999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.3599999999999983,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.23999999999999833,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.11999999999999833,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.0
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.12
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.24
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.36
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.48
+    },
+    {
+     "in": {},
+     "strength": 0.0,
+     "visible_timer": 0.0,
+     "idle_timer": 0.6
+    },
+    {
+     "in": {},
+     "strength": 0.012058272230399998,
+     "visible_timer": 0.0,
+     "idle_timer": 0.72
+    },
+    {
+     "in": {},
+     "strength": 0.045503621641728,
+     "visible_timer": 0.0,
+     "idle_timer": 0.84
+    },
+    {
+     "in": {},
+     "strength": 0.10621471021341694,
+     "visible_timer": 0.0,
+     "idle_timer": 0.96
+    },
+    {
+     "in": {},
+     "strength": 0.19198452742460193,
+     "visible_timer": 0.0,
+     "idle_timer": 1.08
+    },
+    {
+     "in": {},
+     "strength": 0.2930083524881736,
+     "visible_timer": 0.0,
+     "idle_timer": 1.2000000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.39518625983070244,
+     "visible_timer": 0.0,
+     "idle_timer": 1.3200000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.48573355003397606,
+     "visible_timer": 0.0,
+     "idle_timer": 1.4400000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.5603015110278604,
+     "visible_timer": 0.0,
+     "idle_timer": 1.5600000000000005
+    },
+    {
+     "in": {},
+     "strength": 0.6214472390428455,
+     "visible_timer": 0.0,
+     "idle_timer": 1.6800000000000006
+    },
+    {
+     "in": {},
+     "strength": 0.6715867360151333,
+     "visible_timer": 0.0,
+     "idle_timer": 1.8000000000000007
+    },
+    {
+     "in": {},
+     "strength": 0.7127011235324093,
+     "visible_timer": 0.0,
+     "idle_timer": 1.9200000000000008
+    },
+    {
+     "in": {},
+     "strength": 0.7464149212965756,
+     "visible_timer": 0.0,
+     "idle_timer": 2.040000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.774060235463192,
+     "visible_timer": 0.0,
+     "idle_timer": 2.160000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.7967293930798175,
+     "visible_timer": 0.0,
+     "idle_timer": 2.280000000000001
+    },
+    {
+     "in": {},
+     "strength": 0.8153181023254503,
+     "visible_timer": 0.0,
+     "idle_timer": 2.4000000000000012
+    },
+    {
+     "in": {},
+     "strength": 0.8305608439068692,
+     "visible_timer": 0.0,
+     "idle_timer": 2.5200000000000014
+    },
+    {
+     "in": {},
+     "strength": 0.8430598920036327,
+     "visible_timer": 0.0,
+     "idle_timer": 2.6400000000000015
+    },
+    {
+     "in": {},
+     "strength": 0.8533091114429788,
+     "visible_timer": 0.0,
+     "idle_timer": 2.7600000000000016
+    },
+    {
+     "in": {},
+     "strength": 0.8617134713832426,
+     "visible_timer": 0.0,
+     "idle_timer": 2.8800000000000017
+    },
+    {
+     "in": {},
+     "strength": 0.868605046534259,
+     "visible_timer": 0.0,
+     "idle_timer": 3.0000000000000018
+    },
+    {
+     "in": {},
+     "strength": 0.8742561381580923,
+     "visible_timer": 0.0,
+     "idle_timer": 3.120000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.8788900332896357,
+     "visible_timer": 0.0,
+     "idle_timer": 3.240000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.8826898272975012,
+     "visible_timer": 0.0,
+     "idle_timer": 3.360000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.885805658383951,
+     "visible_timer": 0.0,
+     "idle_timer": 3.480000000000002
+    },
+    {
+     "in": {},
+     "strength": 0.8883606398748398,
+     "visible_timer": 0.0,
+     "idle_timer": 3.6000000000000023
+    },
+    {
+     "in": {},
+     "strength": 0.8904557246973687,
+     "visible_timer": 0.0,
+     "idle_timer": 3.7200000000000024
+    },
+    {
+     "in": {},
+     "strength": 0.8921736942518423,
+     "visible_timer": 0.0,
+     "idle_timer": 3.8400000000000025
+    },
+    {
+     "in": {},
+     "strength": 0.8935824292865108,
+     "visible_timer": 0.0,
+     "idle_timer": 3.9600000000000026
+    },
+    {
+     "in": {},
+     "strength": 0.8947375920149389,
+     "visible_timer": 0.0,
+     "idle_timer": 4.080000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8956848254522498,
+     "visible_timer": 0.0,
+     "idle_timer": 4.200000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8964615568708448,
+     "visible_timer": 0.0,
+     "idle_timer": 4.320000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8970984766340928,
+     "visible_timer": 0.0,
+     "idle_timer": 4.440000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8976207508399561,
+     "visible_timer": 0.0,
+     "idle_timer": 4.560000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8980490156887639,
+     "visible_timer": 0.0,
+     "idle_timer": 4.680000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8984001928647865,
+     "visible_timer": 0.0,
+     "idle_timer": 4.800000000000003
+    },
+    {
+     "in": {},
+     "strength": 0.8986881581491248,
+     "visible_timer": 0.0,
+     "idle_timer": 4.9200000000000035
+    },
+    {
+     "in": {},
+     "strength": 0.8989242896822823,
+     "visible_timer": 0.0,
+     "idle_timer": 5.040000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.8991179175394716,
+     "visible_timer": 0.0,
+     "idle_timer": 5.160000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.8992766923823667,
+     "visible_timer": 0.0,
+     "idle_timer": 5.280000000000004
+    },
+    {
+     "in": {},
+     "strength": 0.8994068877535407,
+     "visible_timer": 0.0,
+     "idle_timer": 5.400000000000004
+    }
+   ]
+  }
+ }
+}

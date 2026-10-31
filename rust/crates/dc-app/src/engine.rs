@@ -29,11 +29,17 @@
 //! the hit test, and [`crate::dpi`] the rest and the frame (once per
 //! monitor at its scale). At 100% nothing is converted.
 //!
-//! Not ported yet: camouflage sampling, partial repaints.
+//! The software fallback (`--software`, `UpdateLayeredWindow`) repaints
+//! only the dirty region of each Companion frame ([`SoftOverlay`], Python's
+//! partial repaints); the GPU path repaints everything, as Python's GL path.
+//!
+//! Camouflage strength is refreshed every 120 ms ([`CamouflageSampler`]);
+//! like Python's, it animates opacity only and grabs no desktop pixels.
 
 use crate::adventure::draw::AdventureDrawer;
 use crate::adventure::screens::{self, PlayableScreens};
 use crate::adventure::{AdventureGame, Effect, StartOptions, input};
+use crate::camouflage::CamouflageSampler;
 use crate::live::LiveChannel;
 use crate::metrics::FontLabelMetrics;
 use crate::overlay_ui::{
@@ -41,6 +47,7 @@ use crate::overlay_ui::{
     tray_checks, tray_event_checked, tray_menu, tray_menu_for,
 };
 use crate::profile_hud;
+use crate::repaint::SoftOverlay;
 use crate::{Args, Mode};
 use dc_core::PyRandom;
 use dc_core::profiling;
@@ -57,7 +64,7 @@ use dc_platform::overlay::{
     OverlayBackend, OverlayConfig, OverlayEvent, OverlayMode, OverlayWindow, RELEASE_HOTKEY_ID,
 };
 use dc_platform::tray::{MessageIcon, Tray, TrayEvent};
-use dc_render::{Color, CpuRenderer, GpuRenderer, RenderHint, Scene};
+use dc_render::{Color, GpuRenderer, RenderHint, Scene};
 use dc_world::playfield::ScreenRect;
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -84,7 +91,7 @@ fn target_fps() -> f64 {
 
 enum Drawer {
     Gpu { gpu: Box<OverlayGpu>, renderer: Box<GpuRenderer> },
-    Soft { cpu: CpuRenderer },
+    Soft { soft: Box<SoftOverlay> },
 }
 
 struct Engine {
@@ -99,6 +106,7 @@ struct Engine {
     game: Option<Rc<RefCell<AdventureGame>>>,
     painter: ScenePainter,
     adventure_drawer: AdventureDrawer,
+    camouflage: CamouflageSampler,
     ui: OverlayUi,
     rng: PyRandom,
     tray: Option<Tray>,
@@ -145,6 +153,14 @@ impl Engine {
         self.manager.is_some() || self.game.is_some()
     }
 
+    /// `_request_full_repaint`: the software overlay's next frame repaints
+    /// everything (whatever changed outside the spiders' footprints).
+    fn request_full_repaint(&mut self) {
+        if let Some(Drawer::Soft { soft }) = self.drawer.as_mut() {
+            soft.request_full();
+        }
+    }
+
     fn screen_rects(&self) -> Vec<ScreenRect> {
         crate::dpi::screen_rects(&self.dpi)
     }
@@ -170,7 +186,7 @@ impl Engine {
             }
             OverlayBackend::Layered => {
                 log::info!("Painting in software (UpdateLayeredWindow)");
-                Drawer::Soft { cpu: CpuRenderer::new() }
+                Drawer::Soft { soft: Box::default() }
             }
         };
         self.geometry = g;
@@ -346,6 +362,7 @@ impl Engine {
         if done.preset_applied {
             // Keep the file poll from applying the same content again.
             self.preset_mtime = dc_platform::session_control::file_mtime(&self.preset);
+            self.request_full_repaint();
         }
         if done.stop {
             log::info!("Stop requested over the live channel");
@@ -440,6 +457,8 @@ impl Engine {
         if self.exiting {
             return;
         }
+        // Menu, dialog and tray actions can add or remove anything.
+        self.request_full_repaint();
         match command {
             EngineCommand::Quit => self.quit(el),
             EngineCommand::Announce(text) => self.announce(&text),
@@ -557,6 +576,7 @@ impl Engine {
         if let Some(Drawer::Gpu { gpu, .. }) = self.drawer.as_mut() {
             gpu.resize(rect.w as u32, rect.h as u32);
         }
+        self.request_full_repaint();
     }
 
     /// `OverlayWindow.tick`.
@@ -612,6 +632,10 @@ impl Engine {
                 g.cursor = c;
             }
             g.set_ui_open(self.ui.is_open(), dt);
+            // Not while the raid waits (released controls, paused).
+            if !(g.controls_released || g.paused || g.is_stopping()) {
+                self.camouflage.tick(now_ms, &mut g.manager.creatures);
+            }
             g.tick(dt);
         }
         self.update_adventure_context();
@@ -663,11 +687,13 @@ impl Engine {
                     Some(data) => {
                         let message = manager.borrow_mut().reload_from_preset_data(&data, &mut self.rng);
                         log::info!("{message}");
+                        self.request_full_repaint();
                     }
                     None => log::warn!("Preset changed but could not be read: {}", self.preset.display()),
                 }
             }
         }
+        self.camouflage.tick(now_ms, &mut manager.borrow_mut().creatures);
         let (mx, my) = self.overlay.as_ref().and_then(|o| o.cursor_local()).unwrap_or((-100000.0, -100000.0));
         // A menu or dialog has the mouse while it is open.
         let down = left_mouse_button_down() && !self.ui.is_open();
@@ -716,6 +742,27 @@ impl Engine {
             let spiders = self.with_manager(|m, _| m.creatures.len()).unwrap_or(0);
             (profile_hud::hud_header(spiders, self.fps, self.policy.reason), profiling::hud_lines())
         });
+        let (w, h) = (self.geometry.w as u32, self.geometry.h as u32);
+        // Software Companion frames: what to repaint, and the clip that
+        // culls whatever lies outside it. The dirty region is in logical
+        // pixels and leaves out the HUD, so a scaled monitor or the HUD
+        // repaints everything (Python added `_hud_rect` instead).
+        let partial_ok = hud.is_none() && self.dpi.is_identity();
+        let clip = match (self.drawer.as_mut(), &self.manager) {
+            (Some(Drawer::Soft { soft }), Some(manager)) => {
+                if !partial_ok {
+                    soft.request_full();
+                }
+                soft.plan(&mut manager.borrow_mut(), (w, h))
+            }
+            // The GPU repaints everything; drop the cursor silk's dirty
+            // rects, which would otherwise pile up while silk is active.
+            (Some(Drawer::Gpu { .. }), Some(manager)) => {
+                manager.borrow_mut().mouse_web_world.dirty_rects();
+                None
+            }
+            _ => None,
+        };
         let mut scene = Scene::new();
         {
             let mut canvas = scene.canvas();
@@ -723,7 +770,7 @@ impl Engine {
             if let Some(game) = &self.game {
                 self.adventure_drawer.paint(&mut game.borrow_mut(), &mut canvas);
             } else if let Some(manager) = &self.manager {
-                self.painter.paint(&mut manager.borrow_mut(), &mut canvas, None);
+                self.painter.paint(&mut manager.borrow_mut(), &mut canvas, clip);
             }
             if let Some((header, lines)) = &hud {
                 profile_hud::draw_profile_hud(&mut canvas, header, lines);
@@ -731,7 +778,6 @@ impl Engine {
         }
         // Recorded in logical pixels; drawn per monitor at its scale.
         let scene = crate::dpi::physical_scene(&self.dpi, &scene).unwrap_or(scene);
-        let (w, h) = (self.geometry.w as u32, self.geometry.h as u32);
         match self.drawer.as_mut() {
             Some(Drawer::Gpu { gpu, renderer }) => {
                 let Some(frame) = gpu.acquire() else { return };
@@ -739,10 +785,10 @@ impl Engine {
                 renderer.render(&scene, &view, (w, h), Some(Color::TRANSPARENT));
                 gpu.queue.present(frame);
             }
-            Some(Drawer::Soft { cpu }) => {
-                let image = cpu.render(&scene, w, h, None);
+            Some(Drawer::Soft { soft }) => {
+                let (pixels, dirty) = soft.render(&scene, (w, h));
                 if let Some(o) = self.overlay.as_ref() {
-                    o.present_premultiplied(image.data(), w, h);
+                    o.present_premultiplied_rects(pixels, w, h, dirty.as_deref());
                 }
             }
             None => return,
@@ -937,6 +983,7 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
         game: None,
         painter: ScenePainter::new(PaintSwitches::from_env()),
         adventure_drawer: AdventureDrawer::new(PaintSwitches::from_env()),
+        camouflage: CamouflageSampler::default(),
         ui,
         rng,
         tray: None,

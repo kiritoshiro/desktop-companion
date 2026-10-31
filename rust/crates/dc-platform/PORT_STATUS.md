@@ -43,7 +43,10 @@ and gives cursor positions in logical pixels.
   while the cursor is elsewhere, and `WindowFromPoint` away from the circle no
   longer returns the overlay.
 - Software fallback `OverlayBackend::Layered` (`UpdateLayeredWindow` with a
-  premultiplied DIB) passes the same `--verify` checks.
+  premultiplied DIB) passes the same `--verify` checks. It now presents
+  through `UpdateLayeredWindowIndirect`; `present_premultiplied_rects`
+  copies only the dirty rects into the DIB and passes their bounding rect
+  as `prcDirty` (dc-app's partial repaints). Not yet run on screen.
 
 ## Tests
 
