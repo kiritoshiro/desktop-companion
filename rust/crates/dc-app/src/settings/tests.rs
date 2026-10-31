@@ -730,10 +730,20 @@ fn preset_edits_save_exactly_what_python_saves() {
     let label = temperament(&host, "cautious");
     screen.choose(screen.probe("slot2:temperament"), &label, &mut host);
     screen.choose(screen.probe("slot3:category"), "Jumper", &mut host);
-    assert_eq!(host.window.slots[3].model, oracle["jumper_skin"].as_str().unwrap());
+    // The skin that follows a category is the newest model file, so Python's
+    // pick depends on when the files were checked out: compare with the
+    // newest skin here, and substitute it into Python's save.
+    let category = host.window.slots[3].category.clone();
+    let newest = host.window.catalog.skins_for(Some(&category))[0].id.clone();
+    assert_eq!(host.window.slots[3].model, newest);
+    let python_pick = oracle["jumper_skin"].as_str().unwrap();
+    let expected = oracle["edited"]
+        .as_str()
+        .unwrap()
+        .replace(&format!("\"{python_pick}\""), &format!("\"{newest}\""));
 
     screen.click("button:Save", &mut host);
-    assert_eq!(std::fs::read_to_string(&saved).unwrap(), oracle["edited"].as_str().unwrap());
+    assert_eq!(std::fs::read_to_string(&saved).unwrap(), expected);
 }
 
 #[test]
