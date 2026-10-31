@@ -558,6 +558,7 @@ fn the_overlay_side_applies_what_the_window_pushes() {
             .expect("the launched preset loads");
     let mut channel = crate::live::LiveChannel::open(&state.dir, &preset, false);
     assert!(channel.is_listening());
+    connect_channel(&mut host);
     let before = manager.always_show_xp;
 
     screen.click("check:XP", &mut host);
