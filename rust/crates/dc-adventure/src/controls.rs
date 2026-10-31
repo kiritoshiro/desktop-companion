@@ -52,7 +52,8 @@ pub const ACTIONS: [(Action, &str, &str); 15] = [
     (
         Action::Shoot,
         "Shoot silk",
-        "Fire one silk charge along your aim, even if it misses. Refill at home or the Silk loom.",
+        "Fire one silk charge, even if it misses: from a key, straight where your spider faces; from a mouse \
+         button, exactly at the pointer. Refill at home or the Silk loom.",
     ),
     (Action::Bite, "Bite", "Hold to repeatedly bite a foe in front of you, inside the aim cone."),
     (Action::CompanionFollow, "Scout: follow", "Your companion follows and fights nearby enemies."),

@@ -89,9 +89,11 @@ players aim forward, share one bag, and have separate armour/skill windows
 opened together by K or P. Close both to resume. See [local co-op details](docs/adventure-mission.md#local-two-player-mode).
 The status panel shows health,
 stamina, silk ammunition and action cooldowns; drag its header to move it.
-Silk fires visibly along your aim even on a miss. Stand at home to refill;
+Silk fires visibly even on a miss: from a key, straight where your spider
+faces; from a mouse button, exactly at the pointer. Stand at home to refill;
 capturing the Silk loom raises capacity to twelve and refills faster.
-Companion commands are **1 Follow**, **2 Defend here**, **3 Attack target**
+Companions walk at your pace and run, on their own stamina, to catch up or
+when you run. Companion commands are **1 Follow**, **2 Defend here**, **3 Attack target**
 (point at an enemy first), also available as HUD buttons and rebindable controls.
 Adventure captures mouse input while active; **Esc** pauses, opens settings,
 restarts or exits the raid. Spiders at the same level use the same baseline size

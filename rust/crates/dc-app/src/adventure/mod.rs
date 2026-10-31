@@ -24,6 +24,7 @@ pub mod input;
 pub mod screens;
 
 use crate::overlay_ui::{EngineCommand, UiRequest};
+use dc_adventure::adventure::ShotAim;
 use dc_adventure::controls::{Action, ControlSettings, Key, MouseButton, controls_path, load_controls};
 use dc_adventure::mission::{MissionHost, SpiderId, TerritoryMission};
 use dc_adventure::mission_factory::{Mission, create_mission};
@@ -468,7 +469,9 @@ impl AdventureGame {
                 p.control.jump(spider_mut(manager, p.creature));
             }
             Action::Shoot if down && !repeat => {
-                TerritoryMission::shoot(manager, p.creature, &mut p.control);
+                // A key shoots where the spider faces; a mouse button, at the pointer.
+                let aim = if pointer.is_some() { ShotAim::Pointer } else { ShotAim::Facing };
+                TerritoryMission::shoot(manager, p.creature, &mut p.control, aim);
             }
             _ => {}
         }

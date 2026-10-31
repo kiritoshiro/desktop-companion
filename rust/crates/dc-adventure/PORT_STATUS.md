@@ -10,10 +10,10 @@
 | `app/adventure_profile.py` | `src/adventure_profile.rs` | **ported**: `AdventureProfile` (v4), load + v1/v2 migration, atomic save, `HERO`, `PLAYER_TWO`, `*_progression`, `store_progression`, `unlock_companion`, `record_result` |
 | `app/encounters.py` | `src/encounters.rs` | **ported**: `EncounterProfile`, `PROFILES`, `EncounterDirector` (`outposts`, `defenders_for`, `update`, `retry`), `OutpostSite` trait |
 | `app/stat_text.py` | `src/stat_text.rs` | **ported** (byte-identical HTML for every skill and piece/level) |
-| `app/adventure.py` | `src/adventure.rs` | **ported** over the `ControlledSpider` trait (see below) |
+| `app/adventure.py` | `src/adventure.rs` | **ported** over the `ControlledSpider` trait (see below); includes #114 (`shot_angle` as `ShotAim`: a key shoots where the spider faces, a mouse button at the pointer), which is on `legacy`'s PR branch `feat/facing-shot-companion-sprint`, not merged there |
 | `app/mission_factory.py` | `src/mission_factory.rs` | **ported**: `build_layout`, `plan_mission`, `create_mission` → `Mission::{Territory, Swarm, Reclaim}` (screen capture is a callback dc-app supplies) |
 | `app/admin_ui.py` (data functions) | `src/admin.rs` | **ported**: `set_admin`, `reset_progress`, `give_amber`, `give_all_armour`, `unlock_all_companions`, `set_hero_level`; the dialog is dc-ui's |
-| `app/mission.py` | `src/mission.rs`, `src/mission_actor.rs` | **ported** (Codex worker, 2026-10-18): `MissionSite`, `TerritoryMission`, `MissionActor`, over the `MissionHost` / `MissionSpider` traits below |
+| `app/mission.py` | `src/mission.rs`, `src/mission_actor.rs` | **ported** (Codex worker, 2026-10-18): `MissionSite`, `TerritoryMission`, `MissionActor`, over the `MissionHost` / `MissionSpider` traits below; includes #114's `_ally_pace` (companions walk at 115 and run at 190); `missions.json` was dumped from that PR branch (the other fixtures are identical on both) |
 | `app/swarm.py`, `app/reclaim.py` | `src/swarm.rs`, `src/reclaim.rs` | **ported**, as `MissionEnvironment` hooks around a `TerritoryMission` |
 
 `src/progression.rs` re-exports `dc_state::progression` and

@@ -340,6 +340,58 @@ fn live_raids_match_python() {
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
+/// test_mission.py's `test_companions_walk_at_your_pace_and_run_to_catch_up`
+/// (#114). The owner: "my companion spiders seem to not have ability to run
+/// just like me ... they should be able to shift run, to follow me."
+#[test]
+fn companions_walk_at_your_pace_and_run_to_catch_up() {
+    use dc_adventure::adventure::ControlledSpider;
+    use dc_adventure::mission_actor::MissionActor;
+
+    let dir = scratch("ally-pace");
+    let map = fresh_profile().selected_map;
+    let (mut manager, mut mission, mut rng) = make(&dir.0, &map, 3, 1, false);
+    // clear_enemies: only the hero's side is left.
+    let m = mission.territory_mut();
+    m.actors.retain(|a| a.role == "ally");
+    let keep: Vec<SpiderId> = m.players.iter().map(|p| p.creature).chain(m.actors.iter().map(|a| a.creature)).collect();
+    manager.creatures.retain(|c| keep.iter().any(|id| id.0 == c.id));
+    let ally = m.actors.iter().position(|a| a.role == "ally").expect("a companion");
+    let (ally_id, hero) = (m.actors[ally].creature, m.hero);
+    let step = |manager: &mut CreatureManager, mission: &mut Mission, rng: &mut PyRandom, seconds: f64| {
+        for _ in 0..(seconds * 60.0).round() as usize {
+            mission.update(manager, 1.0 / 60.0, rng);
+        }
+    };
+    let place = |manager: &mut CreatureManager, x: f64, y: f64| {
+        let c = manager.creatures.iter_mut().find(|c| c.id == ally_id.0).unwrap();
+        (c.kin.x, c.kin.y) = (x, y);
+    };
+    step(&mut manager, &mut mission, &mut rng, 0.5);
+
+    let (hx, hy) = (MissionHost::creature(&manager, hero).x(), MissionHost::creature(&manager, hero).y());
+    place(&mut manager, hx + 20.0, hy + 90.0);
+    mission.territory_mut().actors[ally].think = 0.0;
+    step(&mut manager, &mut mission, &mut rng, 0.2);
+    let c = MissionHost::creature(&manager, ally_id);
+    assert!(c.speed() <= MissionActor::ALLY_WALK * c.speed_mult() + 1e-6, "close by it walks: {}", c.speed());
+
+    let (hx, hy) = (MissionHost::creature(&manager, hero).x(), MissionHost::creature(&manager, hero).y());
+    let far = mission.territory().layout.clamp(hx + 700.0, hy, 40.0);
+    place(&mut manager, far.0, far.1);
+    let energy = MissionHost::creature(&manager, ally_id).energy();
+    mission.territory_mut().actors[ally].think = 0.0;
+    step(&mut manager, &mut mission, &mut rng, 0.3);
+    let c = MissionHost::creature(&manager, ally_id);
+    assert!((c.speed() - MissionActor::ALLY_RUN * c.speed_mult()).abs() < 1e-6, "far behind: it runs");
+    assert!(c.energy() < energy, "running costs it stamina, as it costs you");
+
+    MissionHost::creature_mut(&mut manager, ally_id).set_energy(0.0);
+    step(&mut manager, &mut mission, &mut rng, 0.1);
+    let c = MissionHost::creature(&manager, ally_id);
+    assert!((c.speed() - MissionActor::ALLY_WALK * c.speed_mult()).abs() < 1e-6, "out of stamina it walks");
+}
+
 #[test]
 fn maps_are_all_covered() {
     let fx = fixture();
