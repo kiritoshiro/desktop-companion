@@ -80,7 +80,8 @@ with full health, stamina and eight silk charges. By default WASD
 moves, Shift sprints (draining energy), Space jumps, Q fires a web and
 holding F repeatedly bites, K opens the skill tree and Esc pauses. The mouse only aims:
 within a cone in front of the spider (90 degrees by default), and the spider
-turns by walking. **Controls...** on the Adventure page, or Settings in the
+turns by walking. Silk is the exception: from a key it goes straight ahead,
+and from a mouse button bound to it, exactly at the pointer, cone or not. **Controls...** on the Adventure page, or Settings in the
 pause menu, lists what every button does, changes the aim cone, and rebinds any
 action to another key or mouse button (saved in `state\controls.json`; Esc
 always pauses). Check **Two players · one keyboard** to add a second saved hero:

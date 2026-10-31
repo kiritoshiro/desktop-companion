@@ -6,7 +6,7 @@
 use dc_adventure::adventure::SilkShot;
 use dc_adventure::adventure_profile::{fresh_profile, profile_path, save_profile};
 use dc_adventure::campaign::MAPS;
-use dc_adventure::controls::ControlSettings;
+use dc_adventure::controls::{Action, ControlSettings};
 use dc_adventure::mission::{MissionHost, SpawnRequest, SpiderId, TerritoryMission};
 use dc_adventure::mission_factory::{Mission, create_mission};
 use dc_core::PyRandom;
@@ -374,7 +374,8 @@ fn companions_walk_at_your_pace_and_run_to_catch_up() {
     mission.territory_mut().actors[ally].think = 0.0;
     step(&mut manager, &mut mission, &mut rng, 0.2);
     let c = MissionHost::creature(&manager, ally_id);
-    assert!(c.speed() <= MissionActor::ALLY_WALK * c.speed_mult() + 1e-6, "close by it walks: {}", c.speed());
+    let walk = MissionActor::ALLY_WALK * c.speed_mult();
+    assert!((c.speed() - walk).abs() < 1e-6, "close by it walks at your pace (was 68): {}", c.speed());
 
     let (hx, hy) = (MissionHost::creature(&manager, hero).x(), MissionHost::creature(&manager, hero).y());
     let far = mission.territory().layout.clamp(hx + 700.0, hy, 40.0);
@@ -390,6 +391,28 @@ fn companions_walk_at_your_pace_and_run_to_catch_up() {
     step(&mut manager, &mut mission, &mut rng, 0.1);
     let c = MissionHost::creature(&manager, ally_id);
     assert!((c.speed() - MissionActor::ALLY_WALK * c.speed_mult()).abs() < 1e-6, "out of stamina it walks");
+
+    // Caught up (inside ALLY_CALM_GAP of its place, rested): it lets go of
+    // its sprint, walks, and its stamina stops draining.
+    let full = MissionHost::creature(&manager, ally_id).max_energy();
+    MissionHost::creature_mut(&mut manager, ally_id).set_energy(full);
+    let home = mission.territory().actors[ally].home;
+    place(&mut manager, home.0 + 40.0, home.1);
+    mission.territory_mut().actors[ally].think = 0.0;
+    step(&mut manager, &mut mission, &mut rng, 0.2);
+    let c = MissionHost::creature(&manager, ally_id);
+    assert!((c.speed() - MissionActor::ALLY_WALK * c.speed_mult()).abs() < 1e-6, "caught up, it walks again");
+    assert!(c.energy() >= full - 1e-9, "walking costs no stamina");
+
+    // You run: it runs with you, even close by.
+    for action in [Action::Sprint, Action::MoveRight] {
+        mission.territory_mut().players[0].control.set_held(action, true);
+    }
+    mission.territory_mut().actors[ally].think = 0.0;
+    step(&mut manager, &mut mission, &mut rng, 0.3);
+    let c = MissionHost::creature(&manager, ally_id);
+    assert!((c.speed() - MissionActor::ALLY_RUN * c.speed_mult()).abs() < 1e-6, "you run, so it runs");
+    mission.territory_mut().players[0].control.clear_keys();
 }
 
 #[test]

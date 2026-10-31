@@ -6,7 +6,9 @@
 //! - Movement is keys only. By default the spider no longer turns to face
 //!   the pointer while standing still.
 //! - The pointer aims inside a cone around the facing (`aim_cone`, total
-//!   degrees; 90 by default, 360 for free aim).
+//!   degrees; 90 by default, 360 for free aim). Silk is the exception
+//!   (`ShotAim`): a key shoots straight ahead, a mouse button exactly at the
+//!   pointer.
 //! - Bindings are stored by name ("W", "Shift", "Space", "Mouse Left") in
 //!   `controls.json` in the state folder.
 //!

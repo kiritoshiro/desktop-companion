@@ -309,12 +309,12 @@ impl PlayerController {
     }
 
     /// No movement key held.
-    pub fn motion_idle(&self) -> bool {
+    pub(crate) fn motion_idle(&self) -> bool {
         !self.held.iter().any(|a| a.is_movement())
     }
 
     /// The sprint key (or a companion's wish to run) is held.
-    pub fn sprint_held(&self) -> bool {
+    pub(crate) fn sprint_held(&self) -> bool {
         self.holds(Action::Sprint)
     }
 
