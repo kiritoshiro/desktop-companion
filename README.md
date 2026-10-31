@@ -30,7 +30,8 @@ cargo run --release -p dc-app -- --engine --preset presets\default.json  # overl
 ```
 
 The overlay also takes `--mode adventure`, `--seed N`, `--verbose`,
-`--software` and `--seconds S` (quit after that long).
+`--software`, `--seconds S` (quit after that long) and `--snapshot out.png`
+(save a screenshot of the primary monitor 3 s in).
 
 ## Using it
 
@@ -132,13 +133,15 @@ app on `legacy` uses the same folder and format.
 ## Content
 
 Models (`models/<id>/model.json`), personalities (`personalities/*.json`) and
-presets (`presets/*.json`) are auto-discovered; no code changes are needed.
+presets (`presets/*.json`) are auto-discovered; the app needs no code changes.
 A model needs `id`, `display_name`, `base_size`, `default_personality`,
 `colors` and `legs` (or a `body_plan`); its look is tuned in its `appearance`
 block. A personality needs `id`, `display_name`, `speed_multiplier`,
 `reaction_radius`, `boldness`, `wander_frequency`, and a `temperament` of six
 0-10 traits. The tests load every shipped model, personality and preset, so
-`cargo test -p dc-content` (in `rust/`) checks a new one.
+`cargo test -p dc-content` (in `rust/`) checks a new one. They also count the
+shipped files: update the counts in `rust/crates/dc-content/tests/ported.rs`
+when you add or remove one.
 
 ## Development
 

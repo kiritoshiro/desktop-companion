@@ -6,7 +6,8 @@
 #
 # Output: rust\dist\DesktopBugCompanion\ (DesktopBugCompanion.exe with
 # models, personalities, presets and assets beside it, where the app looks
-# for its data) and rust\dist\DesktopBugCompanion-<version>-windows-x64.zip.param([switch]$NoBuild)
+# for its data) and rust\dist\DesktopBugCompanion-<version>-windows-x64.zip.
+param([switch]$NoBuild)
 $ErrorActionPreference = "Stop"
 
 $rust = $PSScriptRoot

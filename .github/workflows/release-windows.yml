@@ -67,16 +67,8 @@ jobs:
           }
           Write-Host "Tag $env:REF_NAME matches version $version"
 
-      - name: Cache Cargo registry
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
-        with:
-          path: |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: rust-registry-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
-          restore-keys: rust-registry-${{ runner.os }}-
-
+      # No cache here: a release builds from a clean slate, so a poisoned
+      # cache can never reach the published zip (zizmor's cache-poisoning).
       # A release used to validate data and run no tests, so it could ship
       # code that the CI workflow would have rejected. Same tests as CI.
       - name: Run the tests

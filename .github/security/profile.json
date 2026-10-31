@@ -6,10 +6,41 @@
   "semgrep_rules": [
     "p/rust"
   ],
-  "excluded_rules": [
-    "rust.lang.security.unsafe-usage.unsafe-usage",
-    "rust.lang.security.temp-dir.temp-dir",
-    "rust.lang.security.args.args",
-    "rust.lang.security.current-exe.current-exe"
+  "reviewed_findings": [
+    {
+      "rule": "rust.lang.security.unsafe-usage.unsafe-usage",
+      "paths": ["rust/crates/dc-platform/*"]
+    },
+    {
+      "rule": "rust.lang.security.temp-dir.temp-dir",
+      "paths": [
+        "rust/crates/dc-adventure/src/admin.rs",
+        "rust/crates/dc-adventure/src/adventure_profile.rs",
+        "rust/crates/dc-adventure/src/controls.rs",
+        "rust/crates/dc-adventure/src/custom_maps.rs",
+        "rust/crates/dc-adventure/src/mission_factory.rs",
+        "rust/crates/dc-app/src/adventure/screens.rs",
+        "rust/crates/dc-app/src/camouflage.rs",
+        "rust/crates/dc-app/src/live.rs",
+        "rust/crates/dc-app/src/repaint.rs",
+        "rust/crates/dc-app/src/*/tests.rs",
+        "rust/crates/dc-platform/src/live_channel.rs",
+        "rust/crates/dc-platform/src/logging_setup.rs",
+        "rust/crates/dc-platform/src/session_control.rs",
+        "rust/crates/dc-ui/src/bridge.rs"
+      ]
+    },
+    {
+      "rule": "rust.lang.security.args.args",
+      "paths": ["rust/crates/*/examples/*", "rust/crates/dc-app/src/main.rs"]
+    },
+    {
+      "rule": "rust.lang.security.current-exe.current-exe",
+      "paths": [
+        "rust/crates/dc-app/src/settings.rs",
+        "rust/crates/dc-content/src/discovery.rs",
+        "rust/crates/dc-ui/src/assets.rs"
+      ]
+    }
   ]
 }

@@ -42,7 +42,8 @@ jobs:
           cargo --version
 
       # Saved from main, where pull requests can restore it; a cache saved on
-      # a pull request is visible to that pull request only.
+      # a pull request is visible to that pull request only. v2 added the
+      # package smoke test's release build; the old key still seeds it.
       - name: Cache Cargo registry and build
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
@@ -51,8 +52,11 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             rust/target
-          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/rust-toolchain.toml') }}
-          restore-keys: rust-${{ runner.os }}-
+            rust/target-release
+          key: rust-v2-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/rust-toolchain.toml') }}
+          restore-keys: |
+            rust-v2-${{ runner.os }}-
+            rust-${{ runner.os }}-
 
       - name: Formatting
         run: cargo fmt --all --check
@@ -65,3 +69,15 @@ jobs:
         env:
           DESKTOP_BUG_STATE_DIR: ${{ runner.temp }}\dc-state
         run: cargo test --workspace --locked
+
+      # What release-windows.yml ships: the release build and the zip with
+      # the data folders beside the exe. Nothing is uploaded.
+      - name: Package smoke test
+        run: |
+          ./package.ps1
+          if (-not (Get-ChildItem -Path dist -Filter 'DesktopBugCompanion-*-windows-x64.zip')) {
+            throw 'package.ps1 produced no zip'
+          }
+          if (-not (Test-Path -LiteralPath 'dist/DesktopBugCompanion/models')) {
+            throw 'The package has no models folder'
+          }
