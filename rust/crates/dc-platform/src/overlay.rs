@@ -46,7 +46,7 @@ use std::time::{Duration, Instant};
 
 use dc_core::IRect;
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, SIZE, WPARAM};
+use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION, CreateCompatibleDC,
     CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC, HBITMAP, HDC, HGDIOBJ, ReleaseDC, SelectObject,
@@ -55,8 +55,9 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{HOT_KEY_MODIFIERS, RegisterHot
 use windows::Win32::UI::Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass};
 use windows::Win32::UI::WindowsAndMessaging::{
     GWL_EXSTYLE, HTCLIENT, HTTRANSPARENT, KillTimer, LWA_ALPHA, MA_NOACTIVATE, STYLESTRUCT, SWP_NOACTIVATE,
-    SWP_NOZORDER, SetLayeredWindowAttributes, SetTimer, SetWindowPos, ULW_ALPHA, UpdateLayeredWindow, WM_DISPLAYCHANGE,
-    WM_DPICHANGED, WM_HOTKEY, WM_MOUSEACTIVATE, WM_NCDESTROY, WM_NCHITTEST, WM_STYLECHANGING, WM_TIMER,
+    SWP_NOZORDER, SetLayeredWindowAttributes, SetTimer, SetWindowPos, ULW_ALPHA, UPDATELAYEREDWINDOWINFO,
+    UpdateLayeredWindowIndirect, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_HOTKEY, WM_MOUSEACTIVATE, WM_NCDESTROY,
+    WM_NCHITTEST, WM_STYLECHANGING, WM_TIMER,
 };
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event_loop::ActiveEventLoop;
@@ -587,17 +588,51 @@ impl OverlayWindow {
     /// (normally the geometry's size) with `UpdateLayeredWindow`. Pixels
     /// with alpha 0 are click-through by themselves on this path.
     pub fn present_premultiplied(&self, rgba: &[u8], width: u32, height: u32) -> bool {
+        self.present_premultiplied_rects(rgba, width, height, None)
+    }
+
+    /// [`OverlayWindow::present_premultiplied`] for a frame of which only
+    /// `dirty` changed since the last one shown (`None`: all of it). Only
+    /// those rects are copied into the window's bitmap, and the window is
+    /// told to update their bounding rect (`prcDirty`); the rest keeps the
+    /// pixels it has. A new size always shows the whole frame.
+    pub fn present_premultiplied_rects(&self, rgba: &[u8], width: u32, height: u32, dirty: Option<&[IRect]>) -> bool {
         if self.backend != OverlayBackend::Layered || rgba.len() < width as usize * height as usize * 4 {
             return false;
         }
+        let mut dirty = dirty;
         let mut slot = self.layered.borrow_mut();
         if slot.as_ref().map(|b| (b.width, b.height) != (width, height)).unwrap_or(true) {
             *slot = LayeredBuffer::new(width, height);
+            dirty = None;
         }
         let Some(buf) = slot.as_mut() else { return false };
-        buf.fill_from_rgba(rgba);
         let g = self.geometry();
-        buf.present(self.hwnd(), (g.x, g.y))
+        let bounds = match dirty {
+            None => {
+                buf.fill_from_rgba(rgba);
+                None
+            }
+            Some(rects) => {
+                let mut bounds: Option<RECT> = None;
+                for r in rects {
+                    let Some(r) = buf.fill_rect_from_rgba(rgba, r) else { continue };
+                    bounds = Some(match bounds {
+                        None => r,
+                        Some(b) => RECT {
+                            left: b.left.min(r.left),
+                            top: b.top.min(r.top),
+                            right: b.right.max(r.right),
+                            bottom: b.bottom.max(r.bottom),
+                        },
+                    });
+                }
+                // Nothing changed: the window already shows this frame.
+                let Some(b) = bounds else { return true };
+                Some(b)
+            }
+        };
+        buf.present(self.hwnd(), (g.x, g.y), bounds)
     }
 }
 
@@ -671,7 +706,32 @@ impl LayeredBuffer {
         }
     }
 
-    fn present(&self, hwnd: HWND, pos: (i32, i32)) -> bool {
+    /// Copy one rect of `rgba` (clamped to the bitmap); the rect copied,
+    /// or `None` when it was empty.
+    fn fill_rect_from_rgba(&mut self, rgba: &[u8], r: &IRect) -> Option<RECT> {
+        let (w, h) = (self.width as i32, self.height as i32);
+        let (x0, x1) = (r.x.clamp(0, w), r.right().clamp(0, w));
+        let (y0, y1) = (r.y.clamp(0, h), r.bottom().clamp(0, h));
+        if x0 >= x1 || y0 >= y1 {
+            return None;
+        }
+        let n = self.width as usize * self.height as usize * 4;
+        let dst = unsafe { std::slice::from_raw_parts_mut(self.bits, n) };
+        let stride = self.width as usize * 4;
+        for y in y0 as usize..y1 as usize {
+            let row = y * stride + x0 as usize * 4..y * stride + x1 as usize * 4;
+            for (d, s) in dst[row.clone()].chunks_exact_mut(4).zip(rgba[row].chunks_exact(4)) {
+                d[0] = s[2];
+                d[1] = s[1];
+                d[2] = s[0];
+                d[3] = s[3];
+            }
+        }
+        Some(RECT { left: x0, top: y0, right: x1, bottom: y1 })
+    }
+
+    /// `UpdateLayeredWindowIndirect`, updating only `dirty` when given.
+    fn present(&self, hwnd: HWND, pos: (i32, i32), dirty: Option<RECT>) -> bool {
         let dst = POINT { x: pos.0, y: pos.1 };
         let size = SIZE { cx: self.width as i32, cy: self.height as i32 };
         let src = POINT { x: 0, y: 0 };
@@ -683,19 +743,21 @@ impl LayeredBuffer {
         };
         unsafe {
             let screen = GetDC(None);
-            let r = UpdateLayeredWindow(
-                hwnd,
-                Some(screen),
-                Some(&dst),
-                Some(&size),
-                Some(self.dc),
-                Some(&src),
-                COLORREF(0),
-                Some(&blend),
-                ULW_ALPHA,
-            );
+            let info = UPDATELAYEREDWINDOWINFO {
+                cbSize: std::mem::size_of::<UPDATELAYEREDWINDOWINFO>() as u32,
+                hdcDst: screen,
+                pptDst: &dst,
+                psize: &size,
+                hdcSrc: self.dc,
+                pptSrc: &src,
+                crKey: COLORREF(0),
+                pblend: &blend,
+                dwFlags: ULW_ALPHA,
+                prcDirty: dirty.as_ref().map_or(std::ptr::null(), |d| d as *const RECT),
+            };
+            let r = UpdateLayeredWindowIndirect(hwnd, &info);
             ReleaseDC(None, screen);
-            r.is_ok()
+            r.as_bool()
         }
     }
 }

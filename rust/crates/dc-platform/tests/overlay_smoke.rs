@@ -119,6 +119,11 @@ fn overlay_window_styles_hit_test_hotkeys_and_tray() {
     // Software present of a fully transparent frame succeeds.
     let frame = vec![0u8; g.w as usize * g.h as usize * 4];
     assert!(overlay.present_premultiplied(&frame, g.w as u32, g.h as u32));
+    // Then only part of it (`prcDirty`), a rect hanging off the edge
+    // included; nothing changed at all presents nothing.
+    let dirty = [dc_core::IRect::new(2, 3, 10, 8), dc_core::IRect::new(g.w - 5, 0, 20, 4)];
+    assert!(overlay.present_premultiplied_rects(&frame, g.w as u32, g.h as u32, Some(&dirty)));
+    assert!(overlay.present_premultiplied_rects(&frame, g.w as u32, g.h as u32, Some(&[])));
 
     // The tray: a menu with an exclusive group.
     let model = TrayMenu::new()

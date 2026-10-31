@@ -19,8 +19,12 @@
 //! The live channel to the settings window is [`LiveChannel`]; the preset
 //! file and the stop-request file stay polled as its fallbacks.
 //!
-//! Not ported yet: camouflage sampling, partial repaints, DPI scaling
-//! (everything is in physical pixels).
+//! The software fallback (`--software`, `UpdateLayeredWindow`) repaints
+//! only the dirty region of each Companion frame ([`SoftOverlay`], Python's
+//! partial repaints); the GPU path repaints everything, as Python's GL path.
+//!
+//! Not ported yet: camouflage sampling, DPI scaling (everything is in
+//! physical pixels).
 
 use crate::adventure::draw::AdventureDrawer;
 use crate::adventure::screens::{self, PlayableScreens};
@@ -31,6 +35,7 @@ use crate::overlay_ui::{
     AdventureContext, EngineCommand, OverlayUi, UiRequest, apply_overlay_action, apply_spider_action, initial_status,
     tray_checks, tray_event_checked, tray_menu, tray_menu_for,
 };
+use crate::repaint::SoftOverlay;
 use crate::{Args, Mode};
 use dc_core::PyRandom;
 use dc_manager::paint::ScenePainter;
@@ -45,7 +50,7 @@ use dc_platform::overlay::{
     OverlayBackend, OverlayConfig, OverlayEvent, OverlayMode, OverlayWindow, RELEASE_HOTKEY_ID,
 };
 use dc_platform::tray::{MessageIcon, Tray, TrayEvent};
-use dc_render::{Color, CpuRenderer, GpuRenderer, RenderHint, Scene};
+use dc_render::{Color, GpuRenderer, RenderHint, Scene};
 use dc_world::playfield::ScreenRect;
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -72,7 +77,7 @@ fn target_fps() -> f64 {
 
 enum Drawer {
     Gpu { gpu: Box<OverlayGpu>, renderer: Box<GpuRenderer> },
-    Soft { cpu: CpuRenderer },
+    Soft { soft: Box<SoftOverlay> },
 }
 
 struct Engine {
@@ -128,6 +133,14 @@ impl Engine {
         self.manager.is_some() || self.game.is_some()
     }
 
+    /// `_request_full_repaint`: the software overlay's next frame repaints
+    /// everything (whatever changed outside the spiders' footprints).
+    fn request_full_repaint(&mut self) {
+        if let Some(Drawer::Soft { soft }) = self.drawer.as_mut() {
+            soft.request_full();
+        }
+    }
+
     fn screen_rects(&self) -> Vec<ScreenRect> {
         let g = self.geometry;
         screen_rects_local((g.x, g.y), &monitors()).into_iter().map(|r| ScreenRect::new(r.x, r.y, r.w, r.h)).collect()
@@ -147,7 +160,7 @@ impl Engine {
             }
             OverlayBackend::Layered => {
                 log::info!("Painting in software (UpdateLayeredWindow)");
-                Drawer::Soft { cpu: CpuRenderer::new() }
+                Drawer::Soft { soft: Box::default() }
             }
         };
         self.geometry = g;
@@ -321,6 +334,7 @@ impl Engine {
         if done.preset_applied {
             // Keep the file poll from applying the same content again.
             self.preset_mtime = dc_platform::session_control::file_mtime(&self.preset);
+            self.request_full_repaint();
         }
         if done.stop {
             log::info!("Stop requested over the live channel");
@@ -415,6 +429,8 @@ impl Engine {
         if self.exiting {
             return;
         }
+        // Menu, dialog and tray actions can add or remove anything.
+        self.request_full_repaint();
         match command {
             EngineCommand::Quit => self.quit(el),
             EngineCommand::Announce(text) => self.announce(&text),
@@ -526,6 +542,7 @@ impl Engine {
         if let Some(Drawer::Gpu { gpu, .. }) = self.drawer.as_mut() {
             gpu.resize(rect.w as u32, rect.h as u32);
         }
+        self.request_full_repaint();
     }
 
     /// `OverlayWindow.tick`.
@@ -627,6 +644,7 @@ impl Engine {
                     Some(data) => {
                         let message = manager.borrow_mut().reload_from_preset_data(&data, &mut self.rng);
                         log::info!("{message}");
+                        self.request_full_repaint();
                     }
                     None => log::warn!("Preset changed but could not be read: {}", self.preset.display()),
                 }
@@ -675,6 +693,13 @@ impl Engine {
         if !self.ready() || self.drawer.is_none() {
             return;
         }
+        let (w, h) = (self.geometry.w as u32, self.geometry.h as u32);
+        // Software Companion frames: what to repaint, and the clip that
+        // culls whatever lies outside it.
+        let clip = match (self.drawer.as_mut(), &self.manager) {
+            (Some(Drawer::Soft { soft }), Some(manager)) => soft.plan(&mut manager.borrow_mut(), (w, h)),
+            _ => None,
+        };
         let mut scene = Scene::new();
         {
             let mut canvas = scene.canvas();
@@ -682,10 +707,9 @@ impl Engine {
             if let Some(game) = &self.game {
                 self.adventure_drawer.paint(&mut game.borrow_mut(), &mut canvas);
             } else if let Some(manager) = &self.manager {
-                self.painter.paint(&mut manager.borrow_mut(), &mut canvas, None);
+                self.painter.paint(&mut manager.borrow_mut(), &mut canvas, clip);
             }
         }
-        let (w, h) = (self.geometry.w as u32, self.geometry.h as u32);
         match self.drawer.as_mut() {
             Some(Drawer::Gpu { gpu, renderer }) => {
                 let Some(frame) = gpu.acquire() else { return };
@@ -693,10 +717,10 @@ impl Engine {
                 renderer.render(&scene, &view, (w, h), Some(Color::TRANSPARENT));
                 gpu.queue.present(frame);
             }
-            Some(Drawer::Soft { cpu }) => {
-                let image = cpu.render(&scene, w, h, None);
+            Some(Drawer::Soft { soft }) => {
+                let (pixels, dirty) = soft.render(&scene, (w, h));
                 if let Some(o) = self.overlay.as_ref() {
-                    o.present_premultiplied(image.data(), w, h);
+                    o.present_premultiplied_rects(pixels, w, h, dirty.as_deref());
                 }
             }
             None => return,
