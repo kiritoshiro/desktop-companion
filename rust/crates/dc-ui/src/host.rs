@@ -21,6 +21,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use egui::{TexturesDelta, Vec2, ViewportId, ViewportInfo};
+use egui_wgpu::wgpu;
 use egui_wgpu::winit::Painter;
 use egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};
 use winit::event::WindowEvent;
@@ -46,10 +47,50 @@ impl GpuShare {
         self.existing.is_some()
     }
 
+    /// Create the device now, without a window, so the first pop-up does
+    /// not stall the overlay while wgpu starts up.
+    pub fn warm(&mut self) {
+        if self.ready() {
+            return;
+        }
+        let config = self.configuration();
+        let instance = block_on(config.wgpu_setup.new_instance());
+        match block_on(egui_wgpu::RenderState::create(&config, &instance, None, egui_wgpu::RendererOptions::default()))
+        {
+            Ok(rs) => {
+                self.existing = Some(WgpuSetupExisting {
+                    instance: rs.instance,
+                    adapter: rs.adapter,
+                    device: rs.device,
+                    queue: rs.queue,
+                })
+            }
+            Err(e) => log::warn!("Could not prepare the GPU for menus: {e}"),
+        }
+    }
+
     fn configuration(&self) -> WgpuConfiguration {
-        let mut config = WgpuConfiguration::default();
-        if let Some(existing) = &self.existing {
-            config.wgpu_setup = WgpuSetup::Existing(existing.clone());
+        let mut config = WgpuConfiguration {
+            // These windows paint on the overlay's thread, which is already
+            // paced by the overlay's own vsync; a second vsync wait per menu
+            // frame made every spider stutter while a menu was hovered.
+            surface: egui_wgpu::SurfaceConfig {
+                present_mode: wgpu::PresentMode::AutoNoVsync,
+                desired_maximum_frame_latency: Some(1),
+            },
+            ..Default::default()
+        };
+        match &self.existing {
+            Some(existing) => config.wgpu_setup = WgpuSetup::Existing(existing.clone()),
+            // DX12 only, like the overlay: every new window's painter
+            // enumerates the instance's adapters, and Vulkan and GL make
+            // that slow.
+            None if cfg!(windows) => {
+                if let WgpuSetup::CreateNew(create) = &mut config.wgpu_setup {
+                    create.instance_descriptor.backends = wgpu::Backends::DX12;
+                }
+            }
+            None => {}
         }
         config
     }

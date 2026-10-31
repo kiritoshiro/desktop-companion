@@ -88,6 +88,11 @@ impl Shell {
         self.windows.iter().any(|h| h.window.id() == id)
     }
 
+    /// Prepare the menus' GPU device before the first menu is asked for.
+    pub fn warm_gpu(&mut self) {
+        self.gpu.warm();
+    }
+
     pub fn window_count(&self) -> usize {
         self.windows.len()
     }

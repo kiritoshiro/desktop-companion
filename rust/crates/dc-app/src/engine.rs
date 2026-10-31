@@ -769,6 +769,7 @@ impl ApplicationHandler for Engine {
             return;
         }
         self.create_tray();
+        self.ui.warm_gpu();
         self.channel = Some(LiveChannel::open(&self.state_dir, &self.preset, self.adventure()));
         self.start = Instant::now();
         self.last_tick = self.start;

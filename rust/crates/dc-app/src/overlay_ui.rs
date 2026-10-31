@@ -148,6 +148,12 @@ impl OverlayUi {
         Self { core: surfaces::UiCore::new(state_dir), shell: shell::Shell::default() }
     }
 
+    /// Create the menus' GPU device now (at overlay start), not on the
+    /// first right-click.
+    pub fn warm_gpu(&mut self) {
+        self.shell.warm_gpu();
+    }
+
     /// Ask for something to be shown.
     pub fn request(&mut self, el: &ActiveEventLoop, request: UiRequest) {
         self.core.request(request);
