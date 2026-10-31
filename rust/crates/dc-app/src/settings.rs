@@ -338,16 +338,24 @@ impl<L: Launcher> SettingsHost<L> {
     }
 
     /// `reset_saved_progress` (already confirmed in the window).
+    ///
+    /// Differs from Python: a running overlay the channel cannot reach is
+    /// stopped (and saves) before the file is reset. It holds the colony in
+    /// memory, and Python's "restart to see it" let its next save write the
+    /// old progress back over the reset.
     fn reset_progress(&mut self) {
-        if self.channel_connected(100) {
-            self.client.send(&ChannelMessage::ResetProgress.to_map());
+        if self.channel_connected(100) && self.client.send(&ChannelMessage::ResetProgress.to_map()) {
             self.window.set_status("Saved progress reset in the running overlay.");
             return;
         }
+        let stopped = self.launcher.running();
+        if stopped {
+            self.stop();
+        }
         let path = self.state_dir.join("creatures.json");
         if dc_state::runtime_state::reset_saved_progress(&path) {
-            self.window.set_status(if self.launcher.running() {
-                "Saved progress reset. Restart the overlay to see it."
+            self.window.set_status(if stopped {
+                "The overlay did not answer, so it was stopped and its saved progress reset. Launch it again to start fresh."
             } else {
                 "Saved progress reset."
             });

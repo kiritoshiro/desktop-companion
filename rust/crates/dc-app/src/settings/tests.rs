@@ -700,6 +700,25 @@ fn reset_asks_a_listening_overlay_and_leaves_the_file_to_it() {
     assert_eq!(state.read("creatures.json"), before);
 }
 
+/// An overlay that runs but cannot be reached would write its colony back
+/// over a reset file, so it is stopped first; Python only said to restart.
+#[test]
+fn reset_stops_an_overlay_it_cannot_reach_before_resetting_the_file() {
+    let state = TempState::new("reset-unreachable");
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap() + "\n";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    assert!(!host.channel_connected(0), "no overlay channel listens in this test");
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops.len(), 1, "the unreachable overlay was not stopped");
+    assert!(!host.launcher.running);
+    assert_eq!(state.read("creatures.json"), oracle["reset"].as_str().unwrap());
+    assert!(host.window.status.starts_with("The overlay did not answer, so it was stopped"), "{}", host.window.status);
+}
+
 // -- presets --------------------------------------------------------------------
 
 #[test]
