@@ -19,6 +19,10 @@
 //! The live channel to the settings window is [`LiveChannel`]; the preset
 //! file and the stop-request file stay polled as its fallbacks.
 //!
+//! `DESKTOP_BUG_PROFILE` times every tick, the desktop probe and the paint
+//! (`dc_core::profiling`; the manager times its own systems), and draws the
+//! numbers in the corner (`profile_hud`) unless `DESKTOP_BUG_PROFILE_HUD` is off.
+//!
 //! Not ported yet: camouflage sampling, partial repaints, DPI scaling
 //! (everything is in physical pixels).
 
@@ -31,8 +35,10 @@ use crate::overlay_ui::{
     AdventureContext, EngineCommand, OverlayUi, UiRequest, apply_overlay_action, apply_spider_action, initial_status,
     tray_checks, tray_event_checked, tray_menu, tray_menu_for,
 };
+use crate::profile_hud;
 use crate::{Args, Mode};
 use dc_core::PyRandom;
+use dc_core::profiling;
 use dc_manager::paint::ScenePainter;
 use dc_manager::{CreatureManager, DesktopSurface, MouseInput};
 use dc_paint::PaintSwitches;
@@ -112,6 +118,8 @@ struct Engine {
     geometry: dc_core::IRect,
     last_left_down: bool,
     frames: u64,
+    /// `show_profile_hud`: `DESKTOP_BUG_PROFILE` with the HUD not turned off.
+    show_profile_hud: bool,
     error: Option<String>,
 }
 
@@ -530,6 +538,8 @@ impl Engine {
 
     /// `OverlayWindow.tick`.
     fn tick(&mut self, el: &ActiveEventLoop) {
+        // Closed on every way out; painting comes later, as a sample of its own.
+        let _frame = profiling::frame();
         let now = Instant::now();
         let dt = now.duration_since(self.last_tick).as_secs_f64().clamp(0.001, 0.05);
         self.last_tick = now;
@@ -591,6 +601,7 @@ impl Engine {
         let Some(manager) = self.manager.clone() else { return false };
         if now_ms - self.last_surface_check >= DESKTOP_SURFACE_CHECK_MS {
             self.last_surface_check = now_ms;
+            let _probe = profiling::section("desktop-probe");
             let mut m = manager.borrow_mut();
             let opts = SnapshotOptions {
                 exclude_hwnd: own,
@@ -675,6 +686,11 @@ impl Engine {
         if !self.ready() || self.drawer.is_none() {
             return;
         }
+        let _paint = profiling::section("paint");
+        let hud = self.show_profile_hud.then(|| {
+            let spiders = self.with_manager(|m, _| m.creatures.len()).unwrap_or(0);
+            (profile_hud::hud_header(spiders, self.fps, self.policy.reason), profiling::hud_lines())
+        });
         let mut scene = Scene::new();
         {
             let mut canvas = scene.canvas();
@@ -683,6 +699,9 @@ impl Engine {
                 self.adventure_drawer.paint(&mut game.borrow_mut(), &mut canvas);
             } else if let Some(manager) = &self.manager {
                 self.painter.paint(&mut manager.borrow_mut(), &mut canvas, None);
+            }
+            if let Some((header, lines)) = &hud {
+                profile_hud::draw_profile_hud(&mut canvas, header, lines);
             }
         }
         let (w, h) = (self.geometry.w as u32, self.geometry.h as u32);
@@ -870,6 +889,11 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
         None => PyRandom::from_entropy(),
     };
     let ui = OverlayUi::with_state_dir(state_dir.clone());
+    // Measurement, off unless DESKTOP_BUG_PROFILE asks for it; the manager
+    // records into the same (thread-local) profiler.
+    if profiling::profiler_from_env() {
+        log::info!("Profiling frames ({}=1)", profiling::PROFILE_ENV);
+    }
     let mut engine = Engine {
         args,
         preset,
@@ -900,6 +924,7 @@ pub fn run(args: Args, preset: PathBuf, state_dir: PathBuf) -> Result<(), String
         geometry: virtual_screen_geometry(),
         last_left_down: false,
         frames: 0,
+        show_profile_hud: profiling::hud_requested(),
         error: None,
     };
     let event_loop = EventLoop::new().map_err(|e| format!("event loop: {e}"))?;

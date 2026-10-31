@@ -1,9 +1,11 @@
 //! Shared foundation for the Rust port of Desktop Bug Companion:
-//! CPython-compatible randomness, math helpers, colours and rectangles.
+//! CPython-compatible randomness, math helpers, colours, rectangles and
+//! frame profiling.
 
 pub mod color;
 pub mod geom;
 pub mod math;
+pub mod profiling;
 pub mod rng;
 
 pub use color::Color;

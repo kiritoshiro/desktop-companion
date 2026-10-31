@@ -5,7 +5,7 @@
 
 | Python module | Rust | Status |
 |---|---|---|
-| `manager/core.py` | `src/core.rs` | **ported**: construction (`new`, `empty`), `create_creature`, neighbour links, render order, screen rects/resize, `creature_at`, `wants_mouse`, `update` / `update_with_controller`, camouflage touch |
+| `manager/core.py` | `src/core.rs` | **ported**: construction (`new`, `empty`), `create_creature`, neighbour links, render order, screen rects/resize, `creature_at`, `wants_mouse`, `update` / `update_with_controller` (with Python's `get_profiler()` sections, through `dc_core::profiling`; `tests/profiling.rs`), camouflage touch |
 | `manager/core.py` (presets, randomise) | `src/roster.rs` | **ported**: `load_preset`, `load_preset_data`, `reload_from_preset_data`, `replace_with_traits`, `randomize_*`, `session_snapshot` |
 | `manager/core.py` (settings) | `src/naming.rs` (labels, teams, behaviour), `src/prey.rs` (flies) | **ported**: the `set_*` setters the settings window uses |
 | `manager/core.py::render` | `src/render.rs` | **ported as data**: `draw_output()` returns `FrameDraw` (Python's layer order, per-creature `RenderSnapshot`, occlusion regions); `dc-paint` paints it |
