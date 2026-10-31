@@ -24,6 +24,8 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+mod thumbnails;
+
 /// Starts and watches the overlay process. A trait so tests never start one.
 pub trait Launcher {
     fn launch(&mut self, preset: &Path, mode: OverlayMode) -> Result<(), String>;
@@ -110,6 +112,9 @@ pub struct SettingsHost<L: Launcher> {
     hid_for_start: bool,
     /// The monitors for the raid setup card (dc-platform; tests pass their own).
     screens: fn() -> Vec<ScreenInfo>,
+    /// The skin thumbnails need the window's context, so they are made on
+    /// the first frame (and again after the library is reloaded).
+    thumbnails_installed: bool,
 }
 
 impl<L: Launcher> SettingsHost<L> {
@@ -144,6 +149,7 @@ impl<L: Launcher> SettingsHost<L> {
             visibility: None,
             hid_for_start: false,
             screens: Self::system_screens,
+            thumbnails_installed: false,
         };
         host.refresh_adventure();
         host
@@ -446,6 +452,7 @@ impl<L: Launcher> SettingsHost<L> {
             UiAction::RefreshLibrary => {
                 self.window.set_catalog(bridge::settings_catalog(self.root.as_deref()));
                 self.window.set_presets(bridge::presets(self.root.as_deref()));
+                self.thumbnails_installed = false;
             }
             UiAction::LaunchOverlay { mode: OverlayMode::Adventure, .. } => self.start_adventure(),
             UiAction::LaunchOverlay { mode, preset } => self.launch(mode, &preset),
@@ -681,6 +688,10 @@ impl<L: Launcher> SettingsHost<L> {
 
     /// The window and any dialog over it.
     pub fn draw(&mut self, ctx: &egui::Context) -> Vec<UiAction> {
+        if !self.thumbnails_installed {
+            self.window.set_thumbnails(thumbnails::model_thumbnail_fn(ctx, self.root.as_deref()));
+            self.thumbnails_installed = true;
+        }
         let mut actions = self.window.ui(ctx);
         let Some(dialog) = self.dialog.as_mut() else { return actions };
         let (title, size) = match dialog {
