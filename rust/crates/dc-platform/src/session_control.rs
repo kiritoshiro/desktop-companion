@@ -51,7 +51,8 @@ pub fn clear_stop_request(state_dir: impl AsRef<Path>) {
 pub trait StoppableProcess {
     /// Whether the process is still running (`poll() is None`).
     fn is_running(&mut self) -> bool;
-    /// Kill it outright.
+    /// Kill it outright, and wait until it has gone, so nothing it was
+    /// writing (a save of the colony) can land after the caller moves on.
     fn terminate(&mut self);
 }
 
@@ -61,7 +62,9 @@ impl StoppableProcess for std::process::Child {
     }
 
     fn terminate(&mut self) {
-        let _ = self.kill();
+        if self.kill().is_ok() {
+            let _ = self.wait();
+        }
     }
 }
 

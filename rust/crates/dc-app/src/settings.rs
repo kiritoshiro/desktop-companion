@@ -313,13 +313,13 @@ impl<L: Launcher> SettingsHost<L> {
     }
 
     /// `stop_overlay`.
-    pub fn stop(&mut self) {
+    pub fn stop(&mut self) -> StopOutcome {
         if !self.launcher.running() {
             self.launched_preset = None;
             session_control::clear_stop_request(&self.state_dir);
             self.window.set_overlay_running(false);
             self.window.set_status("No overlay process is running from this window.");
-            return;
+            return StopOutcome::NotRunning;
         }
         if self.channel_connected(100) {
             self.client.send(&ChannelMessage::StopRequest.to_map());
@@ -335,29 +335,39 @@ impl<L: Launcher> SettingsHost<L> {
             }
             StopOutcome::NotRunning => "No overlay process is running from this window.",
         });
+        outcome
     }
 
     /// `reset_saved_progress` (already confirmed in the window).
     ///
-    /// Differs from Python: a running overlay the channel cannot reach is
-    /// stopped (and saves) before the file is reset. It holds the colony in
-    /// memory, and Python's "restart to see it" let its next save write the
-    /// old progress back over the reset.
+    /// Differs from Python: a running overlay this window cannot ask over the
+    /// channel (unreachable, or an Adventure raid, which ignores the request)
+    /// is stopped before the file is reset, and waited for even when it has
+    /// to be killed. It holds the colony in memory, and Python's "restart to
+    /// see it" let its next save write the old progress back over the reset.
+    ///
+    /// Still as Python: a message the channel accepted counts as done (there
+    /// is no acknowledgement), and an overlay this window did not start is
+    /// not stopped (it cannot see one).
     fn reset_progress(&mut self) {
-        if self.channel_connected(100) && self.client.send(&ChannelMessage::ResetProgress.to_map()) {
+        let adventure = self.overlay_mode == Some(OverlayMode::Adventure);
+        if !adventure && self.channel_connected(100) && self.client.send(&ChannelMessage::ResetProgress.to_map()) {
             self.window.set_status("Saved progress reset in the running overlay.");
             return;
         }
-        let stopped = self.launcher.running();
-        if stopped {
-            self.stop();
-        }
+        let outcome = if self.launcher.running() { self.stop() } else { StopOutcome::NotRunning };
         let path = self.state_dir.join("creatures.json");
         if dc_state::runtime_state::reset_saved_progress(&path) {
-            self.window.set_status(if stopped {
-                "The overlay did not answer, so it was stopped and its saved progress reset. Launch it again to start fresh."
-            } else {
-                "Saved progress reset."
+            self.window.set_status(match outcome {
+                StopOutcome::Graceful => {
+                    "The overlay was stopped (it saved first) and its saved progress reset. Launch it again to \
+                     start fresh."
+                }
+                StopOutcome::Terminated => {
+                    "The overlay did not respond and was closed, then its saved progress was reset. Cages, webs \
+                     and nests placed since its last save were lost."
+                }
+                StopOutcome::NotRunning => "Saved progress reset.",
             });
         } else {
             self.window.set_status(format!("Could not write {}.", path.display()));
@@ -464,7 +474,9 @@ impl<L: Launcher> SettingsHost<L> {
             }
             UiAction::LaunchOverlay { mode: OverlayMode::Adventure, .. } => self.start_adventure(),
             UiAction::LaunchOverlay { mode, preset } => self.launch(mode, &preset),
-            UiAction::StopOverlay => self.stop(),
+            UiAction::StopOverlay => {
+                self.stop();
+            }
             UiAction::ResetProgress => self.reset_progress(),
             UiAction::OpenProjectFolder => {
                 let root = self.root.clone().unwrap_or_else(dc_content::discovery::app_root);

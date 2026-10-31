@@ -131,6 +131,9 @@ struct FakeLauncher {
     /// Polls the overlay stays up after a stop request; `None`: wedged.
     answers_stop_after: Option<u32>,
     exit_code: Option<i32>,
+    /// What a graceful stop writes on its way out, as the overlay saves its
+    /// colony on quit: (file, contents).
+    saves_on_stop: Option<(PathBuf, String)>,
 }
 
 impl FakeLauncher {
@@ -142,6 +145,7 @@ impl FakeLauncher {
             fail_with: None,
             answers_stop_after: Some(2),
             exit_code: None,
+            saves_on_stop: None,
         }
     }
 }
@@ -176,6 +180,11 @@ impl Launcher for FakeLauncher {
             request_seen |= stop_request_path(state_dir).is_file();
         });
         self.stops.push(Stop { outcome, request_seen, terminated: process.terminated });
+        if outcome == StopOutcome::Graceful
+            && let Some((path, contents)) = &self.saves_on_stop
+        {
+            std::fs::write(path, contents).unwrap();
+        }
         self.running = false;
         outcome
     }
@@ -702,6 +711,8 @@ fn reset_asks_a_listening_overlay_and_leaves_the_file_to_it() {
 
 /// An overlay that runs but cannot be reached would write its colony back
 /// over a reset file, so it is stopped first; Python only said to restart.
+/// The fake overlay saves its old colony as it stops, so resetting before
+/// stopping would leave the old progress in the file.
 #[test]
 fn reset_stops_an_overlay_it_cannot_reach_before_resetting_the_file() {
     let state = TempState::new("reset-unreachable");
@@ -709,14 +720,41 @@ fn reset_stops_an_overlay_it_cannot_reach_before_resetting_the_file() {
     let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap() + "\n";
     std::fs::write(state.path("creatures.json"), &input).unwrap();
     let mut host = host(&state);
+    host.launcher.saves_on_stop = Some((state.path("creatures.json"), input.clone()));
     let mut screen = Screen::new();
     launch_companion(&mut screen, &mut host);
     assert!(!host.channel_connected(0), "no overlay channel listens in this test");
     confirm_reset(&mut screen, &mut host);
     assert_eq!(host.launcher.stops.len(), 1, "the unreachable overlay was not stopped");
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::Graceful);
     assert!(!host.launcher.running);
+    assert_eq!(
+        state.read("creatures.json"),
+        oracle["reset"].as_str().unwrap(),
+        "its save on quit came after the reset"
+    );
+    assert!(host.window.status.starts_with("The overlay was stopped (it saved first)"), "{}", host.window.status);
+}
+
+/// A wedged overlay is killed (and waited for) before the reset, and the
+/// status says what that cost.
+#[test]
+fn reset_of_a_wedged_overlay_says_recent_changes_were_lost() {
+    let state = TempState::new("reset-wedged");
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap() + "\n";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops.len(), 1);
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::Terminated);
+    assert!(host.launcher.stops[0].terminated);
     assert_eq!(state.read("creatures.json"), oracle["reset"].as_str().unwrap());
-    assert!(host.window.status.starts_with("The overlay did not answer, so it was stopped"), "{}", host.window.status);
+    assert!(host.window.status.contains("did not respond and was closed"), "{}", host.window.status);
+    assert!(host.window.status.contains("were lost"), "{}", host.window.status);
 }
 
 // -- presets --------------------------------------------------------------------
