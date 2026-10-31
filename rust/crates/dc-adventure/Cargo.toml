@@ -1,0 +1,15 @@
+[package]
+name = "dc-adventure"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+dc-core.workspace = true
+dc-world.workspace = true
+dc-content.workspace = true
+dc-state.workspace = true
+dc-art.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
