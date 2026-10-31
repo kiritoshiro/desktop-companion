@@ -93,9 +93,15 @@ impl GpuShare {
             // DX12 only, like the overlay: every new window's painter
             // enumerates the instance's adapters, and Vulkan and GL make
             // that slow.
-            None if cfg!(windows) && !self.dx12_failed => {
+            None if cfg!(windows) => {
                 if let WgpuSetup::CreateNew(create) = &mut config.wgpu_setup {
-                    create.instance_descriptor.backends = wgpu::Backends::DX12;
+                    create.instance_descriptor.backends = if self.dx12_failed {
+                        // The default set ranks DX12 first; it would be
+                        // picked, and fail, again.
+                        create.instance_descriptor.backends.difference(wgpu::Backends::DX12)
+                    } else {
+                        wgpu::Backends::DX12
+                    };
                 }
             }
             None => {}
@@ -293,8 +299,8 @@ mod tests {
             assert_eq!(backends(&share), Some(wgpu::Backends::DX12));
             share.dx12_failed = true;
             let fallback = backends(&share).expect("a new device");
-            assert_ne!(fallback, wgpu::Backends::DX12, "a failed DX12 start falls back");
-            assert!(fallback.contains(wgpu::Backends::DX12) || fallback.contains(wgpu::Backends::VULKAN));
+            assert!(!fallback.contains(wgpu::Backends::DX12), "a failed DX12 start is not retried");
+            assert!(fallback.contains(wgpu::Backends::VULKAN) || fallback.contains(wgpu::Backends::GL));
         }
     }
 }

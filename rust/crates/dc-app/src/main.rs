@@ -132,7 +132,7 @@ mod tests {
     fn dpi_awareness_comes_first_in_main() {
         let src = include_str!("main.rs");
         let main = &src[src.find("fn main() -> ExitCode {").expect("main")..];
-        let dpi = main.find("enable_high_dpi_scaling()").expect("main makes the process DPI aware");
+        let dpi = main.find("dc_platform::dpi::enable_high_dpi_scaling();").expect("main makes the process DPI aware");
         for later in ["parse_args()", "settings::run(", "engine::run("] {
             let at = main.find(later).unwrap_or_else(|| panic!("main calls {later}"));
             assert!(dpi < at, "DPI awareness after {later}");

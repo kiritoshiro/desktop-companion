@@ -211,7 +211,9 @@ impl RepaintState {
         }
         self.base_prev = bases;
         // Fly spawners breathe and can be dragged: always their footprint
-        // (the previous one comes from last frame's region).
+        // (the previous one comes from last frame's region). A nest far from
+        // everything else widens the culling box, so the software path then
+        // draws more than it repaints; pixels stay right.
         for sp in &m.fly_world.spawners {
             let half = sp.radius * 1.2 + 4.0;
             add(&mut region, rect_from_xywh((sp.x - half, sp.y - half, half * 2.0, half * 2.0)));
