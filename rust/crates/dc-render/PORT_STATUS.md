@@ -100,7 +100,9 @@ Counts are grep hits. Files with the most painter calls: `app/config_ui.py`,
   canvas recording, CPU compositing / clips / gradients / images, atlas packer.
 * `tests/render.rs`: CPU fixture regression (`tests/fixtures/cpu_features.png`,
   re-bless with `DC_RENDER_BLESS=1`), CPU vs GPU agreement on the feature
-  scene (mean channel diff 0.51 on RX 9070 XT), spiders + text CPU vs GPU and
+  scene (mean channel diff 0.51 on RX 9070 XT), `Scene::append_transformed`
+  (matches recording under the transform, mean diff 0.014 from the dashes;
+  stays inside its clip; GPU agrees with CPU), spiders + text CPU vs GPU and
   batching (≤ 3 draw calls), persistent contents with `clear: None`. GPU tests
   skip when no adapter exists.
 * `examples/bench.rs` (300 spiders, 1920×1080): record 0.76 ms, CPU 47 ms,

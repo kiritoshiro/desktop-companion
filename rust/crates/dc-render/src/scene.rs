@@ -11,7 +11,8 @@ use crate::image::Image;
 use crate::paint::{Brush, Cap, CompositionMode, Join};
 use crate::path::{FillRule, Path, PathRef, Polylines, Verb};
 use crate::text::GlyphPos;
-use dc_core::Color;
+use crate::transform::Transform;
+use dc_core::{Color, Rect};
 
 /// `paint` value meaning "use the command's inline `color`".
 pub(crate) const SOLID: u32 = u32::MAX;
@@ -192,6 +193,84 @@ impl Scene {
             }
         }
         s
+    }
+
+    /// Appends every command of `src` drawn through `t` (applied after each
+    /// command's own transform) and clipped to `clip` (this scene's device
+    /// pixels), like replaying a `QPicture` under a painter transform and
+    /// clip rect. Paints, strokes, glyphs and images are shared; cosmetic
+    /// pens stay one device pixel wide. The overlay draws one logical-pixel
+    /// scene once per monitor this way, each at its own DPI scale.
+    pub fn append_transformed(&mut self, src: &Scene, t: &Transform, clip: Option<Rect>) {
+        let (v0, p0) = (self.verbs.len() as u32, self.points.len() as u32);
+        let (paint0, stroke0) = (self.paints.len() as u32, self.strokes.len() as u32);
+        let (image0, glyph0) = (self.images.len() as u32, self.glyphs.len() as u32);
+        self.verbs.extend_from_slice(&src.verbs);
+        self.points.extend_from_slice(&src.points);
+        self.paints.extend_from_slice(&src.paints);
+        self.strokes.extend_from_slice(&src.strokes);
+        self.images.extend(src.images.iter().cloned());
+        self.glyphs.extend_from_slice(&src.glyphs);
+        let shape = |s: Shape| match s {
+            Shape::Path { verbs, points } => {
+                Shape::Path { verbs: (verbs.0 + v0, verbs.1 + v0), points: (points.0 + p0, points.1 + p0) }
+            }
+            other => other,
+        };
+        let then = |m: [f32; 6]| Transform::from_f32(m).then(t).to_f32();
+        let outer = clip.map(|r| [r.x as f32, r.y as f32, r.right() as f32, r.bottom() as f32]);
+        // Where each of `src`'s clips went; an unclipped one stays clip 0
+        // (backends read a clip without scissor or shapes as empty).
+        let mut clips = Vec::with_capacity(src.clips.len());
+        for c in &src.clips {
+            let base = self.clip_shapes.len() as u32;
+            for i in c.shapes.0..c.shapes.1 {
+                let cs = src.clip_shapes[i as usize];
+                self.clip_shapes.push(ClipShape {
+                    shape: shape(cs.shape),
+                    rule: cs.rule,
+                    transform: then(cs.transform),
+                });
+            }
+            let mut scissor = None;
+            if let Some(s) = c.scissor {
+                let r = Rect::from_ltrb(s[0] as f64, s[1] as f64, s[2] as f64, s[3] as f64);
+                if t.is_axis_aligned() {
+                    let d = t.map_rect(r);
+                    scissor = Some([d.x as f32, d.y as f32, d.right() as f32, d.bottom() as f32]);
+                } else {
+                    let shape = Shape::Rect { x: r.x as f32, y: r.y as f32, w: r.w as f32, h: r.h as f32 };
+                    self.clip_shapes.push(ClipShape { shape, rule: FillRule::Winding, transform: t.to_f32() });
+                }
+            }
+            let scissor = match (scissor, outer) {
+                (Some(a), Some(b)) => Some([a[0].max(b[0]), a[1].max(b[1]), a[2].min(b[2]), a[3].min(b[3])]),
+                (a, b) => a.or(b),
+            };
+            let shapes = (base, self.clip_shapes.len() as u32);
+            if scissor.is_none() && shapes.0 == shapes.1 {
+                clips.push(0);
+            } else {
+                clips.push(self.clips.len() as u32);
+                self.clips.push(Clip { scissor, shapes });
+            }
+        }
+        for cmd in &src.cmds {
+            let op = match cmd.op {
+                Op::Fill { shape: s, rule } => Op::Fill { shape: shape(s), rule },
+                Op::Stroke { shape: s, stroke } => Op::Stroke { shape: shape(s), stroke: stroke + stroke0 },
+                Op::Image { image, src: from, dst, smooth } => {
+                    Op::Image { image: image + image0, src: from, dst, smooth }
+                }
+                Op::Glyphs { start, end, px } => Op::Glyphs { start: start + glyph0, end: end + glyph0, px },
+            };
+            let clip = clips[cmd.clip as usize];
+            if self.clips[clip as usize].is_empty() {
+                continue;
+            }
+            let paint = if cmd.paint == SOLID { SOLID } else { cmd.paint + paint0 };
+            self.cmds.push(Command { op, transform: then(cmd.transform), paint, clip, ..*cmd });
+        }
     }
 
     pub(crate) fn push_path(&mut self, p: &Path) -> Shape {

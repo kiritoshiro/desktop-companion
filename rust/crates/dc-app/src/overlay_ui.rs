@@ -207,6 +207,12 @@ impl OverlayUi {
         self.core.origin = origin;
     }
 
+    /// The overlay's local DPI map, so that position also converts to the
+    /// manager's logical pixels on a scaled monitor (identity at 100%).
+    pub fn set_overlay_dpi(&mut self, dpi: dc_platform::dpi::DpiMap) {
+        self.core.dpi = dpi;
+    }
+
     /// What kind of Adventure is running (pause menu choices, party window).
     pub fn set_adventure(&mut self, adventure: AdventureContext) {
         self.core.adventure = adventure;

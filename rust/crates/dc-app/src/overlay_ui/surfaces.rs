@@ -14,6 +14,7 @@ use std::time::{Duration, Instant};
 use dc_adventure::adventure_profile::{AdventureProfile, load_profile, profile_path, save_profile};
 use dc_adventure::controls::{controls_path, load_controls, save_controls};
 use dc_manager::CreatureManager;
+use dc_platform::dpi::DpiMap;
 use dc_ui::UiAction;
 use dc_ui::windows::character::CharacterWindow;
 use dc_ui::windows::inspector::{CreatureInspector, InspectorTab, InspectorView};
@@ -141,6 +142,9 @@ pub struct UiCore {
     pending: Vec<(u64, Pending)>,
     next_id: SurfaceId,
     pub origin: (i32, i32),
+    /// The overlay's local DPI map: a click's position relative to `origin`
+    /// (physical) to the manager's logical pixels.
+    pub dpi: DpiMap,
     pub adventure: AdventureContext,
     pub state_dir: PathBuf,
     /// `_moving_base_id`.
@@ -159,6 +163,7 @@ impl UiCore {
             pending: Vec::new(),
             next_id: 1,
             origin: (0, 0),
+            dpi: DpiMap::default(),
             adventure: AdventureContext::default(),
             state_dir,
             carried_base: None,
@@ -392,7 +397,7 @@ impl UiCore {
         for s in &mut self.surfaces {
             match &mut s.view {
                 View::Menu { menu, context, creature, at } if context.is_none() => {
-                    let local = (at.0 - origin.0 as f64, at.1 - origin.1 as f64);
+                    let local = self.dpi.to_logical(at.0 - origin.0 as f64, at.1 - origin.1 as f64);
                     let ctx =
                         MenuContext::from_manager(manager, creature.as_deref(), local, self.carried_base.as_deref());
                     **menu = WoodMenu::new(ctx.entries());

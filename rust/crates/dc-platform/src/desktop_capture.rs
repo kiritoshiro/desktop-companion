@@ -17,7 +17,7 @@
 
 use std::path::PathBuf;
 
-use dc_core::Rect;
+use dc_core::{IRect, Rect};
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BitBlt, CAPTUREBLT, CreateCompatibleBitmap, CreateCompatibleDC,
@@ -31,6 +31,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::BOOL;
 
+use crate::dpi::{DpiMap, ScaledScreen};
 use crate::monitors::{MonitorInfo, primary_index};
 use crate::overlay_win32::WS_EX_TOOLWINDOW;
 use crate::win::{class_name, ex_style, is_dwm_cloaked, rect_from_dwm, rect_from_user32};
@@ -312,9 +313,34 @@ pub fn list_windows(origin: (f64, f64), screens: &[ScreenGeometry]) -> Vec<Rect>
     windows_front_to_back(origin, screens, false).into_iter().map(|(r, _)| r).collect()
 }
 
-struct WindowWalk<'a> {
+/// The screens as a [`DpiMap`] (their physical rectangles and ratios).
+fn dpi_map_of(screens: &[ScreenGeometry]) -> DpiMap {
+    DpiMap::new(screens.iter().map(|g| {
+        let dpr = if g.dpr > 0.0 { g.dpr } else { 1.0 };
+        let physical = IRect::new(g.x as i32, g.y as i32, (g.w * dpr).round() as i32, (g.h * dpr).round() as i32);
+        ScaledScreen::new(physical, dpr)
+    }))
+}
+
+/// A window's physical rectangle (`l, t, r, b`) as an overlay-local one in
+/// the screens' space. Rust difference: the window converts whole on the
+/// monitor holding most of it ([`DpiMap::rect_to_logical`]); Python converted
+/// each corner with `physical_to_local`, which on a scaled monitor misses a
+/// window ending at the monitor's right or bottom edge (a maximised one) and
+/// tears one crossing monitors. Identical when every ratio is 1.
+pub fn window_rect_local(map: &DpiMap, frame: (i32, i32, i32, i32), origin: (f64, f64)) -> Rect {
+    let (l, t, r, b) = frame;
+    let physical = Rect::new(l as f64, t as f64, (r - l) as f64, (b - t) as f64);
+    if map.is_identity() {
+        // `physical_to_local` of both corners, as before.
+        return Rect::new(physical.x - origin.0, physical.y - origin.1, physical.w, physical.h);
+    }
+    map.rect_to_logical(physical).translated(-origin.0, -origin.1)
+}
+
+struct WindowWalk {
     origin: (f64, f64),
-    screens: &'a [ScreenGeometry],
+    map: DpiMap,
     pictures: bool,
     pid: u32,
     found: Vec<(Rect, Option<RgbaImage>)>,
@@ -351,13 +377,13 @@ fn visit_one(hwnd: HWND, walk: &mut WindowWalk) {
     if rect.right - rect.left < 40 || rect.bottom - rect.top < 30 {
         return;
     }
-    let (x0, y0) = physical_to_local(rect.left as f64, rect.top as f64, walk.screens, walk.origin);
-    let (x1, y1) = physical_to_local(rect.right as f64, rect.bottom as f64, walk.screens, walk.origin);
+    let frame = (rect.left, rect.top, rect.right, rect.bottom);
+    let local = window_rect_local(&walk.map, frame, walk.origin);
     let mut picture = None;
     if walk.pictures && walk.found.len() < MAX_PICTURES && !unsafe { IsHungAppWindow(hwnd) }.as_bool() {
-        picture = print_window(hwnd, (rect.left, rect.top, rect.right, rect.bottom));
+        picture = print_window(hwnd, frame);
     }
-    walk.found.push((Rect::new(x0, y0, x1 - x0, y1 - y0), picture));
+    walk.found.push((local, picture));
 }
 
 fn windows_front_to_back(
@@ -365,7 +391,8 @@ fn windows_front_to_back(
     screens: &[ScreenGeometry],
     pictures: bool,
 ) -> Vec<(Rect, Option<RgbaImage>)> {
-    let mut walk = WindowWalk { origin, screens, pictures, pid: std::process::id(), found: Vec::new() };
+    let map = dpi_map_of(screens);
+    let mut walk = WindowWalk { origin, map, pictures, pid: std::process::id(), found: Vec::new() };
     if unsafe { EnumWindows(Some(visit), LPARAM(&mut walk as *mut WindowWalk as isize)) }.is_err() {
         return Vec::new();
     }
@@ -517,6 +544,50 @@ mod tests {
         assert_eq!(physical_to_local(960.0, 540.0, &screens, (0.0, 0.0)), (640.0, 360.0));
         assert_eq!(physical_to_local(2000.0, 10.0, &screens, (0.0, 0.0)), (2000.0, 10.0));
         assert_eq!(physical_to_local(-50.0, 10.0, &screens, (-100.0, 0.0)), (50.0, 10.0));
+    }
+
+    fn monitor(rect: IRect, dpi: u32) -> MonitorInfo {
+        MonitorInfo { handle: 0, name: "\\\\.\\DISPLAY9".into(), rect, work: rect, dpi, primary: false }
+    }
+
+    /// Reclaim on 2560x1440 at 100% + 3840x2160 at 150%: each screen's
+    /// picture is native, its rectangle logical, and a maximised window on
+    /// the 4K monitor covers exactly that monitor's logical rectangle, so
+    /// the frozen desktop lines up with the overlay's per-monitor scaling.
+    #[test]
+    fn window_rectangles_follow_the_screens_ratio() {
+        let list = [monitor(IRect::new(0, 0, 2560, 1440), 96), monitor(IRect::new(2560, 0, 3840, 2160), 144)];
+        let geoms: Vec<_> = list.iter().map(|m| ScreenGeometry::of(m, true)).collect();
+        assert_eq!(geoms[1], ScreenGeometry { x: 2560.0, y: 0.0, w: 2560.0, h: 1440.0, dpr: 1.5 });
+        let map = dpi_map_of(&geoms);
+        assert_eq!(map, DpiMap::from_monitors(&list));
+        let maximised = window_rect_local(&map, (2560, 0, 6400, 2160), (0.0, 0.0));
+        assert_eq!(maximised, Rect::new(2560.0, 0.0, 2560.0, 1440.0));
+        // Python's corners: the bottom-right one is off the monitor and was
+        // left unconverted.
+        assert_eq!(physical_to_local(6400.0, 2160.0, &geoms, (0.0, 0.0)), (6400.0, 2160.0));
+        let on_main = window_rect_local(&map, (100, 200, 900, 800), (0.0, 0.0));
+        assert_eq!(on_main, Rect::new(100.0, 200.0, 800.0, 600.0));
+        // Negative origin: the overlay's corner is the left monitor's.
+        let list = [monitor(IRect::new(-3840, -400, 3840, 2160), 144), monitor(IRect::new(0, 0, 1920, 1080), 96)];
+        let geoms: Vec<_> = list.iter().map(|m| ScreenGeometry::of(m, true)).collect();
+        let r = window_rect_local(&dpi_map_of(&geoms), (-3000, -100, -1500, 800), (-3840.0, -400.0));
+        assert_eq!(r, Rect::new(560.0, 200.0, 1000.0, 600.0));
+    }
+
+    #[test]
+    fn window_rectangles_at_one_hundred_percent_are_unchanged() {
+        let list = [monitor(IRect::new(-1920, 0, 1920, 1080), 96), monitor(IRect::new(0, 0, 2560, 1440), 96)];
+        for logical in [false, true] {
+            let geoms: Vec<_> = list.iter().map(|m| ScreenGeometry::of(m, logical)).collect();
+            let map = dpi_map_of(&geoms);
+            for frame in [(-1920, 0, 0, 1080), (-500, 10, 700, 400), (2400, 1300, 2700, 1500)] {
+                let (x0, y0) = physical_to_local(frame.0 as f64, frame.1 as f64, &geoms, (-1920.0, 0.0));
+                let (x1, y1) = physical_to_local(frame.2 as f64, frame.3 as f64, &geoms, (-1920.0, 0.0));
+                let python = Rect::new(x0, y0, x1 - x0, y1 - y0);
+                assert_eq!(window_rect_local(&map, frame, (-1920.0, 0.0)), python);
+            }
+        }
     }
 
     #[test]

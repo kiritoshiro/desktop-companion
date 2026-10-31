@@ -2,7 +2,7 @@
 //!
 //! Re-bless the CPU fixture with `DC_RENDER_BLESS=1 cargo test -p dc-render`.
 
-use dc_render::{Color, CpuRenderer, Font, Headless, Image, Pen, Rect, Scene, TextFlags, demo};
+use dc_render::{Color, CpuRenderer, Font, Headless, Image, Pen, Rect, Scene, TextFlags, Transform, demo};
 use std::path::PathBuf;
 
 const W: u32 = 320;
@@ -79,6 +79,76 @@ fn cpu_draws_expected_pixels() {
     assert!(inside.g > 100, "{inside:?}");
 }
 
+/// 150% about (40, -20): how the overlay draws its logical scene on a
+/// scaled monitor whose corner is there.
+const DPI: Transform = Transform::new(1.5, 0.0, 0.0, 1.5, 40.0 * (1.0 - 1.5), -20.0 * (1.0 - 1.5));
+const BIG: (u32, u32) = (480, 360);
+
+fn recorded_under(t: &Transform) -> Scene {
+    let mut s = Scene::new();
+    {
+        let mut c = s.canvas();
+        c.set_transform(t, false);
+        demo::feature_scene(&mut c);
+    }
+    s
+}
+
+#[test]
+fn an_appended_scene_draws_like_one_recorded_under_the_transform() {
+    let mut cpu = CpuRenderer::new();
+    let want = cpu.render(&recorded_under(&DPI), BIG.0, BIG.1, Some(Color::TRANSPARENT));
+    let mut mapped = Scene::new();
+    mapped.append_transformed(&feature_scene(), &DPI, None);
+    let got = cpu.render(&mapped, BIG.0, BIG.1, Some(Color::TRANSPARENT));
+    let d = diff(&want, &got, 3);
+    eprintln!("appended vs recorded: mean {:.4} max {} over3 {:.5}", d.mean, d.max, d.over);
+    // Only the dashes differ (they are cut at recording time, with the
+    // recording scale's tolerance).
+    assert!(d.mean < 0.05 && d.over < 0.002, "mean {} max {} over {}", d.mean, d.max, d.over);
+    // The clip path and the cleared hole moved with the scene.
+    assert_eq!(got.pixel(300, 20).a, want.pixel(300, 20).a);
+    let (x, y) = DPI.map(200.0, 180.0);
+    assert!(got.pixel(x as u32, y as u32).g > 100);
+
+    // Through the identity: the same pixels as the scene itself.
+    let mut same = Scene::new();
+    same.append_transformed(&feature_scene(), &Transform::IDENTITY, None);
+    let a = cpu.render(&feature_scene(), W, H, Some(Color::TRANSPARENT));
+    let b = cpu.render(&same, W, H, Some(Color::TRANSPARENT));
+    assert_eq!(a.data(), b.data());
+}
+
+#[test]
+fn an_appended_scene_stays_inside_its_clip() {
+    let mut cpu = CpuRenderer::new();
+    let mut whole = Scene::new();
+    whole.append_transformed(&feature_scene(), &DPI, None);
+    let whole = cpu.render(&whole, BIG.0, BIG.1, Some(Color::TRANSPARENT));
+    // Two monitors' worth: the left half at 150%, the right half through
+    // the identity, each clipped to its own half.
+    let mut halves = Scene::new();
+    halves.append_transformed(&feature_scene(), &DPI, Some(Rect::new(0.0, 0.0, 240.0, 360.0)));
+    halves.append_transformed(&feature_scene(), &Transform::IDENTITY, Some(Rect::new(240.0, 0.0, 240.0, 360.0)));
+    let halves = cpu.render(&halves, BIG.0, BIG.1, Some(Color::TRANSPARENT));
+    let plain = cpu.render(&feature_scene(), BIG.0, BIG.1, Some(Color::TRANSPARENT));
+    // Drawing through a clip mask rounds a gradient a level differently.
+    let near = |a: Color, b: Color| {
+        a.r.abs_diff(b.r).max(a.g.abs_diff(b.g)).max(a.b.abs_diff(b.b)).max(a.a.abs_diff(b.a)) <= 2
+    };
+    for y in (0..BIG.1).step_by(7) {
+        for x in (0..BIG.0).step_by(5) {
+            let want = if x < 240 { whole.pixel(x, y) } else { plain.pixel(x, y) };
+            assert!(near(halves.pixel(x, y), want), "({x}, {y}): {:?} vs {want:?}", halves.pixel(x, y));
+        }
+    }
+    // Nothing of the 150% copy spills past its half: what the identity copy
+    // leaves empty there stays empty.
+    assert_eq!(plain.pixel(400, 300).a, 0);
+    assert_eq!(halves.pixel(400, 300).a, 0);
+    assert!(whole.pixel(400, 300).a > 0, "the scaled copy does reach there unclipped");
+}
+
 fn headless() -> Option<Headless> {
     let h = Headless::new(4);
     if h.is_none() {
@@ -98,6 +168,19 @@ fn gpu_matches_cpu() {
     }
     let d = diff(&cpu, &g, 48);
     eprintln!("cpu vs gpu ({}): mean {:.3} max {} over48 {:.4}", gpu.adapter_info.name, d.mean, d.max, d.over);
+    assert!(d.mean < 2.0 && d.over < 0.01, "GPU differs from CPU: mean {} over {}", d.mean, d.over);
+}
+
+#[test]
+fn gpu_draws_appended_scenes_like_cpu() {
+    let Some(mut gpu) = headless() else { return };
+    let mut halves = Scene::new();
+    halves.append_transformed(&feature_scene(), &DPI, Some(Rect::new(0.0, 0.0, 240.0, 360.0)));
+    halves.append_transformed(&feature_scene(), &Transform::IDENTITY, Some(Rect::new(240.0, 0.0, 240.0, 360.0)));
+    let cpu = CpuRenderer::new().render(&halves, BIG.0, BIG.1, Some(Color::TRANSPARENT));
+    let g = gpu.render(&halves, BIG.0, BIG.1, Some(Color::TRANSPARENT));
+    let d = diff(&cpu, &g, 48);
+    eprintln!("appended cpu vs gpu: mean {:.3} max {} over48 {:.4}", d.mean, d.max, d.over);
     assert!(d.mean < 2.0 && d.over < 0.01, "GPU differs from CPU: mean {} over {}", d.mean, d.over);
 }
 

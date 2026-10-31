@@ -41,6 +41,9 @@ runs; that choice just resumes.
   (physical px, `virtual_screen_geometry()` x/y). `at` in requests is a
   desktop position; this maps it to manager coordinates ("Add a cage here",
   "Put the base down here"). Call on start and when the geometry changes.
+- `set_overlay_dpi(map)` — the overlay's local `DpiMap`, with the origin:
+  the desktop position also converts to the manager's logical pixels on a
+  scaled monitor (identity at 100%). Same moments as the origin.
 - `set_adventure(AdventureContext { in_mission, players, target_fps,
   player_creatures })` — what the pause menu offers, one vs two-player
   character window, the settings dialog's frame rate. Default: in a raid, one

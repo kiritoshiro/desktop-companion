@@ -356,6 +356,32 @@ fn clicking_menu_entries_yields_engine_commands() {
     assert!(core.take_commands().is_empty());
 }
 
+/// A right-click on a 150% monitor left of a 100% one: the menu opens at
+/// the physical desktop point, its actions use the manager's logical one.
+#[test]
+fn a_click_on_a_scaled_monitor_reaches_the_manager_in_logical_pixels() {
+    use dc_platform::dpi::{DpiMap, ScaledScreen};
+    let dir = TempDir::new("menu-dpi");
+    let (m, _) = manager(&dir.0);
+    let mut core = core(&dir.0);
+    core.origin = (-3840, 0);
+    core.dpi = DpiMap::new([
+        ScaledScreen::new(dc_core::IRect::new(0, 0, 1920, 1080), 1.0),
+        ScaledScreen::new(dc_core::IRect::new(-3840, 0, 3840, 2160), 1.5),
+    ])
+    .translated(3840, 0);
+    let mut d = Driver::default();
+    // The main monitor keeps its corner (3840 local) in both spaces.
+    for (at, cage) in [((-3840.0 + 600.0, 300.0), "add_cage=400,200"), ((100.0, 50.0), "add_cage=3940,50")] {
+        core.request(UiRequest::OverlayMenu { at });
+        core.sync(&m);
+        let id = open_id(&core, "menu");
+        d.settle(&mut core, id);
+        d.click(&mut core, id, "menu:add_cage");
+        assert_eq!(core.take_commands(), vec![EngineCommand::OverlayAction { action: cage.into() }]);
+    }
+}
+
 #[test]
 fn hovering_an_entry_explains_it_in_the_strip() {
     let dir = TempDir::new("menu-tips");

@@ -5,7 +5,8 @@
 //! Coordinates: the Rust overlay is per-monitor-DPI aware (winit sets
 //! PER_MONITOR_AWARE_V2), so everything here is in **physical** pixels, the
 //! space every raw Win32 call already uses. Qt's logical space is recovered
-//! with [`MonitorInfo::logical_rect`] where a caller wants it.
+//! with [`MonitorInfo::logical_rect`], or for the whole desktop with
+//! [`crate::dpi::DpiMap`], where a caller wants it.
 
 use dc_core::{IRect, Rect};
 use windows::Win32::Foundation::{LPARAM, POINT, RECT};
@@ -108,7 +109,11 @@ pub fn monitor_at(x: i32, y: i32) -> Option<MonitorInfo> {
 /// Union of every monitor's rectangle, physical pixels. Falls back to
 /// 1280x720 at the origin when nothing is reported, as the Python did.
 pub fn virtual_screen_geometry() -> IRect {
-    let list = monitors();
+    virtual_screen_geometry_of(&monitors())
+}
+
+/// [`virtual_screen_geometry`] of a monitor list already read.
+pub fn virtual_screen_geometry_of(list: &[MonitorInfo]) -> IRect {
     if let Some(rect) = union_of(list.iter().map(|m| m.rect)) {
         return rect;
     }
