@@ -58,12 +58,13 @@ annotation preserves compatibility with existing overlay/settings processes.
 
 Reviewed exception (2026-11-01, owner: repository maintainer; review by 2027-02-01):
 four audit rules of Semgrep's `p/rust` pack are accepted in the reviewed files
-only (`reviewed_findings` in `.github/security/profile.json`); the same rule
-anywhere else still fails the scan. They mark every use of an API rather than a
+only (`reviewed_findings` in `.github/security/profile.json`, exact paths, no
+patterns); the same rule in any other file, new files included, still fails
+the scan. They mark every use of an API rather than a
 misuse, and on the switch to Rust they reported 134 locations, all reviewed:
-- `unsafe-usage` (107): every `unsafe` block, all in `dc-platform` (the Win32
-  glue), which cannot make its calls without one; clippy and review cover
-  them. An `unsafe` block in any other crate still fails the scan.
+- `unsafe-usage` (107): every `unsafe` block, all in 14 files of `dc-platform`
+  (the Win32 glue), which cannot make its calls without one; clippy and review
+  cover them. An `unsafe` block in any other file still fails the scan.
 - `temp-dir` (16): every one inside a `#[cfg(test)]` module, for scratch folders.
 - `args` (8): the examples' and `dc-app`'s own command-line parsing; nothing
   trusts `args[0]`.

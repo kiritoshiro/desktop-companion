@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Run Semgrep CE and report locations without printing source or credentials."""
-import fnmatch
 import json
 import subprocess
 import sys
@@ -20,14 +19,14 @@ try:
 except (ValueError, TypeError):
     print('Semgrep did not return valid JSON; scan incomplete.', file=sys.stderr)
     sys.exit(2)
-# Reviewed exceptions: a rule in the listed files only, each justified in
+# Reviewed exceptions: a rule in the listed files only (exact paths, no
+# patterns, so a new file is never covered), each justified in
 # docs/cybersecurity.md. The same rule anywhere else still fails the scan.
 reviewed = policy.get('reviewed_findings', [])
 
 
 def is_reviewed(finding):
-    return any(finding['check_id'] == entry['rule']
-               and any(fnmatch.fnmatch(finding['path'], pattern) for pattern in entry['paths'])
+    return any(finding['check_id'] == entry['rule'] and finding['path'] in entry['paths']
                for entry in reviewed)
 
 

@@ -9,7 +9,22 @@
   "reviewed_findings": [
     {
       "rule": "rust.lang.security.unsafe-usage.unsafe-usage",
-      "paths": ["rust/crates/dc-platform/*"]
+      "paths": [
+        "rust/crates/dc-platform/examples/overlay_demo.rs",
+        "rust/crates/dc-platform/src/desktop_capture.rs",
+        "rust/crates/dc-platform/src/desktop_environment.rs",
+        "rust/crates/dc-platform/src/dpi.rs",
+        "rust/crates/dc-platform/src/frame_policy.rs",
+        "rust/crates/dc-platform/src/input.rs",
+        "rust/crates/dc-platform/src/live_channel.rs",
+        "rust/crates/dc-platform/src/logging_setup.rs",
+        "rust/crates/dc-platform/src/monitors.rs",
+        "rust/crates/dc-platform/src/overlay.rs",
+        "rust/crates/dc-platform/src/overlay_win32.rs",
+        "rust/crates/dc-platform/src/screen_activity.rs",
+        "rust/crates/dc-platform/src/tray.rs",
+        "rust/crates/dc-platform/src/win.rs"
+      ]
     },
     {
       "rule": "rust.lang.security.temp-dir.temp-dir",
@@ -20,10 +35,12 @@
         "rust/crates/dc-adventure/src/custom_maps.rs",
         "rust/crates/dc-adventure/src/mission_factory.rs",
         "rust/crates/dc-app/src/adventure/screens.rs",
+        "rust/crates/dc-app/src/adventure/tests.rs",
         "rust/crates/dc-app/src/camouflage.rs",
         "rust/crates/dc-app/src/live.rs",
+        "rust/crates/dc-app/src/overlay_ui/tests.rs",
         "rust/crates/dc-app/src/repaint.rs",
-        "rust/crates/dc-app/src/*/tests.rs",
+        "rust/crates/dc-app/src/settings/tests.rs",
         "rust/crates/dc-platform/src/live_channel.rs",
         "rust/crates/dc-platform/src/logging_setup.rs",
         "rust/crates/dc-platform/src/session_control.rs",
@@ -32,7 +49,16 @@
     },
     {
       "rule": "rust.lang.security.args.args",
-      "paths": ["rust/crates/*/examples/*", "rust/crates/dc-app/src/main.rs"]
+      "paths": [
+        "rust/crates/dc-app/src/main.rs",
+        "rust/crates/dc-art/examples/generate_ui_art.rs",
+        "rust/crates/dc-paint/examples/bench.rs",
+        "rust/crates/dc-paint/examples/compare.rs",
+        "rust/crates/dc-platform/examples/overlay_demo.rs",
+        "rust/crates/dc-render/examples/bench.rs",
+        "rust/crates/dc-render/examples/smoke.rs",
+        "rust/crates/dc-ui/examples/settings_window.rs"
+      ]
     },
     {
       "rule": "rust.lang.security.current-exe.current-exe",
