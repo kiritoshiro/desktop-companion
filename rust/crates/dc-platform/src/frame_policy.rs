@@ -5,11 +5,15 @@
 //! on a laptop running off its battery, is being a bad guest. The decision is
 //! a pure function of two facts about the machine; the probes that establish
 //! those facts are separate, cheap, and answer "no" when they cannot tell.
+//!
+//! Differs from Python: a window counts as fullscreen only when it covers
+//! every monitor. Python checked only the monitor the window is on, so a game
+//! on one screen slowed the spiders still visible on the other to 10 FPS.
 
-use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow};
 use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
+use crate::monitors::monitors;
 use crate::win::{class_name, hwnd_to_raw, rect_from_user32};
 
 /// Nothing the overlay draws can be seen behind a fullscreen window.
@@ -48,9 +52,14 @@ pub fn covers_monitor(window: (i32, i32, i32, i32), screen: (i32, i32, i32, i32)
         && window.3 >= screen.3 - slack
 }
 
-/// True when the focused window covers a whole monitor (the monitor it is
-/// on, so a fullscreen app on the second screen counts). False wherever it
-/// cannot tell.
+/// Whether a window rectangle covers every monitor (all `l, t, r, b`), so
+/// no spider is left in view. False for an empty list.
+pub fn covers_every_monitor(window: (i32, i32, i32, i32), screens: &[(i32, i32, i32, i32)]) -> bool {
+    !screens.is_empty() && screens.iter().all(|&s| covers_monitor(window, s))
+}
+
+/// True when the focused window covers every monitor, so a fullscreen game
+/// on one screen of two does not count. False wherever it cannot tell.
 pub fn foreground_window_is_fullscreen(exclude_hwnd: Option<isize>) -> bool {
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd.0.is_null() || exclude_hwnd == Some(hwnd_to_raw(hwnd)) {
@@ -61,16 +70,9 @@ pub fn foreground_window_is_fullscreen(exclude_hwnd: Option<isize>) -> bool {
         return false;
     }
     let Some(rect) = rect_from_user32(hwnd) else { return false };
-    let monitor = unsafe { MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST) };
-    if monitor.0.is_null() {
-        return false;
-    }
-    let mut info = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
-    if !unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
-        return false;
-    }
-    let s = info.rcMonitor;
-    covers_monitor((rect.left, rect.top, rect.right, rect.bottom), (s.left, s.top, s.right, s.bottom))
+    let screens: Vec<_> =
+        monitors().iter().map(|m| (m.rect.x, m.rect.y, m.rect.x + m.rect.w, m.rect.y + m.rect.h)).collect();
+    covers_every_monitor((rect.left, rect.top, rect.right, rect.bottom), &screens)
 }
 
 /// True when the machine runs from its battery; false when plugged in or
@@ -211,6 +213,19 @@ mod tests {
         assert!(!covers_monitor((3, 0, 1920, 1080), screen));
         assert!(covers_monitor((-8, -8, 1928, 1088), screen));
         assert!(!covers_monitor((0, 0, 1920, 1040), screen));
+    }
+
+    /// The owner's layout: a game fullscreen on the 2560x1440 primary leaves
+    /// the 4K screen beside it in view, so the spiders keep their rate.
+    #[test]
+    fn a_game_on_one_of_two_monitors_is_not_fullscreen() {
+        let primary = (0, 0, 2560, 1440);
+        let second = (2560, -718, 6400, 1442);
+        assert!(covers_every_monitor(primary, &[primary]));
+        assert!(!covers_every_monitor(primary, &[primary, second]));
+        assert!(!covers_every_monitor(second, &[primary, second]));
+        assert!(covers_every_monitor((0, -718, 6400, 1442), &[primary, second]));
+        assert!(!covers_every_monitor(primary, &[]));
     }
 
     #[test]
