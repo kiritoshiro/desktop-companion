@@ -1,8 +1,10 @@
 # Rust port of Desktop Bug Companion
 
-A staged rewrite of the Python/PyQt5 app (`../src/desktop_bug`) in Rust, with
-wgpu for the overlay and egui for the windows. The Python app stays the
-reference and keeps working until the Rust build reaches parity.
+A rewrite of the Python/PyQt5 app in Rust, with wgpu for the overlay and egui
+for the windows. Since 2026-11-01 this is the app on `main`; the Python app is
+on the `legacy` branch and stays the reference for behaviour. Paths like
+`../src/desktop_bug` and `../tests/` below, and the fixture generators under
+`crates/*/tools/`, need a `legacy` checkout.
 
 ## Crates
 

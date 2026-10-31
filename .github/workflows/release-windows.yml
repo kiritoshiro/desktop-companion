@@ -49,61 +49,60 @@ jobs:
           $commit = git rev-parse "refs/tags/$($env:RELEASE_TAG)^{commit}"
           if ($LASTEXITCODE -ne 0 -or $commit -ne $env:GITHUB_SHA) { throw 'Select the release tag as the workflow ref; its commit must match the scanned checkout.' }
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: '3.13'
-
-      - name: Install dependencies
-        shell: pwsh
-        run: python -m pip install -r requirements.txt
-
       # A release whose tag disagrees with the version in the source ships an
       # executable that reports a number nobody can match to a commit.
-      - name: Check the tag matches __version__
+      - name: Check the tag matches the workspace version
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:PYTHONPATH = Join-Path $PWD 'src'
-          $version = python -c "import desktop_bug; print(desktop_bug.__version__)"
-          if ($LASTEXITCODE -ne 0) { throw 'Could not read desktop_bug.__version__' }
+          $match = Select-String -Path 'rust/Cargo.toml' -Pattern '^version = "(.+)"'
+          if (-not $match) { throw 'No version in rust/Cargo.toml' }
+          $version = $match.Matches[0].Groups[1].Value
           $expected = "v$version"
           if ($env:REF_NAME -ne $expected) {
-            throw "Tag $env:REF_NAME does not match __version__ ($expected). Update src/desktop_bug/__init__.py or retag."
+            throw "Tag $env:REF_NAME does not match the version in rust/Cargo.toml ($expected). Update [workspace.package] version or retag."
           }
-          Write-Host "Tag $env:REF_NAME matches __version__ $version"
+          Write-Host "Tag $env:REF_NAME matches version $version"
+
+      - name: Cache Cargo registry
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: rust-registry-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-registry-${{ runner.os }}-
 
       # A release used to validate data and run no tests, so it could ship
-      # code that the CI workflow would have rejected. Same runner as CI.
-      - name: Run all checks (compile, data, pytest, ruff)
+      # code that the CI workflow would have rejected. Same tests as CI.
+      - name: Run the tests
         shell: pwsh
-        run: python tools/run_all_checks.py
+        working-directory: rust
+        env:
+          CARGO_INCREMENTAL: 0
+          DESKTOP_BUG_STATE_DIR: ${{ runner.temp }}\dc-state
+        run: cargo test --workspace --locked
 
-      - name: Build one-file executable
+      # The exe with models, personalities, presets and assets beside it, as
+      # rust/dist/DesktopBugCompanion-<version>-windows-x64.zip.
+      - name: Build and package
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          python -m PyInstaller --noconfirm --clean DesktopBugCompanion.spec
-
-          if (-not (Test-Path -LiteralPath 'dist/DesktopBugCompanion.exe')) {
-            throw 'PyInstaller did not produce dist/DesktopBugCompanion.exe'
-          }
-
-          Compress-Archive `
-            -Path 'dist/DesktopBugCompanion.exe', 'README.md' `
-            -DestinationPath 'dist/DesktopBugCompanion-windows-x64.zip' `
-            -CompressionLevel Optimal
+          ./rust/package.ps1
+          $zips = @(Get-ChildItem -Path 'rust/dist' -Filter 'DesktopBugCompanion-*-windows-x64.zip')
+          if ($zips.Count -ne 1) { throw "Expected one zip in rust/dist, found $($zips.Count)" }
+          Move-Item -LiteralPath $zips[0].FullName -Destination 'rust/dist/DesktopBugCompanion-windows-x64.zip'
 
       - name: Upload build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: DesktopBugCompanion-windows-x64
-          path: |
-            dist/DesktopBugCompanion.exe
-            dist/DesktopBugCompanion-windows-x64.zip
+          path: rust/dist/DesktopBugCompanion-windows-x64.zip
           if-no-files-found: error
 
   release:
@@ -150,9 +149,6 @@ jobs:
           RELEASE_TAG: ${{ steps.release_tag.outputs.tag }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Rename-Item `
-            -LiteralPath 'release-assets/DesktopBugCompanion.exe' `
-            -NewName "DesktopBugCompanion-$env:RELEASE_TAG-windows-x64.exe"
           Rename-Item `
             -LiteralPath 'release-assets/DesktopBugCompanion-windows-x64.zip' `
             -NewName "DesktopBugCompanion-$env:RELEASE_TAG-windows-x64.zip"

@@ -1,14 +1,12 @@
-# Builds the Rust app and packs it as a portable folder and zip, the
-# counterpart of build_exe.bat / DesktopBugCompanion.spec for the Python app.
+# Builds the Rust app and packs it as a portable folder and zip; the release
+# workflow (.github/workflows/release-windows.yml) publishes the zip.
 #
 #   pwsh rust\package.ps1            # build, assemble, zip
 #   pwsh rust\package.ps1 -NoBuild   # reuse the last release build
 #
 # Output: rust\dist\DesktopBugCompanion\ (DesktopBugCompanion.exe with
 # models, personalities, presets and assets beside it, where the app looks
-# for its data) and rust\dist\DesktopBugCompanion-<version>-windows-x64.zip.
-# The spec bundles the same four folders inside its single-file EXE.
-param([switch]$NoBuild)
+# for its data) and rust\dist\DesktopBugCompanion-<version>-windows-x64.zip.param([switch]$NoBuild)
 $ErrorActionPreference = "Stop"
 
 $rust = $PSScriptRoot

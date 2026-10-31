@@ -1,9 +1,15 @@
 {
-  "category": "Python desktop application",
+  "category": "Rust desktop application",
   "source_paths": [
-    "src"
+    "rust/crates"
   ],
   "semgrep_rules": [
-    "p/python"
+    "p/rust"
+  ],
+  "excluded_rules": [
+    "rust.lang.security.unsafe-usage.unsafe-usage",
+    "rust.lang.security.temp-dir.temp-dir",
+    "rust.lang.security.args.args",
+    "rust.lang.security.current-exe.current-exe"
   ]
 }

@@ -1,6 +1,6 @@
 # Cybersecurity baseline
 
-Project type: **Python desktop application**. Default branch: `main`.
+Project type: **Rust desktop application** (`rust/`; the Python app is on the `legacy` branch since 2026-11-01). Default branch: `main`.
 
 Added scans: Semgrep CE, TruffleHog, zizmor, Trivy (weekly/manual on private repos). Existing checks are retained.
 One Linux job shares setup across tools; timeout is 15 minutes and superseded runs
@@ -48,12 +48,26 @@ Public conversion is a separate decision. Review full history, release assets,
 credentials, personal data, licensing and fork restrictions before changing
 visibility. No visibility changes are part of this rollout.
 
-CodeQL additionally scans python in this public repository and uploads results to code scanning. It automatically skips if made private.
+CodeQL additionally scans Rust (and the few remaining Python scripts) in this public repository and uploads results to code scanning. It automatically skips if made private.
 
 Reviewed exception (2026-09-29, owner: repository maintainer; review by 2026-12-29):
+(Python app, now on `legacy`; the Rust `dc-platform/src/live_channel.rs` uses SHA-256)
 `live_channel.channel_name` uses SHA-1 only to derive a stable IPC name from a
 local directory, not to authenticate a peer or verify content. A one-call Semgrep
 annotation preserves compatibility with existing overlay/settings processes.
+
+Reviewed exception (2026-11-01, owner: repository maintainer; review by 2027-02-01):
+four audit rules of Semgrep's `p/rust` pack are excluded by id in
+`.github/security/profile.json`. They mark every use of an API rather than a
+misuse, and on the switch to Rust they reported 134 locations, all reviewed:
+- `unsafe-usage` (107): every `unsafe` block. The Win32 calls in `dc-platform`
+  and the overlay cannot be made without one; clippy and review cover them.
+- `temp-dir` (16): every one inside a `#[cfg(test)]` module, for scratch folders.
+- `args` (8): the examples' and `dc-app`'s own command-line parsing; nothing
+  trusts `args[0]`.
+- `current-exe` (3): the settings window starting its own exe as the overlay,
+  and finding the shipped data beside the exe (as the Python app did).
+Every other rule in the pack still runs and fails the gate.
 
 ## Security gate
 

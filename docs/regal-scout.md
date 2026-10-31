@@ -1,5 +1,7 @@
 # Regal Scout — corrected face orientation
 
+> Written for the Python app, now on the `legacy` branch: file paths, tests and commands here refer to it. Where the Rust app on `main` differs, its crates' `PORT_STATUS.md` files say so.
+
 Select **Jumper → Regal Scout · corrected face**. Regal Fluff remains a
 separate selectable model with its original geometry and appearance.
 

@@ -1,5 +1,8 @@
 name: Windows CI
 
+# The Rust app in rust/. The job keeps the id validate-and-build, the check
+# branch protection on main requires. Its tests read the shipped models,
+# personalities, presets and assets, so it runs on every change.
 on:
   push:
     branches: [main]
@@ -15,6 +18,14 @@ permissions:
 jobs:
   validate-and-build:
     runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: rust
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
 
     steps:
       - name: Check out repository
@@ -22,33 +33,35 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          # Matches the version developers use locally, so a failure here is
-          # reproducible on a workstation.
-          python-version: '3.13'
-          cache: pip
-
-      - name: Install dependencies
-        shell: pwsh
-        run: python -m pip install -r requirements.txt
-
-      # One runner, shared with the release workflow. It discovers the smoke
-      # tests rather than being handed a list that can drift out of date, and a
-      # forgotten list entry fails silently by simply not running anything.
-      - name: Run all checks (compile, data, pytest, ruff)
-        shell: pwsh
-        run: python tools/run_all_checks.py
-
-      - name: Build Windows executable smoke test
-        shell: pwsh
+      # rust/rust-toolchain.toml picks the channel; rustup on the runner
+      # installs it on first use.
+      - name: Show toolchain
         run: |
-          $ErrorActionPreference = 'Stop'
-          python -m PyInstaller --noconfirm --clean `
-            --distpath ci-dist --workpath ci-build `
-            DesktopBugCompanion.spec
+          rustup component add clippy rustfmt
+          rustc --version
+          cargo --version
 
-          if (-not (Test-Path -LiteralPath 'ci-dist/DesktopBugCompanion.exe')) {
-            throw 'PyInstaller did not produce ci-dist/DesktopBugCompanion.exe'
-          }
+      # Saved from main, where pull requests can restore it; a cache saved on
+      # a pull request is visible to that pull request only.
+      - name: Cache Cargo registry and build
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            rust/target
+          key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock', 'rust/rust-toolchain.toml') }}
+          restore-keys: rust-${{ runner.os }}-
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      # Headless: no window opens. Test runs write only to temporary folders.
+      - name: Tests
+        env:
+          DESKTOP_BUG_STATE_DIR: ${{ runner.temp }}\dc-state
+        run: cargo test --workspace --locked

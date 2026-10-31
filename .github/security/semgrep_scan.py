@@ -12,6 +12,9 @@ command = ['semgrep', 'scan', '--oss-only', '--metrics=off', '--disable-version-
            '--exclude', '.github/security/**', '--exclude', 'tests/**']
 for pack in policy['semgrep_rules']:
     command += ['--config', pack]
+# Reviewed rule-level exceptions; each is justified in docs/cybersecurity.md.
+for rule in policy.get('excluded_rules', []):
+    command += ['--exclude-rule', rule]
 command += policy['source_paths']
 result = subprocess.run(command, capture_output=True, text=True)
 try:
