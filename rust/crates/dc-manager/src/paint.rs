@@ -37,6 +37,9 @@ impl ScenePainter {
     /// `CreatureManager.render(painter)`, with `clip` the repaint rectangle
     /// grown by 2 px (`None` for the whole overlay).
     pub fn paint(&mut self, m: &mut CreatureManager, canvas: &mut Canvas, clip: Option<Clip>) {
+        // Python's "render-props" and "render" sections in one: the props
+        // and the spiders are laid down by the same `render_scene` call.
+        let _span = dc_core::profiling::section("render");
         let order: Vec<u64> =
             if m.render_order.is_empty() { m.creatures.iter().map(|c| c.id).collect() } else { m.render_order.clone() };
         let mut draws = Vec::with_capacity(order.len());

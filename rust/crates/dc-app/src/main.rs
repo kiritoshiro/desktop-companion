@@ -23,6 +23,7 @@ mod engine;
 mod live;
 mod metrics;
 mod overlay_ui;
+mod profile_hud;
 mod settings;
 #[cfg(test)]
 mod test_support;

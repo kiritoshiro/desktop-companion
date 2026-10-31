@@ -2,6 +2,7 @@
 use crate::{cages::CageDrag, surfaces::DesktopSurface};
 use dc_content::OrderedMap;
 use dc_core::PyRandom;
+use dc_core::profiling::timed;
 use dc_creature::{
     ApproxLabelMetrics, Creature, CreatureConfig, CreatureId, Env, LabelMetrics, Population, UpdateOutcome,
 };
@@ -366,9 +367,14 @@ impl CreatureManager {
             self.neighbor_refresh_accum = 0.0;
             self.refresh_neighbor_links();
         }
-        self.update_prey_targets(dt, rng);
-        self.base_world.update(dt, &mut self.creatures, Some(&mut self.web_world), rng);
-        self.update_colony_growth(dt, rng);
+        // Every system below is timed so the cost of a frame can be attributed
+        // instead of guessed at; a section does nothing unless
+        // DESKTOP_BUG_PROFILE asked for measurement.
+        timed("behaviour", || self.update_prey_targets(dt, rng));
+        timed("jobs", || {
+            self.base_world.update(dt, &mut self.creatures, Some(&mut self.web_world), rng);
+            self.update_colony_growth(dt, rng);
+        });
         if self.creatures.iter().any(|c| c.job_mode == "build") {
             self.mark_runtime_state_dirty();
         }
@@ -377,7 +383,7 @@ impl CreatureManager {
         let mut commands = vec![];
         for i in 0..self.creatures.len() {
             if self.creatures[i].prey.is_none() && !self.creatures[i].player_control {
-                self.maybe_seek_desktop_cover(i, dt, rng);
+                timed("desktop", || self.maybe_seek_desktop_cover(i, dt, rng));
             }
             let (fx, fy, hunting) = if self.creatures[i].desktop_fully_hidden && !self.creatures[i].dragging {
                 self.creatures[i].social_target = None;
@@ -395,7 +401,8 @@ impl CreatureManager {
                 bases: Some(&self.base_world),
                 commands: &mut commands,
             };
-            if c.update(dt, fx, fy, self.screen_w, self.screen_h, &mut env) == UpdateOutcome::PlayerControlled {
+            let outcome = timed("creatures", || c.update(dt, fx, fy, self.screen_w, self.screen_h, &mut env));
+            if outcome == UpdateOutcome::PlayerControlled {
                 controller(dt, c);
             }
             pop.set(c.view());
@@ -416,15 +423,17 @@ impl CreatureManager {
                 (c.kin.x, c.kin.y) = self.playfield.clamp(c.kin.x, c.kin.y, margin);
                 (c.kin.target_x, c.kin.target_y) = self.playfield.clamp(c.kin.target_x, c.kin.target_y, margin);
             }
-            self.update_desktop_awareness(i, dt, rng);
+            timed("desktop", || self.update_desktop_awareness(i, dt, rng));
             pop.set(self.creatures[i].view());
         }
-        self.web_world.update(dt, Some((mx, my)));
+        timed("webs", || self.web_world.update(dt, Some((mx, my))));
         self.mouse_web_world.enabled = self.allow_mouse_capture;
-        self.desired_cursor = self.mouse_web_world.update(dt, mx, my);
-        self.fly_world.update(dt, &mut self.creatures, Some(&mut self.web_world));
-        self.resolve_fly_catches(rng);
-        self.resolve_combat(dt);
+        self.desired_cursor = timed("mouse-webs", || self.mouse_web_world.update(dt, mx, my));
+        timed("flies", || {
+            self.fly_world.update(dt, &mut self.creatures, Some(&mut self.web_world));
+            self.resolve_fly_catches(rng);
+        });
+        timed("combat", || self.resolve_combat(dt));
         self.render_sort_accum += dt;
         if self.dragged_creature.is_some() || self.render_sort_accum >= 0.10 {
             self.render_sort_accum = 0.0;
