@@ -811,6 +811,32 @@ fn reset_leaves_the_file_alone_when_the_overlay_cannot_be_closed() {
     );
 }
 
+/// A stop that cannot close the overlay keeps tracking it: its mode, its
+/// preset and the window's running state stay, and a mode switch launches
+/// nothing beside it.
+#[test]
+fn an_overlay_that_cannot_be_closed_is_still_tracked() {
+    let state = TempState::new("stop-unkillable");
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    host.launcher.kill_fails = true;
+    let mut screen = Screen::new();
+    open_page(&mut screen, &mut host, Page::Skirmish);
+    screen.click("map:territory:play", &mut host);
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure));
+    assert!(WindowApp::handle(&mut host, vec![UiAction::LeaveAdventure]));
+    assert_eq!(host.launcher.stops.last().unwrap().outcome, StopOutcome::StillRunning);
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure), "the live raid was forgotten");
+    assert!(host.launcher.running);
+    assert!(host.window.status.contains("could not be closed"), "{}", host.window.status);
+    // Switching to Companion stops first; that fails again, so nothing launches.
+    let launches = host.launcher.launches.len();
+    let preset = host.window.current_preset_data().unwrap();
+    host.launch(OverlayMode::Companion, &preset);
+    assert_eq!(host.launcher.launches.len(), launches, "a second overlay was launched beside the live one");
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure));
+}
+
 /// An Adventure raid ignores the reset message, so it is not asked: the raid
 /// is stopped and the file reset, even with its channel listening.
 #[test]

@@ -259,8 +259,10 @@ impl<L: Launcher> SettingsHost<L> {
 
     /// `launch_engine`.
     pub fn launch(&mut self, mode: OverlayMode, preset: &Value) {
-        if self.launcher.running() && self.overlay_mode != Some(mode) {
-            self.stop();
+        if self.launcher.running() && self.overlay_mode != Some(mode) && self.stop() == StopOutcome::StillRunning {
+            // The other mode's overlay is still up; launching beside it would
+            // run two.
+            return;
         }
         if self.launcher.running() {
             if self.apply_live_if_running(preset) {
@@ -327,6 +329,12 @@ impl<L: Launcher> SettingsHost<L> {
             self.client.send(&ChannelMessage::StopRequest.to_map());
         }
         let outcome = self.launcher.stop(&self.state_dir);
+        if outcome == StopOutcome::StillRunning {
+            // Still up: keep tracking it as it is (its mode decides how a
+            // reset reaches it), and say so.
+            self.window.set_status("Overlay did not respond and could not be closed; it may still be running.");
+            return outcome;
+        }
         self.launched_preset = None;
         self.overlay_mode = None;
         self.window.set_overlay_running(false);
