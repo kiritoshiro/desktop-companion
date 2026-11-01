@@ -2,7 +2,9 @@
 
 Run with the main checkout's python.exe -I. Isolated Python ignores PYTHONPATH,
 so insert the worktree src explicitly (also set PYTHONPATH for subprocesses).
-No reference methods or random streams are monkeypatched.
+No reference methods or random streams are monkeypatched, except that the
+painted frames draw the squared-up front legs as Rust does (see
+`rust_combat_leg_pose`); the simulation never calls that method.
 """
 from pathlib import Path
 import json
@@ -54,11 +56,38 @@ def trace(m):
 RENDERED = ("colony", "fight", "hunt", "stalk", "duel")
 
 
+def rust_combat_leg_pose(original):
+    """Rust changed the squared-up pose on purpose (dc-kinematics
+    PORT_STATUS.md): the front legs reach towards the foe instead of being
+    lifted up the screen, and the pose eases while the spider walks. The bite
+    and everything else stay Python's."""
+    def pose(self, leg, ax, ay, foot_x, foot_y, front):
+        stance = getattr(self, "combat_stance", 0.0)
+        _, lift = self.strike_phase()
+        if lift > 0.01 or stance <= 0.01 or front <= 0.15:
+            return original(self, leg, ax, ay, foot_x, foot_y, front)
+        front_weight = min(max((front - 0.15) / 0.85, 0.0), 1.0)
+        walking = min(max(self.current_speed / 120.0, 0.0), 1.0)
+        weight = stance * front_weight * (1.0 - 0.65 * walking)
+        face_x, face_y = self.combat_face_x, self.combat_face_y
+        lateral_x, lateral_y = -face_y, face_x
+        side = self._side_sign(leg.definition.get("side", "right"))
+        foot_x += face_x * self.size * 0.46 * weight
+        foot_y += face_y * self.size * 0.46 * weight
+        foot_x += lateral_x * side * self.size * 0.34 * weight
+        foot_y += lateral_y * side * self.size * 0.34 * weight
+        return foot_x, foot_y
+    return pose
+
+
 def render_frame(m, path):
     """The manager's own `render(painter)` on a transparent 1280x720 image,
     as the overlay paints it, after the run (so it changes nothing above)."""
     from PyQt5.QtCore import Qt
     from PyQt5.QtGui import QImage, QPainter
+    from desktop_bug.creature.render_procedural import RenderProceduralMixin
+    original = RenderProceduralMixin._combat_leg_pose
+    RenderProceduralMixin._combat_leg_pose = rust_combat_leg_pose(original)
     for name in ("names", "levels", "health", "xp", "stamina"):
         getattr(m, f"set_always_show_{name}")(False)
     # Offscreen Qt has no fonts and draws text as empty boxes, so the floating
@@ -69,8 +98,11 @@ def render_frame(m, path):
     image.fill(Qt.transparent)
     painter = QPainter(image)
     painter.setRenderHint(QPainter.Antialiasing, True)
-    m.render(painter)
-    painter.end()
+    try:
+        m.render(painter)
+    finally:
+        painter.end()
+        RenderProceduralMixin._combat_leg_pose = original
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(str(path))
 

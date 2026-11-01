@@ -510,14 +510,19 @@ impl Kinematics {
             fy += face_y * reach + lateral_y * side * spread;
             return (fx, fy);
         }
-        let weight = stance * front_weight;
+        // Python also lifted the feet straight up the screen (`fy -= 0.52`),
+        // which, seen from above, dragged them back behind the head of a
+        // spider walking down the screen at its foe. Here the raise reads as
+        // reaching towards the foe, and it eases while the spider walks so
+        // its planted feet still carry it.
+        let walking = clamp(self.current_speed / 120.0, 0.0, 1.0);
+        let weight = stance * front_weight * (1.0 - 0.65 * walking);
         let (face_x, face_y) = (draw.combat_face_x, draw.combat_face_y);
         let (lateral_x, lateral_y) = (-face_y, face_x);
-        fx += face_x * size * 0.30 * weight;
-        fy += face_y * size * 0.30 * weight;
+        fx += face_x * size * 0.46 * weight;
+        fy += face_y * size * 0.46 * weight;
         fx += lateral_x * side * size * 0.34 * weight;
         fy += lateral_y * side * size * 0.34 * weight;
-        fy -= size * 0.52 * weight;
         (fx, fy)
     }
 

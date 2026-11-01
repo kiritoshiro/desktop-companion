@@ -507,6 +507,47 @@ fn tarantula_carried_legs_hang_below_and_spread() {
     assert!(k.legs[0].stepping && k.legs[0].lift == 1.0);
 }
 
+/// Rust-only: Python lifted the squared-up front feet straight up the screen,
+/// which pulled them back behind the head of a spider facing down the screen.
+#[test]
+fn tarantula_squared_up_front_legs_reach_at_the_foe_from_any_side() {
+    let (mut k, _) = tarantula();
+    let front: Vec<usize> = (0..k.legs.len()).filter(|&i| k.leg_front_factor(i) > 0.15).collect();
+    assert!(!front.is_empty());
+    let push = |k: &Kinematics, i: usize, face: (f64, f64)| {
+        let draw = dc_kinematics::DrawCtx {
+            combat_stance: 1.0,
+            combat_face_x: face.0,
+            combat_face_y: face.1,
+            ..Default::default()
+        };
+        let (fx, fy) = k.combat_leg_pose(i, 0.0, 0.0, k.leg_front_factor(i), &draw);
+        (fx * face.0 + fy * face.1, hypot(fx, fy))
+    };
+    let mut reaches = Vec::new();
+    for step in 0..8 {
+        let angle = step as f64 * PI / 4.0;
+        let face = (angle.cos(), angle.sin());
+        for &i in &front {
+            let (forward, _) = push(&k, i, face);
+            assert!(forward > k.size * 0.10, "leg {i} facing {angle:.2}: {forward}");
+            reaches.push(forward);
+        }
+    }
+    let spread = reaches.iter().cloned().fold(f64::MIN, f64::max) - reaches.iter().cloned().fold(f64::MAX, f64::min);
+    let per_leg = reaches.len() / 8;
+    assert!(
+        (0..per_leg).all(|j| reaches.iter().skip(j).step_by(per_leg).all(|r| (r - reaches[j]).abs() < 1e-9)),
+        "the reach must not depend on which way the spider faces (spread {spread})"
+    );
+    // A spider still walking at its foe keeps most of the pose off its feet.
+    let i = front[0];
+    let (_, standing) = push(&k, i, (0.0, 1.0));
+    k.current_speed = 150.0;
+    let (_, walking) = push(&k, i, (0.0, 1.0));
+    assert!(walking < standing * 0.5, "{walking} vs {standing}");
+}
+
 #[test]
 fn tarantula_released_feet_stay_inside_the_chain_span() {
     let (k, ctx) = tarantula();
