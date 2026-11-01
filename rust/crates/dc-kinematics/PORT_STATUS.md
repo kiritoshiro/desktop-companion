@@ -23,7 +23,7 @@ the chain solve and `math.hypot` / `sum` are bit-exact.
 | `kinematics/__init__.py` | `lib.rs` | ported |
 | `creature/constants.py` (gait part) | `constants.rs` | ported: `smootherstep`, `GAIT_BY_STATE`/`gait_by_state`, `GAIT_SPELL_GAP`, `GAIT_SPELL_LENGTH`, `VALID_GAIT_STYLES`, `GAIT_LABELS`, `normalize_gait_style` |
 | `behaviour/temperament.py` drift helpers | `drift.rs` | ported: `_drift_state_multiplier`, `_is_drift_sliding`, `_drift_amount`, `_prime_drift`, `_guard_drifter_travel_direction` |
-| `render_procedural.py` leg geometry | `chain.rs`, `config.rs` | ported: `_sprite_leg_chain_config`, `_update_spider_joint_articulation`, `_sprite_leg_chain_points`, `_solve_knee`, `_safe_sprite_leg_foot`, `_leg_attach_drawn`, `_leg_front_factor`, `_leg_lift_px`, `_leg_draw_points`, `_picked_up_leg_pose`, `_front_leg_feeler_pose`, `_combat_leg_pose` |
+| `render_procedural.py` leg geometry | `chain.rs`, `config.rs` | ported: `_sprite_leg_chain_config`, `_update_spider_joint_articulation`, `_sprite_leg_chain_points`, `_solve_knee`, `_safe_sprite_leg_foot`, `_leg_attach_drawn`, `_leg_front_factor`, `_leg_lift_px`, `_leg_draw_points`, `_picked_up_leg_pose`, `_front_leg_feeler_pose`, `_combat_leg_pose` (changed, see below) |
 | `render_detail.py` | `detail.rs` | ported (`ENABLED` is an argument) |
 | `support/math_utils` CPython semantics | `pymath.rs` | `hypot` (CPython `vector_norm`), `py_sum` (Neumaier), `py_pow`, `wrap_pi`, JSON `float()`/`int()`/`bool()` |
 
@@ -74,6 +74,12 @@ the chain solve and `math.hypot` / `sum` are bit-exact.
   painter may cache. Fixed arrays replace lists (max 16 legs, 5 segments).
 * `SpiderGaitConfig.profile` is an enum (`GaitProfile`) so the config is
   `Copy` on the hot path; unknown names map to `Other` (behaviour unchanged).
+* `_combat_leg_pose` (squared up at a foe, not the bite): Python also lifted
+  the front feet `0.52 * size` straight up the screen. Seen from above, that
+  pulled them back behind the head of a spider walking down the screen at its
+  foe, and stretched them far ahead of one walking up. Here the raise is a
+  reach towards the foe (`0.46` instead of `0.30`, same `0.34` spread),
+  and it eases by up to 65% while the spider walks (`current_speed / 120`).
 * A non-numeric value in a leg definition or personality falls back to the
   default instead of raising.
 * Tests not ported because they test something else: antenna/palp posture in
@@ -85,7 +91,7 @@ the chain solve and `math.hypot` / `sum` are bit-exact.
 
 ## Tests
 
-`cargo test -p dc-kinematics`: 50 tests (11 trace replays, 24 locomotion
+`cargo test -p dc-kinematics`: 51 tests (11 trace replays, 25 locomotion
 ports, 10 geometry ports, 5 unit). Benchmark: `cargo test --release -p
 dc-kinematics --test bench -- --ignored --nocapture` (about 6 us per spider
 per frame for the grounded tarantula, about 19 us with eight chain solves;
