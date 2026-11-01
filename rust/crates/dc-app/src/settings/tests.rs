@@ -109,11 +109,15 @@ struct FakeProcess {
     polls: u32,
     alive_for: Option<u32>,
     terminated: bool,
+    survives_kill: bool,
 }
 
 impl StoppableProcess for FakeProcess {
     fn is_running(&mut self) -> bool {
         self.polls += 1;
+        if self.terminated {
+            return self.survives_kill;
+        }
         self.alive_for.is_none_or(|n| self.polls <= n)
     }
 
@@ -131,6 +135,11 @@ struct FakeLauncher {
     /// Polls the overlay stays up after a stop request; `None`: wedged.
     answers_stop_after: Option<u32>,
     exit_code: Option<i32>,
+    /// What a graceful stop writes on its way out, as the overlay saves its
+    /// colony on quit: (file, contents).
+    saves_on_stop: Option<(PathBuf, String)>,
+    /// Killing it fails: it stays up.
+    kill_fails: bool,
 }
 
 impl FakeLauncher {
@@ -142,6 +151,8 @@ impl FakeLauncher {
             fail_with: None,
             answers_stop_after: Some(2),
             exit_code: None,
+            saves_on_stop: None,
+            kill_fails: false,
         }
     }
 }
@@ -169,14 +180,24 @@ impl Launcher for FakeLauncher {
     /// `ProcessLauncher::stop`'s `stop_process`, on a fake process and
     /// without real sleeps.
     fn stop(&mut self, state_dir: &Path) -> StopOutcome {
-        let mut process = FakeProcess { polls: 0, alive_for: self.answers_stop_after, terminated: false };
+        let mut process = FakeProcess {
+            polls: 0,
+            alive_for: self.answers_stop_after,
+            terminated: false,
+            survives_kill: self.kill_fails,
+        };
         let mut request_seen = false;
         let running = self.running;
         let outcome = stop_process(running.then_some(&mut process), state_dir, 0.5, 0.1, |_| {
             request_seen |= stop_request_path(state_dir).is_file();
         });
         self.stops.push(Stop { outcome, request_seen, terminated: process.terminated });
-        self.running = false;
+        if outcome == StopOutcome::Graceful
+            && let Some((path, contents)) = &self.saves_on_stop
+        {
+            std::fs::write(path, contents).unwrap();
+        }
+        self.running = outcome == StopOutcome::StillRunning;
         outcome
     }
 
@@ -698,6 +719,145 @@ fn reset_asks_a_listening_overlay_and_leaves_the_file_to_it() {
     received(&server, "reset_progress");
     assert_eq!(host.window.status, "Saved progress reset in the running overlay.");
     assert_eq!(state.read("creatures.json"), before);
+}
+
+/// An overlay that runs but cannot be reached would write its colony back
+/// over a reset file, so it is stopped first; Python only said to restart.
+/// The fake overlay saves its old colony as it stops, so resetting before
+/// stopping would leave the old progress in the file.
+#[test]
+fn reset_stops_an_overlay_it_cannot_reach_before_resetting_the_file() {
+    let state = TempState::new("reset-unreachable");
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap() + "\n";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    host.launcher.saves_on_stop = Some((state.path("creatures.json"), input.clone()));
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    assert!(!host.channel_connected(0), "no overlay channel listens in this test");
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops.len(), 1, "the unreachable overlay was not stopped");
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::Graceful);
+    assert!(!host.launcher.running);
+    assert_eq!(
+        state.read("creatures.json"),
+        oracle["reset"].as_str().unwrap(),
+        "its save on quit came after the reset"
+    );
+    assert!(host.window.status.starts_with("The overlay was stopped (it saved first)"), "{}", host.window.status);
+}
+
+/// A wedged overlay is killed (and waited for) before the reset, and the
+/// status says what that cost.
+#[test]
+fn reset_of_a_wedged_overlay_says_recent_changes_were_lost() {
+    let state = TempState::new("reset-wedged");
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap() + "\n";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops.len(), 1);
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::Terminated);
+    assert!(host.launcher.stops[0].terminated);
+    assert_eq!(state.read("creatures.json"), oracle["reset"].as_str().unwrap());
+    assert!(host.window.status.contains("did not respond and was closed"), "{}", host.window.status);
+    assert!(host.window.status.contains("were lost"), "{}", host.window.status);
+}
+
+/// When the reset itself fails after a kill, the status still says what the
+/// kill cost.
+#[test]
+fn a_failed_reset_after_a_kill_still_says_changes_were_lost() {
+    let state = TempState::new("reset-wedged-unwritable");
+    // A folder where the file should be: the reset cannot write it.
+    std::fs::create_dir_all(state.path("creatures.json")).unwrap();
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::Terminated);
+    assert!(host.window.status.contains("were lost"), "{}", host.window.status);
+    assert!(host.window.status.contains("could not write"), "{}", host.window.status);
+}
+
+/// An overlay that cannot even be killed could still save its old colony,
+/// so the file is left alone and the status says why.
+#[test]
+fn reset_leaves_the_file_alone_when_the_overlay_cannot_be_closed() {
+    let state = TempState::new("reset-unkillable");
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap()
+        + "
+";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    host.launcher.kill_fails = true;
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::StillRunning);
+    assert_eq!(state.read("creatures.json"), input, "reset under a live overlay");
+    assert!(
+        host.window.status.contains("could not be closed, so saved progress was not reset"),
+        "{}",
+        host.window.status
+    );
+}
+
+/// A stop that cannot close the overlay keeps tracking it: its mode, its
+/// preset and the window's running state stay, and a mode switch launches
+/// nothing beside it.
+#[test]
+fn an_overlay_that_cannot_be_closed_is_still_tracked() {
+    let state = TempState::new("stop-unkillable");
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    host.launcher.kill_fails = true;
+    let mut screen = Screen::new();
+    open_page(&mut screen, &mut host, Page::Skirmish);
+    screen.click("map:territory:play", &mut host);
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure));
+    assert!(WindowApp::handle(&mut host, vec![UiAction::LeaveAdventure]));
+    assert_eq!(host.launcher.stops.last().unwrap().outcome, StopOutcome::StillRunning);
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure), "the live raid was forgotten");
+    assert!(host.launcher.running);
+    assert!(host.launched_preset.is_some(), "its preset was forgotten");
+    assert!(host.window.overlay_running, "the window says nothing runs");
+    assert!(host.window.status.contains("could not be closed"), "{}", host.window.status);
+    // Switching to Companion stops first; that fails again, so nothing launches.
+    let launches = host.launcher.launches.len();
+    let preset = host.window.current_preset_data().unwrap();
+    host.launch(OverlayMode::Companion, &preset);
+    assert_eq!(host.launcher.launches.len(), launches, "a second overlay was launched beside the live one");
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure));
+}
+
+/// An Adventure raid ignores the reset message, so it is not asked: the raid
+/// is stopped and the file reset, even with its channel listening.
+#[test]
+fn reset_during_adventure_stops_the_raid_instead_of_asking_it() {
+    let state = TempState::new("reset-adventure");
+    let server = state.server();
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap() + "\n";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    let mut screen = Screen::new();
+    open_page(&mut screen, &mut host, Page::Skirmish);
+    screen.click("map:territory:play", &mut host);
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure));
+    connect_channel(&mut host);
+    assert!(WindowApp::handle(&mut host, vec![UiAction::ResetProgress]));
+    assert!(!received_types(&server).contains(&"reset_progress".to_owned()), "the raid was asked to reset");
+    assert_eq!(host.launcher.stops.len(), 1, "the raid was not stopped");
+    assert_eq!(state.read("creatures.json"), oracle["reset"].as_str().unwrap());
 }
 
 // -- presets --------------------------------------------------------------------
