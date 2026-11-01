@@ -508,12 +508,56 @@ fn a_bound_mouse_button_shoots_at_the_pointer() {
     g.tick(0.02);
     let (x, y) = hero_position(&g);
     let heading = ControlledSpider::heading(g.player_spider(0));
-    let target = (x + heading.cos() * 150.0, y + heading.sin() * 150.0);
+    // Behind the spider, far outside the aim cone (#114): the click still
+    // decides the direction exactly.
+    let behind = heading + std::f64::consts::PI;
+    let target = (x + behind.cos() * 150.0, y + behind.sin() * 150.0);
     let silk = g.territory().players[0].control.silk;
     g.mouse_press(MouseButton::Left, target.0, target.1);
     assert_eq!(g.territory().players[0].control.aim, target, "the click aims the shot");
     assert!(g.territory().players[0].control.silk < silk, "the shot is fired");
+    let angle = last_silk_angle(&g);
+    assert!(angle_gap(angle, behind) < 1e-6, "a click goes exactly at the pointer: {angle} vs {behind}");
     g.mouse_release(MouseButton::Left);
+}
+
+/// The direction of the newest aimed silk in flight.
+fn last_silk_angle(g: &AdventureGame) -> f64 {
+    let silk = g
+        .manager
+        .fly_world
+        .projectiles
+        .iter()
+        .rev()
+        .find_map(|p| match p {
+            dc_world::flies::Projectile::Aimed(s) => Some(s),
+            _ => None,
+        })
+        .expect("a silk shot in flight");
+    silk.vel.1.atan2(silk.vel.0)
+}
+
+fn angle_gap(a: f64, b: f64) -> f64 {
+    (dc_core::math::py_mod(a - b + std::f64::consts::PI, std::f64::consts::TAU) - std::f64::consts::PI).abs()
+}
+
+/// #114: a key shoots straight where the spider faces, wherever the
+/// pointer last was.
+#[test]
+fn a_key_shoots_where_the_spider_faces_not_at_the_pointer() {
+    let state = scratch("key-shot");
+    let mut g = game(&state, |_| {});
+    g.tick(0.02);
+    let (x, y) = hero_position(&g);
+    let heading = ControlledSpider::heading(g.player_spider(0));
+    let aside = heading + 1.2;
+    g.territory_mut().players[0].control.aim = (x + aside.cos() * 200.0, y + aside.sin() * 200.0);
+    let silk = g.territory().players[0].control.silk;
+    press(&mut g, Key::Char('Q'));
+    assert!(g.territory().players[0].control.silk < silk, "Q fires silk by default");
+    let angle = last_silk_angle(&g);
+    assert!(angle_gap(angle, heading) < 1e-6, "a key shot follows the heading: {angle} vs {heading}");
+    release(&mut g, Key::Char('Q'));
 }
 
 #[test]

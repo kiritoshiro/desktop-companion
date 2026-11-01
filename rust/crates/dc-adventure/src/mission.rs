@@ -1,7 +1,7 @@
 //! Port of app/mission.py: isolated territory raids and the manager boundary.
 pub use crate::mission_actor::MissionActor;
 use crate::{
-    adventure::{AimTarget, Bite, ControlledSpider, PlayerController, SilkShot},
+    adventure::{AimTarget, Bite, ControlledSpider, PlayerController, ShotAim, SilkShot},
     adventure_profile::*,
     armoury,
     campaign::{self, MapInfo, MapKind},
@@ -895,8 +895,8 @@ impl TerritoryMission {
         }
         result
     }
-    pub fn shoot(host: &mut impl MissionHost, id: SpiderId, control: &mut PlayerController) -> bool {
-        if let Some(shot) = control.shoot(host.creature_mut(id)) {
+    pub fn shoot(host: &mut impl MissionHost, id: SpiderId, control: &mut PlayerController, aim: ShotAim) -> bool {
+        if let Some(shot) = control.shoot(host.creature_mut(id), aim) {
             host.shoot(id, shot);
             true
         } else {
