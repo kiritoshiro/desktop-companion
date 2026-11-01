@@ -109,11 +109,15 @@ struct FakeProcess {
     polls: u32,
     alive_for: Option<u32>,
     terminated: bool,
+    survives_kill: bool,
 }
 
 impl StoppableProcess for FakeProcess {
     fn is_running(&mut self) -> bool {
         self.polls += 1;
+        if self.terminated {
+            return self.survives_kill;
+        }
         self.alive_for.is_none_or(|n| self.polls <= n)
     }
 
@@ -134,6 +138,8 @@ struct FakeLauncher {
     /// What a graceful stop writes on its way out, as the overlay saves its
     /// colony on quit: (file, contents).
     saves_on_stop: Option<(PathBuf, String)>,
+    /// Killing it fails: it stays up.
+    kill_fails: bool,
 }
 
 impl FakeLauncher {
@@ -146,6 +152,7 @@ impl FakeLauncher {
             answers_stop_after: Some(2),
             exit_code: None,
             saves_on_stop: None,
+            kill_fails: false,
         }
     }
 }
@@ -173,7 +180,12 @@ impl Launcher for FakeLauncher {
     /// `ProcessLauncher::stop`'s `stop_process`, on a fake process and
     /// without real sleeps.
     fn stop(&mut self, state_dir: &Path) -> StopOutcome {
-        let mut process = FakeProcess { polls: 0, alive_for: self.answers_stop_after, terminated: false };
+        let mut process = FakeProcess {
+            polls: 0,
+            alive_for: self.answers_stop_after,
+            terminated: false,
+            survives_kill: self.kill_fails,
+        };
         let mut request_seen = false;
         let running = self.running;
         let outcome = stop_process(running.then_some(&mut process), state_dir, 0.5, 0.1, |_| {
@@ -185,7 +197,7 @@ impl Launcher for FakeLauncher {
         {
             std::fs::write(path, contents).unwrap();
         }
-        self.running = false;
+        self.running = outcome == StopOutcome::StillRunning;
         outcome
     }
 
@@ -772,6 +784,31 @@ fn a_failed_reset_after_a_kill_still_says_changes_were_lost() {
     assert_eq!(host.launcher.stops[0].outcome, StopOutcome::Terminated);
     assert!(host.window.status.contains("were lost"), "{}", host.window.status);
     assert!(host.window.status.contains("could not write"), "{}", host.window.status);
+}
+
+/// An overlay that cannot even be killed could still save its old colony,
+/// so the file is left alone and the status says why.
+#[test]
+fn reset_leaves_the_file_alone_when_the_overlay_cannot_be_closed() {
+    let state = TempState::new("reset-unkillable");
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap()
+        + "
+";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    host.launcher.kill_fails = true;
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::StillRunning);
+    assert_eq!(state.read("creatures.json"), input, "reset under a live overlay");
+    assert!(
+        host.window.status.contains("could not be closed, so saved progress was not reset"),
+        "{}",
+        host.window.status
+    );
 }
 
 /// An Adventure raid ignores the reset message, so it is not asked: the raid

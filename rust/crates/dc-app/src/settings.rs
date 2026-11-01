@@ -72,7 +72,9 @@ impl Launcher for ProcessLauncher {
 
     fn stop(&mut self, state_dir: &Path) -> StopOutcome {
         let outcome = session_control::stop_process_default(self.child.as_mut(), state_dir);
-        self.child = None;
+        if outcome != StopOutcome::StillRunning {
+            self.child = None;
+        }
         outcome
     }
 
@@ -334,6 +336,7 @@ impl<L: Launcher> SettingsHost<L> {
                 "Overlay did not respond and was closed; recent progress may not have been saved."
             }
             StopOutcome::NotRunning => "No overlay process is running from this window.",
+            StopOutcome::StillRunning => "Overlay did not respond and could not be closed; it may still be running.",
         });
         outcome
     }
@@ -356,6 +359,13 @@ impl<L: Launcher> SettingsHost<L> {
             return;
         }
         let outcome = if self.launcher.running() { self.stop() } else { StopOutcome::NotRunning };
+        if outcome == StopOutcome::StillRunning {
+            // It could still save its old colony over a reset file.
+            self.window.set_status(
+                "The overlay did not respond and could not be closed, so saved progress was not reset (the                  overlay would write it back). Quit it from its tray icon, then try again.",
+            );
+            return;
+        }
         let path = self.state_dir.join("creatures.json");
         if dc_state::runtime_state::reset_saved_progress(&path) {
             self.window.set_status(match outcome {
@@ -367,7 +377,7 @@ impl<L: Launcher> SettingsHost<L> {
                     "The overlay did not respond and was closed, then its saved progress was reset. Cages, webs \
                      and nests placed since its last save were lost."
                 }
-                StopOutcome::NotRunning => "Saved progress reset.",
+                StopOutcome::NotRunning | StopOutcome::StillRunning => "Saved progress reset.",
             });
         } else if outcome == StopOutcome::Terminated {
             self.window.set_status(format!(

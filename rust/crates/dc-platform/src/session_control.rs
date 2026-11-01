@@ -73,7 +73,10 @@ impl StoppableProcess for std::process::Child {
 pub enum StopOutcome {
     NotRunning,
     Graceful,
+    /// Killed, and gone.
     Terminated,
+    /// Killing it failed: it may still be running (and could still save).
+    StillRunning,
 }
 
 impl StopOutcome {
@@ -82,6 +85,7 @@ impl StopOutcome {
             StopOutcome::NotRunning => "not-running",
             StopOutcome::Graceful => "graceful",
             StopOutcome::Terminated => "terminated",
+            StopOutcome::StillRunning => "still-running",
         }
     }
 }
@@ -106,8 +110,7 @@ pub fn stop_process<P: StoppableProcess>(
         return StopOutcome::NotRunning;
     }
     if !request_stop(state_dir) {
-        process.terminate();
-        return StopOutcome::Terminated;
+        return kill(process);
     }
     let mut waited = 0.0;
     let step = poll.max(0.01);
@@ -120,8 +123,18 @@ pub fn stop_process<P: StoppableProcess>(
         waited += step;
     }
     clear_stop_request(state_dir);
+    kill(process)
+}
+
+/// Kill an overlay that did not stop in time, reporting what really
+/// happened: it may have quit on its own during the last wait (then it
+/// saved), or the kill may fail (then it may still save later).
+fn kill<P: StoppableProcess>(process: &mut P) -> StopOutcome {
+    if !process.is_running() {
+        return StopOutcome::Graceful;
+    }
     process.terminate();
-    StopOutcome::Terminated
+    if process.is_running() { StopOutcome::StillRunning } else { StopOutcome::Terminated }
 }
 
 /// [`stop_process`] with the default grace, poll and a real sleep.
@@ -218,17 +231,21 @@ mod tests {
         polls: u32,
         exits_after: Option<u32>,
         terminated: bool,
+        survives_kill: bool,
     }
 
     impl FakeProcess {
         fn new(exits_after: Option<u32>) -> Self {
-            Self { polls: 0, exits_after, terminated: false }
+            Self { polls: 0, exits_after, terminated: false, survives_kill: false }
         }
     }
 
     impl StoppableProcess for FakeProcess {
         fn is_running(&mut self) -> bool {
             self.polls += 1;
+            if self.terminated {
+                return self.survives_kill;
+            }
             match self.exits_after {
                 None => true,
                 Some(n) => self.polls <= n,
@@ -277,6 +294,16 @@ mod tests {
         assert!(!stop_request_path(&tmp).exists());
         assert_eq!(slept.len(), 5, "{slept:?}");
         assert!(slept.iter().all(|s| *s == 0.1));
+
+        // It quits on its own during the last wait: it saved, nothing was killed.
+        let mut late = FakeProcess::new(Some(6));
+        assert_eq!(stop_process(Some(&mut late), &tmp, 0.5, 0.1, |_| {}), StopOutcome::Graceful);
+        assert!(!late.terminated);
+
+        // The kill fails: it may still be running, and says so.
+        let mut stubborn = FakeProcess { survives_kill: true, ..FakeProcess::new(None) };
+        assert_eq!(stop_process(Some(&mut stubborn), &tmp, 0.5, 0.1, |_| {}), StopOutcome::StillRunning);
+        assert!(stubborn.terminated);
 
         assert_eq!(stop_process::<FakeProcess>(None, &tmp, 5.0, 0.1, |_| {}), StopOutcome::NotRunning);
         let mut already = FakeProcess::new(Some(0));
