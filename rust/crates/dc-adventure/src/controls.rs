@@ -6,7 +6,9 @@
 //! - Movement is keys only. By default the spider no longer turns to face
 //!   the pointer while standing still.
 //! - The pointer aims inside a cone around the facing (`aim_cone`, total
-//!   degrees; 90 by default, 360 for free aim).
+//!   degrees; 90 by default, 360 for free aim). Silk is the exception
+//!   (`ShotAim`): a key shoots straight ahead, a mouse button exactly at the
+//!   pointer.
 //! - Bindings are stored by name ("W", "Shift", "Space", "Mouse Left") in
 //!   `controls.json` in the state folder.
 //!
@@ -52,7 +54,8 @@ pub const ACTIONS: [(Action, &str, &str); 15] = [
     (
         Action::Shoot,
         "Shoot silk",
-        "Fire one silk charge along your aim, even if it misses. Refill at home or the Silk loom.",
+        "Fire one silk charge, even if it misses: from a key, straight where your spider faces; from a mouse \
+         button, exactly at the pointer. Refill at home or the Silk loom.",
     ),
     (Action::Bite, "Bite", "Hold to repeatedly bite a foe in front of you, inside the aim cone."),
     (Action::CompanionFollow, "Scout: follow", "Your companion follows and fights nearby enemies."),

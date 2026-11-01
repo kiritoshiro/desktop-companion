@@ -80,7 +80,8 @@ with full health, stamina and eight silk charges. By default WASD
 moves, Shift sprints (draining energy), Space jumps, Q fires a web and
 holding F repeatedly bites, K opens the skill tree and Esc pauses. The mouse only aims:
 within a cone in front of the spider (90 degrees by default), and the spider
-turns by walking. **Controls...** on the Adventure page, or Settings in the
+turns by walking. Silk is the exception: from a key it goes straight ahead,
+and from a mouse button bound to it, exactly at the pointer, cone or not. **Controls...** on the Adventure page, or Settings in the
 pause menu, lists what every button does, changes the aim cone, and rebinds any
 action to another key or mouse button (saved in `state\controls.json`; Esc
 always pauses). Check **Two players · one keyboard** to add a second saved hero:
@@ -89,9 +90,11 @@ players aim forward, share one bag, and have separate armour/skill windows
 opened together by K or P. Close both to resume. See [local co-op details](docs/adventure-mission.md#local-two-player-mode).
 The status panel shows health,
 stamina, silk ammunition and action cooldowns; drag its header to move it.
-Silk fires visibly along your aim even on a miss. Stand at home to refill;
+Silk fires visibly even on a miss: from a key, straight where your spider
+faces; from a mouse button, exactly at the pointer. Stand at home to refill;
 capturing the Silk loom raises capacity to twelve and refills faster.
-Companion commands are **1 Follow**, **2 Defend here**, **3 Attack target**
+Companions walk at your pace and run, on their own stamina, to catch up or
+when you run. Companion commands are **1 Follow**, **2 Defend here**, **3 Attack target**
 (point at an enemy first), also available as HUD buttons and rebindable controls.
 Adventure captures mouse input while active; **Esc** pauses, opens settings,
 restarts or exits the raid. Spiders at the same level use the same baseline size

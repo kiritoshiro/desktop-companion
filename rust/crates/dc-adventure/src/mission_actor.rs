@@ -1,7 +1,7 @@
 //! Port of app/mission.py's MissionActor: the player's rules with AI decisions.
 use crate::{
-    adventure::{ControlledSpider, PlayerController},
-    controls::ControlSettings,
+    adventure::{ControlledSpider, PlayerController, ShotAim},
+    controls::{Action, ControlSettings},
     mission::*,
 };
 use dc_content::enemy_traits::{EnemyTraits, traits_for};
@@ -47,6 +47,15 @@ impl MissionActor {
     pub const CHARGE_SPEED: f64 = 1.7;
     pub const HIT_AND_RUN_SECONDS: f64 = 0.9;
     pub const RALLY_REACH: f64 = 230.0;
+    // A companion keeps up with you (the owner: "my companion spiders seem
+    // to not have ability to run just like me ... they should be able to
+    // shift run, to follow me and do other of my commands"): it walks at
+    // your pace, and runs, on its own stamina, when it has fallen this far
+    // behind where it should be -- or whenever you run.
+    pub const ALLY_WALK: f64 = 115.0;
+    pub const ALLY_RUN: f64 = 190.0;
+    pub const ALLY_RUN_GAP: f64 = 170.0;
+    pub const ALLY_CALM_GAP: f64 = 90.0;
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         creature: SpiderId,
@@ -298,6 +307,10 @@ impl MissionActor {
         let reach = self.control.bite_reach(c);
         let mut paused = gap < if self.target.is_some() { reach * 0.72 } else { 22.0 };
         let mut speed = if self.style == "hunter" { 95.0 } else { 68.0 } * c.speed_mult();
+        if self.role == "ally" {
+            speed = self.ally_pace(m, host, gap, !paused, dt);
+        }
+        let c = host.creature(self.creature);
         if let Some(traits) = self.traits {
             speed *= traits.speed;
             if self.charge_time > 0.0 {
@@ -372,11 +385,29 @@ impl MissionActor {
         }
         c.advance_pose(dt);
     }
+    /// `_ally_pace`: a companion's speed, holding its own sprint key when it
+    /// has fallen behind or the leading player runs. `moving` is whether it
+    /// has somewhere to go this frame.
+    fn ally_pace(&mut self, m: &TerritoryMission, host: &mut impl MissionHost, gap: f64, moving: bool, dt: f64) -> f64 {
+        let leader_runs = m
+            .players
+            .iter()
+            .find(|p| !host.creature(p.creature).dead())
+            .is_some_and(|p| p.control.sprint_held() && !p.control.motion_idle());
+        if gap > Self::ALLY_RUN_GAP || leader_runs {
+            self.control.set_held(Action::Sprint, true);
+        } else if gap < Self::ALLY_CALM_GAP {
+            self.control.set_held(Action::Sprint, false);
+        }
+        let c = host.creature_mut(self.creature);
+        let running = self.control.sprinting(c, moving, dt);
+        (if running { Self::ALLY_RUN } else { Self::ALLY_WALK }) * c.speed_mult()
+    }
     pub fn release_strike(&mut self, m: &mut TerritoryMission, host: &mut impl MissionHost) {
         self.control.aim = self.strike_point;
         match self.strike_kind.as_deref() {
             Some("shoot") => {
-                TerritoryMission::shoot(host, self.creature, &mut self.control);
+                TerritoryMission::shoot(host, self.creature, &mut self.control, ShotAim::Cone);
             }
             Some("spit") => {
                 self.spit(m, host, self.strike_point);

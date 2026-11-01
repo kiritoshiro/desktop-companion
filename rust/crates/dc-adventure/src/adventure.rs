@@ -90,6 +90,18 @@ pub struct SilkShot {
     pub reach: f64,
 }
 
+/// What a shot aims by: Python's `shoot(manager, toward_pointer)` and the
+/// mission spider's own `shot_angle`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShotAim {
+    /// A key: straight where the spider faces.
+    Facing,
+    /// A mouse button: exactly at the pointer, whatever the cone.
+    Pointer,
+    /// A mission spider: at its wound-up point, inside its view cone.
+    Cone,
+}
+
 /// What a bite press did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bite {
@@ -217,6 +229,26 @@ impl PlayerController {
         clamp_to_cone(spider.heading(), wanted, self.controls.half_cone())
     }
 
+    /// Where a silk shot goes (the owner: "when I'm using F to shoot it
+    /// should shoot in the direction the spider is facing, not based on the
+    /// mouse. If shooting with the mouse, then the mouse dictates the precise
+    /// direction"): a key shoots straight ahead, a mouse button exactly at
+    /// the pointer, and a mission spider at its wound-up point inside its cone.
+    pub fn shot_angle<S: ControlledSpider + ?Sized>(&self, spider: &S, aim: ShotAim) -> f64 {
+        match aim {
+            ShotAim::Cone => self.aim_angle(spider),
+            ShotAim::Facing => spider.heading(),
+            ShotAim::Pointer => {
+                let (ax, ay) = self.aim;
+                if self.keyboard_aim || (ax - spider.x()).hypot(ay - spider.y()) < 1.0 {
+                    spider.heading()
+                } else {
+                    (ay - spider.y()).atan2(ax - spider.x())
+                }
+            }
+        }
+    }
+
     /// Is `target` inside the view cone (allowing for its own size)?
     pub fn in_cone<S: ControlledSpider + ?Sized>(&self, spider: &S, target: &AimTarget) -> bool {
         let (dx, dy) = (target.x - spider.x(), target.y - spider.y());
@@ -276,6 +308,16 @@ impl PlayerController {
         self.held.clear();
     }
 
+    /// No movement key held.
+    pub(crate) fn motion_idle(&self) -> bool {
+        !self.held.iter().any(|a| a.is_movement())
+    }
+
+    /// The sprint key (or a companion's wish to run) is held.
+    pub(crate) fn sprint_held(&self) -> bool {
+        self.holds(Action::Sprint)
+    }
+
     pub fn update<S: ControlledSpider + ?Sized>(&mut self, spider: &mut S, dt: f64) {
         self.feedback_time = (self.feedback_time - dt).max(0.0);
         if spider.webbed() && !self.was_webbed {
@@ -326,7 +368,7 @@ impl PlayerController {
         spider.advance_pose(dt);
     }
 
-    fn sprinting<S: ControlledSpider + ?Sized>(&mut self, spider: &mut S, moving: bool, dt: f64) -> bool {
+    pub(crate) fn sprinting<S: ControlledSpider + ?Sized>(&mut self, spider: &mut S, moving: bool, dt: f64) -> bool {
         if self.sprint_exhausted && spider.energy() >= spider.max_energy() * 0.20 {
             self.sprint_exhausted = false;
         }
@@ -449,9 +491,9 @@ impl PlayerController {
         }
     }
 
-    /// Fire one silk charge along the aim: the shot to build, or None (with
-    /// feedback when silk or stamina ran out).
-    pub fn shoot<S: ControlledSpider + ?Sized>(&mut self, spider: &mut S) -> Option<SilkShot> {
+    /// Fire one silk charge along [`Self::shot_angle`]: the shot to build, or
+    /// None (with feedback when silk or stamina ran out).
+    pub fn shoot<S: ControlledSpider + ?Sized>(&mut self, spider: &mut S, aim: ShotAim) -> Option<SilkShot> {
         if self.paused || spider.dead() || spider.airborne() || self.web_cooldown > 0.0 {
             return None;
         }
@@ -468,7 +510,7 @@ impl PlayerController {
             self.feedback_time = 2.5;
             return None;
         }
-        let shot = SilkShot { angle: self.aim_angle(spider), reach: self.web_range };
+        let shot = SilkShot { angle: self.shot_angle(spider, aim), reach: self.web_range };
         spider.spend_energy(Self::WEB_ENERGY);
         self.silk -= 1.0;
         self.web_cooldown = Self::WEB_COOLDOWN;
@@ -620,6 +662,29 @@ mod tests {
         assert!(!s.controlled);
     }
 
+    /// test_mission.py's `test_a_key_shoots_where_the_spider_faces_and_a_click_at_the_pointer`
+    /// (#114). The owner: "when I'm using F to shoot it should shoot in the
+    /// direction the spider is facing, not based on the mouse. If shooting
+    /// with the mouse then the mouse dictates the precise direction."
+    #[test]
+    fn a_key_shoots_where_the_spider_faces_and_a_click_at_the_pointer() {
+        let mut s = spider(0.4);
+        let mut player = PlayerController::new(&mut s, None);
+        player.aim = (s.x, s.y + 300.0); // the pointer straight below
+        let shot = player.shoot(&mut s, ShotAim::Facing).expect("a key shot");
+        assert!((shot.angle - 0.4).abs() < 1e-9, "a key shot follows the heading, not the pointer");
+        player.web_cooldown = 0.0;
+        player.aim = (s.x - 300.0, s.y); // behind it: a click still goes there
+        let shot = player.shoot(&mut s, ShotAim::Pointer).expect("a click shot");
+        assert!((shot.angle.abs() - PI).abs() < 1e-9, "a click goes exactly at the pointer, outside the cone");
+        // A mission spider's shot stays inside its cone.
+        assert!((player.shot_angle(&s, ShotAim::Cone) - player.aim_angle(&s)).abs() < 1e-12);
+        assert!((player.shot_angle(&s, ShotAim::Cone).abs() - PI).abs() > 0.5);
+        // Aiming by keyboard (two players), a click shoots straight ahead too.
+        player.keyboard_aim = true;
+        assert!((player.shot_angle(&s, ShotAim::Pointer) - 0.4).abs() < 1e-9);
+    }
+
     #[test]
     fn only_what_is_in_front_can_be_hit() {
         let mut s = spider(0.0);
@@ -696,13 +761,13 @@ mod tests {
         assert_eq!(player.bite(&mut s, &[foe], false), Bite::Whiff);
         assert!(s.attack_cooldown >= PlayerController::WHIFF_RECOVERY);
         assert_eq!(player.bite(&mut s, &[foe], true), Bite::Blocked);
-        let shot = player.shoot(&mut s).expect("a shot");
+        let shot = player.shoot(&mut s, ShotAim::Facing).expect("a shot");
         assert_eq!(shot.reach, PlayerController::WEB_RANGE);
         assert_eq!(player.silk, 7.0);
-        assert!(player.shoot(&mut s).is_none(), "cooldown");
+        assert!(player.shoot(&mut s, ShotAim::Facing).is_none(), "cooldown");
         player.web_cooldown = 0.0;
         player.silk = 0.0;
-        assert!(player.shoot(&mut s).is_none());
+        assert!(player.shoot(&mut s, ShotAim::Facing).is_none());
         assert!(player.feedback.starts_with("Silk empty"));
         s.webbed = true;
         player.update(&mut s, 0.1);
