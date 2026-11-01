@@ -757,6 +757,44 @@ fn reset_of_a_wedged_overlay_says_recent_changes_were_lost() {
     assert!(host.window.status.contains("were lost"), "{}", host.window.status);
 }
 
+/// When the reset itself fails after a kill, the status still says what the
+/// kill cost.
+#[test]
+fn a_failed_reset_after_a_kill_still_says_changes_were_lost() {
+    let state = TempState::new("reset-wedged-unwritable");
+    // A folder where the file should be: the reset cannot write it.
+    std::fs::create_dir_all(state.path("creatures.json")).unwrap();
+    let mut host = host(&state);
+    host.launcher.answers_stop_after = None;
+    let mut screen = Screen::new();
+    launch_companion(&mut screen, &mut host);
+    confirm_reset(&mut screen, &mut host);
+    assert_eq!(host.launcher.stops[0].outcome, StopOutcome::Terminated);
+    assert!(host.window.status.contains("were lost"), "{}", host.window.status);
+    assert!(host.window.status.contains("could not write"), "{}", host.window.status);
+}
+
+/// An Adventure raid ignores the reset message, so it is not asked: the raid
+/// is stopped and the file reset, even with its channel listening.
+#[test]
+fn reset_during_adventure_stops_the_raid_instead_of_asking_it() {
+    let state = TempState::new("reset-adventure");
+    let server = state.server();
+    let oracle = python();
+    let input = serde_json::to_string_pretty(&oracle["reset_input"]).unwrap() + "\n";
+    std::fs::write(state.path("creatures.json"), &input).unwrap();
+    let mut host = host(&state);
+    let mut screen = Screen::new();
+    open_page(&mut screen, &mut host, Page::Skirmish);
+    screen.click("map:territory:play", &mut host);
+    assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure));
+    connect_channel(&mut host);
+    assert!(WindowApp::handle(&mut host, vec![UiAction::ResetProgress]));
+    assert!(!received_types(&server).contains(&"reset_progress".to_owned()), "the raid was asked to reset");
+    assert_eq!(host.launcher.stops.len(), 1, "the raid was not stopped");
+    assert_eq!(state.read("creatures.json"), oracle["reset"].as_str().unwrap());
+}
+
 // -- presets --------------------------------------------------------------------
 
 #[test]

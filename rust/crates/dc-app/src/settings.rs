@@ -369,6 +369,12 @@ impl<L: Launcher> SettingsHost<L> {
                 }
                 StopOutcome::NotRunning => "Saved progress reset.",
             });
+        } else if outcome == StopOutcome::Terminated {
+            self.window.set_status(format!(
+                "The overlay did not respond and was closed, so cages, webs and nests placed since its last save \
+                 were lost; then its saved progress could not be reset: could not write {}.",
+                path.display()
+            ));
         } else {
             self.window.set_status(format!("Could not write {}.", path.display()));
         }
