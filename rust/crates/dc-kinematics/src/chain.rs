@@ -517,7 +517,11 @@ impl Kinematics {
         // its planted feet still carry it.
         let walking = clamp(self.current_speed / 120.0, 0.0, 1.0);
         let weight = stance * front_weight * (1.0 - 0.65 * walking);
-        let (face_x, face_y) = (draw.combat_face_x, draw.combat_face_y);
+        let (mut face_x, mut face_y) = (draw.combat_face_x, draw.combat_face_y);
+        if hypot(face_x, face_y) < 1e-6 {
+            // A foe right on top of it: square up the way it faces.
+            (face_x, face_y) = (self.heading.cos(), self.heading.sin());
+        }
         let (lateral_x, lateral_y) = (-face_y, face_x);
         fx += face_x * size * 0.46 * weight;
         fy += face_y * size * 0.46 * weight;

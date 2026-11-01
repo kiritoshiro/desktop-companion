@@ -540,8 +540,22 @@ fn tarantula_squared_up_front_legs_reach_at_the_foe_from_any_side() {
         (0..per_leg).all(|j| reaches.iter().skip(j).step_by(per_leg).all(|r| (r - reaches[j]).abs() < 1e-9)),
         "the reach must not depend on which way the spider faces (spread {spread})"
     );
-    // A spider still walking at its foe keeps most of the pose off its feet.
+    // A foe right on top of it: the pose follows the spider's heading.
     let i = front[0];
+    k.heading = 0.0;
+    let foot = |face: (f64, f64)| {
+        let draw = dc_kinematics::DrawCtx {
+            combat_stance: 1.0,
+            combat_face_x: face.0,
+            combat_face_y: face.1,
+            ..Default::default()
+        };
+        k.combat_leg_pose(i, 0.0, 0.0, k.leg_front_factor(i), &draw)
+    };
+    let (on_top, along_heading) = (foot((0.0, 0.0)), foot((1.0, 0.0)));
+    assert!(on_top.0 > k.size * 0.10, "{on_top:?}");
+    assert_eq!(on_top, along_heading);
+    // A spider still walking at its foe keeps most of the pose off its feet.
     let (_, standing) = push(&k, i, (0.0, 1.0));
     k.current_speed = 150.0;
     let (_, walking) = push(&k, i, (0.0, 1.0));

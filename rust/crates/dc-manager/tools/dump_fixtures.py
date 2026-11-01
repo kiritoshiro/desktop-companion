@@ -8,6 +8,7 @@ painted frames draw the squared-up front legs as Rust does (see
 """
 from pathlib import Path
 import json
+import math
 import os
 import random
 import sys
@@ -70,6 +71,8 @@ def rust_combat_leg_pose(original):
         walking = min(max(self.current_speed / 120.0, 0.0), 1.0)
         weight = stance * front_weight * (1.0 - 0.65 * walking)
         face_x, face_y = self.combat_face_x, self.combat_face_y
+        if math.hypot(face_x, face_y) < 1e-6:
+            face_x, face_y = math.cos(self.heading), math.sin(self.heading)
         lateral_x, lateral_y = -face_y, face_x
         side = self._side_sign(leg.definition.get("side", "right"))
         foot_x += face_x * self.size * 0.46 * weight
