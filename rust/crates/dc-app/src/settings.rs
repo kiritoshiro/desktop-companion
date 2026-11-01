@@ -724,6 +724,9 @@ impl<L: Launcher> SettingsHost<L> {
 
     /// `closeEvent`: closing the window saves and stops the overlay.
     pub fn on_close(&mut self) {
+        // Known gap: an overlay that cannot even be killed (StillRunning)
+        // outlives the window, which closes anyway and stops tracking it;
+        // keeping the window open needs a veto in dc-ui's `WindowApp`.
         if self.launcher.running() {
             self.stop();
         }

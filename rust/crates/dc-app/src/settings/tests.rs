@@ -828,6 +828,8 @@ fn an_overlay_that_cannot_be_closed_is_still_tracked() {
     assert_eq!(host.launcher.stops.last().unwrap().outcome, StopOutcome::StillRunning);
     assert_eq!(host.overlay_mode, Some(OverlayMode::Adventure), "the live raid was forgotten");
     assert!(host.launcher.running);
+    assert!(host.launched_preset.is_some(), "its preset was forgotten");
+    assert!(host.window.overlay_running, "the window says nothing runs");
     assert!(host.window.status.contains("could not be closed"), "{}", host.window.status);
     // Switching to Companion stops first; that fails again, so nothing launches.
     let launches = host.launcher.launches.len();
