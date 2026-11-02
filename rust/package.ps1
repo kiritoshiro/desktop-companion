@@ -18,6 +18,12 @@ $app = Join-Path $dist "DesktopBugCompanion"
 
 $version = (Select-String -Path (Join-Path $rust "Cargo.toml") -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
 
+# Fail fast, before the build, if the packaged overlay is running. Deleting
+# the exe first (below) is what actually protects the folder.
+$running = Get-Process -Name DesktopBugCompanion -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($app + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }
+if ($running) { throw "Close the overlay first: it is running from $app (PID $($running.Id -join ', '))" }
+
 if (-not $NoBuild) {
     $env:CARGO_TARGET_DIR = $target
     cargo build --release -p dc-app --manifest-path (Join-Path $rust "Cargo.toml")
@@ -26,7 +32,16 @@ if (-not $NoBuild) {
 $exe = Join-Path $target "release\dc-app.exe"
 if (-not (Test-Path $exe)) { throw "No release build at $exe" }
 
-if (Test-Path $app) { Remove-Item -Recurse -Force $app }
+if (Test-Path $app) {
+    # A running overlay locks its exe, and a recursive delete would remove the
+    # data folders before failing on it. Delete the exe first, so nothing else
+    # goes while the overlay runs from here.
+    $appExe = Join-Path $app "DesktopBugCompanion.exe"
+    if (Test-Path $appExe) {
+        try { Remove-Item -Force $appExe } catch { throw "Close the overlay first: $appExe is in use" }
+    }
+    Remove-Item -Recurse -Force $app
+}
 New-Item -ItemType Directory -Force $app | Out-Null
 Copy-Item $exe (Join-Path $app "DesktopBugCompanion.exe")
 foreach ($folder in "models", "personalities", "presets", "assets") {
