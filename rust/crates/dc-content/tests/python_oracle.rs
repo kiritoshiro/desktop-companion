@@ -32,8 +32,13 @@ fn opt_strings(v: &Value) -> Option<Vec<String>> {
 fn body_plans_match() {
     let expected = &oracle()["body_plans"];
     for plan in body_plans::body_plans() {
-        assert_json_eq(&format!("{} legs", plan.id), &json!(plan.legs_json), &expected[plan.id]["legs"]);
-        assert_json_eq(&format!("{} typed legs", plan.id), &json!(plan.legs), &expected[plan.id]["legs"]);
+        let mut legs = expected[plan.id]["legs"].clone();
+        if plan.id == "tarantula" {
+            // Rust-only: the tarantula rests its feet further out.
+            body_plans::lengthen_tarantula_rest(legs.as_array_mut().unwrap());
+        }
+        assert_json_eq(&format!("{} legs", plan.id), &json!(plan.legs_json), &legs);
+        assert_json_eq(&format!("{} typed legs", plan.id), &json!(plan.legs), &legs);
         assert_json_eq(
             &format!("{} gait", plan.id),
             &serde_json::to_value(&plan.gait).unwrap(),
@@ -168,8 +173,14 @@ fn models_match() {
     got_ids.sort();
     want_ids.sort();
     assert_eq!(got_ids, want_ids);
+    let python_tarantula_legs = &oracle()["body_plans"]["tarantula"]["legs"];
     for (id, model) in models.iter() {
-        assert_json_eq(id, &strip_private(model.to_value()), &expected[id]);
+        let mut want = expected[id].clone();
+        if &want["legs"] == python_tarantula_legs {
+            // Rust-only: legs taken from the tarantula plan rest further out.
+            body_plans::lengthen_tarantula_rest(want["legs"].as_array_mut().unwrap());
+        }
+        assert_json_eq(id, &strip_private(model.to_value()), &want);
     }
 }
 

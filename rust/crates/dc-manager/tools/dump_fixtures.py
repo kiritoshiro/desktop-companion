@@ -2,9 +2,10 @@
 
 Run with the main checkout's python.exe -I. Isolated Python ignores PYTHONPATH,
 so insert the worktree src explicitly (also set PYTHONPATH for subprocesses).
-No reference methods or random streams are monkeypatched, except that the
-painted frames draw the squared-up front legs as Rust does (see
-`rust_combat_leg_pose`); the simulation never calls that method.
+No reference methods or random streams are monkeypatched, except two
+deliberate Rust changes: the painted frames draw the squared-up front legs as
+Rust does (`rust_combat_leg_pose`; the simulation never calls that method),
+and the tarantula plan rests its legs further out (`rust_tarantula_rig`).
 """
 from pathlib import Path
 import json
@@ -55,6 +56,32 @@ def trace(m):
 # Scenarios whose last frame is also painted. None pins a label, so with the
 # label switches off no text is drawn except damage numbers.
 RENDERED = ("colony", "fight", "hunt", "stalk", "duel")
+
+
+def rust_tarantula_rig():
+    """Rust changed the tarantula plan on purpose: its legs rest further out
+    (dc-content `TARANTULA_REST_REACH`), with the support-pose forward limit
+    that keeps such a rig turning (dc-kinematics `spider_support_pose`). The
+    same patch is in dc-adventure/tools/dump_fixtures.py."""
+    import inspect
+    import textwrap
+    from desktop_bug.content import body_plans
+    from desktop_bug.creature.kinematics import gait
+
+    reach = (1.75, 1.63, 1.53, 1.85)
+    for index, leg in enumerate(body_plans._TARANTULA_LEGS):
+        af, as_ = leg["attach_forward"], leg["attach_side"]
+        rf, rs = leg["rest_forward"], leg["rest_side"]
+        scale = reach[index // 2] / math.sqrt((rf - af) * (rf - af) + (rs - as_) * (rs - as_))
+        leg["rest_forward"] = af + (rf - af) * scale
+        leg["rest_side"] = as_ + (rs - as_) * scale
+    source = textwrap.dedent(inspect.getsource(gait.GaitConfigMixin._spider_support_pose))
+    old = "if abs(local_f) > self.size * 2.45:"
+    assert old in source
+    source = source.replace(old, "if abs(local_f) > self.size * max(2.45, abs(float(leg.definition.get(\"rest_forward\", 0.0))) + 0.92):")
+    namespace = {}
+    exec(compile(source, gait.__file__, "exec"), vars(gait), namespace)
+    gait.GaitConfigMixin._spider_support_pose = namespace["_spider_support_pose"]
 
 
 def rust_combat_leg_pose(original):
@@ -113,6 +140,7 @@ def render_frame(m, path):
 
 
 def main():
+    rust_tarantula_rig()
     with tempfile.TemporaryDirectory(prefix="dc-manager-oracle-") as scratch:
         os.environ["DESKTOP_BUG_STATE_DIR"] = str(Path(scratch) / "initial")
         from PyQt5.QtWidgets import QApplication

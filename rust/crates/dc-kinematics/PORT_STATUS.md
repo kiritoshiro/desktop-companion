@@ -84,6 +84,12 @@ the chain solve and `math.hypot` / `sum` are bit-exact.
   and foe, clamped at 0): Python raised the legs at a foe behind a spider
   walking on, pulling them back over its body. With a foe right on top, the
   heading stands in for the foe's direction.
+* `_spider_support_pose` rejected a pose with a planted foot more than 2.45
+  sizes ahead of or behind the body. Rust allows `max(2.45, |rest_forward| +
+  0.92)`: the same 0.92 of travel past the rest spot that Python's widest rig
+  (1.53) had. Without it the longer tarantula legs (dc-content
+  `TARANTULA_REST_REACH`, front feet at 1.98) found no pose while turning and
+  froze. Rigs resting at 1.53 or less are unchanged.
 * A non-numeric value in a leg definition or personality falls back to the
   default instead of raising.
 * Tests not ported because they test something else: antenna/palp posture in

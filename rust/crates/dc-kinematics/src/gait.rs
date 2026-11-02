@@ -301,7 +301,11 @@ impl Kinematics {
             if side * local_s < side_floor {
                 return None;
             }
-            if local_f.abs() > size * 2.45 {
+            // Python's fixed 2.45 sizes left a planted foot 0.92 of travel past
+            // the widest rest spot it was tuned for (1.53). Rust-only: keep that
+            // margin for legs that rest further out, or a turning tarantula
+            // (`TARANTULA_REST_REACH`) finds no pose and freezes.
+            if local_f.abs() > size * 2.45f64.max(d.rest_forward_or().abs() + 0.92) {
                 return None;
             }
         }

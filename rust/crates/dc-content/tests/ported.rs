@@ -176,6 +176,29 @@ fn each_plan_walks_differently() {
     assert!(hz("tarantula") < hz("bug") && hz("bug") < hz("jumper"));
 }
 
+/// Rust-only: a theraphosid's legs run IV > I > II > III, and the tarantula
+/// plan rests them at those lengths (Python rested leg I the shortest).
+#[test]
+fn tarantula_legs_rest_longest_at_the_back_then_the_front() {
+    let legs = body_plan_legs("tarantula");
+    let root_to_rest: Vec<f64> = legs
+        .iter()
+        .map(|l| {
+            let (df, ds) =
+                (l.rest_forward.unwrap() - l.attach_forward.unwrap(), l.rest_side.unwrap() - l.attach_side.unwrap());
+            (df * df + ds * ds).sqrt()
+        })
+        .collect();
+    for (i, want) in body_plans::TARANTULA_REST_REACH.iter().enumerate() {
+        assert!(
+            (root_to_rest[2 * i] - want).abs() < 1e-12 && (root_to_rest[2 * i + 1] - want).abs() < 1e-12,
+            "{root_to_rest:?}"
+        );
+    }
+    let [i, ii, iii, iv] = body_plans::TARANTULA_REST_REACH;
+    assert!(iv > i && i > ii && ii > iii);
+}
+
 #[test]
 fn a_plan_hands_out_copies() {
     let mut first = body_plan_legs("bug");

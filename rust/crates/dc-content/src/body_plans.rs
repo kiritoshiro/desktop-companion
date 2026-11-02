@@ -5,7 +5,8 @@
 //! plan. Each plan carries its own gait. A model keeps whatever it states for
 //! itself: an explicit `legs` array wins, and an `appearance.spider_gait`
 //! overrides the plan's. The leg/gait tables are in `data/body_plans.json`,
-//! exported unchanged from the Python module.
+//! exported unchanged from the Python module; only the tarantula's rest spots
+//! are moved at load (`lengthen_tarantula_rest`).
 
 use std::sync::LazyLock;
 
@@ -53,6 +54,29 @@ fn enemy_legs(bug_legs: &[Value], crab: bool) -> Vec<Value> {
     legs
 }
 
+/// Rust-only: how far each tarantula leg pair (I to IV) rests its foot from its
+/// root, in sizes. Python's plan rested leg I 1.13 from its root and leg IV
+/// 1.62, so the front legs were drawn the shortest. A theraphosid's order is
+/// IV > I > II > III (the B. hamorii holotype: 1.059 : 1 : 0.931 : 0.876), and
+/// its legs span about 2.3 body lengths, so these also run about 15% longer.
+pub const TARANTULA_REST_REACH: [f64; 4] = [1.75, 1.63, 1.53, 1.85];
+
+/// Move each leg's rest spot along the line from its root so the root-to-rest
+/// distance is `TARANTULA_REST_REACH` for its pair.
+pub fn lengthen_tarantula_rest(legs: &mut [Value]) {
+    for (index, leg) in legs.iter_mut().enumerate() {
+        let obj = leg.as_object_mut().expect("plan legs are objects");
+        let num = |key: &str| obj[key].as_f64().expect("plan leg number");
+        let (attach_f, attach_s) = (num("attach_forward"), num("attach_side"));
+        let (rest_f, rest_s) = (num("rest_forward"), num("rest_side"));
+        // sqrt, not hypot: it rounds the same in Python, which mirrors this.
+        let (df, ds) = (rest_f - attach_f, rest_s - attach_s);
+        let scale = TARANTULA_REST_REACH[index / 2] / (df * df + ds * ds).sqrt();
+        obj.insert("rest_forward".into(), json!(attach_f + (rest_f - attach_f) * scale));
+        obj.insert("rest_side".into(), json!(attach_s + (rest_s - attach_s) * scale));
+    }
+}
+
 static BODY_PLANS: LazyLock<Vec<BodyPlan>> = LazyLock::new(|| {
     let raw: Value = serde_json::from_str(RAW).expect("body_plans.json is valid");
     let legs_of = |id: &str| raw["legs"][id].as_array().expect("plan legs").clone();
@@ -63,10 +87,12 @@ static BODY_PLANS: LazyLock<Vec<BodyPlan>> = LazyLock::new(|| {
         g["cycle_hz"] = json!(hz);
         g
     };
+    let mut tarantula_legs = legs_of("tarantula");
+    lengthen_tarantula_rest(&mut tarantula_legs);
     let entries: Vec<(&'static str, Vec<Value>, Value)> = vec![
         ("bug", bug_legs.clone(), gait_of("bug")),
         ("segmented", legs_of("segmented"), gait_of("segmented")),
-        ("tarantula", legs_of("tarantula"), gait_of("tarantula")),
+        ("tarantula", tarantula_legs, gait_of("tarantula")),
         ("jumper", legs_of("jumper"), gait_of("jumper")),
         ("enemy_crab", enemy_legs(&bug_legs, true), with_hz(2.15)),
         ("enemy_orb", enemy_legs(&bug_legs, false), with_hz(1.65)),
