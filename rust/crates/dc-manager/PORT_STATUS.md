@@ -57,7 +57,7 @@
   label as `job_pinned` with the creature's `job_id`; see dc-paint's
   PORT_STATUS. It is in `session_snapshot`, and `tests/parity.rs` turns it
   off with the other label switches before comparing frames. The settings
-  window does not show it yet, so its saved presets match Python's.
+  window has it as **Jobs** under "Always show" (dc-ui `LABEL_SWITCHES`).
 
 ## Tests
 

@@ -44,7 +44,9 @@ view and tilde, release and hotkey, two players, mouse drag/shot/commands,
 victory/defeat recorded, Reclaim blue screen, restart, controls reload,
 menu commands, CPU-rendered frames), key mapping and capture conversion,
 the overlay UI layer (`overlay_ui/tests.rs`) and the settings process
-(`settings/tests.rs`, byte-for-byte preset saves against Python), and
+(`settings/tests.rs`, byte-for-byte preset saves against Python; the
+Rust-only `always_show_jobs` switch is mirrored in the oracle by
+`rust/tools/oracle_patches.py`, which `gen_preset_edits.py` applies), and
 the live channel (`live.rs`: real pipe, real manager; one test drives the
 real settings window against the overlay's end), the partial repaints
 (`repaint.rs`: QRect rounding, first/requested/150th frames whole, a

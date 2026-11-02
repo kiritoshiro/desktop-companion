@@ -59,6 +59,14 @@ teams for the inspector.
 `exit_after` for smoke runs. `examples/settings_window.rs` opens the settings
 window on the checkout's real content (`--seconds N`, `--page`, `--root`).
 
+## Rust-only additions
+
+- **Jobs** in the settings window's "Always show" row (`always_show_jobs`,
+  on by default; the job icons drawn by dc-paint). It is saved after
+  `always_show_stamina` and follows the tray via `apply_live_session_state`
+  like the other switches. dc-app's byte-for-byte preset oracle gets the same
+  key from `rust/tools/oracle_patches.py`.
+
 ## Tests
 
 Unit tests per module, plus headless integration tests (`tests/`) that drive
