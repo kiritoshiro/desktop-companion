@@ -814,11 +814,12 @@ impl BaseWorld {
                 posted.sort_by(|&a, &b| creatures[a].progression_id().cmp(creatures[b].progression_id()));
             }
             for (s, posted) in posts[..used].iter() {
-                // Only the first few (by progression id) are posted; the rest
-                // get no guard intent and roam.
+                // Only the first few (by progression id) patrol; every guard
+                // still answers an intruder (`update_guard` stops a slot past
+                // `count` before the patrol).
                 let cap = GUARD_POSTS_BASE + self.bases[*s].level.max(0) as usize;
                 let count = posted.len().min(cap);
-                for (slot, &g) in posted[..count].iter().enumerate() {
+                for (slot, &g) in posted.iter().enumerate() {
                     self.update_guard(dt, g, *s, slot, count, creatures, rng);
                 }
             }
@@ -951,7 +952,8 @@ impl BaseWorld {
         let site = &mut self.bases[s];
         site.alert = 0.0f64.max(site.alert - dt * 0.22);
         let patrol_angle = site.patrol_angle;
-        if !on || !able {
+        // Rust-only: guards past the posted few roam instead of patrolling.
+        if !on || !able || slot >= count {
             return;
         }
         let guard = &mut creatures[g];

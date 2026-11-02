@@ -53,19 +53,23 @@ def tarantula_rig() -> None:
 
 
 def guard_ring() -> None:
-    """dc-world `GUARD_POSTS_BASE` and `update_guard`: a base posts at most
-    4 + level guards, and each walks its own stretch of a ring round the base
-    (widened to 70 px per guard) instead of a line through the centre."""
+    """dc-world `GUARD_POSTS_BASE` and `update_guard`: only the first 4 + level
+    guards of a base patrol (every guard still answers an intruder), each on
+    its own stretch of a ring round the base (widened to 70 px per guard)
+    instead of a line through the centre."""
     from desktop_bug.world import jobs
 
     _replace_method(jobs.BaseWorld, "update", (
         "            for slot, guard in enumerate(posted):\n"
         "                self._update_guard(dt, guard, site, slot, len(posted), creatures)\n",
         "            count = min(len(posted), 4 + max(0, int(site.level)))\n"
-        "            for slot, guard in enumerate(posted[:count]):\n"
+        "            for slot, guard in enumerate(posted):\n"
         "                self._update_guard(dt, guard, site, slot, count, creatures)\n",
     ))
     _replace_method(jobs.BaseWorld, "_update_guard", (
+        "        if not on_duty or not self._can_work(guard):\n",
+        "        if not on_duty or not self._can_work(guard) or slot >= count:\n",
+    ), (
         "        axis = site.patrol_angle + (slot / max(1, count)) * math.pi\n"
         "        standoff = site.radius + GUARD_STANDOFF_PAD\n",
         "        sector = math.tau / max(1, count)\n"
