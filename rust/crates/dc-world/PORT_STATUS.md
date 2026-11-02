@@ -185,6 +185,18 @@ All plain public fields or getters; nothing needs Qt.
 5. `FlyWorld::playfield` / `BaseWorld::playfield` are owned copies (Python
    shared one object); the manager must assign a new one when monitors change.
 
+## Deliberate differences (chosen)
+
+- **Guards** (`update` and `update_guard`): Python posted every guard of a team
+  on its base, each walking a line through the centre, so thirty guards made
+  one crowd in the middle. Only `GUARD_POSTS_BASE` (4) + its level guards of a
+  base patrol, by progression id; the rest still answer an intruder but
+  otherwise roam. Each
+  posted guard walks its own stretch of a ring round the base (`GUARD_ARC_SHARE`
+  of its sector either way, at most `GUARD_ARC_MAX`), and the ring widens to
+  give each guard `GUARD_RING_SPACING`. Alerts are unchanged. The fixture
+  generators apply the same change to the oracle (`rust/tools/oracle_patches.py`).
+
 ## Performance
 
 Fear (every fly against every spider) and guard intruder scans use

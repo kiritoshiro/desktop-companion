@@ -26,6 +26,7 @@ from types import SimpleNamespace
 HERE = Path(__file__).resolve().parent
 WORKTREE = HERE.parents[3]
 sys.path.insert(0, str(WORKTREE / "src"))
+sys.path.insert(0, str(WORKTREE / "rust" / "tools"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from desktop_bug.world import flies as F  # noqa: E402
@@ -768,6 +769,8 @@ def carcass_trace():
 
 
 def main():
+    import oracle_patches
+    oracle_patches.apply_all()
     OUT.mkdir(parents=True, exist_ok=True)
     data = {
         "webs.json": {"plans": web_plans(), "claims": web_claims(), "trace": web_trace(),

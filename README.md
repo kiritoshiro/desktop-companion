@@ -59,8 +59,11 @@ and name and removes all bases (presets, settings, cages and webs are kept).
 **Teams and bases.** Spiders on one team are friends; **Rivals** is hostile to
 every other team, and the Teams panel sets any pair to friend, ignore or foe.
 Foes fight, and a beaten spider dies. Builders raise a team base of dirt
-mounds; Guards walk a line through it and intercept foes; Scouts, Web tenders
-and Hunters work around it. A spider with no team looks after its own base.
+mounds; up to four Guards (one more per base level) patrol a ring round it and
+intercept foes, while extra Guards roam; Scouts, Web tenders and Hunters work
+around it. A spider with no team looks after its own base. A team's base is
+founded at the middle of its members, so a big team spread over several
+monitors starts near the middle of them all; right-click a base to remove it.
 
 Teams are named and coloured in a preset, and pairs set in `team_relations`:
 
