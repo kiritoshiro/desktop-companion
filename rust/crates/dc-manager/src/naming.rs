@@ -32,6 +32,7 @@ impl CreatureManager {
             c.force_show_health = self.always_show_health;
             c.force_show_xp = self.always_show_xp;
             c.force_show_stamina = self.always_show_stamina;
+            c.force_show_job = self.always_show_jobs;
         }
     }
     pub fn set_always_show_levels(&mut self, e: bool) -> String {
@@ -53,6 +54,11 @@ impl CreatureManager {
         self.always_show_stamina = e;
         self.apply_label_overrides();
         format!("Stamina bar {}.", if e { "shown on every spider" } else { "hidden" })
+    }
+    pub fn set_always_show_jobs(&mut self, e: bool) -> String {
+        self.always_show_jobs = e;
+        self.apply_label_overrides();
+        format!("Job icons {}.", if e { "shown on every spider with a job" } else { "shown with names only" })
     }
     pub fn name_creature(&mut self, id: u64, name: &str) -> String {
         let Some(c) = self.creature_mut(id) else {

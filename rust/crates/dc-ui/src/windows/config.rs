@@ -63,8 +63,8 @@ pub const SWATCH_KEY_ORDER: [&str; 6] = ["body", "abdomen", "legs", "head", "eye
 /// blank on purpose and carry tooltips.
 pub const SLOT_HEADERS: [&str; 9] = ["Category", "Skin", "", "Temperament", "Count", "Skills", "Team", "Job", ""];
 
-/// The Always show switches, by preset key.
-pub const LABEL_SWITCHES: [(&str, &str, &str); 5] = [
+/// The Always show switches, by preset key (`always_show_jobs` is Rust-only).
+pub const LABEL_SWITCHES: [(&str, &str, &str); 6] = [
     (
         "always_show_names",
         "Names",
@@ -74,6 +74,11 @@ pub const LABEL_SWITCHES: [(&str, &str, &str); 5] = [
     ("always_show_health", "Health", "Show every spider's health bar, not only ones pinned one at a time."),
     ("always_show_xp", "XP", "Show every spider's progress to its next level as a thin line under its level."),
     ("always_show_stamina", "Stamina", "Show every spider's stamina (energy) under its health bar."),
+    (
+        "always_show_jobs",
+        "Jobs",
+        "Show a job icon (Hunter, Builder, Guard, Scout, Web tender) above every spider that has a job.",
+    ),
 ];
 
 /// `BODY_PLAN_LABELS`.
@@ -798,6 +803,7 @@ impl ConfigWindow {
             ("health", "always_show_health"),
             ("XP", "always_show_xp"),
             ("stamina", "always_show_stamina"),
+            ("jobs", "always_show_jobs"),
         ]
         .iter()
         .filter(|(_, key)| self.label_switches.get(*key).copied().unwrap_or(false))
@@ -1327,13 +1333,14 @@ impl ConfigWindow {
             ui.horizontal(|ui| {
                 ui.label("Always show:");
                 ui.spacing_mut().item_spacing.x = 12.0;
-                // Names, Levels, Health, XP, Stamina -- the Qt order.
+                // Names, Levels, Health, XP, Stamina -- the Qt order -- then Jobs.
                 for key in [
                     "always_show_names",
                     "always_show_levels",
                     "always_show_health",
                     "always_show_xp",
                     "always_show_stamina",
+                    "always_show_jobs",
                 ] {
                     let (_, label, tip) =
                         LABEL_SWITCHES.iter().find(|(k, _, _)| *k == key).copied().unwrap_or_default();

@@ -374,6 +374,7 @@ pub fn settings_catalog() -> SettingsCatalog {
             ("always_show_health", true),
             ("always_show_xp", false),
             ("always_show_stamina", true),
+            ("always_show_jobs", true),
         ]
         .iter()
         .map(|(k, v)| ((*k).to_owned(), *v))

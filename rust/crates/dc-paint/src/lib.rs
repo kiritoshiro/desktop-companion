@@ -22,6 +22,7 @@ pub mod compare;
 pub mod creature;
 pub mod damage;
 pub mod draw;
+pub mod job_icon;
 pub mod label;
 pub mod look;
 pub(crate) mod procedural;

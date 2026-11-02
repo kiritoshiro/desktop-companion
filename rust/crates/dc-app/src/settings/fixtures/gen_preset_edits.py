@@ -19,7 +19,8 @@ Run from the worktree root:
     set QT_QPA_PLATFORM=offscreen
     <venv>\\Scripts\\python.exe -I rust/crates/dc-app/src/settings/fixtures/gen_preset_edits.py
 
-It writes `preset_edits.json` beside itself.
+It writes `preset_edits.json` beside itself, after
+rust/tools/oracle_patches.py (the window saves `always_show_jobs`).
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 WORKTREE = HERE.parents[5]
 sys.path.insert(0, str(WORKTREE / "src"))
+sys.path.insert(0, str(WORKTREE / "rust" / "tools"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["DESKTOP_BUG_STATE_DIR"] = str(Path(tempfile.mkdtemp(prefix="dc-preset-edits-")) / "state")
 
@@ -55,6 +57,9 @@ def pick(combo, value) -> None:
 
 
 def main() -> None:
+    import oracle_patches
+
+    oracle_patches.apply_all()
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = ConfigWindow()
     table = window.table

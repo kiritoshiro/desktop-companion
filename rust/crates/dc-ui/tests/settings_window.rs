@@ -359,6 +359,20 @@ fn the_teams_panel_lists_pairs_with_their_stance() {
 }
 
 #[test]
+fn jobs_turned_off_in_the_tray_are_saved_off() {
+    let mut w = window();
+    let preset = w.current_preset_data().unwrap();
+    assert_eq!(preset["settings"]["always_show_jobs"], json!(true), "on by default");
+    w.apply_live_session_state(&json!({"always_show_jobs": false}));
+    assert!(!w.label_switches["always_show_jobs"]);
+    let preset = w.current_preset_data().unwrap();
+    assert_eq!(preset["settings"]["always_show_jobs"], json!(false));
+    let mut back = ConfigWindow::new(sample::settings_catalog());
+    back.load_preset(&preset);
+    assert!(!back.label_switches["always_show_jobs"], "a saved preset keeps it off");
+}
+
+#[test]
 fn a_live_update_touches_only_what_the_tray_can_change() {
     let mut w = window();
     let before = w.slots.clone();

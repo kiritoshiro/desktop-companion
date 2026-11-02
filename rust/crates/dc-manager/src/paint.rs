@@ -206,6 +206,8 @@ pub fn creature_draw(c: &Creature, look: &CreatureLook) -> CreatureDraw {
             hovered: l.hovered,
             team_id: l.team_id.clone(),
             team_color: l.team_color,
+            job_id: l.job_id.clone(),
+            job_pinned: l.job_pinned,
             hp: l.hp,
             max_hp: l.max_hp,
             energy: l.energy,

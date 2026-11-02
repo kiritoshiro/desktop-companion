@@ -51,6 +51,8 @@ pub struct CreatureManager {
     pub always_show_health: bool,
     pub always_show_xp: bool,
     pub always_show_stamina: bool,
+    /// Rust-only: every spider with a job shows its job icon.
+    pub always_show_jobs: bool,
     pub team_stances: Arc<Stances>,
     pub team_profiles: Arc<TeamProfiles>,
     pub flies_enabled: bool,
@@ -140,6 +142,7 @@ impl CreatureManager {
             always_show_health: true,
             always_show_xp: false,
             always_show_stamina: true,
+            always_show_jobs: true,
             team_stances: Arc::new(Stances::new()),
             team_profiles: Arc::new(TeamProfiles::new()),
             flies_enabled: true,
@@ -257,6 +260,7 @@ impl CreatureManager {
         c.force_show_health = self.always_show_health;
         c.force_show_xp = self.always_show_xp;
         c.force_show_stamina = self.always_show_stamina;
+        c.force_show_job = self.always_show_jobs;
         c.playfield = Some(Arc::new(self.playfield.clone()));
         if let Some((x, y)) = pos {
             c.kin.x = x;

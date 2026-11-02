@@ -85,6 +85,21 @@ def guard_ring() -> None:
     ))
 
 
+def always_show_jobs() -> None:
+    """dc-ui `LABEL_SWITCHES` `always_show_jobs` (Rust-only job icons, on by
+    default): the settings window saves it right after `always_show_stamina`.
+    Python has no checkbox for it, so it saves the loaded value or the
+    default, which is what Rust saves while nobody touches the switch."""
+    from desktop_bug.app import config_ui
+
+    _replace_method(config_ui.ConfigWindow, "current_settings_data", (
+        '"always_show_stamina": bool(self.always_stamina_check.isChecked()),\n',
+        '"always_show_stamina": bool(self.always_stamina_check.isChecked()),\n'
+        '            "always_show_jobs": bool(settings.get("always_show_jobs", True)),\n',
+    ))
+
+
 def apply_all() -> None:
     tarantula_rig()
     guard_ring()
+    always_show_jobs()

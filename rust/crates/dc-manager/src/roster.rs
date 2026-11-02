@@ -112,8 +112,11 @@ impl CreatureManager {
                 "always_show_xp" => {
                     self.set_always_show_xp(v);
                 }
-                _ => {
+                "always_show_stamina" => {
                     self.set_always_show_stamina(v);
+                }
+                _ => {
+                    self.set_always_show_jobs(v);
                 }
             }
         }
@@ -423,6 +426,6 @@ impl CreatureManager {
         format!("Randomized everything: {} spider(s).", self.creatures.len())
     }
     pub fn session_snapshot(&self) -> Value {
-        json!({"mood_mode":self.mood_mode,"always_show_names":self.always_show_names,"always_show_levels":self.always_show_levels,"always_show_health":self.always_show_health,"always_show_xp":self.always_show_xp,"always_show_stamina":self.always_show_stamina,"size_scale":self.size_scale,"social_play":self.social_play,"flies_enabled":self.flies_enabled,"interferable":self.interferable,"creatures":self.creatures.iter().map(|c|json!({"id":c.progression_id,"name":c.name,"team_id":c.progression.team_id})).collect::<Vec<_>>()})
+        json!({"mood_mode":self.mood_mode,"always_show_names":self.always_show_names,"always_show_levels":self.always_show_levels,"always_show_health":self.always_show_health,"always_show_xp":self.always_show_xp,"always_show_stamina":self.always_show_stamina,"always_show_jobs":self.always_show_jobs,"size_scale":self.size_scale,"social_play":self.social_play,"flies_enabled":self.flies_enabled,"interferable":self.interferable,"creatures":self.creatures.iter().map(|c|json!({"id":c.progression_id,"name":c.name,"team_id":c.progression.team_id})).collect::<Vec<_>>()})
     }
 }

@@ -192,8 +192,14 @@ fn menu_ids(core: &UiCore, id: SurfaceId) -> Vec<String> {
     }
 }
 
-const LABELS: [&str; 5] =
-    ["always_show_names", "always_show_levels", "always_show_health", "always_show_xp", "always_show_stamina"];
+const LABELS: [&str; 6] = [
+    "always_show_names",
+    "always_show_levels",
+    "always_show_health",
+    "always_show_xp",
+    "always_show_stamina",
+    "always_show_jobs",
+];
 
 // -- the right-click menu ----------------------------------------------------------
 
@@ -523,6 +529,10 @@ fn overlay_actions_change_the_real_manager() {
     assert!(!m.always_show_names);
     apply_overlay_action(&mut m, &mut rng, "always_show_names");
     assert!(m.always_show_names, "no argument flips it");
+    apply_overlay_action(&mut m, &mut rng, "always_show_jobs=off");
+    assert!(!m.always_show_jobs && m.creatures.iter().all(|c| !c.force_show_job));
+    apply_overlay_action(&mut m, &mut rng, "always_show_jobs");
+    assert!(m.always_show_jobs && m.creatures.iter().all(|c| c.force_show_job), "no argument flips it");
     apply_overlay_action(&mut m, &mut rng, "naming=off");
     assert!(!m.naming_enabled);
     apply_overlay_action(&mut m, &mut rng, "interferable=off");
@@ -593,6 +603,7 @@ fn the_tray_menu_mirrors_create_tray() {
         "naming",
         "always_show_names",
         "always_show_stamina",
+        "always_show_jobs",
         "flies_on",
         "fly_rate=sparse",
         "fly_rate=swarm",

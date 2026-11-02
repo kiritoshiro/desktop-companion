@@ -99,6 +99,20 @@ inputs (see "Verification").
   `CreatureManager.render` set and draws over a covering window. Checked with
   PyQt5: Qt leaks the same pixels. `tests/scene.rs` pins this.
 
+## Rust-only additions
+
+* **Job icons** (`job_icon.rs`, used by `label.rs`): the Python app had no
+  job cue. A spider with a job (Hunter, Builder, Guard, Scout, Web tender)
+  shows its icon before its name in the full and hero labels; `"none"` shows
+  nothing. With `LabelDraw::job_pinned` (the manager's "Always show jobs")
+  a spider whose name is hidden gets a small round badge in the team colour
+  instead. Quiet (mission) labels are unchanged. Plain canvas shapes, so the
+  CPU and GPU backends both draw it; `tests/job_icon.rs` checks each job's
+  icon, the badge, the wider bounding rect and GPU against CPU.
+  No Python parity frame changes: the manager fixtures have no jobs, and
+  `dc-manager`'s frame comparison turns the switch off with the other label
+  switches.
+
 ## Benchmark
 
 `cargo run --release -p dc-paint --example bench 300 120`: 300 spiders (the

@@ -20,7 +20,7 @@ use dc_platform::tray::TrayMenu;
 use super::EngineCommand;
 
 /// `_add_label_switches`: (text, action, emblem, tooltip), in menu order.
-pub const LABEL_SWITCHES: [(&str, &str, &str, &str); 5] = [
+pub const LABEL_SWITCHES: [(&str, &str, &str, &str); 6] = [
     ("Always show names", "always_show_names", "name", "Show every spider's name without having to hover it."),
     ("Always show levels", "always_show_levels", "pin", "Show every spider's level beside its name."),
     (
@@ -40,6 +40,12 @@ pub const LABEL_SWITCHES: [(&str, &str, &str, &str); 5] = [
         "always_show_stamina",
         "stamina",
         "Show every spider's stamina (energy) under its health bar.",
+    ),
+    (
+        "Always show jobs",
+        "always_show_jobs",
+        "armor",
+        "Show a job icon (Hunter, Builder, Guard, Scout, Web tender) above every spider that has a job.",
     ),
 ];
 
@@ -64,7 +70,7 @@ pub const RATE_OPTIONS: [(&str, &str); 3] = [
 ];
 
 /// The tray's on/off entries (checkable, not in a group).
-pub const TRAY_SWITCHES: [&str; 9] = [
+pub const TRAY_SWITCHES: [&str; 10] = [
     "interferable",
     "mouse_web",
     "naming",
@@ -73,6 +79,7 @@ pub const TRAY_SWITCHES: [&str; 9] = [
     "always_show_health",
     "always_show_xp",
     "always_show_stamina",
+    "always_show_jobs",
     "flies_on",
 ];
 
@@ -84,6 +91,7 @@ pub fn label_switch(manager: &CreatureManager, action: &str) -> bool {
         "always_show_health" => manager.always_show_health,
         "always_show_xp" => manager.always_show_xp,
         "always_show_stamina" => manager.always_show_stamina,
+        "always_show_jobs" => manager.always_show_jobs,
         _ => false,
     }
 }
@@ -210,7 +218,7 @@ pub fn apply_spider_action(
 ///
 /// `fps=N`, `size=S`, `randomize_models`, `randomize_personalities`,
 /// `randomize_count`, `randomize_everything`, `interferable`, `mouse_web`,
-/// `naming`, `always_show_{names,levels,health,xp,stamina}`, `flies_on`,
+/// `naming`, `always_show_{names,levels,health,xp,stamina,jobs}`, `flies_on`,
 /// `fly_rate=sparse|normal|swarm`, `release_fly`, `fly_nest`, `add_nest`,
 /// `reset_nest`, `add_cage[=x,y]`, `remove_cages`, `remove_base=<id>`,
 /// `move_base=<id>@x,y`, `remove_bases`, `quit`. Switches take `=on`/`=off`.
@@ -266,14 +274,16 @@ pub fn apply_overlay_action(manager: &mut CreatureManager, rng: &mut PyRandom, a
         | "always_show_levels"
         | "always_show_health"
         | "always_show_xp"
-        | "always_show_stamina" => {
+        | "always_show_stamina"
+        | "always_show_jobs" => {
             let on = switch_value(arg, label_switch(manager, name));
             let message = match name {
                 "always_show_names" => manager.set_always_show_names(on),
                 "always_show_levels" => manager.set_always_show_levels(on),
                 "always_show_health" => manager.set_always_show_health(on),
                 "always_show_xp" => manager.set_always_show_xp(on),
-                _ => manager.set_always_show_stamina(on),
+                "always_show_stamina" => manager.set_always_show_stamina(on),
+                _ => manager.set_always_show_jobs(on),
             };
             announce(message)
         }
@@ -387,7 +397,7 @@ struct TrayState {
     interferable: bool,
     mouse_web: bool,
     naming: bool,
-    labels: [bool; 5],
+    labels: [bool; 6],
     flies_on: bool,
     fly_nest: bool,
 }
@@ -401,7 +411,7 @@ impl Default for TrayState {
             interferable: true,
             mouse_web: true,
             naming: true,
-            labels: [true, true, true, false, true],
+            labels: [true, true, true, false, true, true],
             flies_on: true,
             fly_nest: true,
         }
@@ -422,6 +432,7 @@ impl TrayState {
                 m.always_show_health,
                 m.always_show_xp,
                 m.always_show_stamina,
+                m.always_show_jobs,
             ],
             flies_on: m.flies_enabled,
             fly_nest: m.flies_spawner,
