@@ -18,6 +18,12 @@ $app = Join-Path $dist "DesktopBugCompanion"
 
 $version = (Select-String -Path (Join-Path $rust "Cargo.toml") -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
 
+# The folder is replaced below, and a running overlay locks its exe: deleting
+# would remove the data folders and then fail, leaving the app without them.
+$running = Get-Process -Name DesktopBugCompanion -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -and $_.Path.StartsWith($app + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }
+if ($running) { throw "Close the overlay first: it is running from $app (PID $($running.Id -join ', '))" }
+
 if (-not $NoBuild) {
     $env:CARGO_TARGET_DIR = $target
     cargo build --release -p dc-app --manifest-path (Join-Path $rust "Cargo.toml")
