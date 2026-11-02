@@ -37,7 +37,6 @@ use crate::webs::{self, WebWorld};
 pub use dc_content::jobs::{JOB_DEFINITIONS, JOB_IDS, JobDefinition, job_by_id, normalize_job_id};
 
 const TAU: f64 = std::f64::consts::TAU;
-const PI: f64 = std::f64::consts::PI;
 
 /// `job_definition(value)`.
 pub fn job_definition(value: Option<&str>) -> &'static JobDefinition {
@@ -95,6 +94,16 @@ pub const GUARD_LINE_ARRIVE: f64 = 14.0;
 pub const GUARD_LINE_DWELL: (f64, f64) = (2.5, 4.5);
 pub const GUARD_POST_DRIFT: f64 = 0.012;
 pub const GUARD_FACE_OUT_DIST: f64 = 34.0;
+/// Rust-only: a base posts this many guards, plus one per base level. The
+/// rest roam: thirty guards on one base made a single crowd (Python posted
+/// every guard).
+pub const GUARD_POSTS_BASE: usize = 4;
+/// Rust-only: room each posted guard gets on its ring round the base.
+pub const GUARD_RING_SPACING: f64 = 70.0;
+/// Rust-only: how much of its stretch of the ring a guard walks either way
+/// of its mid-point, and the most it walks (radians) when it guards alone.
+pub const GUARD_ARC_SHARE: f64 = 0.3;
+pub const GUARD_ARC_MAX: f64 = 0.6;
 pub const MOUNDS_PER_BASE: usize = 12;
 pub const PATCH_POINTS: usize = 15;
 pub const PATCH_FLATTEN: f64 = 0.58;
@@ -805,8 +814,11 @@ impl BaseWorld {
                 posted.sort_by(|&a, &b| creatures[a].progression_id().cmp(creatures[b].progression_id()));
             }
             for (s, posted) in posts[..used].iter() {
-                let count = posted.len();
-                for (slot, &g) in posted.iter().enumerate() {
+                // Only the first few (by progression id) are posted; the rest
+                // get no guard intent and roam.
+                let cap = GUARD_POSTS_BASE + self.bases[*s].level.max(0) as usize;
+                let count = posted.len().min(cap);
+                for (slot, &g) in posted[..count].iter().enumerate() {
                     self.update_guard(dt, g, *s, slot, count, creatures, rng);
                 }
             }
@@ -951,8 +963,14 @@ impl BaseWorld {
                 self.guard_line.entry(key.clone()).or_insert(GuardLine { end, dwell: 0.0, anchor: None })
             }
         };
-        let axis = patrol_angle + (slot as f64 / 1.max(count) as f64) * PI;
+        // Rust-only: each guard walks its own stretch of a ring round the
+        // base, widened to give every posted guard GUARD_RING_SPACING. Python
+        // ran every guard on a line through the centre, so a crowd of guards
+        // all met in the middle.
+        let sector = TAU / 1.max(count) as f64;
+        let half_arc = (sector * GUARD_ARC_SHARE).min(GUARD_ARC_MAX);
         let standoff = radius + GUARD_STANDOFF_PAD;
+        let patrol_radius = standoff.max(count as f64 * GUARD_RING_SPACING / TAU);
         if let Some((ax, ay)) = line.anchor
             && hypot(gx - ax, gy - ay) > GUARD_LINE_ARRIVE * 2.0
         {
@@ -974,7 +992,8 @@ impl BaseWorld {
             line.end = -line.end;
             line.anchor = None;
         }
-        let end = (sx + axis.cos() * standoff * line.end, sy + axis.sin() * standoff * line.end);
+        let angle = patrol_angle + slot as f64 * sector + half_arc * line.end;
+        let end = (sx + angle.cos() * patrol_radius, sy + angle.sin() * patrol_radius);
         if hypot(end.0 - gx, end.1 - gy) <= GUARD_LINE_ARRIVE {
             line.anchor = Some((gx, gy));
             line.dwell = rng.uniform(GUARD_LINE_DWELL.0, GUARD_LINE_DWELL.1);

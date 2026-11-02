@@ -445,6 +445,37 @@ fn an_unleveled_bases_guard_does_not_get_the_wider_ring() {
     assert_ne!(guarded(0, 3.0), JobMode::GuardAlert);
 }
 
+/// Rust-only: a base posts `GUARD_POSTS_BASE` + level guards, each on its
+/// own stretch of a ring round the base; the rest roam.
+fn posted_guards(level: i64) -> (Vec<(f64, f64)>, (f64, f64), f64) {
+    let mut world = BaseWorld::new(1200.0, 900.0, &[]);
+    let mut rng = PyRandom::from_u64(1);
+    let mut bugs: Vec<Bug> =
+        (0..9).map(|i| Bug::dummy("guard", "pack_a", 560.0 + i as f64 * 9.0, 450.0, 10 + i)).collect();
+    let site = world.ensure_site(&bugs[0]);
+    site.level = level;
+    let (centre, standoff) = ((site.x, site.y), site.radius() + GUARD_STANDOFF_PAD);
+    world.update(DT, &mut bugs, None, &mut rng);
+    let targets = bugs.iter().filter(|b| b.mode == JobMode::Patrol).map(|b| b.target.unwrap()).collect();
+    (targets, centre, standoff)
+}
+
+#[test]
+fn a_base_posts_a_few_guards_round_a_ring_and_the_rest_roam() {
+    for level in [0, 2] {
+        let (targets, (sx, sy), standoff) = posted_guards(level);
+        assert_eq!(targets.len(), GUARD_POSTS_BASE + level as usize, "level {level}");
+        let radius = standoff.max(targets.len() as f64 * GUARD_RING_SPACING / std::f64::consts::TAU);
+        for (i, &(x, y)) in targets.iter().enumerate() {
+            // On the ring, not on a line through the centre.
+            assert!(((x - sx).hypot(y - sy) - radius).abs() < 1e-6, "level {level} guard {i}");
+            for &(ox, oy) in &targets[..i] {
+                assert!((x - ox).hypot(y - oy) > 30.0, "level {level}: guards {i} share a spot");
+            }
+        }
+    }
+}
+
 fn regen(level: i64, dragged: bool) -> f64 {
     let mut world = BaseWorld::new(800.0, 600.0, &[]);
     let mut rng = PyRandom::from_u64(1);

@@ -33,6 +33,7 @@ HERE = Path(__file__).resolve().parent
 CRATE = HERE.parent
 WORKTREE = CRATE.parents[2]
 sys.path.insert(0, str(WORKTREE / "src"))
+sys.path.insert(0, str(WORKTREE / "rust" / "tools"))
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 os.environ["DESKTOP_BUG_STATE_DIR"] = tempfile.mkdtemp(prefix="dc-creature-fixtures-")
 
@@ -287,6 +288,8 @@ def run(name, creatures, specs, frames, path_seed, group, events=None, note="", 
 
 
 def main():
+    import oracle_patches
+    oracle_patches.apply_all()
     manager = CreatureManager(WORKTREE / "presets" / "colony.json", SW, SH, seed=SEED)
     manager.base_world.clear()
 
