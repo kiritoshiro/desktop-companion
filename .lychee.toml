@@ -17,4 +17,6 @@ exclude = [
   '^https?://localhost',
   # Oxford Academic answers automated requests with 403.
   '^https://academic\.oup\.com/',
+  # Ask IFAS redirects in a loop until the client keeps its locale cookie.
+  '^https://ask\.ifas\.ufl\.edu/',
 ]
