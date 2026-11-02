@@ -163,6 +163,11 @@ pub struct LabelDraw {
     /// `progression.team_id` and `team_color(team_id, team_profiles)`.
     pub team_id: String,
     pub team_color: (u8, u8, u8),
+    /// `job_id` (`"none"` for no job), drawn as an icon in the label.
+    pub job_id: String,
+    /// The "Always show jobs" switch: a spider with a job shows its icon
+    /// even when its name is hidden.
+    pub job_pinned: bool,
     pub hp: f64,
     pub max_hp: f64,
     pub energy: f64,
@@ -184,6 +189,8 @@ impl Default for LabelDraw {
             hovered: false,
             team_id: "neutral".into(),
             team_color: (255, 255, 255),
+            job_id: "none".into(),
+            job_pinned: false,
             hp: 1.0,
             max_hp: 1.0,
             energy: 1.0,

@@ -10,13 +10,15 @@ use serde_json::Value;
 
 use crate::util::{ColorMap, JsonMap, OrderedMap, de};
 
-/// The label switches and their defaults (`LABEL_SWITCH_DEFAULTS`).
-pub const LABEL_SWITCH_DEFAULTS: [(&str, bool); 5] = [
+/// The label switches and their defaults (`LABEL_SWITCH_DEFAULTS`), plus
+/// the Rust-only `always_show_jobs` (each spider's job icon).
+pub const LABEL_SWITCH_DEFAULTS: [(&str, bool); 6] = [
     ("always_show_names", true),
     ("always_show_levels", true),
     ("always_show_health", true),
     ("always_show_xp", false),
     ("always_show_stamina", true),
+    ("always_show_jobs", true),
 ];
 
 /// One row of a preset: which model, which temperament, how many.
@@ -156,6 +158,8 @@ pub struct PresetSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub always_show_stamina: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub always_show_jobs: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flies: Option<FliesSettings>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub teams: Option<OrderedMap<TeamEntry>>,
@@ -175,6 +179,7 @@ impl PresetSettings {
             "always_show_health" => self.always_show_health,
             "always_show_xp" => self.always_show_xp,
             "always_show_stamina" => self.always_show_stamina,
+            "always_show_jobs" => self.always_show_jobs,
             _ => None,
         };
         stored

@@ -50,6 +50,15 @@
 - Mission hand-off (`save_runtime_state` delegating to `self.mission`) belongs to
   dc-app, which owns both the manager and the mission.
 
+## Rust-only additions
+
+- `always_show_jobs` (preset key and tray switch, on by default): sets each
+  creature's `force_show_job`, which `paint::creature_draw` passes to the
+  label as `job_pinned` with the creature's `job_id`; see dc-paint's
+  PORT_STATUS. It is in `session_snapshot`, and `tests/parity.rs` turns it
+  off with the other label switches before comparing frames. The settings
+  window does not show it yet, so its saved presets match Python's.
+
 ## Tests
 
 `tests/parity.rs` replays 21 runs of the unmodified Python manager

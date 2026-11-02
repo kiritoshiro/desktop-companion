@@ -52,7 +52,7 @@ pub struct MenuContext {
     pub any_bases: bool,
     pub any_cages: bool,
     /// `always_show_*`, in [`LABEL_SWITCHES`] order.
-    pub labels: [bool; 5],
+    pub labels: [bool; 6],
 }
 
 fn base_info(manager: &CreatureManager, site: &dc_world::jobs::BaseSite) -> BaseInfo {
@@ -88,7 +88,7 @@ impl MenuContext {
         // Removed while it was being carried: forget it.
         let carried =
             carried.and_then(|id| manager.base_world.bases.iter().find(|s| s.id == id)).map(|s| base_info(manager, s));
-        let mut labels = [false; 5];
+        let mut labels = [false; 6];
         for (i, (_, action, _, _)) in LABEL_SWITCHES.iter().enumerate() {
             labels[i] = label_switch(manager, action);
         }

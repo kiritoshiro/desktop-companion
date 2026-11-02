@@ -413,6 +413,8 @@ pub struct Creature {
     pub force_show_health: bool,
     pub force_show_xp: bool,
     pub force_show_stamina: bool,
+    /// The manager's "Always show jobs" switch (Rust-only).
+    pub force_show_job: bool,
     pub label_style: LabelStyle,
     pub name: String,
     pub hovered: bool,
@@ -794,6 +796,7 @@ impl Creature {
             force_show_health: false,
             force_show_xp: false,
             force_show_stamina: false,
+            force_show_job: false,
             label_style: LabelStyle::Full,
             name: String::new(),
             hovered: false,

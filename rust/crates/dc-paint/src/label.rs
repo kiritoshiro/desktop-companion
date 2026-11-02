@@ -5,6 +5,7 @@
 //! `_draw_label_bars`, plus the label part of `bounding_rect`.
 
 use crate::draw::CreatureDraw;
+use crate::job_icon::{draw_job_icon, has_job_icon};
 use dc_core::math::clamp;
 use dc_core::{Color, Rect};
 use dc_render::{Brush, Canvas, Font, FontMetrics, Pen, TextFlags, Weight};
@@ -16,6 +17,18 @@ pub const LABEL_BAR_WIDTH: f64 = 44.0;
 pub const XP_BAR_COLOR: (u8, u8, u8) = (242, 212, 128);
 /// `Creature.STAMINA_BAR_COLOR`.
 pub const STAMINA_BAR_COLOR: (u8, u8, u8) = (250, 204, 20);
+/// The job icon's radius in the name label, as a share of the font height.
+pub const JOB_ICON_RADIUS: f64 = 0.32;
+/// The gap between the job icon and the name.
+pub const JOB_ICON_GAP: f64 = 4.0;
+/// The radius of the round job badge shown when only the job is pinned.
+pub const JOB_BADGE_RADIUS: f64 = 8.0;
+
+/// The width the job icon adds to a label line `font_height` tall
+/// (0 without a job). `dc_creature::labels` measures the same.
+pub fn job_icon_extra(job_id: &str, font_height: f64) -> f64 {
+    if has_job_icon(job_id) { font_height * JOB_ICON_RADIUS * 2.0 + JOB_ICON_GAP } else { 0.0 }
+}
 
 impl CreatureDraw {
     /// `health_fraction()`.
@@ -44,10 +57,21 @@ impl CreatureDraw {
         font
     }
 
-    /// `label_visible(always_show)`.
+    /// The "Always show jobs" badge applies: a job, the switch on and not
+    /// a quiet (mission) label.
+    pub fn job_badge_pinned(&self) -> bool {
+        let l = &self.label;
+        l.job_pinned && has_job_icon(&l.job_id) && l.label_style != "quiet"
+    }
+
+    /// `label_visible(always_show)`, plus the job badge.
     pub fn label_visible(&self, always_show: bool) -> bool {
         let l = &self.label;
-        let pinned = l.level_label_pinned || l.health_label_pinned || l.xp_label_pinned || l.stamina_label_pinned;
+        let pinned = l.level_label_pinned
+            || l.health_label_pinned
+            || l.xp_label_pinned
+            || l.stamina_label_pinned
+            || self.job_badge_pinned();
         if always_show || pinned {
             return true;
         }
@@ -164,7 +188,8 @@ impl CreatureDraw {
         if self.label_visible(always_show_names) {
             let fm = FontMetrics::new(&self.label_font());
             let text = self.label_text();
-            let half_w = (fm.horizontal_advance(&text) as f64 * 0.5 + 12.0).max(LABEL_BAR_WIDTH * 0.5 + 2.0);
+            let tw = fm.horizontal_advance(&text) as f64 + job_icon_extra(&self.label.job_id, fm.height() as f64);
+            let half_w = (tw * 0.5 + 12.0).max(LABEL_BAR_WIDTH * 0.5 + 2.0);
             let label_h = fm.height() as f64 + 12.0 + self.label_bars_height();
             min_x = min_x.min(self.x - half_w);
             max_x = max_x.max(self.x + half_w);
@@ -239,6 +264,18 @@ pub fn draw_label_bars(p: &mut Canvas, d: &CreatureDraw, mut bar_y: f64) {
     }
 }
 
+/// The round job badge, its bottom at `bottom`: the team-coloured ring of
+/// the name label around the job icon.
+pub fn draw_job_badge(p: &mut Canvas, d: &CreatureDraw, bottom: f64) {
+    let r = JOB_BADGE_RADIUS;
+    let (cx, cy) = (d.x, bottom - r);
+    p.set_pen(Pen::new(d.label_border_color(), 1.6));
+    p.set_brush(Color::rgba(18, 18, 22, 205));
+    p.draw_ellipse_at(cx, cy, r, r);
+    draw_job_icon(p, &d.label.job_id, cx, cy, r * 0.62, Color::rgba(245, 247, 250, 255));
+    p.set_brush(Brush::None);
+}
+
 /// `_draw_quiet_label(painter)`.
 pub fn draw_quiet_label(p: &mut Canvas, d: &CreatureDraw) {
     let mut font = Font::new("Segoe UI", 9.0);
@@ -278,7 +315,11 @@ pub fn draw_name_label(p: &mut Canvas, d: &CreatureDraw, always_show_names: bool
         return;
     }
     if !d.name_visible(always_show_names) {
-        draw_label_bars(p, d, d.label_top() - d.label_bars_height() - 1.0);
+        let bars_top = d.label_top() - d.label_bars_height() - 1.0;
+        draw_label_bars(p, d, bars_top);
+        if d.job_badge_pinned() {
+            draw_job_badge(p, d, bars_top - 2.0);
+        }
         return;
     }
     let font = d.label_font();
@@ -287,9 +328,10 @@ pub fn draw_name_label(p: &mut Canvas, d: &CreatureDraw, always_show_names: bool
     let text = d.label_text();
     let tw = fm.horizontal_advance(&text) as f64;
     let th = fm.height() as f64;
+    let icon_w = job_icon_extra(&d.label.job_id, th);
     let pad_x = 8.0;
     let pad_y = 4.0;
-    let box_w = tw + pad_x * 2.0;
+    let box_w = tw + icon_w + pad_x * 2.0;
     let box_h = th + pad_y * 2.0;
     let top_extent = d.label_top();
     let box_x = d.x - box_w * 0.5;
@@ -313,13 +355,18 @@ pub fn draw_name_label(p: &mut Canvas, d: &CreatureDraw, always_show_names: bool
         p.set_brush(gold);
         p.draw_polygon(&[(tx - 6.0, ty - 7.0), (tx + 6.0, ty - 7.0), (tx, ty)]);
     }
-    p.set_pen(Color::rgba(245, 247, 250, 255));
-    p.draw_text_in(Rect::new(box_x, box_y, box_w, box_h), TextFlags::ALIGN_CENTER, &text);
+    let text_color = Color::rgba(245, 247, 250, 255);
+    if icon_w > 0.0 {
+        let r = th * JOB_ICON_RADIUS;
+        draw_job_icon(p, &d.label.job_id, box_x + pad_x + r, box_y + box_h * 0.5, r, text_color);
+    }
+    p.set_pen(text_color);
+    p.draw_text_in(Rect::new(box_x + icon_w, box_y, box_w - icon_w, box_h), TextFlags::ALIGN_CENTER, &text);
     if d.label.xp_label_pinned {
         let suffix = d.level_suffix();
         let suffix = suffix.trim_start_matches([' ', '\u{00b7}']);
         let level_w = fm.horizontal_advance(suffix) as f64;
-        let level_x = box_x + pad_x + tw - level_w;
+        let level_x = box_x + icon_w + pad_x + tw - level_w;
         let line_y = box_y + box_h - 3.5;
         p.set_pen(Pen::NONE);
         p.set_brush(Color::rgba(0, 0, 0, 150));

@@ -37,6 +37,11 @@ pub struct LabelSnapshot {
     pub hovered: bool,
     pub team_id: String,
     pub team_color: (u8, u8, u8),
+    /// `job_id` and the "Always show jobs" switch (Rust-only).
+    #[serde(default)]
+    pub job_id: String,
+    #[serde(default)]
+    pub job_pinned: bool,
     pub hp: f64,
     pub max_hp: f64,
     pub energy: f64,
@@ -213,6 +218,8 @@ impl Creature {
                 hovered: self.hovered,
                 team_id: team_id.clone(),
                 team_color: (border[0], border[1], border[2]),
+                job_id: self.job_id.clone(),
+                job_pinned: self.force_show_job,
                 hp: self.hp,
                 max_hp: self.max_hp,
                 energy: self.energy,

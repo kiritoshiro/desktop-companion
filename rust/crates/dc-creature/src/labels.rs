@@ -120,12 +120,24 @@ impl Creature {
         10.0 + (self.level() - 1) as f64 * 0.1
     }
 
-    /// `label_visible(always_show)`: is the label drawn at all?
+    /// Has a job with an icon (every job but `"none"`; Rust-only).
+    pub fn has_job_icon(&self) -> bool {
+        self.job_id != "none" && dc_content::jobs::job_by_id(&self.job_id).is_some()
+    }
+
+    /// The "Always show jobs" badge applies (`dc_paint`'s `job_badge_pinned`).
+    pub fn job_badge_pinned(&self) -> bool {
+        self.force_show_job && self.has_job_icon() && self.label_style != LabelStyle::Quiet
+    }
+
+    /// `label_visible(always_show)`: is the label drawn at all? Also when
+    /// only the job badge is pinned.
     pub fn label_visible(&self, always_show: bool) -> bool {
         let pinned = self.level_label_pinned()
             || self.health_label_pinned()
             || self.xp_label_pinned()
-            || self.stamina_label_pinned();
+            || self.stamina_label_pinned()
+            || self.job_badge_pinned();
         if always_show || pinned {
             return true;
         }
@@ -280,8 +292,12 @@ impl Creature {
         if self.label_visible(always_show_names) {
             let size = self.label_point_size();
             let text = self.label_text();
-            let half_w = (metrics.horizontal_advance(&text, size, true) * 0.5 + 12.0).max(LABEL_BAR_WIDTH * 0.5 + 2.0);
-            let label_h = metrics.height(size, true) + 12.0 + self.label_bars_height();
+            let font_h = metrics.height(size, true);
+            // The job icon (`dc_paint::label::job_icon_extra`): 0.64 em plus a 4 px gap.
+            let icon_w = if self.has_job_icon() { font_h * 0.64 + 4.0 } else { 0.0 };
+            let half_w = ((metrics.horizontal_advance(&text, size, true) + icon_w) * 0.5 + 12.0)
+                .max(LABEL_BAR_WIDTH * 0.5 + 2.0);
+            let label_h = font_h + 12.0 + self.label_bars_height();
             min_x = min_x.min(self.kin.x - half_w);
             max_x = max_x.max(self.kin.x + half_w);
             min_y -= label_h + 6.0;

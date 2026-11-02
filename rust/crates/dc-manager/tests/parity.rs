@@ -242,6 +242,7 @@ fn compare_frame(m: &mut CreatureManager, png: &std::path::Path, name: &str) -> 
     m.set_always_show_health(false);
     m.set_always_show_xp(false);
     m.set_always_show_stamina(false);
+    m.set_always_show_jobs(false);
     // The generator cleared these too: offscreen Qt draws text as boxes.
     for c in &mut m.creatures {
         c.damage_numbers.clear();

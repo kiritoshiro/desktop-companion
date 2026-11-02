@@ -47,9 +47,13 @@ and name and removes all bases (presets, settings, cages and webs are kept).
 - Right-click a spider to name it, toggle its abilities, or inspect its level,
   talents, armour, team and relations. Right-click a base to remove it.
 - Tray menu: randomize, size, mood, social play, flies, cages, the
-  "always show" switches (names, levels, health and stamina are on by default;
-  XP is a thin line under the level, on request), and **Let spiders web-trap the
-  mouse** (the master switch for anything that moves your pointer).
+  "always show" switches (names, levels, health, stamina and jobs are on by
+  default; XP is a thin line under the level, on request), and **Let spiders
+  web-trap the mouse** (the master switch for anything that moves your pointer).
+- Job icons: a spider's label shows its job before its name: crosshair =
+  Hunter, hammer = Builder, shield = Guard, eye = Scout, web = Web tender (no
+  icon = no job). With **Always show jobs** on, a spider whose name is hidden
+  shows the icon in a small team-coloured badge instead.
 - Wiggle the mouse to break free of a silk trap. Swipe across a web to tear it.
 
 **Teams and bases.** Spiders on one team are friends; **Rivals** is hostile to
