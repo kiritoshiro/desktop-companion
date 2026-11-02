@@ -31,7 +31,7 @@ Port of `src/desktop_bug/content/*`.
 
 ## Deliberate differences (chosen)
 
-- **Tarantula plan rest spots:** Python rested leg I's foot 1.13 sizes from its root and leg IV's 1.62, so the front legs were drawn the shortest. `lengthen_tarantula_rest` moves each rest spot along its line from the root to `TARANTULA_REST_REACH` (I 1.75, II 1.63, III 1.53, IV 1.85): the theraphosid order IV > I > II > III, about 15% longer overall. `data/body_plans.json` stays Python's; the oracle tests apply the same function to Python's plan and to models that take their legs from it (`tarantula`, `enemy_ash_wolf`, `enemy_ember_matriarch`). Goes with the support-pose forward limit in dc-kinematics.
+- **Tarantula plan rest spots:** Python rested leg I's foot 1.13 sizes from its root and leg IV's 1.62, so the front legs were drawn the shortest. `lengthen_tarantula_rest` moves each rest spot along its line from the root to `TARANTULA_REST_REACH` (I 1.75, II 1.63, III 1.53, IV 1.85): the theraphosid order IV > I > II > III, about 15% longer overall. `data/body_plans.json` stays Python's; the oracle tests apply the same function to Python's plan and to models that take their legs from it (`tarantula`, `enemy_ash_wolf`, `enemy_ember_matriarch`). Goes with the tarantula-profile support-pose forward limit in dc-kinematics.
 
 ## Tests
 

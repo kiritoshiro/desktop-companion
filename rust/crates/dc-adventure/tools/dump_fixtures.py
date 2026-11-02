@@ -211,7 +211,7 @@ def rust_tarantula_rig():
     source = textwrap.dedent(inspect.getsource(gait.GaitConfigMixin._spider_support_pose))
     old = "if abs(local_f) > self.size * 2.45:"
     assert old in source
-    source = source.replace(old, "if abs(local_f) > self.size * max(2.45, abs(float(leg.definition.get(\"rest_forward\", 0.0))) + 0.92):")
+    source = source.replace(old, "if abs(local_f) > self.size * (max(2.45, abs(float(leg.definition.get(\"rest_forward\", 0.0))) + 0.92) if config.get(\"profile\") == \"tarantula\" else 2.45):")
     namespace = {}
     exec(compile(source, gait.__file__, "exec"), vars(gait), namespace)
     gait.GaitConfigMixin._spider_support_pose = namespace["_spider_support_pose"]
