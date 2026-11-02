@@ -508,42 +508,15 @@ fn tarantula_carried_legs_hang_below_and_spread() {
 }
 
 /// Rust-only: Python lifted the squared-up front feet straight up the screen,
-/// which pulled them back behind the head of a spider facing down the screen.
+/// which pulled them back behind the head of a spider facing down the screen,
+/// and it raised them at a foe behind the spider too.
 #[test]
 fn tarantula_squared_up_front_legs_reach_at_the_foe_from_any_side() {
     let (mut k, _) = tarantula();
     let front: Vec<usize> = (0..k.legs.len()).filter(|&i| k.leg_front_factor(i) > 0.15).collect();
     assert!(!front.is_empty());
-    let push = |k: &Kinematics, i: usize, face: (f64, f64)| {
-        let draw = dc_kinematics::DrawCtx {
-            combat_stance: 1.0,
-            combat_face_x: face.0,
-            combat_face_y: face.1,
-            ..Default::default()
-        };
-        let (fx, fy) = k.combat_leg_pose(i, 0.0, 0.0, k.leg_front_factor(i), &draw);
-        (fx * face.0 + fy * face.1, hypot(fx, fy))
-    };
-    let mut reaches = Vec::new();
-    for step in 0..8 {
-        let angle = step as f64 * PI / 4.0;
-        let face = (angle.cos(), angle.sin());
-        for &i in &front {
-            let (forward, _) = push(&k, i, face);
-            assert!(forward > k.size * 0.10, "leg {i} facing {angle:.2}: {forward}");
-            reaches.push(forward);
-        }
-    }
-    let spread = reaches.iter().cloned().fold(f64::MIN, f64::max) - reaches.iter().cloned().fold(f64::MAX, f64::min);
-    let per_leg = reaches.len() / 8;
-    assert!(
-        (0..per_leg).all(|j| reaches.iter().skip(j).step_by(per_leg).all(|r| (r - reaches[j]).abs() < 1e-9)),
-        "the reach must not depend on which way the spider faces (spread {spread})"
-    );
-    // A foe right on top of it: the pose follows the spider's heading.
-    let i = front[0];
-    k.heading = 0.0;
-    let foot = |face: (f64, f64)| {
+    // The front foot of leg `i` squared up at a foe in direction `face`.
+    let foot = |k: &Kinematics, i: usize, face: (f64, f64)| {
         let draw = dc_kinematics::DrawCtx {
             combat_stance: 1.0,
             combat_face_x: face.0,
@@ -552,14 +525,37 @@ fn tarantula_squared_up_front_legs_reach_at_the_foe_from_any_side() {
         };
         k.combat_leg_pose(i, 0.0, 0.0, k.leg_front_factor(i), &draw)
     };
-    let (on_top, along_heading) = (foot((0.0, 0.0)), foot((1.0, 0.0)));
-    assert!(on_top.0 > k.size * 0.10, "{on_top:?}");
-    assert_eq!(on_top, along_heading);
+    let mut reaches = Vec::new();
+    for step in 0..8 {
+        let angle = step as f64 * PI / 4.0;
+        let face = (angle.cos(), angle.sin());
+        k.heading = angle;
+        for &i in &front {
+            let (fx, fy) = foot(&k, i, face);
+            let forward = fx * face.0 + fy * face.1;
+            assert!(forward > k.size * 0.10, "leg {i} facing {angle:.2}: {forward}");
+            reaches.push(forward);
+        }
+    }
+    let per_leg = reaches.len() / 8;
+    assert!(
+        (0..per_leg).all(|j| reaches.iter().skip(j).step_by(per_leg).all(|r| (r - reaches[j]).abs() < 1e-9)),
+        "the reach must not depend on which way the spider faces: {reaches:?}"
+    );
+    let i = front[0];
+    k.heading = 0.0;
+    let ahead = foot(&k, i, (1.0, 0.0));
+    // A foe right on top of it: the pose follows the spider's heading.
+    assert_eq!(foot(&k, i, (0.0, 0.0)), ahead);
+    // A foe behind the spider leaves its front legs alone; one beside it
+    // raises them less than one ahead.
+    assert_eq!(foot(&k, i, (-1.0, 0.0)), (0.0, 0.0));
+    let beside = foot(&k, i, (0.6, 0.8));
+    assert!(beside.0 > 0.0 && hypot(beside.0, beside.1) < hypot(ahead.0, ahead.1), "{beside:?} vs {ahead:?}");
     // A spider still walking at its foe keeps most of the pose off its feet.
-    let (_, standing) = push(&k, i, (0.0, 1.0));
     k.current_speed = 150.0;
-    let (_, walking) = push(&k, i, (0.0, 1.0));
-    assert!(walking < standing * 0.5, "{walking} vs {standing}");
+    let walking = foot(&k, i, (1.0, 0.0));
+    assert!(hypot(walking.0, walking.1) < hypot(ahead.0, ahead.1) * 0.5, "{walking:?} vs {ahead:?}");
 }
 
 #[test]

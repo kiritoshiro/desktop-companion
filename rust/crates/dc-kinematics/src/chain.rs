@@ -516,12 +516,16 @@ impl Kinematics {
         // reaching towards the foe, and it eases while the spider walks so
         // its planted feet still carry it.
         let walking = clamp(self.current_speed / 120.0, 0.0, 1.0);
-        let weight = stance * front_weight * (1.0 - 0.65 * walking);
+        let (head_x, head_y) = (self.heading.cos(), self.heading.sin());
         let (mut face_x, mut face_y) = (draw.combat_face_x, draw.combat_face_y);
         if hypot(face_x, face_y) < 1e-6 {
             // A foe right on top of it: square up the way it faces.
-            (face_x, face_y) = (self.heading.cos(), self.heading.sin());
+            (face_x, face_y) = (head_x, head_y);
         }
+        // Only a foe in front raises the front legs. One beside or behind a
+        // spider that walks on would otherwise pull them back over its body.
+        let ahead = clamp(face_x * head_x + face_y * head_y, 0.0, 1.0);
+        let weight = stance * front_weight * (1.0 - 0.65 * walking) * ahead;
         let (lateral_x, lateral_y) = (-face_y, face_x);
         fx += face_x * size * 0.46 * weight;
         fy += face_y * size * 0.46 * weight;
