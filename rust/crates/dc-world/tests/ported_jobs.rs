@@ -445,6 +445,111 @@ fn an_unleveled_bases_guard_does_not_get_the_wider_ring() {
     assert_ne!(guarded(0, 3.0), JobMode::GuardAlert);
 }
 
+/// Rust-only: a base's guards. Progression ids are shuffled against the
+/// creature order, so the posted few must be picked by id.
+struct GuardPost {
+    world: BaseWorld,
+    rng: PyRandom,
+    bugs: Vec<Bug>,
+}
+
+const GUARD_IDS: [usize; 9] = [6, 2, 8, 0, 5, 3, 7, 1, 4];
+
+impl GuardPost {
+    fn new(level: i64) -> GuardPost {
+        let mut bugs: Vec<Bug> = GUARD_IDS
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| {
+                let mut b = Bug::dummy("guard", "pack_a", 560.0 + i as f64 * 9.0, 450.0, 10 + i as i64);
+                b.pid = format!("guard-{id}");
+                b
+            })
+            .collect();
+        let mut world = BaseWorld::new(1200.0, 900.0, &[]);
+        world.ensure_site(&bugs[0]).level = level;
+        let mut rng = PyRandom::from_u64(1);
+        world.update(DT, &mut bugs, None, &mut rng);
+        GuardPost { world, rng, bugs }
+    }
+
+    fn site(&self) -> &BaseSite {
+        &self.world.bases[0]
+    }
+
+    fn step(&mut self) {
+        self.world.update(DT, &mut self.bugs, None, &mut self.rng);
+    }
+
+    /// The patrol radius, sector and half arc for `count` posted guards.
+    fn ring(&self, count: usize) -> (f64, f64, f64) {
+        let tau = std::f64::consts::TAU;
+        let standoff = self.site().radius() + GUARD_STANDOFF_PAD;
+        let sector = tau / count as f64;
+        (standoff.max(count as f64 * GUARD_RING_SPACING / tau), sector, (sector * GUARD_ARC_SHARE).min(GUARD_ARC_MAX))
+    }
+
+    /// Which end of its arc a target is (+1 / -1), checking it is on the ring.
+    fn end_of(&self, slot: usize, count: usize, (x, y): (f64, f64)) -> f64 {
+        let (radius, sector, half_arc) = self.ring(count);
+        let (sx, sy) = (self.site().x, self.site().y);
+        assert!(((x - sx).hypot(y - sy) - radius).abs() < 1e-6, "slot {slot} off the ring");
+        let mid = self.site().patrol_angle + slot as f64 * sector;
+        let pi = std::f64::consts::PI;
+        let off = ((y - sy).atan2(x - sx) - mid + pi).rem_euclid(2.0 * pi) - pi;
+        assert!((off.abs() - half_arc).abs() < 1e-6, "slot {slot}: {off} not at an end of its arc");
+        off.signum()
+    }
+}
+
+#[test]
+fn a_base_posts_its_lowest_ids_round_a_ring_and_the_rest_roam() {
+    for level in [0, 2] {
+        let post = GuardPost::new(level);
+        let count = GUARD_POSTS_BASE + level as usize;
+        for (i, &id) in GUARD_IDS.iter().enumerate() {
+            let bug = &post.bugs[i];
+            if id < count {
+                assert_eq!(bug.mode, JobMode::Patrol, "level {level}: guard-{id} should patrol");
+                post.end_of(id, count, bug.target.unwrap());
+            } else {
+                assert_eq!(bug.mode, JobMode::Idle, "level {level}: guard-{id} should roam");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_posted_guard_holds_an_end_then_walks_to_the_other() {
+    let mut post = GuardPost::new(0);
+    let count = GUARD_POSTS_BASE;
+    let i = GUARD_IDS.iter().position(|&id| id == 0).unwrap();
+    let target = post.bugs[i].target.unwrap();
+    let first = post.end_of(0, count, target);
+    (post.bugs[i].x, post.bugs[i].y) = target;
+    post.step();
+    assert_eq!(post.bugs[i].target, Some(target), "it holds the spot it reached");
+    assert!(post.bugs[i].facing.is_some(), "and looks outwards");
+    for _ in 0..(GUARD_LINE_DWELL.1 / DT) as usize + 2 {
+        post.step();
+    }
+    let next = post.bugs[i].target.unwrap();
+    assert_eq!(post.end_of(0, count, next), -first, "after the watch it heads for the other end");
+}
+
+#[test]
+fn every_guard_answers_an_intruder_posted_or_not() {
+    let mut post = GuardPost::new(0);
+    let (sx, sy, r) = (post.site().x, post.site().y, post.site().radius());
+    let mut foe = Bug::dummy("none", "rivals", sx + r + 10.0, sy, 99);
+    foe.pid = "foe".into();
+    post.bugs.push(foe);
+    post.step();
+    for (i, &id) in GUARD_IDS.iter().enumerate() {
+        assert_eq!(post.bugs[i].mode, JobMode::GuardAlert, "guard-{id}");
+    }
+}
+
 fn regen(level: i64, dragged: bool) -> f64 {
     let mut world = BaseWorld::new(800.0, 600.0, &[]);
     let mut rng = PyRandom::from_u64(1);
