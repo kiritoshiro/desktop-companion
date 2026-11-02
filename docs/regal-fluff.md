@@ -34,7 +34,7 @@ Existing camouflage, labels, web nets, rolling, and equipment accents remain.
 
 ## Biological basis and deliberate liberties
 
-- [UF/IFAS: Regal Jumping Spider](https://edis.ifas.ufl.edu/publication/IN309)
+- [UF/IFAS: Regal Jumping Spider](https://ask.ifas.ufl.edu/publication/IN309)
   describes the eye arrangement, iridescent chelicerae, white palp hairs,
   fringed male forelegs, visual hunting, and species-specific courtship dance.
 - [Echeverri et al., 2017](https://academic.oup.com/beheco/article/28/6/1445/4091426)
