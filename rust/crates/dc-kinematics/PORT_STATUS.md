@@ -80,6 +80,10 @@ the chain solve and `math.hypot` / `sum` are bit-exact.
   foe, and stretched them far ahead of one walking up. Here the raise is a
   reach towards the foe (`0.46` instead of `0.30`, same `0.34` spread),
   and it eases by up to 65% while the spider walks (`current_speed / 120`).
+  It also scales with how far the foe is in front (the cosine between heading
+  and foe, clamped at 0): Python raised the legs at a foe behind a spider
+  walking on, pulling them back over its body. With a foe right on top, the
+  heading stands in for the foe's direction.
 * A non-numeric value in a leg definition or personality falls back to the
   default instead of raising.
 * Tests not ported because they test something else: antenna/palp posture in

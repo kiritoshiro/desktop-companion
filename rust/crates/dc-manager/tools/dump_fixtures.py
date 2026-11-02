@@ -69,10 +69,12 @@ def rust_combat_leg_pose(original):
             return original(self, leg, ax, ay, foot_x, foot_y, front)
         front_weight = min(max((front - 0.15) / 0.85, 0.0), 1.0)
         walking = min(max(self.current_speed / 120.0, 0.0), 1.0)
-        weight = stance * front_weight * (1.0 - 0.65 * walking)
+        head_x, head_y = math.cos(self.heading), math.sin(self.heading)
         face_x, face_y = self.combat_face_x, self.combat_face_y
         if math.hypot(face_x, face_y) < 1e-6:
-            face_x, face_y = math.cos(self.heading), math.sin(self.heading)
+            face_x, face_y = head_x, head_y
+        ahead = min(max(face_x * head_x + face_y * head_y, 0.0), 1.0)
+        weight = stance * front_weight * (1.0 - 0.65 * walking) * ahead
         lateral_x, lateral_y = -face_y, face_x
         side = self._side_sign(leg.definition.get("side", "right"))
         foot_x += face_x * self.size * 0.46 * weight
