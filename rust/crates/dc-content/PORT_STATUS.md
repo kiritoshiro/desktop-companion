@@ -29,6 +29,10 @@ Port of `src/desktop_bug/content/*`.
 - **`set_state_dir_override`:** a process-wide override ahead of `DESKTOP_BUG_STATE_DIR`, because tests cannot safely change the environment of a threaded process.
 - **JSON writing:** `util::python_json_dumps` reproduces `json.dumps(indent=2)` byte for byte (ensure_ascii, separators, float repr). The dc-state oracle checks this.
 
+## Deliberate differences (chosen)
+
+- **Tarantula plan rest spots:** Python rested leg I's foot 1.13 sizes from its root and leg IV's 1.62, so the front legs were drawn the shortest. `lengthen_tarantula_rest` moves each rest spot along its line from the root to `TARANTULA_REST_REACH` (I 1.75, II 1.63, III 1.53, IV 1.85): the theraphosid order IV > I > II > III, about 15% longer overall. `data/body_plans.json` stays Python's; the oracle tests apply the same function to Python's plan and to models that take their legs from it (`tarantula`, `enemy_ash_wolf`, `enemy_ember_matriarch`). Goes with the tarantula-profile support-pose forward limit in dc-kinematics.
+
 ## Tests
 
 - `tests/python_oracle.rs` against `tests/fixtures/content_oracle.json` (from `tools/dump_fixtures.py`): body plans, palettes, enemy kinds/skins/picks, enemy traits, every discovered personality (annotated) and model (resolved), derived skills/modules/gaits, temperament/phase tables by id, skill summaries, and the validation messages for 70+ bad inputs.

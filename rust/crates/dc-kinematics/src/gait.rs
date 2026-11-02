@@ -1,7 +1,7 @@
 //! Port of `creature/kinematics/gait.py`: gait style pipeline, spider gait
 //! configuration access, and the grounded, support-driven body solver.
 
-use crate::config::{MAX_LEGS, SpiderGaitConfig};
+use crate::config::{GaitProfile, MAX_LEGS, SpiderGaitConfig};
 use crate::constants::{GAIT_SPELL_GAP, GAIT_SPELL_LENGTH, gait_by_state};
 use crate::core::{FrameCtx, GaitStyle, Kinematics, MotionState};
 use crate::legstate::ContactState;
@@ -301,7 +301,16 @@ impl Kinematics {
             if side * local_s < side_floor {
                 return None;
             }
-            if local_f.abs() > size * 2.45 {
+            // Python's fixed 2.45 sizes left Python's tarantula (rest spots up
+            // to 1.53) 0.92 of travel. Rust-only: tarantula-profile legs keep
+            // that margin past their rest spot, or the longer legs
+            // (`TARANTULA_REST_REACH`) find no pose while turning and freeze.
+            // Other profiles keep Python's limit.
+            let mut forward_limit = 2.45;
+            if config.profile == GaitProfile::Tarantula {
+                forward_limit = f64::max(forward_limit, d.rest_forward_or().abs() + 0.92);
+            }
+            if local_f.abs() > size * forward_limit {
                 return None;
             }
         }
