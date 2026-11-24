@@ -230,8 +230,8 @@ impl Creature {
         } else {
             1.8 + m.arousal * 3.2 + m.curiosity * 1.6 + speed01 * 2.0
         };
-        for i in 0..2 {
-            self.antenna_phase[i] += dt * phase_rate;
+        for phase in &mut self.antenna_phase {
+            *phase += dt * phase_rate;
         }
         if !custom_hand_palps {
             return;
